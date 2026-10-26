@@ -2801,3 +2801,111 @@ mod tests {
         assert_eq!(sample_scale(&[1.0, 3.0], 0.5), 2.0);
     }
 }
+
+impl ParticleDesc {
+    /// Sample manager-owned particle channels with the graph's blend weights.
+    /// Geometry, modifier order and particle ages belong to the shared system;
+    /// switching a leaf never clears its already emitted particles.
+    pub fn blended(&self, samples: &[(String, f32, f32)]) -> Option<Self> {
+        if samples.is_empty() {
+            return None;
+        }
+        let inputs: Vec<_> = samples
+            .iter()
+            .map(|(name, t, w)| {
+                (
+                    self.sequences.get(name).map_or(self, |d| d.as_ref()),
+                    *t,
+                    *w,
+                )
+            })
+            .collect();
+        let mut result = inputs[0].0.clone();
+        result.sequences.clear();
+        let scalar = |sample: &dyn Fn(&ParticleDesc, f32) -> f32| {
+            inputs
+                .iter()
+                .map(|(d, t, w)| sample(d, *t) * *w)
+                .sum::<f32>()
+        };
+        for (i, e) in result.emitters.iter_mut().enumerate() {
+            e.birth_rate = Curve::constant(scalar(&|d, t| {
+                d.emitters.get(i).map_or(0.0, |e| e.birth_rate.sample(t))
+            }));
+            e.visible = Curve::constant(scalar(&|d, t| {
+                d.emitters.get(i).map_or(0.0, |e| e.visible.sample(t))
+            }));
+            e.active = Curve::constant(scalar(&|d, t| {
+                d.emitters.get(i).map_or(0.0, |e| e.active.sample(t))
+            }));
+            e.speed = Some(Curve::constant(scalar(&|d, t| {
+                d.emitters.get(i).map_or(0.0, |e| {
+                    e.speed.as_ref().map_or(e.params.speed, |c| c.sample(t))
+                })
+            })));
+            e.radius = Some(Curve::constant(scalar(&|d, t| {
+                d.emitters.get(i).map_or(0.0, |e| {
+                    e.radius.as_ref().map_or(e.params.radius, |c| c.sample(t))
+                })
+            })));
+            e.life_span = Some(Curve::constant(scalar(&|d, t| {
+                d.emitters.get(i).map_or(0.0, |e| {
+                    e.life_span
+                        .as_ref()
+                        .map_or(e.params.life_span, |c| c.sample(t))
+                })
+            })));
+        }
+        for (i, e) in result.emitters.iter_mut().enumerate() {
+            e.birth_rate = Curve::constant(scalar(&|d, t| {
+                d.emitters.get(i).map_or(0.0, |e| {
+                    e.birth_rate.sample(t)
+                        * e.active.sample(t).clamp(0.0, 1.0)
+                        * e.visible.sample(t).clamp(0.0, 1.0)
+                })
+            }));
+            e.active = Curve::constant(1.0);
+            e.visible = Curve::constant(1.0);
+        }
+        if let Some(r) = &mut result.rotation {
+            r.speed = Curve::constant(scalar(&|d, t| {
+                d.rotation.as_ref().map_or(0.0, |r| r.speed.sample(t))
+            }));
+            r.speed_variation = Curve::constant(scalar(&|d, t| {
+                d.rotation
+                    .as_ref()
+                    .map_or(0.0, |r| r.speed_variation.sample(t))
+            }));
+            r.angle = Curve::constant(scalar(&|d, t| {
+                d.rotation.as_ref().map_or(0.0, |r| r.angle.sample(t))
+            }));
+            r.angle_variation = Curve::constant(scalar(&|d, t| {
+                d.rotation
+                    .as_ref()
+                    .map_or(0.0, |r| r.angle_variation.sample(t))
+            }));
+            r.active = Curve::constant(scalar(&|d, t| {
+                d.rotation.as_ref().map_or(0.0, |r| r.active.sample(t))
+            }));
+        }
+        for (i, c) in result.colliders.iter_mut().enumerate() {
+            c.active = Curve::constant(scalar(&|d, t| {
+                d.colliders.get(i).map_or(0.0, |c| c.active.sample(t))
+            }));
+        }
+        for (i, c) in result.drag.iter_mut().enumerate() {
+            c.active = Curve::constant(scalar(&|d, t| {
+                d.drag.get(i).map_or(0.0, |c| c.active.sample(t))
+            }));
+        }
+        for (i, g) in result.gravity.iter_mut().enumerate() {
+            g.strength = Curve::constant(scalar(&|d, t| {
+                d.gravity.get(i).map_or(0.0, |g| g.strength.sample(t))
+            }));
+            g.active = Curve::constant(scalar(&|d, t| {
+                d.gravity.get(i).map_or(0.0, |g| g.active.sample(t))
+            }));
+        }
+        Some(result)
+    }
+}

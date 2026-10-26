@@ -17,12 +17,17 @@ pub struct EffectInstance {
     pub parts: Vec<(Instance, bool)>,
     pub age: f32,
     pub duration: f32,
+    pub scale: f32,
+    pub fade_duration: f32,
+    pub light: esp::FormId,
+    pub light_attach: Vec3,
     playing: Option<(usize, f32)>,
     pub graph: Option<havok::behavior::runtime::Instance>,
     samples: Vec<(usize, f32, f32)>,
     pub stopped: bool,
     pub finished: bool,
     pub tags: nif::AttachTags,
+    rest_visibility: std::collections::HashMap<i32, bool>,
     sequence_nodes: std::collections::HashMap<String, Vec<crate::render::model::NodeChannel>>,
     text_keys: std::collections::HashMap<String, Vec<(f32, String)>>,
     /// World frames replacing the parent transform of attached subtrees.
@@ -33,6 +38,16 @@ impl EffectInstance {
     /// Pose the parts at the effect's age (each after the part it lies in);
     /// world-space particles stay where they were emitted.
     pub fn pose(&mut self) {
+        let materials = self
+            .anim
+            .as_ref()
+            .map(|a| {
+                self.samples
+                    .iter()
+                    .map(|&(i, t, w)| (a.sequences[i].name.clone(), t, w))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
         if let Some(root) = &mut self.root {
             let delta = self.transform.inverse() * root.transform;
             for (state, sys) in root.particles.iter_mut().zip(&root.model.particles) {
@@ -40,13 +55,11 @@ impl EffectInstance {
                     state.carry(delta);
                 }
             }
+            if !materials.is_empty() {
+                root.model.set_material_samples(&materials);
+            }
             root.transform = self.transform;
             root.world_center = self.transform.transform_point3(root.model.bound_center);
-            if let Some(anim) = &self.anim {
-                if let Some(&(i, t, _)) = self.samples.iter().max_by(|a, b| a.2.total_cmp(&b.2)) {
-                    root.model.set_material_sequence(&anim.sequences[i].name, t);
-                }
-            }
         }
         let Some(anim) = &self.anim else { return };
         let t = anim.start + self.age;
@@ -54,13 +67,17 @@ impl EffectInstance {
         for (i, part) in anim.parts.iter().enumerate() {
             let own = anim.controllers.iter().filter(|c| c.block == part.block);
             let mut local = part.rest;
-            let mut shown = true;
+            let mut shown = self
+                .rest_visibility
+                .get(&part.block)
+                .copied()
+                .unwrap_or(true);
             for c in own {
                 if let Some(m) = c.transform(t, part.rest) {
                     local = m;
                 }
                 if let Some(v) = c.visible(t) {
-                    shown &= v;
+                    shown = v;
                 }
             }
             let mut total = 0.0f32;
@@ -81,7 +98,7 @@ impl EffectInstance {
                 if let Some(channels) = self.sequence_nodes.get(&seq.name.to_ascii_lowercase()) {
                     for c in channels.iter().filter(|c| c.block == part.block) {
                         if let Some(v) = c.visible(time) {
-                            shown &= v;
+                            shown = v;
                         }
                     }
                 }
@@ -104,10 +121,8 @@ impl EffectInstance {
             poses.push(pose);
             let (inst, visible) = &mut self.parts[i];
             *visible = shown;
-            if let Some(&(index, time, _)) = self.samples.iter().max_by(|a, b| a.2.total_cmp(&b.2))
-            {
-                inst.model
-                    .set_material_sequence(&anim.sequences[index].name, time);
+            if !materials.is_empty() {
+                inst.model.set_material_samples(&materials);
             }
             let to = self.transform * pose;
             let delta = to.inverse() * inst.transform;
@@ -145,12 +160,17 @@ impl EffectInstance {
             parts,
             age: 0.0,
             duration,
+            scale: 1.0,
+            fade_duration: 3.0,
+            light: esp::FormId::NULL,
+            light_attach: Vec3::ZERO,
             playing: None,
             graph: None,
             samples: Vec::new(),
             stopped: false,
             finished: false,
             tags: Default::default(),
+            rest_visibility: Default::default(),
             sequence_nodes: Default::default(),
             text_keys: Default::default(),
             anchors: Default::default(),
@@ -222,6 +242,15 @@ impl EffectInstance {
     }
     pub fn configure(&mut self, nif: &nif::Nif) {
         self.tags = nif::attach_tags(nif);
+        self.rest_visibility = nif
+            .blocks
+            .iter()
+            .enumerate()
+            .filter_map(|(i, b)| b.av().map(|a| (i as i32, !a.hidden())))
+            .collect();
+        self.light_attach = crate::render::model::node_transforms(nif)
+            .get("AttachLight")
+            .map_or(Vec3::ZERO, |m| m.w_axis.truncate());
         for block in &nif.blocks {
             let nif::Block::ControllerSequence(seq) = block else {
                 continue;
@@ -290,6 +319,9 @@ impl EffectInstance {
                             .find(|s| s.name.eq_ignore_ascii_case(name))
                             .is_some_and(|s| s.cycle < 2)
                     }
+                }
+                if self.stopped {
+                    graph.send_event("StopEffect");
                 }
                 graph.update(dt, &mut Source(anim));
                 let leaves = graph.sequence_samples();
@@ -361,20 +393,8 @@ impl EffectInstance {
         for (inst, shown) in self.instances_mut() {
             for (state, sys) in inst.particles.iter_mut().zip(&inst.model.particles) {
                 state.stopped = stopped || !shown;
-                let variant =
-                    selected
-                        .iter()
-                        .max_by(|a, b| a.2.total_cmp(&b.2))
-                        .and_then(|(name, t, _)| {
-                            sys.desc.sequences.get(name).map(|d| (d.as_ref(), *t))
-                        });
-                let desc = match variant {
-                    Some((d, t)) => {
-                        state.time = t;
-                        d
-                    }
-                    None => sys.desc.as_ref(),
-                };
+                let blended = sys.desc.blended(&selected);
+                let desc = blended.as_ref().unwrap_or(&sys.desc);
                 state.step(desc, dt, glam::Mat3::from_mat4(inst.transform).inverse());
                 alive |= state.count() > 0;
                 let mut vertices = Vec::new();
@@ -389,6 +409,12 @@ impl EffectInstance {
             }
         }
         alive
+    }
+    pub fn live_particles(&self) -> bool {
+        self.root
+            .iter()
+            .chain(self.parts.iter().map(|(i, _)| i))
+            .any(|i| i.particles.iter().any(|p| p.count() > 0))
     }
     pub fn draw(&mut self, scene: &mut crate::render::Scene) {
         for (inst, shown) in self.instances_mut() {

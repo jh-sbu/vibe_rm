@@ -81,6 +81,9 @@ struct Material {
     billboard: vec4<f32>,   // a billboard's model-space origin, mode + 1 (0: none)
     env: vec4<f32>,         // environment map scale, has cube map, has environment mask
     decal: vec4<f32>,       // decal: parallax scale, passes, hard edge (alpha test without blending)
+    membrane_fill: vec4<f32>,
+    membrane_edge: vec4<f32>,
+    membrane_params: vec4<f32>,
 };
 
 @group(1) @binding(0) var t_diffuse: texture_2d<f32>;
@@ -400,6 +403,27 @@ fn fs_main(in: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
         alpha *= in.color.a;
     }
 
+    if (mat.flags.z == 3u) {
+        let flags=mat.flags.w;
+        var fill=base.rgb;
+        var alpha=base.a;
+        let pal=0.5/vec2<f32>(textureDimensions(t_glow));
+        if ((flags & 2u)!=0u && mat.params.w>0.5) {fill=textureSample(t_glow,s_main,clamp(vec2<f32>(base.g,mat.membrane_fill.a),pal,1.0-pal)).rgb;}
+        if ((flags & 4u)!=0u && mat.params.w>0.5) {alpha=textureSample(t_glow,s_main,clamp(vec2<f32>(base.a,mat.membrane_fill.a),pal,1.0-pal)).a;}
+        if ((flags & 64u)!=0u) {alpha=1.0;}
+        let view=normalize(frame.cam_pos.xyz-in.world_pos);
+        var edge=pow(1.0-abs(dot(normalize(in.normal),view)),mat.membrane_params.x);
+        if (mat.membrane_params.w>0.5) {edge=1.0-edge;}
+        let fa=alpha*mat.membrane_fill.a;
+        let ea=edge*mat.membrane_edge.a;
+        let color=(fill*mat.membrane_fill.rgb*fa+mat.membrane_edge.rgb*ea)/max(fa+ea,0.0001);
+        var opacity=clamp(fa+ea,0.0,1.0);
+        if (mat.membrane_params.y>0.0) {
+            let holes=textureSample(t_normal,s_main,in.uv).r;
+            opacity*=smoothstep(mat.membrane_params.y-mat.membrane_params.z,mat.membrane_params.y+mat.membrane_params.z,holes);
+        }
+        return vec4<f32>(color,opacity);
+    }
     if (mat.flags.z == 1u) {
         // Effect shader: unlit, emissive tinted. The glow slot holds the greyscale palette.
         var c = base.rgb;

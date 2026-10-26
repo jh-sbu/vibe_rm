@@ -27,6 +27,7 @@ pub enum BlendMode {
 pub enum ShaderKind {
     Lit,
     Effect,
+    Membrane,
 }
 
 #[derive(Debug, Clone)]
@@ -53,6 +54,8 @@ pub struct MaterialDesc {
     pub double_sided: bool,
     pub z_write: bool,
     pub z_test: bool,
+    pub blend_op: u8,
+    pub depth_func: u8,
     /// Effect shader view-angle falloff (start, stop, start opacity, stop opacity).
     pub falloff: Vec4,
     /// BSLightingShaderProperty shader type (4 = FaceGen, 5 = skin tint, 6 = hair tint, ...).
@@ -77,6 +80,7 @@ pub struct MaterialDesc {
     /// opacity fades to nothing where it meets the opaque scene behind it
     /// (`sf1::SOFT_EFFECT`). See [`soft_depth`].
     pub soft_depth: f32,
+    pub membrane: Option<super::membrane::MembraneSample>,
 }
 
 /// A material's animated values: shader float / colour and alpha-test
@@ -712,6 +716,8 @@ impl Default for MaterialDesc {
             double_sided: false,
             z_write: true,
             z_test: true,
+            blend_op: 1,
+            depth_func: 0,
             falloff: Vec4::new(1.0, 0.0, 1.0, 1.0),
             shader_type: 0,
             tint: Vec3::ONE,
@@ -722,6 +728,7 @@ impl Default for MaterialDesc {
             parallax: Vec2::ZERO,
             hard_edge: false,
             soft_depth: 0.0,
+            membrane: None,
         }
     }
 }
@@ -972,6 +979,7 @@ impl NodeChannel {
 fn standalone_av(block: &Block) -> Option<&nif::AvObject> {
     match block {
         Block::Node(n) => Some(&n.av),
+        Block::ParticleSystem(p) => Some(&p.av),
         Block::TriShape(t) if t.skin.is_none() => Some(&t.av),
         Block::NiTriShape(g) | Block::NiTriStrips(g) if g.skin.is_none() => Some(&g.av),
         _ => None,
@@ -1056,6 +1064,7 @@ pub fn animation_start(nif: &Nif) -> f32 {
 pub fn convert_effect(nif: &Nif) -> (CpuModel, Vec<NodeChannel>) {
     let controllers = node_controllers(nif);
     let mut split = nif.animated_nodes();
+    split.insert("BeamEnd".into());
     for block in &nif.blocks {
         if let Block::ControllerSequence(seq) = block {
             for cb in &seq.blocks {
@@ -1082,6 +1091,11 @@ pub fn convert_controlled(
 ) -> CpuModel {
     let mut blocks: std::collections::HashSet<_> = controllers.iter().map(|c| c.block).collect();
     blocks.extend(nif::attach_tags(nif).keys().copied());
+    blocks.extend(nif.blocks.iter().enumerate().filter_map(|(i, b)| {
+        standalone_av(b)
+            .filter(|a| split.contains(&a.net.name))
+            .map(|_| i as i32)
+    }));
     // Sequence-only material animation must still create a placed-object part
     // and keep the sequence. Default/actor conversions retain static geometry.
     for (index, block) in nif.blocks.iter().enumerate() {
@@ -1403,7 +1417,9 @@ impl Walk<'_> {
             block,
             Block::TriShape(_) | Block::NiTriShape(_) | Block::NiTriStrips(_)
         );
-        if av.hidden()
+        if (av.hidden()
+            && !self.controlled_blocks.contains(&r.0)
+            && !self.animated_nodes.contains(av.net.name.as_str()))
             || name.starts_with("editormarker")
             || (geometry && name.starts_with("blood"))
             || name == "tracerroot"

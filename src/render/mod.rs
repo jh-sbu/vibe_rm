@@ -2,6 +2,7 @@
 
 pub mod dds;
 pub mod decal;
+pub mod membrane;
 pub mod model;
 pub mod particles;
 pub mod post;
@@ -77,6 +78,9 @@ struct MaterialUniform {
     env: [f32; 4],
     /// A decal's parallax scale and passes, and whether it's a hard-edged cutout.
     decal: [f32; 4],
+    membrane_fill: [f32; 4],
+    membrane_edge: [f32; 4],
+    membrane_params: [f32; 4],
 }
 
 #[repr(C)]
@@ -131,6 +135,8 @@ pub struct PipelineKey {
     pub double_sided: bool,
     pub z_write: bool,
     pub z_test: bool,
+    pub blend_op: u8,
+    pub depth_func: u8,
     /// Grass, instanced by [`GrassInstance`].
     pub grass: bool,
     /// Drawn over the surface it lies on (`sf1::DECAL` / `DYNAMIC_DECAL`):
@@ -150,6 +156,7 @@ pub struct GpuMaterial {
     /// Fades where it meets the scene behind it: needs the opaque scene's depth
     /// copied before it's drawn.
     pub soft: bool,
+    pub skin: bool,
 }
 
 /// An animated material's controllers and what they animate.
@@ -170,19 +177,25 @@ struct MaterialClock {
 
 #[derive(Default)]
 struct MaterialSequenceClock {
-    selected: std::sync::Mutex<Option<(String, f32)>>,
+    selected: std::sync::Mutex<Vec<(String, f32, f32)>>,
 }
 
 impl MaterialSequenceClock {
     fn select(&self, name: &str, time: f32) {
-        *self.selected.lock().unwrap() = Some((name.to_owned(), time));
+        *self.selected.lock().unwrap() = vec![(name.to_owned(), time, 1.0)];
     }
 
     fn apply(&self, anim: &model::MaterialAnim, u: MaterialUniform) -> MaterialUniform {
-        match self.selected.lock().unwrap().as_ref() {
-            Some((name, t)) => u.sequenced(anim, name, *t),
-            None => u,
+        let selected = self.selected.lock().unwrap();
+        let mut result = u;
+        let mut total = 0.0f32;
+        for (name, t, w) in selected.iter().filter(|(_, _, w)| *w > 0.0) {
+            let sample = u.sequenced(anim, name, *t);
+            let fraction = *w / (total + *w);
+            total += *w;
+            result = result.blended(sample, fraction);
         }
+        result
     }
 }
 
@@ -197,6 +210,20 @@ impl MaterialClock {
 }
 
 impl MaterialUniform {
+    fn blended(mut self, other: Self, weight: f32) -> Self {
+        let blend =
+            |a: [f32; 4], b: [f32; 4]| std::array::from_fn(|i| a[i] + (b[i] - a[i]) * weight);
+        self.uv = blend(self.uv, other.uv);
+        self.emissive = blend(self.emissive, other.emissive);
+        self.specular = blend(self.specular, other.specular);
+        self.params = blend(self.params, other.params);
+        self.falloff = blend(self.falloff, other.falloff);
+        self.tint = blend(self.tint, other.tint);
+        self.env = blend(self.env, other.env);
+        self.decal = blend(self.decal, other.decal);
+        self
+    }
+
     /// The values with a material's controllers applied at `t` seconds (only
     /// those started unless `all`).
     fn animated(&self, anim: &model::MaterialAnim, t: f32, all: bool) -> MaterialUniform {
@@ -561,6 +588,8 @@ mod alpha_test_tests {
 }
 
 pub struct GpuPart {
+    pub cpu_vertices: Arc<[Vertex]>,
+    pub cpu_indices: Arc<[u32]>,
     pub vbuf: wgpu::Buffer,
     pub ibuf: wgpu::Buffer,
     pub index_count: u32,
@@ -587,6 +616,8 @@ impl Draw<'_> {
 }
 
 pub struct GpuSkinnedPart {
+    pub cpu_vertices: Arc<[SkinVertex]>,
+    pub cpu_indices: Arc<[u32]>,
     pub vbuf: wgpu::Buffer,
     pub ibuf: wgpu::Buffer,
     pub index_count: u32,
@@ -606,6 +637,16 @@ pub struct GpuModel {
 }
 
 impl GpuModel {
+    pub fn set_material_samples(&self, samples: &[(String, f32, f32)]) {
+        for part in &self.parts {
+            if let Some(clock) = &part.material.anim {
+                if !clock.anim.sequences.is_empty() {
+                    *clock.sequence.selected.lock().unwrap() = samples.to_vec();
+                }
+            }
+        }
+    }
+
     /// Select the material sample on a model created by `sequence_model`.
     /// Renderer animation uploads this state before ordinary and shadow draws.
     pub fn set_material_sequence(&self, name: &str, time: f32) {
@@ -809,6 +850,8 @@ pub struct Scene {
     pub particles: Vec<particles::ParticleBatch>,
     /// Decals on actors' bodies, placed by this frame's poses.
     pub actor_decals: Vec<decal::GpuDecal>,
+    /// Posed membrane overlays, rebuilt from live visual effects.
+    pub membranes: Vec<ActorInstance>,
     /// World-space XY rectangle (min x, min y, max x, max y) where LOD is hidden.
     pub lod_clip: [f32; 4],
     pub lights: Vec<GpuLight>,
@@ -1573,7 +1616,13 @@ impl Renderer {
                 color: wgpu::BlendComponent {
                     src_factor: blend_factor(src),
                     dst_factor: blend_factor(dst),
-                    operation: wgpu::BlendOperation::Add,
+                    operation: match key.blend_op {
+                        2 => wgpu::BlendOperation::Subtract,
+                        3 => wgpu::BlendOperation::ReverseSubtract,
+                        4 => wgpu::BlendOperation::Min,
+                        5 => wgpu::BlendOperation::Max,
+                        _ => wgpu::BlendOperation::Add,
+                    },
                 },
                 alpha: wgpu::BlendComponent {
                     src_factor: wgpu::BlendFactor::One,
@@ -1617,10 +1666,17 @@ impl Renderer {
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: DEPTH_FORMAT,
                     depth_write_enabled: Some(key.z_write),
-                    depth_compare: Some(if key.z_test {
-                        wgpu::CompareFunction::GreaterEqual
-                    } else {
-                        wgpu::CompareFunction::Always
+                    depth_compare: Some(match key.depth_func {
+                        1 => wgpu::CompareFunction::Never,
+                        2 => wgpu::CompareFunction::Greater,
+                        3 => wgpu::CompareFunction::Equal,
+                        4 => wgpu::CompareFunction::GreaterEqual,
+                        5 => wgpu::CompareFunction::Less,
+                        6 => wgpu::CompareFunction::NotEqual,
+                        7 => wgpu::CompareFunction::LessEqual,
+                        8 => wgpu::CompareFunction::Always,
+                        _ if key.z_test => wgpu::CompareFunction::GreaterEqual,
+                        _ => wgpu::CompareFunction::Always,
                     }),
                     stencil: Default::default(),
                     // Reversed depth: nearer is greater.
@@ -1686,7 +1742,7 @@ impl Renderer {
             } else {
                 m.soft_depth
             };
-        let u = MaterialUniform {
+        let mut u = MaterialUniform {
             uv: [m.uv_offset.x, m.uv_offset.y, m.uv_scale.x, m.uv_scale.y],
             emissive: m.emissive.to_array(),
             specular: [m.specular.x, m.specular.y, m.specular.z, m.glossiness],
@@ -1709,7 +1765,9 @@ impl Renderer {
             flags: [
                 m.flags1,
                 m.flags2,
-                if m.kind == ShaderKind::Effect {
+                if m.kind == ShaderKind::Membrane {
+                    3
+                } else if m.kind == ShaderKind::Effect {
                     1
                 } else if m.lod {
                     2
@@ -1730,7 +1788,13 @@ impl Renderer {
                 soft_depth,
             ],
             decal: [m.parallax.x, m.parallax.y, m.hard_edge as u32 as f32, 0.0],
+            membrane_fill: m.membrane.map_or([0.0; 4], |m| m.fill),
+            membrane_edge: m.membrane.map_or([0.0; 4], |m| m.edge),
+            membrane_params: m.membrane.map_or([0.0; 4], |m| m.params),
         };
+        if let Some(sample) = m.membrane {
+            u.flags[3] = sample.flags;
+        }
         let ubuf = self
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -1778,6 +1842,8 @@ impl Renderer {
             double_sided: m.double_sided,
             z_write: m.z_write || m.blend == BlendMode::Opaque,
             z_test: m.z_test || m.blend == BlendMode::Opaque,
+            blend_op: m.blend_op,
+            depth_func: m.depth_func,
             decal: m.flags1 & (nif::sf1::DECAL | nif::sf1::DYNAMIC_DECAL) != 0,
             grass: m.grass,
         };
@@ -1797,6 +1863,7 @@ impl Renderer {
             }),
             billboard: m.billboard.is_some(),
             soft: soft_depth > 0.0,
+            skin: matches!(m.shader_type, 4 | 5),
         }
     }
 
@@ -1884,6 +1951,8 @@ impl Renderer {
                 .parts
                 .iter()
                 .map(|p| GpuPart {
+                    cpu_vertices: p.cpu_vertices.clone(),
+                    cpu_indices: p.cpu_indices.clone(),
                     vbuf: p.vbuf.clone(),
                     ibuf: p.ibuf.clone(),
                     index_count: p.index_count,
@@ -1896,6 +1965,8 @@ impl Renderer {
                 .skinned
                 .iter()
                 .map(|p| GpuSkinnedPart {
+                    cpu_vertices: p.cpu_vertices.clone(),
+                    cpu_indices: p.cpu_indices.clone(),
                     vbuf: p.vbuf.clone(),
                     ibuf: p.ibuf.clone(),
                     index_count: p.index_count,
@@ -1943,6 +2014,8 @@ impl Renderer {
                 .parts
                 .iter()
                 .map(|p| GpuPart {
+                    cpu_vertices: p.cpu_vertices.clone(),
+                    cpu_indices: p.cpu_indices.clone(),
                     vbuf: p.vbuf.clone(),
                     ibuf: p.ibuf.clone(),
                     index_count: p.index_count,
@@ -1996,6 +2069,8 @@ impl Renderer {
                     usage: wgpu::BufferUsages::INDEX,
                 });
             parts.push(GpuPart {
+                cpu_vertices: m.vertices.clone().into(),
+                cpu_indices: m.indices.clone().into(),
                 vbuf,
                 ibuf,
                 index_count: m.indices.len() as u32,
@@ -2021,6 +2096,8 @@ impl Renderer {
                     usage: wgpu::BufferUsages::INDEX,
                 });
             skinned.push(GpuSkinnedPart {
+                cpu_vertices: m.vertices.clone().into(),
+                cpu_indices: m.indices.clone().into(),
                 vbuf,
                 ibuf,
                 index_count: m.indices.len() as u32,
@@ -2230,7 +2307,7 @@ impl Renderer {
             }
         }
         // Rigid attachments of actors (weapons, etc.) go through the static path.
-        for actor in scene.actors() {
+        for actor in scene.actors().chain(&scene.membranes) {
             let (center, radius) = actor.bounds();
             if actor.shadow_only || !frustum.sphere_visible(center, radius) {
                 continue;
@@ -2267,7 +2344,7 @@ impl Renderer {
         let mut skin_inst: Vec<SkinInstanceData> = Vec::new();
         let mut skin_draws: Vec<(&GpuSkinnedPart, u32)> = Vec::new();
         let mut shadow_skin: Vec<(&GpuSkinnedPart, u32, Vec3, f32)> = Vec::new();
-        for actor in scene.actors() {
+        for actor in scene.actors().chain(&scene.membranes) {
             let (center, radius) = actor.bounds();
             let visible = !actor.shadow_only && frustum.sphere_visible(center, radius);
             if !visible {
