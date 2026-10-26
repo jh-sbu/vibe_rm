@@ -1,3 +1,27 @@
+# Spell visuals implementation and research
+
+Implement spell visuals according to the spell visuals plan, subject to all of
+these constraints:
+
+- Use only publicly available sources or game assets for research. Do not use
+  leaked documents, even if publicly accessible. Public community research that
+  deciphers engine behavior is permitted, subject to the restrictions below.
+- Store external public references in `refs/`, which must remain uncommitted.
+- If a public source is source code, it must be open source. Any use of that code
+  must comply with its license terms and be compatible with this project's
+  license. Check both before using it; public availability alone is insufficient.
+- Game assets, including binary asset formats, may be examined, but must not be
+  included in this repository, including under `refs/`.
+- Do not examine the game engine's binary data at all: do not inspect engine
+  executables, libraries, or engine code/data in memory. This prohibition does not
+  extend to binary game assets.
+- Attempt to resolve ambiguities using permitted public information or game-asset
+  examination. If research remains inconclusive and a choice is made to get
+  functionality working, record the choice, supporting research, and remaining
+  uncertainty in `known_ambiguities/`. Record open questions without a decision
+  elsewhere, in ROADMAP or the relevant planning document.
+- Separate implementation work across commits as appropriate.
+
 # Local UESP reference
 
 For Skyrim mechanics and file-format research, use the local UESP index before
@@ -29,12 +53,13 @@ If the database is absent, build it using the downloaded dump as described in
 
 # Research decisions and unfinished work
 
-`known_ambiguities/` holds ONLY decisions made after attempting to check sources,
-where that research did not yield a concrete answer. Do NOT put any todo items in
+`known_ambiguities/` holds ONLY choices made to get functionality working after
+attempting to check sources, where that research did not yield a concrete answer.
+Do NOT put todo items or open questions without a decision in
 `known_ambiguities/`.
 
-Unfinished work should be noted in ROADMAP or the particular planning document
-being worked on.
+Unfinished work and open research questions without a decision should be noted in
+ROADMAP or the particular planning document being worked on.
 
 Do NOT commit anything in `refs/`; the references found there are external and not
 for committing. Anything that needs to be committed should be done elsewhere.
