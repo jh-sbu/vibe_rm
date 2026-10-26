@@ -41,7 +41,8 @@ not claims about verified original-engine behavior.
   effect id does not restart it. Nonpersistent art ends at graph completion or
   the longest authored sequence duration, adjusted by absolute playback frequency,
   with no minimum duration. Sequence-less models use the longest positive finite
-  standalone node-controller span, likewise frequency-adjusted; static art or art
+  standalone node, material or particle controller span, likewise frequency-adjusted;
+  static art or art
   without a usable span uses a one-second fallback. The same lifetime determines
   completion when an indefinitely timed graphless effect stops; explicit impact
   durations remain unchanged. ModelAnim retains the model start offset but no end
@@ -59,10 +60,10 @@ not claims about verified original-engine behavior.
   policy; these remain implementation choices, not verified SE behavior.
 - **Stream reconstruction.** Flame/cone visuals are short-lived models launched at
   PROJ relaunch interval, speed and lifetime, refreshed by concentration delivery.
-  The existing immediate gameplay hit test is unchanged. Cast input identifies
-  independent left/right emitters and selects the corresponding magic node;
-  missing nodes, dual casts and non-hand inputs retain the supplied cast origin.
-  This input plumbing is not an unresolved engine-policy ambiguity.
+  The existing immediate gameplay hit test is unchanged. The references above
+  do not establish how SE reconstructs continuous stream geometry; short-lived
+  model emission is an implementation approximation, not verified SE behavior.
+
   Beams position BeamEnd where available and run authored graphs;
   procedural lightning geometry remains outside this plan.
 - **Dual scale and enchantments.** DUAL's optional projectile/shader/hit-art

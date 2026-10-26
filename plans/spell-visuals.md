@@ -70,7 +70,10 @@ implementation decisions remain in `known_ambiguities/spell-visuals.md` and
 - Lifetime: compare overlapping cloaks, dispel during begin, instantaneous hits
   and unload/reload.
 - Streams: compare left/right Flames, dual Flames, a cone and a lightning bolt
-  at fixed distances.
+  at fixed distances. Cast input now identifies independent left/right emitters
+  and selects the corresponding magic node; missing nodes, dual casts and
+  non-hand inputs retain the supplied cast origin. This input plumbing is not
+  an unresolved engine-policy ambiguity.
 - Enchantments/dual scale: compare a sword drawn/sheathed and full/empty, and a
   dual projectile beside a single cast.
 - Membranes: compare timed captures of Oakflesh's actual ShieldSpellFXS, Soul

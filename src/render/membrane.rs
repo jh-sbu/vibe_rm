@@ -349,7 +349,7 @@ pub fn overlay_actor(
 }
 
 /// D3DBLEND (EFSH) -> NiAlphaProperty factors (our ordinary pipeline).
-/// Microsoft Learn D3D9 documentation; see refs/spell-visuals/d3d9.md.
+/// https://learn.microsoft.com/en-us/windows/win32/direct3d9/d3dblend
 pub fn blend_factor(value: u32) -> u16 {
     match value {
         1 => 1,
