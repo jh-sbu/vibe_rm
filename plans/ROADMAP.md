@@ -10,7 +10,8 @@ game each piece unlocks.
   standalone and manager-owned transform, visibility, material and particle
   animation; authored HKX named-sequence leaves and transition weights; casting
   and hit art attached to actor bones, hand and projectile lights, animated spell
-  projectiles and visual flame/cone streams; EFSH membrane overlays and particles
+  projectiles, flame/beam models held at the hand (spray length by hit
+  distance) and cone models sent out to their range; EFSH membrane overlays and particles
   sampled from currently posed/morphed skin; drawn weapon enchantment art/shaders,
   dual-cast visual replacements/scale; EffectShader/VisualEffect Play/Stop on
   actors and rigid references. `VRM_NO_SPELL_FX=1` disables the new visuals.

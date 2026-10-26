@@ -20,8 +20,8 @@ Implementation choices relative to the proposal:
   with private overlay materials and shared geometry instead of a separate pass.
 - Retain CPU vertex/index copies and skin only sampled vertices for EFSH surface
   emission. General NiPSys skinned/deformed mesh emitters remain a Rendering item.
-- Raw sequence-generator fields, exact shader equations, stream reconstruction,
-  lifetime policy and script visual persistence are documented choices, not
+- Sequence-generator blend modes, exact shader equations, held flame/beam and
+  travelling cone visuals, lifetime policy and script visual persistence are documented choices, not
   assertions of SE parity. The manual `test-mod spell-visuals` probe generates
   its own PEX and references a vanilla shader without copying assets.
 
@@ -69,11 +69,18 @@ implementation decisions remain in `known_ambiguities/spell-visuals.md` and
   applied ability (including No Hit Effect).
 - Lifetime: compare overlapping cloaks, dispel during begin, instantaneous hits
   and unload/reload.
-- Streams: compare left/right Flames, dual Flames, a cone and a lightning bolt
-  at fixed distances. Cast input now identifies independent left/right emitters
-  and selects the corresponding magic node; missing nodes, dual casts and
-  non-hand inputs retain the supplied cast origin. This input plumbing is not
-  an unresolved engine-policy ambiguity.
+- Streams: compare left/right Flames, dual Flames, Frostbite, a shout's cone,
+  Ice Storm and a lightning bolt at fixed distances, both into open air and
+  at a wall 200 and 500 units away (the spray's length blend). Note where the
+  spray starts and ends against where the scorch decal lands, and whether a
+  cone visibly travels out to its range. Cast input identifies independent
+  left/right emitters and selects the corresponding magic node; missing nodes,
+  dual casts and non-hand inputs retain the supplied cast origin.
+- Flame look: offscreen captures (2026-10-26) show the held Flames spray and
+  its MPSFlamesFire addons emitting, but the spray's own jet particles
+  (greyscale ~0.04-0.07 through GradFlame01) draw almost invisibly and the far
+  end reads as a white-hot ball, not orange flame. Compare against SE before
+  changing particle palette or brightness handling.
 - Enchantments/dual scale: compare a sword drawn/sheathed and full/empty, and a
   dual projectile beside a single cast.
 - Membranes: compare timed captures of Oakflesh's actual ShieldSpellFXS, Soul
@@ -84,8 +91,11 @@ implementation decisions remain in `known_ambiguities/spell-visuals.md` and
 - Particles: compare differently sized actors, a changing pose and animated
   frames. Before implementing addon models, inspect an EFSH using DEBR to
   establish spawn placement/timing.
-- Sequence generator: resolve the raw +0x50/+0x54 fields before assigning them
-  playback semantics.
+- Breath origins: dragon fire/frost, centurion steam and Fire Breath cast from
+  the caster's eye height (non-hand sources keep the cast origin); which node
+  their models attach to (a mouth or head node) is open.
+- Dual-cast streams: DUAL projectile replacements and scale aren't applied to
+  held flame/beam models or cone waves yet.
 
 ### Pending automated coverage
 
@@ -338,8 +348,9 @@ played, switched and blended, driving everything the sequence owns.
 ### 3. Effect behaviour graphs
 
 - havok: a `Generator::Sequence { name, sequence, … }` variant for
-  `BGSGamebryoSequenceGenerator`, with the +0x50 byte and +0x54 float kept
-  raw until their meaning is known (`hkb-obj` across the magic graphs).
+  `BGSGamebryoSequenceGenerator`. Its +0x50 byte (`eBlendModeFunction`) and
+  +0x54 float (`fPercent`) weigh it in a non-parametric blender
+  (`known_ambiguities/spell-visuals.md`).
 - `GraphAnim` (or a slim sibling, if `GraphAnim` assumes a rig) reports its
   active sequence leaves with weights each step, instead of a pose. State
   machines, transitions and wildcards run as they already do.
@@ -417,11 +428,12 @@ played, switched and blended, driving everything the sequence owns.
   impact itself is already handled.
 - Projectile light: `PROJ DATA` +16 `LIGH` at the model's `AttachLight`
   node (or its origin), moving with it. It joins the moving lights.
-- Flames (type 0x08) and cones (0x10): today they "reach at once". Visually,
-  spawn short-lived projectile instances from the hand at
-  `Relaunch Interval` (`DATA` +80), each flying at `Speed` for its
-  `Lifetime` (+76). How closely that matches SSE is an ambiguity, and the
-  gameplay hit test stays as it is.
+- Flames (type 0x08): one model held at the hand while casts feed it, its
+  `fFlameProjectileLength` the hit distance over the range. (The first
+  implementation relaunched flying copies at `Relaunch Interval` for
+  `Lifetime`; the lifetime is 0 on nearly every vanilla record, and the
+  models are stationary emitters.) Cones (0x10): one model per cast, sent
+  out at `Speed` as far as the range. The gameplay hit tests stay as they are.
 - Beams (0x04, lightning): place the model from the hand to the hit point
   (`BeamEnd` node at the far end), running its graph. The bolt geometry is
   `BSProceduralLightningController`, a ROADMAP Rendering item: until it
@@ -555,7 +567,11 @@ render pass. Steps 8–9 can run in parallel with 5–7 once step 1 is in.
    actors.
 6. One-shot hit art lifetime without `FX_PERSIST`.
 7. Membrane inflation, stacking order and cap.
-8. Flame and cone projectiles' visual stream vs their instant hit test.
+8. Flame and cone projectiles' visuals vs their instant hit test: held and
+   travelling models chosen (`known_ambiguities/spell-visuals.md`); the
+   exact `fFlameProjectileLength` measure is unverified.
 9. Enchantment visuals while sheathed and as charge falls.
-10. `BGSGamebryoSequenceGenerator`'s byte at +0x50 and float at +0x54.
+10. `BGSGamebryoSequenceGenerator`'s byte at +0x50 and float at +0x54:
+    blend mode and percent, applied as blender child weights
+    (`known_ambiguities/spell-visuals.md`).
 11. Script-played shaders across save and load.

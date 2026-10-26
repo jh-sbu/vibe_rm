@@ -5,7 +5,9 @@ Evidence checked on 2026-10-26: the local UESP record documentation
 [MGEF revision 3507756](https://en.uesp.net/w/index.php?oldid=3507756)),
 public xEdit dev-4.1.6 definitions (MPL-2.0, consulted only for serialized
 field facts), MIT CommonLibSSE-NG declarations at b93280e832f263dbef44e44cbe2936622a02f91a
-(names/layouts only), and installed NIF, ESM and HKX assets. References and their
+(names/layouts only), the MIT Skyrim Behavior Editor at
+7b7167cb18e28f435a64069acbf61eca49a07be3 (HKX field names and enum labels
+only), and installed NIF, ESM and HKX assets. References and their
 licenses are retained under ignored `refs/spell-visuals/`. No engine executable,
 DLL, disassembly, leaked source or executable-memory data was examined. No game
 asset, extracted asset dump, screenshot or game-derived fixture is committed.
@@ -58,13 +60,24 @@ not claims about verified original-engine behavior.
   visuals may resume on reload, but one-shots do not replay. Public records and
   the inspected asset transitions do not establish refresh, caps or early-stop
   policy; these remain implementation choices, not verified SE behavior.
-- **Stream reconstruction.** Flame/cone visuals are short-lived models launched at
-  PROJ relaunch interval, speed and lifetime, refreshed by concentration delivery.
-  The existing immediate gameplay hit test is unchanged. The references above
-  do not establish how SE reconstructs continuous stream geometry; short-lived
-  model emission is an implementation approximation, not verified SE behavior.
-
-  Beams position BeamEnd where available and run authored graphs;
+- **Flame, beam and cone visuals.** One flame or beam model is held per
+  caster, projectile and hand at the hand's magic node (else the cast origin),
+  aimed at what the cast reached and refreshed by each delivery; it stops 0.3 s
+  after the last one and fades in place for the PROJ fade duration. The vanilla
+  flame models are stationary emitters whose particles carry the reach
+  (FireSprayFX01 1500 units/s, dragon fire 2400-3300, centurion steam 1800),
+  nearly every flame record's lifetime is 0, and CommonLibSSE's FlameProjectile
+  only declares an expiration timer and cone angle, so neither relaunching
+  copies nor holding one model is documented; holding one matches the assets.
+  `fFlameProjectileLength` is the hit distance over the PROJ range, 1 when
+  nothing is hit. Its 0-1 domain follows from the graphs (a blend weight in
+  SprayRange; SprayRangePlus's selector index picks its max-range sequence only
+  at 1), but the engine's exact measure (from the eye or the hand, the ray used)
+  is unverified. Cones send one model per cast at the PROJ speed as far as its
+  range, then stop and fade where they are; ConeProjectile's declared origin,
+  cone angle tangent and growing collision sphere fit a projectile travelling
+  outward, but the visual itself is unverified. The immediate gameplay hit tests
+  are unchanged. Beams anchor BeamEnd at the reach and run authored graphs;
   procedural lightning geometry remains outside this plan.
 - **Dual scale and enchantments.** DUAL's optional projectile/shader/hit-art
   replacements are visual only, and its inherit bits select MGEF scale for art
@@ -72,10 +85,16 @@ not claims about verified original-engine behavior.
   sheathing stops them, with no charge-dependent dimming. The records do not
   specify the charge/visibility curve. Explosion scaling is
   part of the excluded explosion implementation.
-- **Sequence generator raw values.** The HKX assets identify sequence name at
-  +0x48; +0x50 and +0x54 are preserved as raw fields. Examined graphs commonly
-  contain 0 and 1.0. No accessible public documentation establishes their full
-  semantics, so they do not impose a playback policy here.
+- **Sequence generator blend modes.** The HKX assets identify sequence name at
+  +0x48; the behaviour editor names +0x50 `eBlendModeFunction` (BMF_NONE,
+  BMF_PERCENT, BMF_ONE_MINUS_PERCENT) and +0x54 `fPercent`, which the vanilla
+  graphs bind by that member name. Every bound use pairs a percent child with a
+  one-minus-percent child under a non-parametric blender, both bound to one
+  variable (SprayRange, SprayRangePlus, BlendBetweenStatesVariable, the ward
+  graphs, the vampire drain graph, moths and fireflies). The factor scales the
+  child's weight in such a blender before normalisation; parametric blends and
+  sequences outside a blender ignore it. Whether Gamebryo applies it as a
+  sequence weight in the same way is not documented.
 - **RFCT transforms.** Facing overrides inherited rotation; camera attachment
   replaces the target origin, and named-node attachment is resolved in the
   target model. Exact precedence and camera-space orientation remain unverified.
