@@ -229,8 +229,16 @@ impl Engine {
             }
         }
         desired.extend(self.update_enchant_fx());
+        let present: std::collections::HashSet<_> = self
+            .magic
+            .effects
+            .iter()
+            .filter(|x| x.active && !x.done)
+            .filter_map(|x| self.spell_actor_frame(x.target).map(|_| x.id))
+            .collect();
+        self.spell_fx.observed.retain(|id| present.contains(id));
         for effect in &self.magic.effects {
-            if effect.active && !effect.done && !self.spell_fx.observed.contains(&effect.id) {
+            if present.contains(&effect.id) && !self.spell_fx.observed.contains(&effect.id) {
                 self.spell_fx.hits.push(effect.clone());
             }
         }
@@ -238,6 +246,9 @@ impl Engine {
         self.spell_fx.hits.dedup_by_key(|x| x.id);
 
         for hit in std::mem::take(&mut self.spell_fx.hits) {
+            if self.spell_actor_frame(hit.target).is_none() {
+                continue;
+            }
             self.spell_fx.observed.insert(hit.id);
             let Some(mgef) = self.magic_effect(hit.effect) else {
                 continue;
@@ -286,6 +297,17 @@ impl Engine {
             }
             let key = (hit.target, ArtKey::Hit(hit_art));
             let persistent = mgef.has(crate::magic::flags::FX_PERSIST) && hit.duration > 0.0;
+            let refresh = self
+                .spell_fx
+                .art
+                .get(&key)
+                .is_some_and(|a| a.stopping_age.is_some() || (!persistent && !a.persistent));
+            if refresh && let Some(mut old) = self.spell_fx.art.remove(&key) {
+                old.effect.stop();
+                old.effect.fade_duration = 0.0;
+                old.effect.finished = true;
+                self.spell_fx.tails.push(old.effect);
+            }
             if let Some(art) = self.spell_fx.art.get_mut(&key) {
                 if !art.owners.contains(&hit.id) {
                     art.owners.push(hit.id);
@@ -363,6 +385,7 @@ impl Engine {
             let Some(frame) = frames.get(&key.0) else {
                 continue;
             };
+            art.owners.retain(|id| active.contains(id));
             let keep = match key.1 {
                 ArtKey::Hand(..) => desired.contains(&key),
                 ArtKey::Hit(_) => art.owners.iter().any(|id| active.contains(id)),

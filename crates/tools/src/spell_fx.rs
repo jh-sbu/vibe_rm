@@ -70,7 +70,8 @@ pub fn run(args: &[String]) -> Result<()> {
             );
         }
         let mut graphs = std::collections::BTreeMap::<String, usize>::new();
-        let (mut models, mut tagged, mut multi, mut havok) = (0, 0, 0, 0);
+        let (mut models, mut available, mut tagged, mut multi, mut havok) = (0, 0, 0, 0, 0);
+        let mut targets = std::collections::BTreeMap::<String, usize>::new();
         for &id in lo.ids_of_type(b"ARTO") {
             let Some(model) = records::ArtObject::load(&lo, id).and_then(|a| a.model) else {
                 continue;
@@ -79,7 +80,13 @@ pub fn run(args: &[String]) -> Result<()> {
             let Some(n) = vfs.read(&model).and_then(|d| nif::Nif::parse(&d).ok()) else {
                 continue;
             };
+            available += 1;
             let tags = nif::attach_tags(&n);
+            for tag in tags.values() {
+                for target in &tag.named_nodes {
+                    *targets.entry(target.clone()).or_default() += 1;
+                }
+            }
             tagged += usize::from(tags.values().any(|t| !t.named_nodes.is_empty()));
             multi += usize::from(tags.values().any(|t| t.multi_technique));
             havok += usize::from(tags.values().any(|t| t.havok_geometry));
@@ -88,8 +95,14 @@ pub fn run(args: &[String]) -> Result<()> {
             }
         }
         println!(
-            "art models: {models}; NamedNode: {tagged}; MultiTechnique: {multi}; HavokGeometry: {havok}"
+            "art model paths: {models}; readable models: {available}; models with NamedNode: {tagged}; MultiTechnique: {multi}; HavokGeometry: {havok}"
         );
+        println!("NamedNode tags: {}", targets.values().sum::<usize>());
+        let mut targets: Vec<_> = targets.into_iter().collect();
+        targets.sort_by_key(|(name, count)| (std::cmp::Reverse(*count), name.clone()));
+        for (target, count) in targets {
+            println!("attach {count}: {target}");
+        }
         for (graph, count) in graphs {
             println!("graph {count}: {graph}");
         }
@@ -198,8 +211,9 @@ mod graph_tests {
     fn graph(name: &str) -> Instance {
         let data = vfs::locate_data_dir().expect("installed Skyrim Data");
         let vfs = vfs::Vfs::new(&data, &LoadOrder::default_plugin_list(&data, None));
+        let (dir, name) = name.rsplit_once('/').unwrap_or(("magic", name));
         let project = Project::load_project(&format!("{name}.hkx"), |rel| {
-            vfs.read(&format!("meshes/magic/{rel}"))
+            vfs.read(&format!("meshes/{dir}/{rel}"))
         })
         .unwrap();
         assert!(!project.graphs.is_empty());
@@ -217,7 +231,7 @@ mod graph_tests {
     fn casting_basic_authored_events_select_named_nif_sequences() {
         let mut i = graph("castingbasic");
         i.set_variable("bRightHand", 1.0);
-        i.set_variable("iHandType", 1.0);
+        i.set_variable("iHandType", 0.0);
         i.update(0.0, &mut |_: &str| Some(10.0));
         for (event, sequence) in [
             ("MRh_SpellAimedStart", "mCharge"),
@@ -260,5 +274,19 @@ mod graph_tests {
                 names(&i)
             );
         }
+    }
+    #[test]
+    #[ignore = "requires installed Skyrim HKX assets"]
+    fn autoplay_activates_sequence_without_a_casting_event() {
+        let mut i = graph("genericbehaviors/autoplay");
+        i.update(0.25, &mut |_: &str| Some(1.0));
+        let samples = i.sequence_samples();
+        assert!(!samples.is_empty());
+        assert!(i.samples().is_empty());
+        assert!(
+            samples
+                .iter()
+                .all(|s| !s.animation.is_empty() && s.weight > 0.0)
+        );
     }
 }

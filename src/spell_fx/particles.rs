@@ -173,7 +173,7 @@ pub fn birth_rate(s: &EffectShader, age: f32, stop: Option<f32>) -> f32 {
 }
 fn skin_vertex(
     actor: &ActorInstance,
-    part: &crate::render::GpuSkinnedPart,
+    skin_to_bone: &[Mat4],
     bone_map: &[usize],
     v: &SkinVertex,
 ) -> (Vec3, Vec3) {
@@ -190,7 +190,7 @@ fn skin_vertex(
             .copied()
             .unwrap_or(Mat4::IDENTITY);
         let transform =
-            actor.transform * pose * part.skin_to_bone.get(b).copied().unwrap_or(Mat4::IDENTITY);
+            actor.transform * pose * skin_to_bone.get(b).copied().unwrap_or(Mat4::IDENTITY);
         p += transform.transform_point3(pos) * v.weights[i];
         n += transform.transform_vector3(normal) * v.weights[i];
     }
@@ -231,7 +231,7 @@ fn surface(
         for i in 0..3 {
             (points[i], normals[i]) = skin_vertex(
                 actor,
-                part,
+                &part.skin_to_bone,
                 &mesh.bone_map,
                 part.cpu_vertices.get(indices[i] as usize)?,
             );
@@ -275,6 +275,44 @@ pub fn material(s: &EffectShader) -> crate::render::model::MaterialDesc {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn sampled_vertices_follow_bones_and_weight_morph() {
+        let mut actor = ActorInstance {
+            meshes: Vec::new(),
+            attachments: Vec::new(),
+            equipment: Vec::new(),
+            held_light: None,
+            transform: Mat4::from_translation(Vec3::X * 10.0),
+            pose: vec![Mat4::from_translation(Vec3::Z * 2.0)],
+            lights: [0; 8],
+            radius: 1.0,
+            shadow_only: false,
+            skin_tone: None,
+            weight: 0.25,
+        };
+        let vertex = SkinVertex {
+            position: [0.0, 1.0, 0.0],
+            normal: [0.0, 0.0, 1.0],
+            tangent: [0.0; 3],
+            bitangent: [0.0; 3],
+            uv: [0.0; 2],
+            color: [1.0; 4],
+            bones: [0; 4],
+            weights: [1.0, 0.0, 0.0, 0.0],
+            thin_position: [2.0, 0.0, 0.0],
+            thin_normal: [0.0; 3],
+        };
+        let skin_to_bone = [Mat4::from_translation(Vec3::Y * 3.0)];
+        let (point, normal) = skin_vertex(&actor, &skin_to_bone, &[0], &vertex);
+        assert_eq!(point, Vec3::new(11.5, 4.0, 2.0));
+        assert_eq!(normal, Vec3::Z);
+        actor.pose[0] = Mat4::from_translation(Vec3::Z * 5.0);
+        assert_eq!(
+            skin_vertex(&actor, &skin_to_bone, &[0], &vertex).0,
+            Vec3::new(11.5, 4.0, 5.0)
+        );
+    }
+
     #[test]
     fn birth_ramps_integrate_expected_counts() {
         let mut s = EffectShader {
