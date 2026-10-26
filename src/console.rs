@@ -654,6 +654,12 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             engine.test_camera = Some((Vec3::new(x, y, z), yaw.to_radians(), pitch.to_radians()));
             vec!["ok".into()]
         }
+        "pthird" => {
+            // pthird [off]: the third-person view (first person with off).
+            let on = !args.first().is_some_and(|a| a.eq_ignore_ascii_case("off"));
+            engine.set_third_person(on);
+            vec![format!("{} person", if on { "third" } else { "first" })]
+        }
         "tpcam" => {
             // tpcam <degrees>: turn the third-person view about the player
             // (180 to see them from the front); their body keeps its facing.

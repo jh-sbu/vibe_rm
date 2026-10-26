@@ -469,39 +469,15 @@ impl Engine {
                 }
             }
         }
-        let visual_info = self.lo.get(visual.projectile).and_then(|r| {
-            r.get(b"DATA").map(|d| {
-                (
-                    crate::spell_fx::records::optional_form(&r, d, 16),
-                    f32_at(d, 48),
-                )
-            })
-        });
-        let mut fx = visual.model.as_deref().and_then(|m| {
-            self.load_spell_model(
-                m,
-                Mat4::from_rotation_translation(
-                    Quat::from_rotation_arc(Vec3::Y, dir.normalize_or(Vec3::Y)),
-                    from,
-                ),
-            )
-        });
+        let mut fx = self.load_projectile_effect(
+            visual.projectile,
+            Mat4::from_rotation_translation(
+                Quat::from_rotation_arc(Vec3::Y, dir.normalize_or(Vec3::Y)),
+                from,
+            ),
+        );
         if let Some(effect) = &mut fx {
             effect.scale = visual_scale;
-            if let Some((light, fade)) = visual_info {
-                effect.light = light;
-                if fade > 0.0 {
-                    effect.fade_duration = fade;
-                } else if let Some(anim) = &effect.anim {
-                    effect.fade_duration = anim
-                        .sequences
-                        .iter()
-                        .filter(|s| s.name.eq_ignore_ascii_case("mEnd"))
-                        .map(|s| (s.stop - s.start) / s.frequency.abs().max(1e-6))
-                        .fold(0.0, f32::max)
-                        .max(0.05);
-                }
-            }
         }
         let model = shot.model.clone().filter(|_| fx.is_none()).and_then(|m| {
             self.models

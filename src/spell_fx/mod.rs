@@ -32,8 +32,8 @@ pub struct SpellFx {
     missing: std::collections::HashSet<(String, String)>,
     pub lights: Vec<crate::render::GpuLight>,
     pub tails: Vec<EffectInstance>,
-    streams: HashMap<(FormId, FormId), StreamSource>,
-    flying: Vec<StreamEffect>,
+    streams: HashMap<(FormId, FormId, crate::casting::CastSource), HeldStream>,
+    waves: Vec<ConeWave>,
     model_nifs: HashMap<String, Option<nif::Nif>>,
     model_nodes: std::cell::RefCell<HashMap<String, std::sync::Arc<HashMap<String, Mat4>>>>,
     actor_poses: std::cell::RefCell<HashMap<FormId, CachedActorPose>>,
@@ -613,8 +613,16 @@ impl Engine {
         if !enabled() {
             return;
         }
-        for stream in &mut self.spell_fx.flying {
-            stream.effect.step(dt, right, up, batches);
+        for effect in self
+            .spell_fx
+            .streams
+            .values_mut()
+            .filter_map(|s| s.effect.as_mut())
+        {
+            effect.step(dt, right, up, batches);
+        }
+        for wave in &mut self.spell_fx.waves {
+            wave.effect.step(dt, right, up, batches);
         }
         for (&(target, _, _), fx) in &mut self.spell_fx.shaders {
             if fx.particle_material.is_none() {
@@ -820,11 +828,6 @@ impl Engine {
     }
 }
 
-#[derive(Default)]
-struct StreamSource {
-    emitters: HashMap<crate::casting::CastSource, StreamEmitter>,
-}
-
 fn stream_start(
     frame: Option<&ActorFrame>,
     source: crate::casting::CastSource,
@@ -841,144 +844,248 @@ fn stream_start(
         .map_or(from, |m| m.w_axis.truncate())
 }
 
-struct StreamEmitter {
-    model: String,
+/// The model of a projectile pointing along `dir` from `at`.
+fn stream_transform(at: Vec3, dir: Vec3) -> Mat4 {
+    Mat4::from_rotation_translation(
+        glam::Quat::from_rotation_arc(Vec3::Y, dir.normalize_or(Vec3::Y)),
+        at,
+    )
+}
+
+/// Seconds a held stream outlasts the cast that last fed it (concentration
+/// casts feed it every `CONCENTRATION_TICK`).
+const STREAM_HOLD: f32 = 0.3;
+const PROJ_BEAM: u16 = 0x4;
+
+/// A flame or beam projectile's model, held at its source while casts feed
+/// it: one per caster, projectile and hand. Its particles carry the reach.
+struct HeldStream {
+    effect: Option<EffectInstance>,
+    /// The cast's origin, for sources without a magic node.
     from: Vec3,
     dir: Vec3,
-    beam_end: Option<Vec3>,
-    interval: f32,
-    lifetime: f32,
-    speed: f32,
-    light: FormId,
+    /// How far the cast reached: to what it struck, else its range.
+    reach: f32,
+    /// That reach as a fraction of the range (`fFlameProjectileLength`).
+    length: f32,
+    beam: bool,
     remaining: f32,
-    owed: f32,
 }
-struct StreamEffect {
+
+/// A cone projectile's model, sent out once as far as its range.
+struct ConeWave {
     effect: EffectInstance,
     velocity: Vec3,
-    remaining: f32,
-    light: FormId,
+    /// Distance still to go.
+    left: f32,
 }
+
 impl Engine {
+    /// A projectile's model (`PROJ` `MODL`) placed at `transform`, with its
+    /// light (`DATA` +16), fading for its fade duration (+48) once stopped,
+    /// or without one for its `mEnd` sequence.
+    pub(crate) fn load_projectile_effect(
+        &mut self,
+        proj: FormId,
+        transform: Mat4,
+    ) -> Option<EffectInstance> {
+        let (model, data) = {
+            let rec = self.lo.get(proj)?;
+            let data = rec.get(b"DATA").map(|d| {
+                (
+                    records::optional_form(&rec, d, 16),
+                    records::optional_float(d, 48),
+                )
+            });
+            (crate::world::records::model_path(&rec)?, data)
+        };
+        let mut effect = self.load_spell_model(&model, transform)?;
+        if let Some((light, fade)) = data {
+            effect.light = light;
+            if fade > 0.0 {
+                effect.fade_duration = fade;
+            } else if let Some(anim) = &effect.anim {
+                effect.fade_duration = anim
+                    .sequences
+                    .iter()
+                    .filter(|s| s.name.eq_ignore_ascii_case("mEnd"))
+                    .map(|s| (s.stop - s.start) / s.frequency.abs().max(1e-6))
+                    .fold(0.0, f32::max)
+                    .max(0.05);
+            }
+        }
+        Some(effect)
+    }
+
+    /// Feed a flame or beam projectile's held model: cast from `from` along
+    /// `dir`, reaching `reach` of its `range`.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn request_spell_stream(
         &mut self,
         caster: FormId,
         proj: FormId,
         from: Vec3,
         dir: Vec3,
-        beam_end: Option<Vec3>,
+        reach: f32,
+        range: f32,
         input: crate::casting::CastSource,
     ) {
         if !enabled() {
             return;
         }
-        let Some(rec) = self.lo.get(proj) else { return };
-        let Some(data) = rec.get(b"DATA") else { return };
-        let Some(model) = crate::world::records::model_path(&rec) else {
-            return;
-        };
-        let interval = records::optional_float(data, 80).clamp(0.01, 1.0);
-        let lifetime = records::optional_float(data, 76).clamp(0.05, 8.0);
-        let light = records::optional_form(&rec, data, 16);
-        let speed = records::optional_float(data, 8).max(0.0);
-        let at = stream_start(self.spell_actor_frame(caster).as_ref(), input, from);
-        let emitters = &mut self
-            .spell_fx
-            .streams
-            .entry((caster, proj))
-            .or_default()
-            .emitters;
-        if let Some(source) = emitters.get_mut(&input) {
-            source.from = at;
-            source.dir = dir;
-            source.beam_end = beam_end;
-            source.remaining = 0.3;
+        let length = if range > 0.0 {
+            (reach / range).clamp(0.0, 1.0)
         } else {
-            emitters.insert(
-                input,
-                StreamEmitter {
-                    model,
-                    from: at,
-                    dir,
-                    beam_end,
-                    interval: if beam_end.is_some() { 0.25 } else { interval },
-                    lifetime: if beam_end.is_some() { 0.25 } else { lifetime },
-                    speed: if beam_end.is_some() { 0.0 } else { speed },
-                    light,
-                    remaining: 0.3,
-                    owed: interval,
-                },
-            );
+            1.0
+        };
+        let key = (caster, proj, input);
+        if let Some(stream) = self.spell_fx.streams.get_mut(&key) {
+            stream.from = from;
+            stream.dir = dir;
+            stream.reach = reach;
+            stream.length = length;
+            stream.remaining = STREAM_HOLD;
+            return;
+        }
+        let beam = self
+            .lo
+            .get(proj)
+            .and_then(|r| r.get(b"DATA").map(|d| records::optional_u32(d, 0) >> 16))
+            .is_some_and(|kind| kind as u16 & PROJ_BEAM != 0);
+        let at = stream_start(self.spell_actor_frame(caster).as_ref(), input, from);
+        let mut effect = self.load_projectile_effect(proj, stream_transform(at, dir));
+        if let Some(effect) = &mut effect {
+            let left = input == crate::casting::CastSource::Left;
+            effect.set_variable("bLeftHand", left as u8 as f32);
+            effect.set_variable("bRightHand", !left as u8 as f32);
+        }
+        self.spell_fx.streams.insert(
+            key,
+            HeldStream {
+                effect,
+                from,
+                dir,
+                reach,
+                length,
+                beam,
+                remaining: STREAM_HOLD,
+            },
+        );
+    }
+
+    /// Send a cone projectile's model out from `from` along `dir`, at `speed`
+    /// as far as `range`.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn launch_spell_cone(
+        &mut self,
+        caster: FormId,
+        proj: FormId,
+        from: Vec3,
+        dir: Vec3,
+        speed: f32,
+        range: f32,
+        input: crate::casting::CastSource,
+    ) {
+        if !enabled() {
+            return;
+        }
+        let at = stream_start(self.spell_actor_frame(caster).as_ref(), input, from);
+        if let Some(effect) = self.load_projectile_effect(proj, stream_transform(at, dir)) {
+            self.spell_fx.waves.push(ConeWave {
+                effect,
+                velocity: dir.normalize_or(Vec3::Y) * speed.max(0.0),
+                left: range.max(0.0),
+            });
         }
     }
+
     fn update_stream_fx(&mut self, dt: f32) {
-        let mut starts = Vec::new();
-        self.spell_fx.streams.retain(|_, source| {
-            source.emitters.retain(|_, s| {
-                let active_dt = dt.min(s.remaining.max(0.0));
-                s.remaining -= dt;
-                s.owed += active_dt;
-                let count = (s.owed / s.interval).floor().min(32.0) as usize;
-                s.owed -= count as f32 * s.interval;
-                for _ in 0..count {
-                    starts.push((
-                        s.model.clone(),
-                        s.from,
-                        s.dir,
-                        s.beam_end,
-                        s.lifetime,
-                        s.speed,
-                        s.light,
-                    ));
-                }
-                s.remaining > 0.0
-            });
-            !source.emitters.is_empty()
-        });
-        for (model, from, dir, end, lifetime, speed, light) in starts {
-            let transform = Mat4::from_rotation_translation(
-                glam::Quat::from_rotation_arc(Vec3::Y, dir.normalize_or(Vec3::Y)),
-                from,
-            );
-            if let Some(mut effect) = self.load_spell_model(&model, transform) {
-                if let Some(end) = end {
-                    if let Some(anim) = &effect.anim {
-                        for part in &anim.parts {
-                            if part.node.eq_ignore_ascii_case("BeamEnd") {
-                                effect.anchors.insert(
-                                    part.block,
-                                    Mat4::from_translation(end) * part.rest.inverse(),
-                                );
-                            }
-                        }
+        // The player's streams follow the aim between casts.
+        let aim = self.scene.player.is_some().then(|| self.player_aim());
+        let frames: Vec<_> = self
+            .spell_fx
+            .streams
+            .keys()
+            .map(|&key| (key, self.spell_actor_frame(key.0)))
+            .collect();
+        let mut lights = Vec::new();
+        for ((caster, proj, source), frame) in frames {
+            let stream = self
+                .spell_fx
+                .streams
+                .get_mut(&(caster, proj, source))
+                .unwrap();
+            stream.remaining -= dt;
+            if let Some((eye, dir)) = aim.filter(|_| caster == PLAYER_REF && !stream.beam) {
+                stream.from = eye;
+                stream.dir = dir;
+            }
+            let end = stream.from + stream.dir * stream.reach;
+            let at = stream_start(frame.as_ref(), source, stream.from);
+            let Some(effect) = &mut stream.effect else {
+                continue;
+            };
+            effect.transform = stream_transform(at, (end - at).normalize_or(stream.dir));
+            if stream.beam
+                && let Some(anim) = &effect.anim
+            {
+                for part in &anim.parts {
+                    if part.node.eq_ignore_ascii_case("BeamEnd") {
+                        effect.anchors.insert(
+                            part.block,
+                            Mat4::from_translation(end) * part.rest.inverse(),
+                        );
                     }
                 }
-                self.spell_fx.flying.push(StreamEffect {
-                    effect,
-                    velocity: dir * speed,
-                    remaining: lifetime,
-                    light,
-                });
+            }
+            effect.set_variable("fFlameProjectileLength", stream.length);
+            if stream.remaining > 0.0 {
+                effect.advance(dt);
+                effect.draw(&mut self.scene);
+                lights.push((
+                    effect.light,
+                    effect.transform.transform_point3(effect.light_attach),
+                ));
             }
         }
-        for stream in &mut self.spell_fx.flying {
-            stream.remaining -= dt;
-            stream.effect.transform.w_axis += (stream.velocity * dt).extend(0.0);
-            if stream.remaining <= 0.0 {
-                stream.effect.stop();
+        let tails = &mut self.spell_fx.tails;
+        self.spell_fx.streams.retain(|_, stream| {
+            if stream.remaining > 0.0 {
+                return true;
             }
-            stream.effect.advance(dt);
-            stream.effect.draw(&mut self.scene);
+            if let Some(mut effect) = stream.effect.take() {
+                effect.stop();
+                tails.push(effect);
+            }
+            false
+        });
+        for wave in &mut self.spell_fx.waves {
+            let step = (wave.velocity.length() * dt).min(wave.left);
+            wave.left -= step;
+            wave.effect.transform.w_axis += (wave.velocity.normalize_or_zero() * step).extend(0.0);
+            wave.effect.advance(dt);
+            wave.effect.draw(&mut self.scene);
+            let fx = &wave.effect;
+            lights.push((fx.light, fx.transform.transform_point3(fx.light_attach)));
         }
-        let lights: Vec<_> = self
-            .spell_fx
-            .flying
-            .iter()
-            .filter(|s| s.remaining > 0.0)
-            .filter_map(|s| self.spell_light(s.light, s.effect.transform.w_axis.truncate()))
+        let tails = &mut self.spell_fx.tails;
+        self.spell_fx.waves.retain_mut(|wave| {
+            if wave.left > 0.0 {
+                return true;
+            }
+            let mut effect = std::mem::replace(
+                &mut wave.effect,
+                EffectInstance::from_parts(Mat4::IDENTITY, None, None, Vec::new(), 0.0),
+            );
+            effect.stop();
+            tails.push(effect);
+            false
+        });
+        let lights: Vec<_> = lights
+            .into_iter()
+            .filter_map(|(light, at)| self.spell_light(light, at))
             .collect();
         self.spell_fx.lights.extend(lights);
-        self.spell_fx.flying.retain(|s| s.remaining > -2.0);
     }
 }
 

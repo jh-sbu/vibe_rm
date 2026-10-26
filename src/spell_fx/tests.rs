@@ -207,39 +207,66 @@ fn stream_start_uses_requested_hand_and_preserves_supplied_fallback() {
 
 #[test]
 #[ignore = "requires a headless GPU adapter"]
-fn stream_hands_refresh_and_expire_independently() {
+fn held_streams_refresh_per_hand_and_expire_without_relaunching() {
     use crate::casting::CastSource;
+    // Not the player, whose streams follow the camera's aim.
+    const NPC: FormId = FormId(0x0100_0950);
     let f = fixture();
     let mut engine = crate::stats::action_tests::headless_engine(&f.0, "Fx.esp");
     let proj = FormId(0x804);
-    let key = (PLAYER_REF, proj);
-    engine.request_spell_stream(PLAYER_REF, proj, Vec3::X, Vec3::Y, None, CastSource::Left);
-    engine.request_spell_stream(PLAYER_REF, proj, -Vec3::X, Vec3::Y, None, CastSource::Right);
-    assert_eq!(engine.spell_fx.streams[&key].emitters.len(), 2);
-    engine.update_stream_fx(0.2);
+    let (left, right) = (
+        (NPC, proj, CastSource::Left),
+        (NPC, proj, CastSource::Right),
+    );
+    engine.request_spell_stream(NPC, proj, Vec3::X, Vec3::Y, 384.0, 768.0, CastSource::Left);
     engine.request_spell_stream(
-        PLAYER_REF,
+        NPC,
         proj,
-        Vec3::Z,
-        Vec3::X,
-        Some(Vec3::Y),
-        CastSource::Left,
+        -Vec3::X,
+        Vec3::Y,
+        900.0,
+        768.0,
+        CastSource::Right,
     );
-    let emitters = &engine.spell_fx.streams[&key].emitters;
-    assert_eq!(emitters.len(), 2);
-    assert_eq!(emitters[&CastSource::Left].from, Vec3::Z);
-    assert_eq!(emitters[&CastSource::Left].beam_end, Some(Vec3::Y));
-    assert_eq!(emitters[&CastSource::Right].from, -Vec3::X);
-    assert!(emitters[&CastSource::Right].remaining < emitters[&CastSource::Left].remaining);
-    engine.update_stream_fx(0.15);
-    assert_eq!(engine.spell_fx.streams[&key].emitters.len(), 1);
-    assert!(
-        engine.spell_fx.streams[&key]
-            .emitters
-            .contains_key(&CastSource::Left)
-    );
+    assert_eq!(engine.spell_fx.streams.len(), 2);
+    assert_eq!(engine.spell_fx.streams[&left].length, 0.5);
+    assert_eq!(engine.spell_fx.streams[&right].length, 1.0);
     engine.update_stream_fx(0.2);
-    assert!(!engine.spell_fx.streams.contains_key(&key));
+    engine.request_spell_stream(NPC, proj, Vec3::Z, Vec3::X, 0.0, 768.0, CastSource::Left);
+    let streams = &engine.spell_fx.streams;
+    assert_eq!(streams.len(), 2);
+    assert_eq!(streams[&left].from, Vec3::Z);
+    assert_eq!(streams[&left].dir, Vec3::X);
+    assert_eq!(streams[&left].length, 0.0);
+    assert_eq!(streams[&right].from, -Vec3::X);
+    assert!(streams[&right].remaining < streams[&left].remaining);
+    engine.update_stream_fx(0.15);
+    assert_eq!(engine.spell_fx.streams.len(), 1);
+    assert!(engine.spell_fx.streams.contains_key(&left));
+    engine.update_stream_fx(0.2);
+    assert!(engine.spell_fx.streams.is_empty());
+    assert!(engine.spell_fx.waves.is_empty());
+}
+
+#[test]
+#[ignore = "requires a headless GPU adapter"]
+fn cone_waves_travel_their_range_then_stop_where_they_are() {
+    let f = lifecycle_fixture();
+    let mut engine = crate::stats::action_tests::headless_engine(&f.0, "Fx.esp");
+    engine.spell_fx.waves.push(ConeWave {
+        effect: lifecycle_effect(1.0),
+        velocity: Vec3::X * 100.0,
+        left: 150.0,
+    });
+    engine.update_stream_fx(1.0);
+    assert_eq!(engine.spell_fx.waves[0].effect.transform.w_axis.x, 100.0);
+    engine.update_stream_fx(1.0);
+    assert!(engine.spell_fx.waves.is_empty());
+    let tail = engine.spell_fx.tails.last().unwrap();
+    assert!(tail.stopped);
+    assert_eq!(tail.transform.w_axis.x, 150.0);
+    engine.update_spell_fx(1.0);
+    assert_eq!(engine.spell_fx.tails[0].transform.w_axis.x, 150.0);
 }
 
 #[test]
