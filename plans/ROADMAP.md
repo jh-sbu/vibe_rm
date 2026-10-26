@@ -1681,26 +1681,27 @@ game each piece unlocks.
      and scene progress while actors are away; attach / remove animation and
      physics without restarting the actor's execution. This is the foundation
      for the package-tree, off-screen travel, unloaded actor-value and save work.
-     Plan: `plans/ai-actor-execution.md` (steps 1 to 7 done: the execution is
+     Plan: `plans/ai-actor-execution.md` (done: the execution is
      `ai::exec::ActorExec`, kept in `Engine::away` while unloaded, with a
      package run that `GetCurrentPackage` reads and whose changes fire
      `OnPackageStart` / `End` / `Change` and the `PACK` fragments. An actor
-     that unloaded with its cell comes back where it left and as it left, in
-     the same furniture, until its package moves it on. Away actors keep
+     that unloaded with its cell comes back where it left, standing (a
+     seated sandboxer afresh), until its package moves it on. Away actors keep
      running (`ai::away`): their packages are read every few seconds and
-     each half hour, and travellers are put 40 short of targets in range,
-     onto targets through doors, or walk on in the cells just left, by
-     autotest13's and autotest14's readings. Actors run at a processing tier
+     each half hour, and travellers walk to 40 short of their targets (in
+     strides away from the cells just left), asked ones in range put there
+     at once, and onto targets through doors, by autotest13's to
+     autotest16's readings. Actors run at a processing tier
      (`ai::exec::Processing`: loaded, buffered, coarse); waiting, sleeping and
      fast travel pass time for every actor (`Engine::pass_time`), loaded
      walkers walking on instead of starting over; damage to unloaded actors
      is taken at once and kills them away. Scenes' package actions finish
      with their actors away, lines waiting for their speakers to load
      (autotest15). Saves keep every execution, loaded actors' too
-     (`AEXC`, step 8). Calibration next, step 9).
+     (`AEXC`, step 8). Calibrated against autotest13 to autotest16, step 9).
    - Processing policies: detailed updates nearby and coarse advancement away
-     (done, step 6), still to add: travel progress through cells and load
-     doors walked rather than jumped (execution state, travel progress and
+     (done, step 6), still to add: travel walked along the navmesh and
+     through load doors rather than in a straight line and put through (execution state, travel progress and
      timestamps are saved: step 8).
      CommonLibSSE exposes High, MiddleHigh, MiddleLow and Low processing levels,
      but their exact eligibility, update cadence and subsystem behavior need
@@ -1719,7 +1720,7 @@ game each piece unlocks.
      before treating the current approximations as compatibility requirements.
      Built and run: `test-mod autotest13`, `autotest14` and `autotest15`
      (scenes with unloaded actors), and `autotest16` for step 9 (unloaded
-     travellers walk; to apply).
+     travellers walk, applied).
    - Whole-cell sandboxers as their cell loads: the game has them at
      something to use anywhere in the cell (`test-mod autotest7`); ours start
      where they stood

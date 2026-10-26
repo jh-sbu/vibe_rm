@@ -313,16 +313,6 @@ fn stage_of(state: &State, seat: Option<(FormId, u8)>) -> exec::Stage {
     }
 }
 
-/// Move furniture marker `want` (furniture, marker index), when among
-/// `options`, to the front.
-fn put_first<M>(options: &mut Vec<(FormId, u8, M)>, want: Option<(FormId, u8)>) {
-    let Some(i) = want.and_then(|w| options.iter().position(|o| (o.0, o.1) == w)) else {
-        return;
-    };
-    let o = options.remove(i);
-    options.insert(0, o);
-}
-
 fn uniform(rand: &mut dyn FnMut() -> u64, lo: f32, hi: f32) -> f32 {
     lo + (rand() % 1000) as f32 / 1000.0 * (hi - lo)
 }
@@ -375,9 +365,6 @@ pub struct ActorRuntime {
     pub seat: Option<Seat>,
     /// Just spawned with the cell: may start out already in furniture.
     pub fresh: bool,
-    /// The furniture marker it was in as it unloaded, to start out in again
-    /// when still free.
-    pub(crate) resume_seat: Option<(FormId, u8)>,
     /// Idle being played in the furniture, if any.
     sub: Option<SubIdle>,
     /// Seconds until the next seated idle is picked; set `wants_idle` when due.
@@ -528,7 +515,6 @@ impl ActorRuntime {
             child: false,
             seat: None,
             fresh: true,
-            resume_seat: None,
             sub: None,
             next_idle: 0.0,
             wants_idle: false,
@@ -1443,7 +1429,6 @@ impl ActorRuntime {
         }
         // VRM_AI_NO_SNAP: walk into furniture even on cell load (to watch enter animations).
         let fresh = std::mem::take(&mut self.fresh) && std::env::var_os("VRM_AI_NO_SNAP").is_none();
-        let resume = self.resume_seat.take().filter(|_| fresh);
         self.give_up_seat(w.furniture);
         self.hurry = false;
         let face = self.face.take();
@@ -1467,7 +1452,7 @@ impl ActorRuntime {
         };
         // Activating starts beside the target, not in it.
         let snap = fresh && goal.behaviour != Behaviour::Activate;
-        if self.seek_furniture(&goal, snap, resume.filter(|_| snap), w) {
+        if self.seek_furniture(&goal, snap, w) {
             return;
         }
         // At what an Activate package names, that isn't furniture: activate it.
@@ -1664,7 +1649,7 @@ impl ActorRuntime {
                 furniture: Some(p.ref_id),
                 ..*goal
             };
-            if self.seek_furniture(&at, false, None, w) {
+            if self.seek_furniture(&at, false, w) {
                 return PatrolStep::Busy;
             }
         }
@@ -1679,15 +1664,8 @@ impl ActorRuntime {
     }
 
     /// Look for furniture the goal wants used; reserve it and head there (or, when
-    /// `fresh`, start out in it: in `resume`'s marker first when it is among the
-    /// choices). Returns true if the actor is now on its way.
-    fn seek_furniture(
-        &mut self,
-        goal: &Goal,
-        fresh: bool,
-        resume: Option<(FormId, u8)>,
-        w: &mut World,
-    ) -> bool {
+    /// `fresh`, start out in it). Returns true if the actor is now on its way.
+    fn seek_furniture(&mut self, goal: &Goal, fresh: bool, w: &mut World) -> bool {
         // Creatures only use the furniture their package names (ambushers' coffins,
         // thrones and alcoves), through their own graphs' furniture idles.
         if !self.skeleton_path.contains("actors/character/") && goal.furniture.is_none() {
@@ -1745,8 +1723,7 @@ impl ActorRuntime {
                 } else {
                     0.9
                 };
-                // (One that was seated as it unloaded sits again.)
-                if resume.is_none() && uniform(w.rand, 0.0, 1.0) > chance {
+                if uniform(w.rand, 0.0, 1.0) > chance {
                     return false;
                 }
                 let secs = (150.0 - goal.energy * 1.2) * uniform(w.rand, 0.6, 1.4);
@@ -1807,7 +1784,6 @@ impl ActorRuntime {
                 options.swap(i, ((w.rand)() % (i as u64 + 1)) as usize);
             }
         }
-        put_first(&mut options, resume);
         for (fid, mi, marker) in options.into_iter().take(6) {
             let Some(f) = w.furniture.get(fid) else {
                 continue;
@@ -2664,7 +2640,7 @@ impl Engine {
             furniture: Some(furniture),
             ..Goal::travel(centre)
         };
-        a.seek_furniture(&goal, false, None, &mut w)
+        a.seek_furniture(&goal, false, &mut w)
     }
 
     /// Send an actor to `to` at a gait (testing): the goal is pinned, so its

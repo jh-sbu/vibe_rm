@@ -49,8 +49,12 @@ pub struct ActorExec {
     /// is put at its target at once rather than late (autotest15).
     pub(crate) prompted: bool,
     /// Away: the real time a traveller not put at once is put at its target
-    /// (autotest15: 34 and 39 s after its package started).
+    /// (asked out of range: autotest16, 29 and 37 s after its package
+    /// started).
     pub(crate) jump_at: Option<f64>,
+    /// Away: the real time a traveller walking in strides last strode. Not
+    /// saved: one loaded from a save strides again a stride's time on.
+    pub(crate) strode_at: Option<f64>,
     /// Away: how to turn it as it loads where its package put it.
     pub(crate) on_arrival: Option<super::schedule::PlacementHeading>,
     /// Away: the real time (`ScriptState::real_time`) and the game time
@@ -149,6 +153,24 @@ pub enum Stage {
     Walking,
     /// In (or getting into) marker `marker` of `furniture`.
     Seated { furniture: FormId, marker: u8 },
+}
+
+impl Stage {
+    /// Whether an actor attaching where it left, at `stage` (none: nothing
+    /// to take up) of a package that `behaves` so, starts out as its cell's
+    /// actors do as it loads (`ActorRuntime::fresh`: in furniture its
+    /// package wants), rather than walking or standing on from where it was.
+    /// One that was seated stands by its seat (autotest16's Sitter hadn't
+    /// sat again 13 s on); a sandboxer that was seated picks something anew
+    /// (autotest16's Sandboxer was in other furniture, as autotest7's
+    /// sandboxers were as their cell loaded).
+    pub(crate) fn starts_fresh(stage: Option<Stage>, behaves: Option<Behaviour>) -> bool {
+        match stage {
+            None => true,
+            Some(Stage::Seated { .. }) => behaves == Some(Behaviour::Sandbox),
+            Some(_) => false,
+        }
+    }
 }
 
 /// One package from when an actor takes it up until another takes its place.
@@ -283,6 +305,7 @@ impl ActorExec {
         self.settled = matches!(stage, Some(Stage::Standing | Stage::Seated { .. }));
         self.ends_at = None;
         self.jump_at = None;
+        self.strode_at = None;
         self.prompted = false;
         self.on_arrival = None;
         self.stamp(now, hours);
@@ -818,17 +841,6 @@ pub(crate) mod tests {
         let idle = crate::ai::stage_of(&State::Use(1.0), Some((FormId::NULL, 0)));
         assert_eq!(idle, Stage::Standing);
     }
-
-    #[test]
-    fn the_seat_it_left_is_tried_first() {
-        let mut options = vec![(FAR, 0, ()), (HOME, 1, ()), (HOME, 0, ())];
-        crate::ai::put_first(&mut options, Some((HOME, 0)));
-        assert_eq!(options, [(HOME, 0, ()), (FAR, 0, ()), (HOME, 1, ())]);
-        // Taken or gone: as they were.
-        crate::ai::put_first(&mut options, Some((SCENE, 0)));
-        crate::ai::put_first(&mut options, None);
-        assert_eq!(options, [(HOME, 0, ()), (FAR, 0, ()), (HOME, 1, ())]);
-    }
     use esp::writer::{Node, RecordBuilder, write_plugin};
     use glam::Mat4;
 
@@ -1210,6 +1222,20 @@ pub(crate) mod tests {
         assert_eq!(e.running_package(ACTOR), Some(PACKAGE));
         e.whereabouts.package.insert(ACTOR, None);
         assert_eq!(e.running_package(ACTOR), Some(PACKAGE));
+    }
+
+    #[test]
+    fn a_seated_actor_comes_back_standing_and_a_sandboxer_afresh() {
+        let seated = Some(Stage::Seated {
+            furniture: FormId(0x840),
+            marker: 0,
+        });
+        assert!(!Stage::starts_fresh(seated, Some(Behaviour::Sit)));
+        assert!(Stage::starts_fresh(seated, Some(Behaviour::Sandbox)));
+        for s in [Stage::Standing, Stage::Walking] {
+            assert!(!Stage::starts_fresh(Some(s), Some(Behaviour::Sandbox)));
+        }
+        assert!(Stage::starts_fresh(None, Some(Behaviour::Sit)));
     }
 
     #[test]

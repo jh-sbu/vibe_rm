@@ -1479,16 +1479,14 @@ impl Engine {
             if let Some(x) = self.away.get(&d.ref_id) {
                 rt.exec.take_back(x, resume.is_some());
             }
-            // It carries on from the stage it reached: in the furniture it
-            // was using when that is still free, else walking or standing on
-            // from where it was (not started out in furniture).
-            match resume {
-                Some(crate::ai::exec::Stage::Seated { furniture, marker }) => {
-                    rt.resume_seat = Some((*furniture, *marker));
-                }
-                Some(_) => rt.fresh = false,
-                None => {}
-            }
+            // It carries on from where it was, walking or standing, or
+            // starts out afresh (`Stage::starts_fresh`).
+            let behaves = rt
+                .exec
+                .current
+                .and_then(|i| rt.exec.packages.get(i))
+                .map(|p| p.behaviour);
+            rt.fresh &= crate::ai::exec::Stage::starts_fresh(*resume, behaves);
             rt.exec.health = self.returning_health(d.ref_id, stats.max_health);
             rt.exec.stamina = stats.max_stamina;
             rt.power_cost = self.power_attack_cost(d.ref_id, d.inventory.weapon(&self.lo));

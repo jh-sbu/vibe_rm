@@ -5,8 +5,7 @@ from them are under Sources at the end. Where unloaded actors appear as
 their cell loads is in `unloaded-placement.md`. The readings are
 `test-mod autotest13`'s to `autotest16`'s (each run 2026-10-25, once);
 their module docs have the numbers. autotest16 overturned the earlier
-reading that unloaded actors don't walk: the "what we chose" sections
-below still describe the code from before it (plan step 9 applies it).
+reading that unloaded actors don't walk (plan step 9 applied it).
 
 ## What is known
 
@@ -146,12 +145,14 @@ move them on); the rest is our choice:
   the package it left with and that package hasn't moved it. Once its
   packages give another, or its package moves it ("Away" below), it is
   placed where it went.
-- **As it left.** One seated (getting in or using furniture) starts out in
-  the same marker when it is still free and usable, else as fresh actors do
-  (a free seat nearby). One walking or standing carries on from there,
-  without starting out in furniture. A sandbox's stop and a patrol's point
-  carry on. Whether the game seats an actor in the same furniture is
-  untested.
+- **As it left, but not seated.** One seated (getting in or using
+  furniture) comes back standing where it was, by its seat, and goes on as
+  its package has it (it may sit again at once; autotest16's Sitter hadn't
+  13 s on: open). A sandboxer that was seated starts out as the cell's
+  actors do as it loads, in furniture of its choosing (autotest16's
+  Sandboxer was in other furniture 438 off). One walking or standing
+  carries on from there, without starting out in furniture. A sandbox's
+  stop and a patrol's point carry on.
 - **Fights and searches end** as an actor unloads: it comes back out of
   combat, not searching, and not bleeding out, as hurt as it left. The game's
   rule is untested (an actor fighting as the player leaves).
@@ -162,8 +163,7 @@ move them on); the rest is our choice:
 - **Saves keep stages** (`AEXC`, step 8): an actor loaded as the save was
   made is saved as though its cell unloaded then, and attaches as it was
   when the save loads, its goal worked out again at once from its package.
-  Whether the game seats a reloaded actor back in its furniture is
-  untested. Actors in saves made before `AEXC` are placed by their
+  What the game does with a reloaded actor that was seated is untested. Actors in saves made before `AEXC` are placed by their
   schedules.
 
 ## Away: what we chose
@@ -174,24 +174,29 @@ had them re-read within about 3 s, and at once as the clock was set or an
 hour passed), a change of package logs the usual events, and its package
 moves it:
 
-- **Travel in the same space**, asked to evaluate its packages
-  (`EvaluatePackage`, or a scene giving it a package) and its target within
-  4,500 (3D): put on the line to it, 40 short (or 10 inside a wider radius:
-  `unloaded_arrival`, as for actors new to a save), then `OnPackageEnd`
-  2.5 s after the start. Unasked, or beyond 4,500, put there 36 s after the
-  start (`LATE_JUMP`), its run ending then (autotest15: 34 and 39 s). One
-  more than 1,400 above or below its target stays where it is, its run
-  going on (moved: within 830; stayed: 1,900 or more).
+- **Travel in the same space walks** (autotest16), from the cells just
+  left at 80 a second in a straight line, elsewhere in strides: one every
+  2.6 s, as far as 84 a second takes it in the time since the last (time
+  passed in a menu included), to the end point on the line to its target,
+  40 short (or 10 inside a wider radius: `unloaded_arrival`, as for actors
+  new to a save). Its run ends as it arrives. Not walked along the navmesh
+  and not through doors; height doesn't matter, and so nothing stays put
+  for want of a path (autotest13's and autotest14's that stayed had, we
+  infer, none).
+- **Asked to evaluate its packages** (`EvaluatePackage`, or a scene giving
+  it a package) with its target within 4,200 in 3D, outside the cells just
+  left, it is put at the end point at once instead, `OnPackageEnd` 2.5 s
+  after the start; with its target farther, it walks and is put there 35 s
+  after the start (`LATE_JUMP`: autotest16's 28.7 and 36.6 s, autotest15's
+  39 s), its run ending then.
 - **Travel into another space** (through a load door): put exactly on its
   target, with `OnLocationChange` when the location changes, then
-  `OnPackageEnd` 2.5 s later; unasked, late as above (the readings only
-  sent actors through doors with `EvaluatePackage`).
-- **In a cell the player has just left** (the places unloaded with the
-  last change of location, until the next one) a traveller walks on in a
-  straight line at 80 a second to the same end point, its run ending as it
-  arrives (as loaded travellers'). Not walked along the navmesh, and not
-  through doors: a target in another space is reached as above. The game
-  keeps such cells loaded (3D and all); ours unload them.
+  `OnPackageEnd` 2.5 s later; unasked, put there 35 s after the start (the
+  readings only sent actors through doors with `EvaluatePackage`).
+- **The cells just left** are the places unloaded with the player's last
+  change of location, until the next one. The game keeps such cells
+  loaded, 3D and all, some of the time ("The buffer's reach", open); ours
+  unload them.
 - **Other packages with a place** (sandbox, sit, sleep, patrol...): put at
   it (on its centre, anywhere in a whole cell) when away from it by more
   than 1.5 times its radius (at least 96), as schedules had them, whatever
@@ -201,8 +206,8 @@ moves it:
   it once more than 256 beyond the follow distance off); following someone
   loaded (the player) they stay where they are.
 - **A journey under way as the actor unloads** (it was walking, or hadn't
-  started) is taken up as one starting unasked: put at the end point
-  late. The game's rule is untested (open, below).
+  started) walks on, as one starting unasked (autotest16's Leaving and
+  LeavingFar).
 - **Despawned actors** (gone through a door, or out of sight for their
   schedule) are put where their schedule has them, as before; their run
   ends 2.5 s later when that is a traveller's target.
@@ -211,7 +216,9 @@ moves it:
   events, as autotest6–9 calibrated. `Whereabouts` reads every other away
   actor's place from its execution.
 - **Waiting and sleeping** step every away actor once as the time has
-  passed ("Time and condition" below). Fast travel does nothing more (the
+  passed ("Time and condition" below): a traveller strides for all of it,
+  so two hours take any one there (autotest16's wait; its sleep took one
+  only partway: open). Fast travel does nothing more (the
   readings: it moved no unloaded actor).
 - The stepper visits 100 away actors a frame, in turn.
 

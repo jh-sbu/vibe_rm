@@ -2,7 +2,7 @@
 //! (`plans/ai-actor-execution.md` step 5). Their packages are read again on
 //! a cadence and as each half hour of game time begins, their runs start,
 //! change and end with the usual events, and their packages move them by the
-//! rules `test-mod autotest13` and `autotest14` observed; the choices are in
+//! rules `test-mod autotest13` to `autotest16` observed; the choices are in
 //! `known_ambiguities/actor-execution.md` ("Away").
 
 use esp::FormId;
@@ -15,29 +15,30 @@ use crate::engine::{Engine, PLAYER_REF};
 
 /// Away actors stepped per frame, in turn.
 const BUDGET: usize = 100;
-/// How far off a Travel package's target in the same space can be for an
-/// actor away to be put at it at once, when asked to evaluate its packages:
-/// every one moved so had it within 4,100, every one not 4,950 or more
-/// (autotest13, autotest14, autotest15's Beyond at 8,843).
-pub(crate) const JUMP_RANGE: f32 = 4500.0;
-/// How far above or below its target in the same space an actor away can
-/// be and still be put at it: every one moved had it within 830 (autotest15's
-/// Beyond 139 at 8,843 away), every one that stayed for minutes 1,900 or
-/// more (autotest13, autotest14's FerryEast at 2,650).
-const JUMP_HEIGHT: f32 = 1400.0;
+/// How far off (in 3D) a Travel package's target in the same space can be
+/// for an actor away to be put at it at once, when asked to evaluate its
+/// packages: autotest16's MidHigh at 4,032 was (1,453 below), its High at
+/// 4,399 wasn't; autotest14's were within 4,100 in XY. Height doesn't
+/// decide: autotest16's three were all 3,762 off in XY.
+pub(crate) const JUMP_RANGE: f32 = 4200.0;
 /// Real seconds from a Travel run's start to its end, for an actor away put
 /// at its target at once (autotest14: `OnPackageEnd` 2.5 s after
 /// `OnPackageStart`).
 const END_DELAY: f64 = 2.5;
 /// Real seconds from a Travel run's start to its actor being put at its
-/// target, its run ending then, when not put at once: unasked, or beyond
-/// `JUMP_RANGE` (autotest15: 34 s for one sent home unasked, 39 s for one
-/// 8,843 off, both in the same frame; autotest13's Scheduled hadn't moved
-/// 5 s on). A periodic pass may be what the game has; one per run is ours.
-pub(crate) const LATE_JUMP: f64 = 36.0;
+/// target, its run ending then, when asked but beyond `JUMP_RANGE` (it walks
+/// till then: autotest16's High 28.7 s, FarAsked 36.6 s; autotest15's
+/// Beyond 39 s), or sent unasked into another space (untested: the readings
+/// only sent actors through doors asked).
+pub(crate) const LATE_JUMP: f64 = 35.0;
 /// Units a second an actor walks in a cell the player has just left
 /// (autotest13: 78 to 87).
 const BUFFERED_WALK_SPEED: f32 = 80.0;
+/// Units a second an actor walks away from the cells just left, and how
+/// often it strides (autotest16: steps of 217 to 221 about every 2.6 s, 2,710
+/// to 3,162 in 34 to 39 s, 7,100 in 93 s).
+pub(crate) const AWAY_WALK_SPEED: f32 = 84.0;
+const STRIDE_TIME: f64 = 2.6;
 /// How far beyond a package's radius (at least 96) an actor away from a
 /// non-Travel package's place must be, by this factor, to be put there: as
 /// waiting has them start over (`jump_to_schedules`).
@@ -77,18 +78,24 @@ enum Move {
         pos: Vec3,
         target: Vec3,
     },
-    /// Walking toward `end` in the cell it is in.
-    Walk { end: Vec3 },
+    /// Walking toward `end` in its space: smoothly in a cell just left, else
+    /// in strides; with `jump`, put there `LATE_JUMP` after its run started
+    /// unless there already.
+    Walk {
+        end: Vec3,
+        strides: bool,
+        jump: bool,
+    },
     /// Keeping up with whom it follows.
     Follow { place: Place, pos: Vec3 },
 }
 
 /// Where a package has an actor away at `pos` in `place` go, its package's
 /// target `target` in `there`, run at `tier`, `prompted` to evaluate its
-/// packages: Travel is put on its target's line 40 short (in a buffered cell
-/// it walks there), or onto it in another space, at once when prompted and
-/// in range, else late, and left where it is when far above or below it;
-/// other packages are put at their place when away from it.
+/// packages: Travel walks to its target's line 40 short, put there at once
+/// when prompted and in range (and late when prompted out of range), or is
+/// put onto its target in another space (late unprompted); other packages
+/// are put at their place when away from it.
 fn plan_move(
     p: &Package,
     place: Place,
@@ -117,13 +124,19 @@ fn plan_move(
         } else if target.is_nan() || pos.is_nan() {
             Move::Settle
         } else if matches!(tier, Processing::Buffered { .. }) {
-            Move::Walk { end }
-        } else if (target.z - pos.z).abs() > JUMP_HEIGHT {
-            Move::Settle
+            Move::Walk {
+                end,
+                strides: false,
+                jump: false,
+            }
         } else if prompted && pos.distance(target) <= JUMP_RANGE {
             now
         } else {
-            late
+            Move::Walk {
+                end,
+                strides: true,
+                jump: prompted,
+            }
         };
     }
     let off = !same_space(place, there)
@@ -323,6 +336,7 @@ impl Engine {
             x.settled = false;
             x.ends_at = None;
             x.jump_at = None;
+            x.strode_at = None;
             x.on_arrival = None;
         } else {
             x.current = pick;
@@ -421,9 +435,40 @@ impl Engine {
                 place: there,
                 pos: to,
             } => self.put_away(r, there, to),
-            Move::Walk { end } => {
+            Move::Walk { end, strides, jump } => {
+                let Some(x) = self.away.get_mut(&r) else {
+                    return;
+                };
+                if jump {
+                    x.jump_at.get_or_insert(now + LATE_JUMP);
+                }
+                if x.jump_at.is_some_and(|t| clock >= t) {
+                    // Asked, out of range: put there now.
+                    x.settled = true;
+                    x.jump_at = None;
+                    x.strode_at = None;
+                    if end != pos {
+                        self.put_away(r, place, end);
+                    }
+                    if let Some(x) = self.away.get_mut(&r) {
+                        x.complete_run(false);
+                    }
+                    return;
+                }
+                let stride = if strides {
+                    // A stride when one is due, for all the time since the
+                    // last (time passed in a menu included).
+                    let last = *x.strode_at.get_or_insert(now);
+                    let since = clock - last;
+                    if since < STRIDE_TIME {
+                        return;
+                    }
+                    x.strode_at = Some(now);
+                    AWAY_WALK_SPEED * since as f32
+                } else {
+                    BUFFERED_WALK_SPEED * dt
+                };
                 let left = end - pos;
-                let stride = BUFFERED_WALK_SPEED * dt;
                 let arrived = left.length() <= stride;
                 let to = if arrived {
                     end
@@ -436,6 +481,8 @@ impl Engine {
                 if arrived && let Some(x) = self.away.get_mut(&r) {
                     // As a loaded traveller's run ends as it arrives.
                     x.settled = true;
+                    x.jump_at = None;
+                    x.strode_at = None;
                     x.complete_run(false);
                 }
             }
@@ -444,8 +491,8 @@ impl Engine {
 
     /// `EvaluatePackage` on actor `r`: its packages are read at once; away,
     /// a traveller in range is put at its target at once (autotest14's
-    /// actors, sent off with it, were within 2 s; unasked ones waited:
-    /// autotest13, autotest15).
+    /// actors, sent off with it, were within 2 s; unasked ones walked:
+    /// autotest16), one out of range late.
     pub(crate) fn evaluate_package(&mut self, r: FormId) {
         if let Some(a) = self.actor_mut(r) {
             a.exec.next_eval = 0.0;
@@ -701,34 +748,59 @@ mod tests {
                 ends: true
             }
         );
-        // Unasked, late (autotest15's Near going home).
+        // Unasked, it walks there in strides (autotest16's PassA).
         let m = plan_move(&travel(0.0), place, pos, there, target, COARSE, false);
         assert_eq!(
             m,
-            Move::Late {
-                place: there,
-                pos: end,
-                target
+            Move::Walk {
+                end,
+                strides: true,
+                jump: false
             }
         );
     }
 
     #[test]
-    fn travel_out_of_range_is_put_late_unless_far_above_or_below() {
+    fn travel_out_of_range_walks_and_is_put_late_when_asked() {
         let (place, pos) = outside(0.0, 0.0);
-        let (there, target) = outside(8843.0, 0.0);
-        // autotest15's Beyond: 8,843 off, 139 below, put there 39 s on.
-        let level = target - Vec3::Z * 139.0;
+        let (there, target) = outside(7566.0, 0.0);
+        // autotest16's FarAsked: walked, then put there 36.6 s on.
+        let level = target - Vec3::Z * 162.0;
         assert!(matches!(
             plan_move(&travel(0.0), place, pos, there, level, COARSE, true),
-            Move::Late { .. }
+            Move::Walk {
+                strides: true,
+                jump: true,
+                ..
+            }
         ));
-        // autotest14's FerryEast: 7,600 off, 2,650 below, never moved.
-        let below = target - Vec3::new(1000.0, 0.0, 2650.0);
-        assert_eq!(
+        // Unasked, it walks all the way (FarUnasked).
+        assert!(matches!(
+            plan_move(&travel(0.0), place, pos, there, level, COARSE, false),
+            Move::Walk {
+                strides: true,
+                jump: false,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn the_distance_decides_a_jump_not_the_height() {
+        let (place, pos) = outside(0.0, 0.0);
+        let (there, flat) = outside(3762.0, 0.0);
+        // autotest16's MidHigh: 1,453 below, 4,032 off, put there at once.
+        let below = flat - Vec3::Z * 1453.0;
+        assert!(matches!(
             plan_move(&travel(0.0), place, pos, there, below, COARSE, true),
-            Move::Settle
-        );
+            Move::Put { ends: true, .. }
+        ));
+        // Its High: 2,281 above, 4,399 off, walked and put there late.
+        let above = flat + Vec3::Z * 2281.0;
+        assert!(matches!(
+            plan_move(&travel(0.0), place, pos, there, above, COARSE, true),
+            Move::Walk { jump: true, .. }
+        ));
     }
 
     #[test]
@@ -757,7 +829,9 @@ mod tests {
         assert_eq!(
             m,
             Move::Walk {
-                end: Vec3::new(5960.0, 0.0, 0.0)
+                end: Vec3::new(5960.0, 0.0, 0.0),
+                strides: false,
+                jump: false
             }
         );
     }
@@ -915,7 +989,7 @@ mod tests {
 
     #[test]
     #[ignore = "needs a headless GPU adapter; synthetic records only"]
-    fn an_actor_away_set_off_unasked_is_put_there_late_its_run_ending_then() {
+    fn an_actor_away_set_off_unasked_walks_there_in_strides() {
         let (_f, mut e) = fixture();
         away_at(&mut e, 0.0, false);
         e.hour = 12.1;
@@ -924,18 +998,27 @@ mod tests {
             heard(&mut e),
             [ev("OnPackageChange", HOME), ev("OnPackageStart", FAR)]
         );
-        e.scripts.real_time += LATE_JUMP - 1.0;
+        // Nothing until a stride is due, then one for the time since.
+        e.scripts.real_time += 2.0;
         e.step_away(ACTOR);
         assert_eq!(e.away[&ACTOR].pos, Vec3::ZERO);
-        e.scripts.real_time += 1.0;
+        e.scripts.real_time += 0.6;
         e.step_away(ACTOR);
+        let x = e.away[&ACTOR].pos.x;
+        assert!((x - AWAY_WALK_SPEED * 2.6).abs() < 0.1, "{x}");
+        assert!(heard(&mut e).is_empty());
+        // It arrives 40 short, its run ending then.
+        for _ in 0..14 {
+            e.scripts.real_time += 2.6;
+            e.step_away(ACTOR);
+        }
         assert_eq!(e.away[&ACTOR].pos, Vec3::new(2960.0, 0.0, 0.0));
         assert_eq!(heard(&mut e), [ev("OnPackageEnd", FAR)]);
     }
 
     #[test]
     #[ignore = "needs a headless GPU adapter; synthetic records only"]
-    fn an_actor_away_with_its_target_out_of_range_is_put_there_late() {
+    fn an_actor_away_asked_with_its_target_out_of_range_walks_then_is_put_there() {
         let (_f, mut e) = fixture();
         away_at(&mut e, -3000.0, false);
         e.hour = 12.1;
@@ -947,10 +1030,12 @@ mod tests {
             heard(&mut e),
             [ev("OnPackageChange", HOME), ev("OnPackageStart", FAR)]
         );
-        assert_eq!(e.away[&ACTOR].pos, Vec3::new(-3000.0, 0.0, 0.0));
+        // Walking (autotest16's FarAsked walked about 3,000 first).
+        let x = e.away[&ACTOR].pos.x;
+        assert!((x - (-3000.0 + AWAY_WALK_SPEED * 10.0)).abs() < 0.1, "{x}");
         assert!(!e.away[&ACTOR].run_completed());
-        // autotest15's Beyond: put there 39 s on, 8,843 off.
-        e.scripts.real_time += LATE_JUMP;
+        // Put there `LATE_JUMP` after it set off.
+        e.scripts.real_time += LATE_JUMP - 10.0;
         e.step_away(ACTOR);
         assert_eq!(e.away[&ACTOR].pos, Vec3::new(2960.0, 0.0, 0.0));
         assert_eq!(heard(&mut e), [ev("OnPackageEnd", FAR)]);
@@ -977,7 +1062,7 @@ mod tests {
 
     #[test]
     #[ignore = "needs a headless GPU adapter; synthetic records only"]
-    fn a_walker_unloading_outside_the_buffer_takes_up_its_journey_late() {
+    fn a_walker_unloading_outside_the_buffer_walks_on() {
         let (_f, mut e) = fixture();
         // It set off before unloading, and is walking.
         loaded_actor(&mut e);
@@ -1001,12 +1086,15 @@ mod tests {
         e.away_steps.buffered.clear();
         e.step_away(ACTOR);
         assert_eq!(e.away[&ACTOR].pos, Vec3::ZERO);
-        // Away, it is put 40 short, unasked: late.
-        e.scripts.real_time += LATE_JUMP;
+        // Away, it walks on in strides (autotest16's Leaving).
+        e.scripts.real_time += 10.0;
         e.step_away(ACTOR);
         let x = &e.away[&ACTOR];
         assert_eq!(x.package(), Some(FAR));
-        assert_eq!(x.pos, Vec3::new(2960.0, 0.0, 0.0));
+        assert!((x.pos.x - AWAY_WALK_SPEED * 10.0).abs() < 0.1);
+        e.scripts.real_time += 30.0;
+        e.step_away(ACTOR);
+        assert_eq!(e.away[&ACTOR].pos, Vec3::new(2960.0, 0.0, 0.0));
     }
 
     #[test]
@@ -1018,11 +1106,10 @@ mod tests {
         e.step_away(ACTOR);
         assert!(e.move_to_editor_location(ACTOR));
         assert_eq!(e.away[&ACTOR].pos, Vec3::ZERO);
-        // Its package takes it on from there (unasked: late, counted from
-        // the move).
+        // Its package takes it on from there, walking.
         e.step_away(ACTOR);
         assert_eq!(e.away[&ACTOR].pos, Vec3::ZERO);
-        e.scripts.real_time += LATE_JUMP;
+        e.scripts.real_time += 40.0;
         e.step_away(ACTOR);
         assert_eq!(e.away[&ACTOR].pos, Vec3::new(2960.0, 0.0, 0.0));
     }

@@ -2355,10 +2355,13 @@ mod away_tests {
         assert!(x.packages.iter().any(|p| p.id == TRAVEL));
         after(&mut e, 0.1);
         assert_eq!(e.running_package(ACTOR), Some(TRAVEL));
-        // Unasked (`play` gives the package ready-made): put there late, its
-        // run ending then.
+        // Unasked (`play` gives the package ready-made): it walks there, its
+        // run ending as it arrives.
         assert_eq!(e.away[&ACTOR].pos.x, 0.0);
-        after(&mut e, crate::ai::away::LATE_JUMP);
+        after(
+            &mut e,
+            2960.0 / crate::ai::away::AWAY_WALK_SPEED as f64 + 1.0,
+        );
         assert_eq!(e.away[&ACTOR].pos.x, 2960.0);
         e.update_scenes();
         assert!(e.is_scene_action_complete(SCENE, 1));

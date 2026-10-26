@@ -1,6 +1,6 @@
 # Plan: actor execution across loading and processing transitions
 
-**Status: draft** (2026-10-24).
+**Status: done** (2026-10-25; drafted 2026-10-24).
 
 This plan covers the first three entries of ROADMAP Next item 4 (AI depth):
 actor execution across loading, processing policies, and the comparison tests
@@ -333,16 +333,18 @@ clocks, non-null forms) and on apply (runs name `PACK` records). Tests:
 
 ### 9. Calibrate against the comparison tests
 
-**Status (2026-10-25):** `test-mod autotest16` ran once. It overturns
-step 5's model: unloaded travellers with a path walk (steps of about 218
-every 2.6 s, about 84 a second), journeys under way walk on as their cell
-unloads, only asked ones within about 4,200 (3D) are put at their targets
-at once, and asked ones farther are put there about 30 to 40 s on. Height
-doesn't stop a jump (`JUMP_HEIGHT` goes). An actor unloaded seated came
-back standing; a sandboxer came back in other furniture. Waiting put an
-unloaded traveller on its target; sleeping only took one partway. Effects
-end as the actor unloads. Applying these is what's left of this step; the
-readings are in `known_ambiguities/actor-execution.md`.
+**Status (2026-10-25):** done. `test-mod autotest16` ran once and
+overturned step 5's model; it's applied. Away travellers walk
+(`ai::away`: strides of `AWAY_WALK_SPEED` 84 every `STRIDE_TIME` 2.6 s
+outside the cells just left), asked ones within `JUMP_RANGE` (now 4,200 in
+3D) are put at their targets at once, asked ones farther walk and are put
+there `LATE_JUMP` (now 35 s) on, and unasked ones walk all the way.
+`JUMP_HEIGHT` is gone: height doesn't decide. A journey under way walks on
+as its cell unloads. An actor that unloaded seated comes back standing by
+its seat, a sandboxer that was seated afresh (`Stage::starts_fresh`; the
+seat it left is no longer kept). Wait and sleep stride travellers for all
+the time passed. What the readings left open is in
+`known_ambiguities/actor-execution.md` ("Open questions").
 
 - Read the step 1 reports (`vrm-tool test-results`) and turn the observed
   rules into tests:
