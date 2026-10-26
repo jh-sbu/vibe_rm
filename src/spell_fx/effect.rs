@@ -26,6 +26,8 @@ pub struct EffectInstance {
     samples: Vec<(usize, f32, f32)>,
     pub stopped: bool,
     pub finished: bool,
+    /// Longest usable standalone controller span, including materials and particles.
+    authored_duration: Option<f32>,
     pub tags: nif::AttachTags,
     rest_visibility: std::collections::HashMap<i32, bool>,
     sequence_nodes: std::collections::HashMap<String, Vec<crate::render::model::NodeChannel>>,
@@ -172,6 +174,7 @@ impl EffectInstance {
             samples: Vec::new(),
             stopped: false,
             finished: false,
+            authored_duration: None,
             tags: Default::default(),
             rest_visibility: Default::default(),
             sequence_nodes: Default::default(),
@@ -237,17 +240,18 @@ impl EffectInstance {
         }
     }
     pub(super) fn one_shot_duration(&self) -> f32 {
-        let Some(anim) = &self.anim else { return 1.0 };
-        if !anim.sequences.is_empty() {
+        let anim = self.anim.as_ref();
+        if let Some(anim) = anim.filter(|a| !a.sequences.is_empty()) {
             return anim
                 .sequences
                 .iter()
                 .map(|s| (s.stop - s.start) / s.frequency.abs().max(1e-6))
                 .fold(0.0, f32::max);
         }
-        anim.controllers
-            .iter()
+        anim.into_iter()
+            .flat_map(|a| &a.controllers)
             .map(|c| (c.timing.stop - c.timing.start) / c.timing.frequency.abs().max(1e-6))
+            .chain(self.authored_duration)
             .filter(|span| span.is_finite() && *span > 0.0)
             .reduce(f32::max)
             .unwrap_or(1.0)
@@ -263,6 +267,20 @@ impl EffectInstance {
         }
     }
     pub fn configure(&mut self, nif: &nif::Nif) {
+        self.authored_duration = nif
+            .blocks
+            .iter()
+            .filter_map(|block| match block {
+                nif::Block::NodeController(c) => Some(c.timing),
+                nif::Block::ShaderController(c) => Some(c.timing),
+                nif::Block::AlphaTestController(c) => Some(c.timing),
+                nif::Block::ParticleController(c) => Some(c.timing),
+                _ => None,
+            })
+            .filter(|t| t.flags & 0x20 == 0 && (t.active() || t.app_init()))
+            .map(|t| (t.stop - t.start) / t.frequency.abs().max(1e-6))
+            .filter(|span| span.is_finite() && *span > 0.0)
+            .reduce(f32::max);
         self.tags = nif::attach_tags(nif);
         self.rest_visibility = nif
             .blocks

@@ -576,11 +576,18 @@ fn hit_art_shared_owners_dispel_one_shot_completion_refresh_and_summon_unload() 
     assert!(!engine.spell_fx.art[&key].effect.stopped);
     engine.magic.effects[1].active = false;
     engine.update_spell_fx(0.0);
-    assert!(engine.spell_fx.art[&key].effect.stopped);
-    assert!(engine.spell_fx.art[&key].stopping_age.is_some());
+    assert!(!engine.spell_fx.art.contains_key(&key));
+    assert_eq!(engine.spell_fx.tails.len(), 1);
+    let stopped = &engine.spell_fx.tails[0];
+    assert!(stopped.stopped && stopped.finished);
+    assert_eq!(stopped.duration, 0.2);
+    assert_eq!(stopped.fade_duration, 3.0);
     engine.scene.cells.clear();
     engine.update_spell_fx(0.0);
     assert!(engine.spell_fx.art.is_empty());
+    assert!(engine.spell_fx.tails[0].stopped);
+    // Finish the retained persistent fade before checking the next one-shot's tails.
+    engine.update_spell_fx(3.1);
     load_lifecycle_target(&mut engine, target);
     engine.magic.effects = vec![lifecycle_hit(3, target, false)];
     engine
@@ -715,6 +722,84 @@ fn sequence_less_art_uses_controller_span_and_stop_uses_same_lifetime() {
     fx.advance(0.21);
     fx.stop();
     assert!(fx.finished);
+}
+
+#[test]
+fn sequence_less_art_uses_material_and_particle_controller_lifetimes() {
+    let timing = nif::anim::Timing {
+        flags: 1, // APP_INIT controllers start with the effect.
+        frequency: -2.0,
+        phase: 0.0,
+        start: 5.0,
+        stop: 5.5,
+    };
+    let controllers = [
+        nif::Block::ShaderController(nif::anim::ShaderController {
+            next: nif::Ref(-1),
+            timing,
+            interpolator: nif::Ref(-1),
+            variable: 5,
+            color: false,
+            lighting: false,
+        }),
+        nif::Block::AlphaTestController(nif::anim::AlphaTestController {
+            next: nif::Ref(-1),
+            timing,
+            interpolator: nif::Ref(-1),
+        }),
+        nif::Block::ParticleController(nif::psys::ParticleController {
+            next: nif::Ref(-1),
+            timing,
+            interpolator: nif::Ref(-1),
+            modifier: String::new(),
+            kind: nif::psys::ControllerKind::Update,
+        }),
+    ];
+    for controller in controllers {
+        let mut fx = lifecycle_effect(0.2);
+        let anim = std::sync::Arc::get_mut(fx.anim.as_mut().unwrap()).unwrap();
+        anim.sequences.clear();
+        assert!(anim.controllers.is_empty());
+        let mut nif = nif::Nif {
+            header: nif::Header {
+                version: 0x14020007,
+                user_version: 12,
+                bs_version: 100,
+                block_types: Vec::new(),
+                block_type_index: Vec::new(),
+                block_sizes: Vec::new(),
+                block_offsets: Vec::new(),
+                strings: Vec::new(),
+            },
+            blocks: vec![controller],
+            roots: Vec::new(),
+        };
+        fx.configure(&nif);
+        assert_eq!(fx.one_shot_duration(), 0.25);
+        fx.advance(0.24);
+        assert!(!art_one_shot_done(&fx));
+        fx.stop();
+        assert!(!fx.finished);
+        fx.stopped = false;
+        fx.duration = f32::INFINITY;
+        fx.advance(0.02);
+        assert!(art_one_shot_done(&fx));
+        fx.stop();
+        assert!(fx.finished);
+
+        // Inactive and sequence-owned controllers do not extend standalone art.
+        for flags in [0, 1 | 0x20] {
+            let t = match &mut nif.blocks[0] {
+                nif::Block::ShaderController(c) => &mut c.timing,
+                nif::Block::AlphaTestController(c) => &mut c.timing,
+                nif::Block::ParticleController(c) => &mut c.timing,
+                _ => unreachable!(),
+            };
+            t.flags = flags;
+            fx.configure(&nif);
+            assert_eq!(fx.one_shot_duration(), 1.0);
+        }
+    }
 }
 
 #[test]
