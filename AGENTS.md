@@ -26,3 +26,15 @@ verified in Skyrim SE.
 
 If the database is absent, build it using the downloaded dump as described in
 `scripts/README.md`. Commit tooling and documentation, not the dump or database.
+
+# Research decisions and unfinished work
+
+`known_ambiguities/` holds ONLY decisions made after attempting to check sources,
+where that research did not yield a concrete answer. Do NOT put any todo items in
+`known_ambiguities/`.
+
+Unfinished work should be noted in ROADMAP or the particular planning document
+being worked on.
+
+Do NOT commit anything in `refs/`; the references found there are external and not
+for committing. Anything that needs to be committed should be done elsewhere.
