@@ -67,17 +67,13 @@ impl EffectInstance {
         for (i, part) in anim.parts.iter().enumerate() {
             let own = anim.controllers.iter().filter(|c| c.block == part.block);
             let mut local = part.rest;
-            let mut shown = self
-                .rest_visibility
-                .get(&part.block)
-                .copied()
-                .unwrap_or(true);
+            let mut controlled_visibility = None;
             for c in own {
                 if let Some(m) = c.transform(t, part.rest) {
                     local = m;
                 }
                 if let Some(v) = c.visible(t) {
-                    shown &= v;
+                    controlled_visibility = Some(controlled_visibility.unwrap_or(true) && v);
                 }
             }
             let mut total = 0.0f32;
@@ -98,7 +94,8 @@ impl EffectInstance {
                 if let Some(channels) = self.sequence_nodes.get(&seq.name.to_ascii_lowercase()) {
                     for c in channels.iter().filter(|c| c.block == part.block) {
                         if let Some(v) = c.visible(time) {
-                            shown &= v;
+                            controlled_visibility =
+                                Some(controlled_visibility.unwrap_or(true) && v);
                         }
                     }
                 }
@@ -106,6 +103,12 @@ impl EffectInstance {
             if let Some((s, r, p)) = blended {
                 local = Mat4::from_scale_rotation_translation(s, r, p);
             }
+            let mut shown = controlled_visibility.unwrap_or_else(|| {
+                self.rest_visibility
+                    .get(&part.block)
+                    .copied()
+                    .unwrap_or(true)
+            });
             let parent = match part.within {
                 Some((o, rel)) if o < i => {
                     shown &= self.parts[o].1;
@@ -515,7 +518,7 @@ mod tests {
         fx
     }
     #[test]
-    fn visibility_requires_every_controller_and_rest_visibility() {
+    fn visibility_requires_controller_agreement_and_uses_rest_only_when_undriven() {
         for reversed in [false, true] {
             let mut fx = fixture();
             let mut channels = fx.sequence_nodes.remove("off").unwrap();
@@ -540,7 +543,18 @@ mod tests {
         fx.rest_visibility.insert(1, false);
         fx.play("On");
         fx.pose();
+        assert!(fx.parts[0].1);
+        fx.samples.clear();
+        fx.pose();
         assert!(!fx.parts[0].1);
+        fx.rest_visibility.insert(1, true);
+        fx.pose();
+        assert!(fx.parts[0].1);
+        let channels = fx.sequence_nodes.remove("on").unwrap();
+        Arc::get_mut(fx.anim.as_mut().unwrap()).unwrap().controllers = channels;
+        fx.rest_visibility.insert(1, false);
+        fx.pose();
+        assert!(fx.parts[0].1);
     }
 
     #[test]
