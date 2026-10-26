@@ -570,6 +570,16 @@ fn hit_art_shared_owners_dispel_one_shot_completion_refresh_and_summon_unload() 
         .insert(key, lifecycle_art(vec![1], true));
     engine.update_spell_fx(0.1);
     assert_eq!(engine.spell_fx.art[&key].owners, vec![1, 2]);
+    engine.scene.cells.clear();
+    engine.update_spell_fx(0.0);
+    assert!(!engine.spell_fx.art.contains_key(&key));
+    load_lifecycle_target(&mut engine, target);
+    engine
+        .spell_fx
+        .art
+        .insert(key, lifecycle_art(Vec::new(), true));
+    engine.update_spell_fx(0.1);
+    assert_eq!(engine.spell_fx.art[&key].owners, vec![1, 2]);
     engine.magic.effects[0].done = true;
     engine.update_spell_fx(0.1);
     assert_eq!(engine.spell_fx.art[&key].owners, vec![2]);
@@ -893,4 +903,97 @@ fn static_hit_art_draws_on_first_update_and_expires_after_fallback() {
             .iter()
             .any(|i| std::sync::Arc::ptr_eq(&i.model, &model))
     );
+}
+
+#[test]
+fn model_caches_are_bounded_and_reuse_existing_entries() {
+    let mut fx = SpellFx::default();
+    let mut shared = None;
+    for i in 0..MODEL_CACHE_CAPACITY * 3 {
+        let path = format!("model{i}.nif");
+        assert!(cached_model(&mut fx.model_nifs, &path, || None).is_none());
+        let nodes = cached_model(&mut fx.model_nodes.borrow_mut(), &path, || {
+            std::sync::Arc::new(HashMap::new())
+        })
+        .clone();
+        let reused = cached_model(&mut fx.model_nodes.borrow_mut(), &path, || {
+            panic!("cached nodes were reloaded")
+        })
+        .clone();
+        assert!(std::sync::Arc::ptr_eq(&nodes, &reused));
+        cached_model(&mut fx.model_nifs, &path, || {
+            panic!("cached NIF was reloaded")
+        });
+        assert!(fx.model_nifs.len() <= MODEL_CACHE_CAPACITY);
+        assert!(fx.model_nodes.borrow().len() <= MODEL_CACHE_CAPACITY);
+        shared = Some(nodes);
+    }
+    assert_eq!(fx.model_nifs.len(), MODEL_CACHE_CAPACITY);
+    assert_eq!(fx.model_nodes.borrow().len(), MODEL_CACHE_CAPACITY);
+    assert!(shared.unwrap().is_empty());
+}
+
+#[test]
+fn actor_pose_pruning_retains_loaded_pose_storage() {
+    let fx = SpellFx::default();
+    let loaded = FormId(0x901);
+    let unloaded = FormId(0x902);
+    let bones = std::sync::Arc::new(HashMap::from([("bone".into(), Mat4::IDENTITY)]));
+    fx.actor_poses.borrow_mut().insert(
+        loaded,
+        CachedActorPose {
+            bones: bones.clone(),
+            ..Default::default()
+        },
+    );
+    fx.actor_poses
+        .borrow_mut()
+        .insert(unloaded, Default::default());
+    fx.prune_actor_poses(&[loaded].into_iter().collect());
+    let poses = fx.actor_poses.borrow();
+    assert_eq!(poses.len(), 1);
+    assert!(std::sync::Arc::ptr_eq(&poses[&loaded].bones, &bones));
+    drop(poses);
+    fx.prune_actor_poses(&Default::default());
+    assert!(fx.actor_poses.borrow().is_empty());
+}
+
+#[test]
+fn unchanged_active_effects_are_not_reenqueued_and_only_persistent_hits_resume() {
+    let mut fx = SpellFx::default();
+    let target = FormId(0x901);
+    let mut effects = vec![
+        lifecycle_hit(1, target, false),
+        lifecycle_hit(2, target, true),
+    ];
+    let available = [target]
+        .into_iter()
+        .collect::<std::collections::HashSet<_>>();
+    fx.queue_active_hits(&effects, available.clone());
+    assert_eq!(fx.hits.iter().map(|x| x.id).collect::<Vec<_>>(), vec![1, 2]);
+    fx.observed.extend([1, 2]);
+    fx.persistent_hits.insert(2, target);
+    fx.hits.clear();
+    fx.queue_active_hits(&effects, available.clone());
+    assert!(fx.hits.is_empty());
+    fx.hits.push(effects[0].clone());
+    fx.hits.push(effects[1].clone());
+    fx.queue_active_hits(&effects, available.clone());
+    assert!(fx.hits.is_empty());
+    fx.queue_active_hits(&effects, Default::default());
+    assert!(fx.hits.is_empty());
+    fx.queue_active_hits(&effects, available.clone());
+    assert_eq!(fx.hits.iter().map(|x| x.id).collect::<Vec<_>>(), vec![2]);
+    fx.hits.clear();
+    fx.queue_active_hits(&effects, available.clone());
+    assert!(fx.hits.is_empty());
+    effects.push(lifecycle_hit(3, target, false));
+    fx.queue_active_hits(&effects, available.clone());
+    assert_eq!(fx.hits.iter().map(|x| x.id).collect::<Vec<_>>(), vec![3]);
+    fx.hits.clear();
+    effects.clear();
+    fx.queue_active_hits(&effects, Default::default());
+    assert!(fx.observed.is_empty());
+    assert!(fx.persistent_hits.is_empty());
+    assert!(fx.available_targets.is_empty());
 }

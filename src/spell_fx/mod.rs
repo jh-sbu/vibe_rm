@@ -27,6 +27,8 @@ pub struct SpellFx {
     pub events: Vec<(FormId, String)>,
     pub hits: Vec<crate::magic::ActiveEffect>,
     observed: std::collections::HashSet<u64>,
+    persistent_hits: HashMap<u64, FormId>,
+    available_targets: std::collections::HashSet<FormId>,
     missing: std::collections::HashSet<(String, String)>,
     pub lights: Vec<crate::render::GpuLight>,
     pub tails: Vec<EffectInstance>,
@@ -35,6 +37,62 @@ pub struct SpellFx {
     model_nifs: HashMap<String, Option<nif::Nif>>,
     model_nodes: std::cell::RefCell<HashMap<String, std::sync::Arc<HashMap<String, Mat4>>>>,
     actor_poses: std::cell::RefCell<HashMap<FormId, CachedActorPose>>,
+}
+
+const MODEL_CACHE_CAPACITY: usize = 128;
+
+fn cached_model<'a, T>(
+    cache: &'a mut HashMap<String, T>,
+    model: &str,
+    load: impl FnOnce() -> T,
+) -> &'a T {
+    if !cache.contains_key(model) {
+        if cache.len() >= MODEL_CACHE_CAPACITY {
+            let victim = cache.keys().next().cloned().unwrap();
+            cache.remove(&victim);
+        }
+        cache.insert(model.to_owned(), load());
+    }
+    &cache[model]
+}
+
+impl SpellFx {
+    fn queue_active_hits(
+        &mut self,
+        effects: &[crate::magic::ActiveEffect],
+        available: std::collections::HashSet<FormId>,
+    ) -> std::collections::HashSet<u64> {
+        let active: std::collections::HashSet<_> = effects
+            .iter()
+            .filter(|x| x.active && !x.done)
+            .map(|x| x.id)
+            .collect();
+        self.observed.retain(|id| active.contains(id));
+        self.persistent_hits.retain(|id, _| active.contains(id));
+        let should_queue = |hit: &crate::magic::ActiveEffect| {
+            !self.observed.contains(&hit.id)
+                || (self.persistent_hits.contains_key(&hit.id)
+                    && available.contains(&hit.target)
+                    && !self.available_targets.contains(&hit.target))
+        };
+        self.hits.retain(&should_queue);
+        self.hits.extend(
+            effects
+                .iter()
+                .filter(|x| active.contains(&x.id) && should_queue(x))
+                .cloned(),
+        );
+        self.hits.sort_by_key(|x| x.id);
+        self.hits.dedup_by_key(|x| x.id);
+        self.available_targets = available;
+        active
+    }
+
+    fn prune_actor_poses(&self, loaded: &std::collections::HashSet<FormId>) {
+        self.actor_poses
+            .borrow_mut()
+            .retain(|id, _| loaded.contains(id));
+    }
 }
 
 #[derive(Default)]
@@ -108,11 +166,9 @@ impl Engine {
             .map(|g| g.0.clone());
         let seed = self.rand();
         let mut effect = EffectInstance::new(&self.renderer, root, anim, transform, seed as u32);
-        let nif = self
-            .spell_fx
-            .model_nifs
-            .entry(model.to_owned())
-            .or_insert_with(|| self.vfs.read(model).and_then(|d| nif::Nif::parse(&d).ok()));
+        let nif = cached_model(&mut self.spell_fx.model_nifs, model, || {
+            self.vfs.read(model).and_then(|d| nif::Nif::parse(&d).ok())
+        });
         if let Some(nif) = nif {
             effect.configure(nif);
         }
@@ -164,21 +220,16 @@ impl Engine {
                     .split('#')
                     .next()
                     .unwrap_or(&inst.model.path);
-                let bones = self
-                    .spell_fx
-                    .model_nodes
-                    .borrow_mut()
-                    .entry(path.to_owned())
-                    .or_insert_with(|| {
-                        std::sync::Arc::new(
-                            self.vfs
-                                .read(path)
-                                .and_then(|d| nif::Nif::parse(&d).ok())
-                                .map(|n| crate::render::model::node_transforms(&n))
-                                .unwrap_or_default(),
-                        )
-                    })
-                    .clone();
+                let bones = cached_model(&mut self.spell_fx.model_nodes.borrow_mut(), path, || {
+                    std::sync::Arc::new(
+                        self.vfs
+                            .read(path)
+                            .and_then(|d| nif::Nif::parse(&d).ok())
+                            .map(|n| crate::render::model::node_transforms(&n))
+                            .unwrap_or_default(),
+                    )
+                })
+                .clone();
                 return Some(ActorFrame {
                     transform: inst.transform,
                     bones,
@@ -220,6 +271,8 @@ impl Engine {
                 );
             }
         }
+        self.spell_fx
+            .prune_actor_poses(&actors.iter().copied().collect());
         let mut desired = std::collections::HashSet::new();
         self.spell_fx.lights.clear();
         for actor in actors {
@@ -293,34 +346,38 @@ impl Engine {
             }
         }
         desired.extend(self.update_enchant_fx());
-        let active: std::collections::HashSet<_> = self
-            .magic
-            .effects
-            .iter()
-            .filter(|x| x.active && !x.done)
-            .map(|x| x.id)
+        let targets: std::collections::HashSet<_> = self
+            .spell_fx
+            .persistent_hits
+            .values()
+            .copied()
+            .chain(
+                self.magic
+                    .effects
+                    .iter()
+                    .filter(|x| x.active && !x.done && !self.spell_fx.observed.contains(&x.id))
+                    .map(|x| x.target),
+            )
+            .chain(self.spell_fx.hits.iter().map(|x| x.target))
             .collect();
-        self.spell_fx.observed.retain(|id| active.contains(id));
-        self.spell_fx.hits.extend(
-            self.magic
-                .effects
-                .iter()
-                .filter(|x| active.contains(&x.id))
-                .cloned(),
-        );
-        self.spell_fx.hits.sort_by_key(|x| x.id);
-        self.spell_fx.hits.dedup_by_key(|x| x.id);
+        let available = targets
+            .into_iter()
+            .filter(|target| self.spell_actor_frame(*target).is_some())
+            .collect();
+        let active = self
+            .spell_fx
+            .queue_active_hits(&self.magic.effects, available);
 
         for hit in std::mem::take(&mut self.spell_fx.hits) {
             let first = self.spell_fx.observed.insert(hit.id);
-            if self.spell_actor_frame(hit.target).is_none() {
-                continue;
-            }
             let Some(mgef) = self.magic_effect(hit.effect) else {
                 continue;
             };
             let persistent = mgef.has(crate::magic::flags::FX_PERSIST) && hit.duration > 0.0;
-            if !first && !persistent {
+            if persistent {
+                self.spell_fx.persistent_hits.insert(hit.id, hit.target);
+            }
+            if (!first && !persistent) || !self.spell_fx.available_targets.contains(&hit.target) {
                 continue;
             }
             let mut hit_art = mgef.hit_art;
