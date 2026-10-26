@@ -70,6 +70,7 @@ mod shouts;
 mod skills;
 mod sleep;
 mod soul_trap;
+mod spell_fx;
 mod spells;
 mod staffs;
 mod stats;

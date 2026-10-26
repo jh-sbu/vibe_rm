@@ -26,6 +26,7 @@ use papyrus::{ObjectId, Value};
 
 use crate::condition::{self, Condition, Context};
 use crate::engine::{Engine, PLAYER_REF};
+use crate::spell_fx::records::{optional_float, optional_form};
 
 /// Magic effect archetypes (`DATA` 0x40; CommonLibSSE `EffectArchetype`).
 #[allow(dead_code)]
@@ -91,6 +92,8 @@ pub mod flags {
     pub const DETRIMENTAL: u32 = 0x4;
     pub const NO_DURATION: u32 = 0x200;
     pub const HIDE_IN_UI: u32 = 0x8000;
+    pub const FX_PERSIST: u32 = 1 << 12;
+    pub const NO_HIT_EFFECT: u32 = 1 << 27;
     /// A spell's power (dual casting) scales its duration rather than its
     /// magnitude (`test-mod dualcast`).
     pub const POWER_AFFECTS_DURATION: u32 = 0x40_0000;
@@ -152,6 +155,15 @@ pub struct MagicEffect {
     /// What it flies as when aimed (`PROJ`), and its impact data set.
     pub projectile: FormId,
     pub impacts: FormId,
+    pub casting_light: FormId,
+    pub hit_shader: FormId,
+    pub enchant_shader: FormId,
+    pub casting_art: FormId,
+    pub hit_art: FormId,
+    pub dual_cast: (FormId, f32),
+    pub enchant_art: FormId,
+    pub hit_visuals: FormId,
+    pub enchant_visuals: FormId,
     /// Skill XP for a use is scaled by this.
     pub skill_usage_mult: f32,
     /// Player-only perk held while this effect is active (`DATA` 0x88).
@@ -166,7 +178,11 @@ pub struct MagicEffect {
 
 impl MagicEffect {
     pub fn load(e: &Engine, id: FormId) -> Option<MagicEffect> {
-        let rec = e.lo.get(id).filter(|r| r.tag().0 == *b"MGEF")?;
+        Self::load_from(&e.lo, id)
+    }
+
+    pub fn load_from(lo: &esp::LoadOrder, id: FormId) -> Option<MagicEffect> {
+        let rec = lo.get(id).filter(|r| r.tag().0 == *b"MGEF")?;
         let d = rec.get(b"DATA").filter(|d| d.len() >= 0x6C)?;
         let u = |o: usize| u32::from_le_bytes(d[o..o + 4].try_into().unwrap());
         let f = |o: usize| f32::from_bits(u(o));
@@ -181,7 +197,7 @@ impl MagicEffect {
         Some(MagicEffect {
             name: rec
                 .get(b"FULL")
-                .map(|x| e.lo.lstring(&rec, x))
+                .map(|x| lo.lstring(&rec, x))
                 .unwrap_or_default(),
             flags: u(0),
             related: fid(u(8)),
@@ -193,6 +209,15 @@ impl MagicEffect {
             second_weight: f(0x3C),
             projectile: fid(u(0x48)),
             impacts: fid(u(0x64)),
+            casting_light: fid(u(0x18)),
+            hit_shader: fid(u(0x20)),
+            enchant_shader: fid(u(0x24)),
+            casting_art: fid(u(0x5C)),
+            hit_art: fid(u(0x60)),
+            dual_cast: (optional_form(&rec, d, 0x6C), optional_float(d, 0x70)),
+            enchant_art: optional_form(&rec, d, 0x74),
+            hit_visuals: optional_form(&rec, d, 0x78),
+            enchant_visuals: optional_form(&rec, d, 0x7C),
             skill_usage_mult: f(0x68),
             perk: d.get(0x88..0x8C).map_or(FormId::NULL, |b| {
                 fid(u32::from_le_bytes(b.try_into().unwrap()))

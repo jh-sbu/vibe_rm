@@ -1,6 +1,10 @@
 # Plan: spell visuals
 
-**Status: proposed** (2026-10-26).
+**Status: in progress** (2026-10-26).
+
+Step 1 record readers, attachment tags and `vrm-tool spell-fx` are implemented.
+EFSH retains the complete DATA bytes with bounded typed accessors, including
+older optional tails. Subsequent steps remain in progress.
 
 This plan covers the "effect visuals" clause of ROADMAP Next item 5 (magic):
 spell projectiles' models running their graphs, particles and shader

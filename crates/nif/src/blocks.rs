@@ -318,6 +318,10 @@ pub struct TriShapeData {
 
 #[derive(Debug, Clone)]
 pub enum ExtraData {
+    Strings {
+        name: String,
+        values: Vec<String>,
+    },
     String {
         name: String,
         value: String,
@@ -939,6 +943,19 @@ pub(crate) fn parse_block(ty: &str, r: &mut Reader) -> Result<Option<Block>> {
                 flags,
                 threshold,
             })
+        }
+        "NiStringsExtraData" => {
+            let name = r.string_value()?;
+            let count = r.u32()? as usize;
+            if count > r.remaining() / 4 {
+                return Err(crate::Error::Invalid(
+                    "extra string count exceeds block".into(),
+                ));
+            }
+            let values = (0..count)
+                .map(|_| r.sized_string())
+                .collect::<crate::Result<_>>()?;
+            Block::ExtraData(ExtraData::Strings { name, values })
         }
         "NiStringExtraData" => {
             let name = r.string_value()?;

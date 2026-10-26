@@ -5,6 +5,7 @@ use anyhow::{Context, Result, bail};
 mod functions;
 mod saves;
 mod seams;
+mod spell_fx;
 mod test_mods;
 
 /// A behaviour project named by its directory (humanoids: `behaviors/0_master.hkx`)
@@ -38,6 +39,7 @@ fn main() -> Result<()> {
     env_logger::init();
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
+        Some("spell-fx") => spell_fx::run(&args[1..])?,
         Some("bsa-list") => {
             let a = bsa::Archive::open(&args[1])?;
             let mut paths: Vec<_> = a.paths().collect();

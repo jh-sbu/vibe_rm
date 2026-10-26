@@ -5,6 +5,8 @@
 //! block types that aren't understood (or are only partially parsed) are
 //! skipped safely. The parsed representation lives in [`blocks`].
 
+mod attach;
+pub use attach::{AttachTags, NodeAttachTags, attach_tags};
 pub mod anim;
 pub mod blocks;
 pub mod collision;
