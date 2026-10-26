@@ -1718,7 +1718,8 @@ game each piece unlocks.
      persistence. Use the observations to establish transition and catch-up rules
      before treating the current approximations as compatibility requirements.
      Built and run: `test-mod autotest13`, `autotest14` and `autotest15`
-     (scenes with unloaded actors).
+     (scenes with unloaded actors), and `autotest16` for step 9 (unloaded
+     travellers walk; to apply).
    - Whole-cell sandboxers as their cell loads: the game has them at
      something to use anywhere in the cell (`test-mod autotest7`); ours start
      where they stood

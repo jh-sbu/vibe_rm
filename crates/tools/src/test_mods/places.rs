@@ -210,19 +210,11 @@ fn xy_distance(a: [f32; 3], b: [f32; 3]) -> f32 {
     ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2)).sqrt()
 }
 
-/// `pairs` actor spots and markers on `cell`'s navmesh (as Skyrim.esm has
-/// it), each marker `reach` (min, max) from its actor in XY, every spot
-/// at least `apart` from the others, and the player's entry spot. Spots are
+/// Where on `cell`'s navmesh (as Skyrim.esm has it) an actor can be put:
 /// the centres of flat triangles (not water or doors) in the navmesh's
 /// largest connected part: in an interior on its most common floor, in an
 /// exterior inside the cell, 256 from its edges.
-pub fn spots(
-    lo: &LoadOrder,
-    cell: FormId,
-    pairs: usize,
-    reach: (f32, f32),
-    apart: f32,
-) -> Result<Spots> {
+pub fn floors(lo: &LoadOrder, cell: FormId) -> Result<Vec<[f32; 3]>> {
     let index = lo.cell(cell).context("not a cell")?;
     let mut meshes = Vec::new();
     for &n in &index.navmeshes {
@@ -322,6 +314,23 @@ pub fn spots(
         }
         (Some(_), None) => bail!("{cell} is a persistent cell"),
     }
+    Ok(floors.into_iter().map(|f| f.centre).collect())
+}
+
+/// `pairs` actor spots and markers on `cell`'s navmesh ([`floors`]), each
+/// marker `reach` (min, max) from its actor in XY, every spot at least
+/// `apart` from the others, and the player's entry spot.
+pub fn spots(
+    lo: &LoadOrder,
+    cell: FormId,
+    pairs: usize,
+    reach: (f32, f32),
+    apart: f32,
+) -> Result<Spots> {
+    let floors: Vec<Floor> = floors(lo, cell)?
+        .into_iter()
+        .map(|centre| Floor { centre })
+        .collect();
     if floors.is_empty() {
         bail!("{cell}: no navmesh floor to put actors on");
     }

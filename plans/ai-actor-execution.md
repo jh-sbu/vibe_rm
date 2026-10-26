@@ -333,6 +333,17 @@ clocks, non-null forms) and on apply (runs name `PACK` records). Tests:
 
 ### 9. Calibrate against the comparison tests
 
+**Status (2026-10-25):** `test-mod autotest16` ran once. It overturns
+step 5's model: unloaded travellers with a path walk (steps of about 218
+every 2.6 s, about 84 a second), journeys under way walk on as their cell
+unloads, only asked ones within about 4,200 (3D) are put at their targets
+at once, and asked ones farther are put there about 30 to 40 s on. Height
+doesn't stop a jump (`JUMP_HEIGHT` goes). An actor unloaded seated came
+back standing; a sandboxer came back in other furniture. Waiting put an
+unloaded traveller on its target; sleeping only took one partway. Effects
+end as the actor unloads. Applying these is what's left of this step; the
+readings are in `known_ambiguities/actor-execution.md`.
+
 - Read the step 1 reports (`vrm-tool test-results`) and turn the observed
   rules into tests:
   - re-entry placement and furniture state

@@ -3,8 +3,10 @@
 For `plans/ai-actor-execution.md`. Public sources and what can be inferred
 from them are under Sources at the end. Where unloaded actors appear as
 their cell loads is in `unloaded-placement.md`. The readings are
-`test-mod autotest13`'s, `autotest14`'s and `autotest15`'s (each run
-2026-10-25, once); their module docs have the numbers.
+`test-mod autotest13`'s to `autotest16`'s (each run 2026-10-25, once);
+their module docs have the numbers. autotest16 overturned the earlier
+reading that unloaded actors don't walk: the "what we chose" sections
+below still describe the code from before it (plan step 9 applies it).
 
 ## What is known
 
@@ -16,35 +18,54 @@ their cell loads is in `unloaded-placement.md`. The readings are
   logging `OnPackageStart` then `OnPackageEnd` (autotest13). That could be a
   placement pass (CommonLibSSE names an `initPackageLocationsQueue`) rather
   than walking.
-- **Unloaded actors aren't walked: they jump or stay.** Outside the loaded
-  and buffered cells, within 2 s of a package starting (with
-  `EvaluatePackage`), an actor is put 40 short of a target in the same
-  space 2,700 to 4,100 away, in its own cell or the next, in one step;
-  `OnPackageEnd` follows 2.5 s after `OnPackageStart`. Actors whose target
-  was 4,950 to 8,200 away and 1,900 or more above or below stayed put for
-  minutes, through fast travel and as their cell loaded. A target in another
-  space (through a load door, either way) moves the actor exactly onto it,
-  with `OnLocationChange`.
-- **Later jumps** (autotest15). A scene sent an actor to a target 8,843
-  away but only 139 below: it was put 40 short of it 39 s later, with
-  `OnPackageEnd` in the same frame. An actor sent home unasked (2,670, its
-  scene letting it go, no `EvaluatePackage`) was put there 34 s after its
-  package started, in that same frame. autotest13's Scheduled, unasked,
-  hadn't moved 5 s on. So unasked or far, actors are still put at their
-  targets, later; one frame for both suggests a periodic pass.
+- **Unloaded actors walk** (autotest16). Outside the loaded and buffered
+  cells a traveller moves along its way in steps of about 218 every 2.6 s,
+  about 84 a second, and arrives 40 short with `OnPackageEnd`: 2,710 to
+  3,162 in 34 to 39 s, 7,100 to 7,500 in 91 to 93 s, asked or not. Three
+  sent 10 s apart arrived apart: no common pass. A journey under way as
+  its cell unloads walks on the same way. autotest15's "late" arrivals
+  (Near home at 34 s, Beyond partway home) were walking.
+- **Asked actors in range are put there at once.** Within 2 s of a package
+  starting with `EvaluatePackage` (or a scene), an actor is put 40 short of
+  a target in the same space up to 4,032 away in 3D (autotest14: 2,700 to
+  4,100 in XY; autotest16: 1,077 and 1,453 below), `OnPackageEnd` 2.5 s
+  after `OnPackageStart`. At 4,399 (autotest16's High, 2,281 above) and
+  beyond, it walks and is then put at its target: 28.7, 36.6 and 39 s on
+  (High, autotest16's FarAsked at 7,566, autotest15's Beyond at 8,843).
+  Height doesn't decide: High, MidHigh and MidLow were all 3,762 off in
+  XY. A target in another space (through a load door, either way) moves
+  the actor exactly onto it, with `OnLocationChange`.
+- **Some stay.** Actors whose target was 4,950 to 8,200 away in the next
+  cell and 1,900 or more below or above stayed put for minutes, asked or
+  not, through fast travel and as their cell loaded (autotest13,
+  autotest14). Inferred: they had no path; autotest16's actors, which had
+  one, all moved.
 - **Loading a cell doesn't move them on.** Actors are found where the jump
   left them (dropped to the ground), or at home if they stayed.
 - **Fast travel** (`Game.FastTravel` to an exterior marker: 0.6 s, the clock
   3.2 hours on) moved no unloaded actor.
 - **Waiting** two hours put a loaded actor that was 3,230 from its target
   exactly on it (1 off), with `OnPackageEnd`. Unloaded actors already at
-  their targets stayed.
+  their targets stayed. An unloaded one 7,537 from its target was 40 short
+  of it after, `OnPackageEnd` 2.6 s after the wait (autotest16). A seated
+  loaded actor stayed seated; a loaded sandboxer got up and wandered on.
+- **Sleeping** two hours put a loaded walker on its target (4 off), with
+  `OnPackageEnd`, but left an unloaded one 7,288 off 3,605 short, about
+  4,000 along its way, walking on (autotest16).
 - **Loading a save** left unloaded actors where they were when it was made
   (40 short of targets they had jumped to), with no package events.
 - **Packages are re-read while unloaded** within about 3 s of a condition
   changing, `EvaluatePackage` or not, and at once when the clock is set or
   an hour in a schedule passes. `OnPackageChange` (old package) then
   `OnPackageStart` (new) fire 0.08 s apart.
+- **Coming back.** An actor seated in a chair as its cell unloaded was
+  standing 18 from the chair as it loaded again 30 s later, and hadn't sat
+  again 13 s on. A sandboxer was in other furniture, 438 from where it was
+  (autotest16).
+- **Dead actors** log `OnPackageStart` as a wait ends (autotest16) or
+  fast travel (autotest13). One sent off unloaded with `EvaluatePackage`
+  logged nothing until its cell loaded, then `OnPackageChange` and
+  `OnPackageStart`, its body staying put.
 - **Buffered cells keep running.** An actor in the exterior the player left
   for an interior keeps its 3D and walks on at loaded speed (autotest15's
   Buffered, moved from its exterior into the palace: 3D kept for a minute,
@@ -55,7 +76,7 @@ their cell loads is in `unloaded-placement.md`. The readings are
 - **Damage away:** brought to nothing, an unloaded actor dies at once, with
   `OnDeath` then. A hurt one doesn't heal (NPCs' `HealRate` is 0).
 - **Timed effects away:** a 90 s effect on an actor was gone 6 s after its
-  cell unloaded, and racial abilities are applied again (with
+  cell unloaded (autotest16: 0.43 s, as its 3D went), and racial abilities are applied again (with
   `OnMagicEffectApply`) each time an actor loads. So active effects appear to
   be dropped on unload rather than paused or run out. While the actor kept
   its 3D in a buffered cell, the effect stayed (autotest14).
@@ -272,34 +293,25 @@ autotest15 ("Scenes play on", above):
 - **Unloaded speakers.** Does an unloaded speaker's scene line hold its
   phase, get skipped, or play on unheard? Not covered: the test writers
   don't build dialogue yet.
-- **What decides the jump, and when.** Every actor put at once had been
-  asked (`EvaluatePackage`, a scene) and had its target within 4,100;
-  every one put late (34 and 39 s) was unasked or 8,843 off; every one that
-  stayed was 1,900 or more above or below. Whether height (or a path)
-  decides staying, and whether late jumps come from a periodic pass (both
-  autotest15 jumps fell in one frame) rather than a delay per run, is open.
-- **Beyond going home.** After its late jump, autotest15's Beyond took up
-  its own Travel home (8,800 off, level) and was found 3,590 from home and
-  5,300 from where it jumped to as the player arrived 63 s later: neither
-  put home (our late jump, 36 s) nor left. Walked at about 83 a second
-  while unloaded, or placed along its path as its cell loaded?
-- **A journey under way as the actor unloads.** Does a walker outside the
-  buffer jump to its target (as one starting a package does), stay, or walk
-  on? We have it jump (when in range).
-- **What reaches far targets** far above or below: does anything ever
-  move them (game hours, waiting, a later re-evaluation), or do they wait
-  for the player?
-- **Waiting and sleeping for unloaded actors** out of jumping range, and
-  sleeping at all: not tested. Nor loaded actors in furniture or sandboxing
-  through a wait: we start them over where their packages have them.
-- **When effects end.** Are active effects dropped at the moment of
-  unloading, or a few seconds later? Only one reading (6 s after) exists;
-  autotest14's actor kept its 3D throughout.
-- **The buffer's reach.** Which cells keep running, and keep their 3D,
-  after the player leaves, and for how long: one exterior and one interior
-  did, the interior's actors with 3D once and without once.
-- **A dead actor's package events.** Dead KilledAway logged an
-  `OnPackageStart` minutes after dying.
+- **The range for jumping at once**: between 4,032 and 4,399 in 3D. And
+  what decides when an asked one out of range is put at its target (28.7,
+  36.6 and 39 s on, after walking 1,540, 3,000 and some): a time, or the
+  distance left?
+- **Sleeping and waiting.** Waiting put an unloaded traveller 7,537 off on
+  its target; sleeping left one 7,288 off about 4,000 along. One reading
+  each: a difference between them, or something about the actors?
+- **Coming back seated.** autotest16's Sitter came back standing by its
+  chair and didn't sit again in 13 s. Does it sit again later, and would
+  one away longer come back seated (as actors new to a save do:
+  autotest7)?
+- **The buffer's reach.** Which cells keep their 3D after the player
+  leaves: an exterior left for an interior always has (three times); an
+  interior left for another interior once did (autotest16) and once
+  didn't (autotest13); an interior left for an exterior kept it twice
+  (autotest14, autotest16's inn) and lost it at once once (autotest16's
+  Buffer3, after two interiors in a row). The actors walked on either way.
+- **No path.** That the actors that stayed had no path is inferred, not
+  tested.
 - **Not covered:**
   - multi-step packages (package trees): the test writers don't build them
     yet

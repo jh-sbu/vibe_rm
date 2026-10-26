@@ -155,6 +155,7 @@ Actor : ObjectReference
     Bool IsDetectedBy(Actor akOther)
     Bool IsDead()
     Bool IsInCombat()
+    Int GetSitState()
 Weather : Form
     global Weather GetCurrentWeather()
     global Float GetCurrentWeatherTransition()
