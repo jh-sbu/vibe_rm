@@ -36,6 +36,7 @@ mod places;
 mod records;
 pub mod results;
 mod script;
+mod spell_visuals;
 mod taper;
 mod venv;
 
@@ -61,6 +62,7 @@ pub const NAMES: &[&str] = &[
     "pex",
     "taper",
     "venv",
+    "spell-visuals",
 ];
 
 /// A test mod's files: the plugin, and its compiled scripts by name.
@@ -97,6 +99,7 @@ pub fn build(name: &str, lo: &LoadOrder) -> Result<TestMod> {
         "dualcast" => dualcast::build(lo),
         "pex" => pex::build(),
         "taper" => taper::build(lo),
+        "spell-visuals" => spell_visuals::build(lo),
         "venv" => Ok(TestMod {
             plugin: venv::build(lo)?,
             scripts: Vec::new(),

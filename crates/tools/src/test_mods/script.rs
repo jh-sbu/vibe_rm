@@ -46,6 +46,12 @@ Keyword : Form
     None SendStoryEvent(Location akLoc, ObjectReference akRef1, ObjectReference akRef2, Int aiValue1, Int aiValue2)
     Bool SendStoryEventAndWait(Location akLoc, ObjectReference akRef1, ObjectReference akRef2, Int aiValue1, Int aiValue2)
 MagicEffect : Form
+EffectShader : Form
+    None Play(ObjectReference akObject, Float afDuration)
+    None Stop(ObjectReference akObject)
+VisualEffect : Form
+    None Play(ObjectReference akObject, Float afDuration, ObjectReference akFacingObject)
+    None Stop(ObjectReference akObject)
 Perk : Form
 Shout : Form
 WordOfPower : Form

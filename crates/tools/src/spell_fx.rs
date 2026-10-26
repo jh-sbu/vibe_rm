@@ -186,3 +186,79 @@ fn model_info(vfs: &vfs::Vfs, model: &str) {
         }
     }
 }
+
+#[cfg(test)]
+mod graph_tests {
+    use super::*;
+    use havok::behavior::{
+        Project,
+        runtime::{Instance, Shared},
+    };
+    use std::sync::Arc;
+    fn graph(name: &str) -> Instance {
+        let data = vfs::locate_data_dir().expect("installed Skyrim Data");
+        let vfs = vfs::Vfs::new(&data, &LoadOrder::default_plugin_list(&data, None));
+        let project = Project::load_project(&format!("{name}.hkx"), |rel| {
+            vfs.read(&format!("meshes/magic/{rel}"))
+        })
+        .unwrap();
+        assert!(!project.graphs.is_empty());
+
+        Instance::new(Shared::new(Arc::new(project)), 1)
+    }
+    fn names(i: &Instance) -> Vec<String> {
+        i.sequence_samples()
+            .iter()
+            .map(|s| s.animation.to_string())
+            .collect()
+    }
+    #[test]
+    #[ignore = "requires installed Skyrim HKX assets"]
+    fn casting_basic_authored_events_select_named_nif_sequences() {
+        let mut i = graph("castingbasic");
+        i.set_variable("bRightHand", 1.0);
+        i.set_variable("iHandType", 1.0);
+        i.update(0.0, &mut |_: &str| Some(10.0));
+        for (event, sequence) in [
+            ("MRh_SpellAimedStart", "mCharge"),
+            ("MRh_SpellReady_Event", "mReady"),
+            ("MRh_SpellRelease_Event", "mCast"),
+            ("MRh_Equipped_Event", "mIdle"),
+        ] {
+            i.send_event(event);
+            i.update(0.5, &mut |_: &str| Some(10.0));
+            if event == "MRh_Equipped_Event" {
+                i.send_event("end");
+                i.update(0.5, &mut |_: &str| Some(10.0));
+            }
+            assert!(
+                names(&i).iter().any(|n| n == sequence),
+                "{event}: {:?}",
+                names(&i)
+            );
+        }
+    }
+    #[test]
+    #[ignore = "requires installed Skyrim HKX assets"]
+    fn begin_loop_end_and_idle_on_load_accept_stop_effect() {
+        for file in ["beginloopend", "idleonload"] {
+            let mut i = graph(file);
+            i.update(0.0, &mut |_: &str| Some(1.0));
+            assert!(!i.sequence_samples().is_empty(), "{file}");
+            i.send_event("end");
+            i.update(0.5, &mut |_: &str| Some(1.0));
+            i.send_event("StopEffect");
+            i.update(0.5, &mut |_: &str| Some(1.0));
+            assert!(
+                names(&i).iter().any(|n| n
+                    == if file == "beginloopend" {
+                        "mEnd"
+                    } else {
+                        "mIdle"
+                    }),
+                "{file}: {:?}",
+                names(&i)
+            );
+        }
+    }
+}
