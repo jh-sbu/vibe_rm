@@ -353,19 +353,26 @@ pub struct BlendChild {
     pub bone_weights_property: Option<String>,
 }
 
+/// `BGSGamebryoSequenceGenerator` blend modes: weigh by `fPercent`, or by
+/// one minus it (anything else: unweighted).
+pub const SEQUENCE_BLEND_PERCENT: u8 = 1;
+pub const SEQUENCE_BLEND_ONE_MINUS_PERCENT: u8 = 2;
+
 pub const BLEND_SYNC: u16 = 0x1;
 pub const BLEND_PARAMETRIC: u16 = 0x10;
 pub const BLEND_CYCLIC: u16 = 0x20;
 
 #[derive(Debug, Clone)]
 pub enum Generator {
-    /// Named NIF sequence, as authored in an HKX asset. The last two fields
-    /// retain their serialized values without assigning engine semantics.
+    /// Named NIF sequence, as authored in an HKX asset.
     Sequence {
         name: String,
         sequence: String,
-        raw_50: u8,
-        raw_54: f32,
+        /// `eBlendModeFunction`: how `percent` weighs the sequence among its
+        /// blender's children (`SEQUENCE_BLEND_*`).
+        blend_mode: u8,
+        /// `fPercent`, usually bound to a variable.
+        percent: f32,
     },
     Clip {
         name: String,
@@ -1276,8 +1283,8 @@ impl<'a> Reader<'a> {
             "BGSGamebryoSequenceGenerator" => Generator::Sequence {
                 name,
                 sequence: p.string(o + 0x48).unwrap_or_default(),
-                raw_50: p.u8(o + 0x50),
-                raw_54: p.f32(o + 0x54),
+                blend_mode: p.u8(o + 0x50),
+                percent: p.f32(o + 0x54),
             },
             "hkbClipGenerator" => Generator::Clip {
                 name,

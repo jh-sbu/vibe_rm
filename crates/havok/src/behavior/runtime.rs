@@ -1964,8 +1964,33 @@ impl Ctx<'_> {
         }
     }
 
+    /// What a sequence generator's blend mode makes of its (bound) `fPercent`,
+    /// as a factor on its weight in a blender; 1 for anything else.
+    fn sequence_blend(&self, gi: usize, g: GenId) -> f32 {
+        let Generator::Sequence {
+            blend_mode,
+            percent,
+            ..
+        } = &self.shared.graph(gi).generators[g]
+        else {
+            return 1.0;
+        };
+        let p = self.bound(gi, g, "fPercent").unwrap_or(*percent);
+        let p = if p.is_finite() {
+            p.clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        match *blend_mode {
+            SEQUENCE_BLEND_PERCENT => p,
+            SEQUENCE_BLEND_ONE_MINUS_PERCENT => 1.0 - p,
+            _ => 1.0,
+        }
+    }
+
     /// Normalised weights of a blender's children. Children flagged in `additive`
-    /// keep their own weight (0..1) and don't take part in the normalisation.
+    /// keep their own weight (0..1) and don't take part in the normalisation;
+    /// sequence children's blend modes scale theirs first.
     fn blend_weights(&self, gi: usize, g: GenId, additive: &[bool]) -> Vec<f32> {
         let graph = self.shared.graph(gi);
         let Generator::Blender {
@@ -2074,6 +2099,11 @@ impl Ctx<'_> {
                 }
             }
         } else {
+            let raw: Vec<f32> = raw
+                .iter()
+                .zip(children)
+                .map(|(r, c)| r * c.generator.map_or(1.0, |cg| self.sequence_blend(gi, cg)))
+                .collect();
             let add = |i: usize| additive.get(i).copied().unwrap_or(false);
             let total: f32 = raw
                 .iter()
@@ -2898,8 +2928,8 @@ mod tests {
             g.generators[index] = Generator::Sequence {
                 name: name.clone(),
                 sequence: name,
-                raw_50: 255,
-                raw_54: 3.0,
+                blend_mode: 255,
+                percent: 3.0,
             };
         }
         let mut i = instance(g);
@@ -2917,6 +2947,62 @@ mod tests {
         assert_eq!(samples.len(), 2);
         assert!((samples.iter().map(|s| s.weight).sum::<f32>() - 1.0).abs() < 1e-6);
         assert!(samples.iter().all(|s| s.weight > 0.0 && s.weight < 1.0));
+    }
+
+    #[test]
+    fn sequence_blend_modes_weigh_blender_children_by_bound_percent() {
+        let graph = |bound: bool| {
+            let sequence = |name: &str, blend_mode| Generator::Sequence {
+                name: name.into(),
+                sequence: name.into(),
+                blend_mode,
+                percent: 1.0,
+            };
+            let mut g = BehaviorGraph::new(
+                "Spray",
+                Some(0),
+                vec![
+                    Generator::Blender {
+                        name: "Blend".into(),
+                        parameter: 1.0,
+                        min_cyclic: 0.0,
+                        max_cyclic: 1.0,
+                        sync_master_child: -1,
+                        flags: 0,
+                        children: vec![masked_child(1, None, None), masked_child(2, None, None)],
+                    },
+                    sequence("Long", SEQUENCE_BLEND_PERCENT),
+                    sequence("Short", SEQUENCE_BLEND_ONE_MINUS_PERCENT),
+                ],
+                vec![],
+            );
+            let variable = g.add_variable("fFlameProjectileLength", VarType::Real, 0.0);
+            if bound {
+                for gen_id in [1, 2] {
+                    g.bindings[gen_id] = vec![Binding {
+                        member: "fPercent".into(),
+                        variable,
+                    }];
+                }
+            }
+            g
+        };
+        let weights = |i: &Instance| {
+            i.sequence_samples()
+                .iter()
+                .map(|s| (s.animation.to_string(), (s.weight * 100.0).round() / 100.0))
+                .collect::<Vec<_>>()
+        };
+        let mut i = instance(graph(true));
+        assert_eq!(weights(&i), [("Short".into(), 1.0)]);
+        assert!(i.set_variable("fFlameProjectileLength", 0.25));
+        i.update(0.0, &mut durations);
+        assert_eq!(weights(&i), [("Long".into(), 0.25), ("Short".into(), 0.75)]);
+        assert!(i.set_variable("fFlameProjectileLength", 4.0));
+        i.update(0.0, &mut durations);
+        assert_eq!(weights(&i), [("Long".into(), 1.0)]);
+        // Unbound, the authored percent applies.
+        assert_eq!(weights(&instance(graph(false))), [("Long".into(), 1.0)]);
     }
 
     fn playing(i: &Instance) -> Vec<(String, f32)> {

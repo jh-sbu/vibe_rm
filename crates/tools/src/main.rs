@@ -1328,9 +1328,11 @@ fn main() -> Result<()> {
                     G::Sequence {
                         name,
                         sequence,
-                        raw_50,
-                        raw_54,
-                    } => println!("{pad}sequence {name} -> {sequence} ({raw_50}, {raw_54})"),
+                        blend_mode,
+                        percent,
+                    } => println!(
+                        "{pad}sequence {name} -> {sequence} (blend mode {blend_mode}, percent {percent})"
+                    ),
                     G::Other(c) => println!("{pad}other {c}"),
                 }
             }
