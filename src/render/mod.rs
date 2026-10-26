@@ -146,6 +146,7 @@ pub struct PipelineKey {
 
 pub struct GpuMaterial {
     pub bind_group: wgpu::BindGroup,
+    membrane_uniform: Option<(wgpu::Buffer, MaterialUniform)>,
     pub key: PipelineKey,
     /// Cut out by alpha testing (casts shadows through its texture).
     pub alpha_test: bool,
@@ -1849,6 +1850,7 @@ impl Renderer {
         };
         GpuMaterial {
             bind_group,
+            membrane_uniform: m.membrane.map(|_| (ubuf.clone(), u)),
             key,
             alpha_test: m.alpha_test.is_some(),
             anim: m.anim.clone().map(|anim| {
@@ -1865,6 +1867,25 @@ impl Renderer {
             soft: soft_depth > 0.0,
             skin: matches!(m.shader_type, 4 | 5),
         }
+    }
+
+    pub fn update_membrane_material(&self, material: &GpuMaterial, desc: &MaterialDesc) {
+        let (Some((buf, base)), Some(sample)) = (&material.membrane_uniform, desc.membrane) else {
+            return;
+        };
+        let mut uniform = *base;
+        uniform.uv = [
+            desc.uv_offset.x,
+            desc.uv_offset.y,
+            desc.uv_scale.x,
+            desc.uv_scale.y,
+        ];
+        uniform.membrane_fill = sample.fill;
+        uniform.membrane_edge = sample.edge;
+        uniform.membrane_params = sample.params;
+        uniform.flags[3] = sample.flags;
+        self.queue
+            .write_buffer(buf, 0, bytemuck::bytes_of(&uniform));
     }
 
     /// One grass's blades over a cell, for [`RenderCell::grass`].

@@ -32,7 +32,62 @@ pub struct SpellFx {
     pub tails: Vec<EffectInstance>,
     streams: HashMap<(FormId, FormId), StreamSource>,
     flying: Vec<StreamEffect>,
+    model_nifs: HashMap<String, Option<nif::Nif>>,
+    model_nodes: std::cell::RefCell<HashMap<String, std::sync::Arc<HashMap<String, Mat4>>>>,
+    actor_poses: std::cell::RefCell<HashMap<FormId, CachedActorPose>>,
 }
+
+#[derive(Default)]
+struct CachedActorPose {
+    skeleton: Option<std::sync::Arc<crate::world::skeleton::Skeleton>>,
+    pose: Vec<Mat4>,
+    bones: std::sync::Arc<HashMap<String, Mat4>>,
+}
+impl CachedActorPose {
+    fn bones(
+        &mut self,
+        skeleton: &std::sync::Arc<crate::world::skeleton::Skeleton>,
+        pose: &[Mat4],
+    ) -> std::sync::Arc<HashMap<String, Mat4>> {
+        let same_skeleton = self
+            .skeleton
+            .as_ref()
+            .is_some_and(|s| std::sync::Arc::ptr_eq(s, skeleton));
+        if !same_skeleton || self.pose != pose {
+            let bones = std::sync::Arc::make_mut(&mut self.bones);
+            if !same_skeleton
+                || self.pose.len().min(skeleton.bones.len()) != pose.len().min(skeleton.bones.len())
+            {
+                bones.clear();
+                bones.extend(
+                    skeleton
+                        .bones
+                        .iter()
+                        .zip(pose)
+                        .map(|(b, p)| (b.name.clone(), *p)),
+                );
+            } else {
+                for (bone, transform) in skeleton.bones.iter().zip(pose) {
+                    *bones.get_mut(&bone.name).unwrap() = *transform;
+                }
+            }
+            self.skeleton = Some(skeleton.clone());
+            self.pose.clear();
+            self.pose.extend_from_slice(pose);
+        }
+        self.bones.clone()
+    }
+}
+fn art_one_shot_done(effect: &EffectInstance) -> bool {
+    let longest = effect.anim.as_ref().map(|a| {
+        a.sequences
+            .iter()
+            .map(|s| (s.stop - s.start) / s.frequency.abs().max(1e-6))
+            .fold(0.0, f32::max)
+    });
+    effect.finished || effect.age >= longest.unwrap_or(0.0)
+}
+
 fn enabled() -> bool {
     std::env::var_os("VRM_NO_SPELL_FX").is_none()
 }
@@ -59,8 +114,13 @@ impl Engine {
             .map(|g| g.0.clone());
         let seed = self.rand();
         let mut effect = EffectInstance::new(&self.renderer, root, anim, transform, seed as u32);
-        if let Some(nif) = self.vfs.read(model).and_then(|d| nif::Nif::parse(&d).ok()) {
-            effect.configure(&nif);
+        let nif = self
+            .spell_fx
+            .model_nifs
+            .entry(model.to_owned())
+            .or_insert_with(|| self.vfs.read(model).and_then(|d| nif::Nif::parse(&d).ok()));
+        if let Some(nif) = nif {
+            effect.configure(nif);
         }
         if let Some(project) = project.and_then(|p| self.graphs.project(&self.vfs, &p)) {
             effect.graph = Some(havok::behavior::runtime::Instance::new(
@@ -94,7 +154,7 @@ impl Engine {
         let (inst, skeleton) = if actor == PLAYER_REF {
             (
                 self.scene.player.as_ref()?,
-                self.player_body.as_ref()?.skeleton.as_ref(),
+                &self.player_body.as_ref()?.skeleton,
             )
         } else {
             if !self.actor_cells.contains_key(&actor) {
@@ -111,11 +171,20 @@ impl Engine {
                     .next()
                     .unwrap_or(&inst.model.path);
                 let bones = self
-                    .vfs
-                    .read(path)
-                    .and_then(|d| nif::Nif::parse(&d).ok())
-                    .map(|n| crate::render::model::node_transforms(&n))
-                    .unwrap_or_default();
+                    .spell_fx
+                    .model_nodes
+                    .borrow_mut()
+                    .entry(path.to_owned())
+                    .or_insert_with(|| {
+                        std::sync::Arc::new(
+                            self.vfs
+                                .read(path)
+                                .and_then(|d| nif::Nif::parse(&d).ok())
+                                .map(|n| crate::render::model::node_transforms(&n))
+                                .unwrap_or_default(),
+                        )
+                    })
+                    .clone();
                 return Some(ActorFrame {
                     transform: inst.transform,
                     bones,
@@ -126,17 +195,18 @@ impl Engine {
             let index = rt.actors.iter().position(|a| a.ref_id == actor)?;
             (
                 self.scene.cells.get(key)?.actors.get(index)?,
-                rt.actors[index].skeleton.as_ref(),
+                &rt.actors[index].skeleton,
             )
         };
         Some(ActorFrame {
             transform: inst.transform,
-            bones: skeleton
-                .bones
-                .iter()
-                .zip(&inst.pose)
-                .map(|(b, p)| (b.name.clone(), *p))
-                .collect(),
+            bones: self
+                .spell_fx
+                .actor_poses
+                .borrow_mut()
+                .entry(actor)
+                .or_default()
+                .bones(skeleton, &inst.pose),
         })
     }
     pub(crate) fn update_spell_fx(&mut self, dt: f32) {
@@ -229,30 +299,36 @@ impl Engine {
             }
         }
         desired.extend(self.update_enchant_fx());
-        let present: std::collections::HashSet<_> = self
+        let active: std::collections::HashSet<_> = self
             .magic
             .effects
             .iter()
             .filter(|x| x.active && !x.done)
-            .filter_map(|x| self.spell_actor_frame(x.target).map(|_| x.id))
+            .map(|x| x.id)
             .collect();
-        self.spell_fx.observed.retain(|id| present.contains(id));
-        for effect in &self.magic.effects {
-            if present.contains(&effect.id) && !self.spell_fx.observed.contains(&effect.id) {
-                self.spell_fx.hits.push(effect.clone());
-            }
-        }
+        self.spell_fx.observed.retain(|id| active.contains(id));
+        self.spell_fx.hits.extend(
+            self.magic
+                .effects
+                .iter()
+                .filter(|x| active.contains(&x.id))
+                .cloned(),
+        );
         self.spell_fx.hits.sort_by_key(|x| x.id);
         self.spell_fx.hits.dedup_by_key(|x| x.id);
 
         for hit in std::mem::take(&mut self.spell_fx.hits) {
+            let first = self.spell_fx.observed.insert(hit.id);
             if self.spell_actor_frame(hit.target).is_none() {
                 continue;
             }
-            self.spell_fx.observed.insert(hit.id);
             let Some(mgef) = self.magic_effect(hit.effect) else {
                 continue;
             };
+            let persistent = mgef.has(crate::magic::flags::FX_PERSIST) && hit.duration > 0.0;
+            if !first && !persistent {
+                continue;
+            }
             let mut hit_art = mgef.hit_art;
             let mut hit_shader = mgef.hit_shader;
             let mut art_scale = 1.0;
@@ -272,15 +348,18 @@ impl Engine {
             if hit.quiet || mgef.has(crate::magic::flags::NO_HIT_EFFECT) {
                 continue;
             }
-            if !hit_shader.is_null() {
+            if !hit_shader.is_null()
+                && !self
+                    .spell_fx
+                    .shaders
+                    .contains_key(&(hit.target, hit_shader, hit.id))
+            {
                 if let Some(shader) = records::EffectShader::load(&self.lo, hit_shader) {
                     crate::world::loader::load_textures(
                         &mut self.renderer,
                         &self.vfs,
                         shader.textures.iter().flatten().cloned().collect(),
                     );
-                    let persistent =
-                        mgef.has(crate::magic::flags::FX_PERSIST) && hit.duration > 0.0;
                     let duration = if persistent {
                         f32::INFINITY
                     } else {
@@ -296,12 +375,11 @@ impl Engine {
                 continue;
             }
             let key = (hit.target, ArtKey::Hit(hit_art));
-            let persistent = mgef.has(crate::magic::flags::FX_PERSIST) && hit.duration > 0.0;
-            let refresh = self
-                .spell_fx
-                .art
-                .get(&key)
-                .is_some_and(|a| a.stopping_age.is_some() || (!persistent && !a.persistent));
+            let refresh =
+                first
+                    && self.spell_fx.art.get(&key).is_some_and(|a| {
+                        a.stopping_age.is_some() || (!persistent && !a.persistent)
+                    });
             if refresh && let Some(mut old) = self.spell_fx.art.remove(&key) {
                 old.effect.stop();
                 old.effect.fade_duration = 0.0;
@@ -343,14 +421,6 @@ impl Engine {
             .keys()
             .filter_map(|(actor, _)| self.spell_actor_frame(*actor).map(|f| (*actor, f)))
             .collect();
-        let active: std::collections::HashSet<_> = self
-            .magic
-            .effects
-            .iter()
-            .filter(|x| x.active && !x.done)
-            .map(|x| x.id)
-            .collect();
-        self.spell_fx.observed.retain(|id| active.contains(id));
         for ((actor, _), art) in &self.spell_fx.art {
             if let Some(frame) = frames.get(actor) {
                 for tags in art.effect.tags.values() {
@@ -424,25 +494,17 @@ impl Engine {
                 }
             }
             art.effect.advance(dt);
-            let longest = art
-                .effect
-                .anim
-                .as_ref()
-                .map(|a| {
-                    a.sequences
-                        .iter()
-                        .map(|s| (s.stop - s.start) / s.frequency.abs().max(1e-6))
-                        .fold(0.0, f32::max)
-                })
-                .unwrap_or(0.0)
-                .max(1.0);
-            let over = (!art.persistent && art.effect.age >= longest)
+            let one_shot_done = !art.persistent && art_one_shot_done(&art.effect);
+            let over = one_shot_done
                 || art
                     .stopping_age
-                    .is_some_and(|age| art.effect.age - age > 3.0 || art.effect.finished)
-                || (!art.persistent && art.effect.finished);
+                    .is_some_and(|age| art.effect.age - age > 3.0 || art.effect.finished);
             if over {
                 art.effect.stop();
+                if one_shot_done {
+                    art.effect.finished = true;
+                    art.effect.fade_duration = 0.0;
+                }
                 self.spell_fx.tails.push(art.effect);
             } else {
                 art.effect.draw(&mut self.scene);
@@ -520,12 +582,15 @@ impl Engine {
                         .and_then(|i| self.scene.cells.get(key)?.actors.get(i))
                 })
             };
+            let surface = actor.map(|actor| {
+                crate::render::membrane::shader_target(actor, fx.shader.flags(), fx.weapon.as_ref())
+            });
             let mut vertices = Vec::new();
             fx.particles.step(
                 &fx.shader,
                 fx.age,
                 fx.stopped,
-                actor,
+                surface.as_ref(),
                 dt,
                 right,
                 up,
@@ -568,15 +633,19 @@ impl Engine {
         keys.sort_by_key(|k| (k.0.0, k.1.0, k.2));
         for key in keys {
             let target = key.0;
-            let fx = &self.spell_fx.shaders[&key];
+            let fx = self.spell_fx.shaders.get_mut(&key).unwrap();
             if fx.shader.flags() & 1 != 0 {
                 continue;
             }
             let desc = crate::render::membrane::material(&fx.shader, fx.age, fx.stopped);
-            let rigid = std::sync::Arc::new(self.renderer.create_material(&desc));
-            let mut skin = self.renderer.create_material(&desc);
-            skin.key.skinned = true;
-            let skin = std::sync::Arc::new(skin);
+            let (rigid, skin) = fx.membrane_materials.get_or_insert_with(|| {
+                let rigid = std::sync::Arc::new(self.renderer.create_material(&desc));
+                let mut skin = self.renderer.create_material(&desc);
+                skin.key.skinned = true;
+                (rigid, std::sync::Arc::new(skin))
+            });
+            self.renderer.update_membrane_material(rigid, &desc);
+            self.renderer.update_membrane_material(skin, &desc);
             let actor = if target == PLAYER_REF {
                 self.scene.player.as_ref()
             } else {
@@ -592,15 +661,16 @@ impl Engine {
                     .membranes
                     .push(crate::render::membrane::overlay_actor(
                         actor,
-                        &rigid,
-                        &skin,
+                        rigid,
+                        skin,
                         fx.shader.flags(),
+                        fx.weapon.as_ref(),
                     ));
             } else {
                 for cell in self.scene.cells.values() {
                     for inst in &cell.instances {
                         if inst.ref_id == target.0 && !inst.hidden {
-                            let model = crate::render::membrane::overlay_model(&inst.model, &rigid);
+                            let model = crate::render::membrane::overlay_model(&inst.model, rigid);
                             self.scene
                                 .dynamic
                                 .push(crate::render::Instance::new(model, inst.transform));
@@ -616,6 +686,21 @@ impl Engine {
     fn play_shader_source(&mut self, target: FormId, form: FormId, source: FormId, duration: f32) {
         if !enabled() {
             return;
+        }
+        if let Some(fx) = self.spell_fx.shaders.get_mut(&(target, source, 0)) {
+            if records::EffectShader::load(&self.lo, form).is_some_and(|shader| {
+                shader.data == fx.shader.data && shader.textures == fx.shader.textures
+            }) {
+                fx.age = 0.0;
+                fx.stopped = None;
+                fx.duration = if duration < 0.0 {
+                    f32::INFINITY
+                } else {
+                    duration.max(0.0)
+                };
+                fx.particles = Default::default();
+                return;
+            }
         }
         let Some(shader) = records::EffectShader::load(&self.lo, form) else {
             return;
@@ -684,7 +769,28 @@ impl Engine {
     }
 }
 
+#[derive(Default)]
 struct StreamSource {
+    emitters: HashMap<crate::casting::CastSource, StreamEmitter>,
+}
+
+fn stream_start(
+    frame: Option<&ActorFrame>,
+    source: crate::casting::CastSource,
+    from: Vec3,
+) -> Vec3 {
+    use crate::casting::CastSource;
+    let node = match source {
+        CastSource::Left => "NPC L MagicNode [LMag]",
+        CastSource::Right => "NPC R MagicNode [RMag]",
+        CastSource::Dual | CastSource::Other => return from,
+    };
+    frame
+        .and_then(|f| f.node(node))
+        .map_or(from, |m| m.w_axis.truncate())
+}
+
+struct StreamEmitter {
     model: String,
     from: Vec3,
     dir: Vec3,
@@ -710,6 +816,7 @@ impl Engine {
         from: Vec3,
         dir: Vec3,
         beam_end: Option<Vec3>,
+        input: crate::casting::CastSource,
     ) {
         if !enabled() {
             return;
@@ -723,19 +830,22 @@ impl Engine {
         let lifetime = records::optional_float(data, 76).clamp(0.05, 8.0);
         let light = records::optional_form(&rec, data, 16);
         let speed = records::optional_float(data, 8).max(0.0);
-        let at = self
-            .spell_actor_frame(caster)
-            .map(|f| f.fallback("NPC R MagicNode [RMag]").w_axis.truncate())
-            .unwrap_or(from);
-        if let Some(source) = self.spell_fx.streams.get_mut(&(caster, proj)) {
+        let at = stream_start(self.spell_actor_frame(caster).as_ref(), input, from);
+        let emitters = &mut self
+            .spell_fx
+            .streams
+            .entry((caster, proj))
+            .or_default()
+            .emitters;
+        if let Some(source) = emitters.get_mut(&input) {
             source.from = at;
             source.dir = dir;
             source.beam_end = beam_end;
             source.remaining = 0.3;
         } else {
-            self.spell_fx.streams.insert(
-                (caster, proj),
-                StreamSource {
+            emitters.insert(
+                input,
+                StreamEmitter {
                     model,
                     from: at,
                     dir,
@@ -752,24 +862,27 @@ impl Engine {
     }
     fn update_stream_fx(&mut self, dt: f32) {
         let mut starts = Vec::new();
-        self.spell_fx.streams.retain(|_, s| {
-            let active_dt = dt.min(s.remaining.max(0.0));
-            s.remaining -= dt;
-            s.owed += active_dt;
-            let count = (s.owed / s.interval).floor().min(32.0) as usize;
-            s.owed -= count as f32 * s.interval;
-            for _ in 0..count {
-                starts.push((
-                    s.model.clone(),
-                    s.from,
-                    s.dir,
-                    s.beam_end,
-                    s.lifetime,
-                    s.speed,
-                    s.light,
-                ));
-            }
-            s.remaining > 0.0
+        self.spell_fx.streams.retain(|_, source| {
+            source.emitters.retain(|_, s| {
+                let active_dt = dt.min(s.remaining.max(0.0));
+                s.remaining -= dt;
+                s.owed += active_dt;
+                let count = (s.owed / s.interval).floor().min(32.0) as usize;
+                s.owed -= count as f32 * s.interval;
+                for _ in 0..count {
+                    starts.push((
+                        s.model.clone(),
+                        s.from,
+                        s.dir,
+                        s.beam_end,
+                        s.lifetime,
+                        s.speed,
+                        s.light,
+                    ));
+                }
+                s.remaining > 0.0
+            });
+            !source.emitters.is_empty()
         });
         for (model, from, dir, end, lifetime, speed, light) in starts {
             let transform = Mat4::from_rotation_translation(

@@ -77,7 +77,7 @@ impl EffectInstance {
                     local = m;
                 }
                 if let Some(v) = c.visible(t) {
-                    shown = v;
+                    shown &= v;
                 }
             }
             let mut total = 0.0f32;
@@ -98,7 +98,7 @@ impl EffectInstance {
                 if let Some(channels) = self.sequence_nodes.get(&seq.name.to_ascii_lowercase()) {
                     for c in channels.iter().filter(|c| c.block == part.block) {
                         if let Some(v) = c.visible(time) {
-                            shown = v;
+                            shown &= v;
                         }
                     }
                 }
@@ -235,6 +235,20 @@ impl EffectInstance {
     }
     pub fn stop(&mut self) {
         if !self.stopped {
+            if self.graph.is_none() && self.duration.is_infinite() {
+                let longest = self
+                    .anim
+                    .as_ref()
+                    .map(|a| {
+                        a.sequences
+                            .iter()
+                            .map(|s| (s.stop - s.start) / s.frequency.abs().max(1e-6))
+                            .fold(0.0, f32::max)
+                    })
+                    .unwrap_or(0.0)
+                    .max(1.0);
+                self.finished |= self.age >= longest;
+            }
             self.send_event("StopEffect");
             self.stopped = true;
             self.duration = self.age;
@@ -364,7 +378,7 @@ impl EffectInstance {
             } else if let Some((index, phase)) = &mut self.playing {
                 let (t, done) = anim.sequences[*index].advance(phase, dt);
                 self.samples = vec![(*index, t, 1.0)];
-                self.finished = done;
+                self.finished |= done;
             }
         }
         self.pose();
@@ -393,12 +407,21 @@ impl EffectInstance {
         for (inst, shown) in self.instances_mut() {
             for (state, sys) in inst.particles.iter_mut().zip(&inst.model.particles) {
                 state.stopped = stopped || !shown;
-                let blended = sys.desc.blended(&selected);
-                let desc = blended.as_ref().unwrap_or(&sys.desc);
-                state.step(desc, dt, glam::Mat3::from_mat4(inst.transform).inverse());
+                state.step_blended(
+                    &sys.desc,
+                    &selected,
+                    dt,
+                    glam::Mat3::from_mat4(inst.transform).inverse(),
+                );
                 alive |= state.count() > 0;
                 let mut vertices = Vec::new();
-                state.quads(desc, inst.transform, right, up, &mut vertices);
+                state.quads(
+                    state.sampled_desc(&sys.desc),
+                    inst.transform,
+                    right,
+                    up,
+                    &mut vertices,
+                );
                 if !vertices.is_empty() {
                     batches.push(crate::render::particles::ParticleBatch {
                         material: sys.material.clone(),
@@ -491,6 +514,107 @@ mod tests {
         }
         fx
     }
+    #[test]
+    fn visibility_requires_every_controller_and_rest_visibility() {
+        for reversed in [false, true] {
+            let mut fx = fixture();
+            let mut channels = fx.sequence_nodes.remove("off").unwrap();
+            channels.extend(fx.sequence_nodes.remove("on").unwrap());
+            if reversed {
+                channels.reverse();
+            }
+            Arc::get_mut(fx.anim.as_mut().unwrap()).unwrap().controllers = channels;
+            fx.pose();
+            assert!(!fx.parts[0].1);
+            let channels =
+                std::mem::take(&mut Arc::get_mut(fx.anim.as_mut().unwrap()).unwrap().controllers);
+            fx.sequence_nodes.insert("on".into(), channels);
+            fx.play("On");
+            fx.pose();
+            assert!(!fx.parts[0].1);
+        }
+        let mut fx = fixture();
+        fx.samples = vec![(1, 0.0, 0.5), (0, 0.0, 0.5)];
+        fx.pose();
+        assert!(!fx.parts[0].1);
+        fx.rest_visibility.insert(1, false);
+        fx.play("On");
+        fx.pose();
+        assert!(!fx.parts[0].1);
+    }
+
+    #[test]
+    fn configured_light_attachment_uses_model_node_then_effect_world_frame() {
+        let mut light = nif::AvObject::default();
+        light.net.name = "AttachLight".into();
+        light.transform.translation = Vec3::Y * 3.0;
+        let node = |av, children| {
+            nif::Block::Node(nif::Node {
+                av,
+                kind: nif::NodeKind::Plain,
+                children,
+                effects: Vec::new(),
+            })
+        };
+        let mut root = nif::AvObject::default();
+        root.transform.translation = Vec3::X * 2.0;
+        let n = nif::Nif {
+            header: nif::Header {
+                version: 0x14020007,
+                user_version: 12,
+                bs_version: 100,
+                block_types: Vec::new(),
+                block_type_index: Vec::new(),
+                block_sizes: Vec::new(),
+                block_offsets: Vec::new(),
+                strings: Vec::new(),
+            },
+            blocks: vec![node(root, vec![nif::Ref(1)]), node(light, Vec::new())],
+            roots: vec![0],
+        };
+        let mut fx = fixture();
+        fx.configure(&n);
+        assert_eq!(fx.light_attach, Vec3::new(0.0, 3.0, 0.0));
+        fx.transform = Mat4::from_translation(Vec3::Z * 4.0);
+        assert_eq!(
+            fx.transform.transform_point3(fx.light_attach),
+            Vec3::new(0.0, 3.0, 4.0)
+        );
+        let mut n = n;
+        n.blocks.clear();
+        fx.configure(&n);
+        assert_eq!(fx.light_attach, Vec3::ZERO);
+    }
+
+    #[test]
+    fn fallback_one_shot_stop_finishes_mesh_but_not_early_stop_or_impacts() {
+        let mut fx = fixture();
+        fx.duration = f32::INFINITY;
+        Arc::get_mut(fx.anim.as_mut().unwrap()).unwrap().sequences[0].cycle = 0;
+        fx.play("On");
+        fx.advance(2.0);
+        assert!(!fx.finished);
+        fx.stop();
+        assert!(fx.finished);
+        assert_eq!(fx.duration, 2.0);
+        fx.advance(0.1);
+        fx.stop();
+        assert!(fx.finished);
+        assert_eq!(fx.duration, 2.0);
+
+        let mut early = fixture();
+        early.duration = f32::INFINITY;
+        early.advance(0.5);
+        early.stop();
+        assert!(!early.finished);
+        let mut impact = fixture();
+        impact.advance(2.0);
+        impact.stop();
+        assert!(!impact.finished);
+        assert_eq!(impact.duration, 2.0);
+        assert_eq!(impact.fade_duration, 3.0);
+    }
+
     #[test]
     fn selection_restarts_visibility_and_attachment_follows_bone() {
         let mut fx = fixture();

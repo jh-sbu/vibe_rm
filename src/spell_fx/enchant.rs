@@ -1,5 +1,8 @@
 //! Drawn weapon enchantment art and shaders (armour uses active hit effects).
-use super::{ArtKey, records, shaders::ShaderEffect};
+use super::{
+    ArtKey, records,
+    shaders::{ShaderEffect, WeaponTarget},
+};
 use crate::engine::{Engine, PLAYER_REF};
 use esp::FormId;
 use std::collections::HashSet;
@@ -64,8 +67,45 @@ impl Engine {
             }
             if !shader.is_null() {
                 let key = (actor, shader, u64::MAX - hand as u64);
+                let Some(path) = self
+                    .rigid_models
+                    .get(&actor)
+                    .and_then(|models| models.iter().find(|(form, _)| *form == weapon))
+                    .map(|(_, path)| format!("{path}#blade"))
+                else {
+                    continue;
+                };
+                let bow = self
+                    .lo
+                    .get(weapon)
+                    .and_then(|r| r.get(b"DNAM").and_then(|d| d.first().copied()))
+                    .is_some_and(|kind| kind == 7 || kind == 9);
+                let node = if bow || hand == crate::spells::LEFT {
+                    "SHIELD"
+                } else {
+                    "WEAPON"
+                };
+                let skeleton = if actor == PLAYER_REF {
+                    self.player_body.as_ref().map(|body| &body.skeleton)
+                } else {
+                    self.actor_ref(actor).map(|actor| &actor.skeleton)
+                };
+                let Some(bone) = skeleton.and_then(|s| s.find(node)) else {
+                    continue;
+                };
+                let target = WeaponTarget {
+                    form: weapon,
+                    hand,
+                    path,
+                    bone,
+                };
                 shaders.insert(key);
-                if !self.spell_fx.shaders.contains_key(&key) {
+                if self
+                    .spell_fx
+                    .shaders
+                    .get(&key)
+                    .is_none_or(|fx| fx.weapon.as_ref() != Some(&target) || fx.stopped.is_some())
+                {
                     if let Some(record) = records::EffectShader::load(&self.lo, shader) {
                         crate::world::loader::load_textures(
                             &mut self.renderer,
@@ -73,7 +113,7 @@ impl Engine {
                             record.textures.iter().flatten().cloned().collect(),
                         );
                         let mut effect = ShaderEffect::new(record, f32::INFINITY, false);
-                        effect.weapon = Some(weapon);
+                        effect.weapon = Some(target);
                         self.spell_fx.shaders.insert(key, effect);
                     }
                 }

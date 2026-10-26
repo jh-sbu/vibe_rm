@@ -214,7 +214,19 @@ fn surface(
                 .map(|p| (m, p))
         })
         .collect();
-    let total: usize = meshes.iter().map(|(_, p)| p.cpu_indices.len() / 3).sum();
+    let skinned_total: usize = meshes.iter().map(|(_, p)| p.cpu_indices.len() / 3).sum();
+    let rigid: Vec<_> = actor
+        .attachments
+        .iter()
+        .chain(&actor.equipment)
+        .filter(|_| !skin_only)
+        .flat_map(|(model, bone, local)| model.parts.iter().map(move |part| (part, *bone, *local)))
+        .collect();
+    let total = skinned_total
+        + rigid
+            .iter()
+            .map(|(p, _, _)| p.cpu_indices.len() / 3)
+            .sum::<usize>();
     if total == 0 {
         return None;
     }
@@ -243,6 +255,26 @@ fn surface(
             (normals[0] * weights.x + normals[1] * weights.y + normals[2] * weights.z)
                 .normalize_or(Vec3::Z),
         ));
+    }
+    for (part, bone, local) in rigid {
+        let count = part.cpu_indices.len() / 3;
+        if triangle >= count {
+            triangle -= count;
+            continue;
+        }
+        let indices = part.cpu_indices.get(triangle * 3..triangle * 3 + 3)?;
+        let transform =
+            actor.transform * actor.pose.get(bone).copied().unwrap_or(Mat4::IDENTITY) * local;
+        let a = u.sqrt();
+        let weights = [1.0 - a, a * (1.0 - v), a * v];
+        let mut position = Vec3::ZERO;
+        let mut normal = Vec3::ZERO;
+        for i in 0..3 {
+            let vertex = part.cpu_vertices.get(indices[i] as usize)?;
+            position += transform.transform_point3(Vec3::from_array(vertex.position)) * weights[i];
+            normal += transform.transform_vector3(Vec3::from_array(vertex.normal)) * weights[i];
+        }
+        return Some((position, normal.normalize_or(Vec3::Z)));
     }
     None
 }

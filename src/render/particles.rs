@@ -992,6 +992,8 @@ pub struct ParticleState {
     pub time: f32,
     /// No more particles are emitted (an impact's effect, past its duration).
     pub stopped: bool,
+    sampled: Option<Box<ParticleDesc>>,
+    use_sampled: bool,
 }
 
 impl ParticleState {
@@ -999,6 +1001,40 @@ impl ParticleState {
         ParticleState {
             rng: seed | 1,
             ..Default::default()
+        }
+    }
+
+    pub fn step_blended(
+        &mut self,
+        desc: &ParticleDesc,
+        samples: &[(String, f32, f32)],
+        dt: f32,
+        model_from_world: Mat3,
+    ) {
+        self.use_sampled = !samples.is_empty();
+        if self.use_sampled {
+            let mut sampled = self.sampled.take().unwrap_or_else(|| {
+                let mut d = desc
+                    .sequences
+                    .get(&samples[0].0)
+                    .map_or(desc, |d| d.as_ref())
+                    .clone();
+                d.sequences.clear();
+                Box::new(d)
+            });
+            desc.blend_into(samples, &mut sampled);
+            self.step(&sampled, dt, model_from_world);
+            self.sampled = Some(sampled);
+        } else {
+            self.step(desc, dt, model_from_world);
+        }
+    }
+
+    pub fn sampled_desc<'a>(&'a self, base: &'a ParticleDesc) -> &'a ParticleDesc {
+        if self.use_sampled {
+            self.sampled.as_deref().unwrap_or(base)
+        } else {
+            base
         }
     }
 
@@ -2784,6 +2820,65 @@ mod tests {
     }
 
     #[test]
+    fn sequence_blend_reuses_geometry_and_preserves_velocity_when_stopped() {
+        let mut d = mesh_fixture(1, 0);
+        let mut off = d.clone();
+        off.emitters[0].active = Curve::constant(0.0);
+        d.sequences.insert("off".into(), Box::new(off));
+        let mut state = ParticleState::new(17);
+        let samples = [("missing".into(), 0.0, 0.75), ("off".into(), 0.0, 0.25)];
+        state.step_blended(&d, &samples, 0.4, Mat3::IDENTITY);
+        assert_eq!(state.count(), 3);
+        assert_eq!(
+            state.sampled_desc(&d).emitters[0].birth_rate.sample(0.0),
+            7.5
+        );
+        assert!(state.sampled_desc(&d).sequences.is_empty());
+        let geometry = state.sampled_desc(&d).emitters[0].meshes[0]
+            .primitives
+            .as_ptr();
+        let before = state.particles[0];
+        state.stopped = true;
+        state.step_blended(&d, &samples, 0.1, Mat3::IDENTITY);
+        assert_eq!(state.count(), 3);
+        assert_eq!(state.particles[0].velocity, before.velocity);
+        assert!(
+            (state.particles[0].position - before.position - before.velocity * 0.1).length() < 1e-5
+        );
+        assert_eq!(
+            state.sampled_desc(&d).emitters[0].meshes[0]
+                .primitives
+                .as_ptr(),
+            geometry
+        );
+        assert_eq!(state.owed[0], 0.0);
+        state.step_blended(&d, &[], 0.0, Mat3::IDENTITY);
+        assert!(std::ptr::eq(state.sampled_desc(&d), &d));
+        state.step_blended(&d, &samples, 0.0, Mat3::IDENTITY);
+        assert_eq!(
+            state.sampled_desc(&d).emitters[0].meshes[0]
+                .primitives
+                .as_ptr(),
+            geometry
+        );
+        state.step_blended(&d, &samples, 100.0, Mat3::IDENTITY);
+        assert_eq!(state.count(), 0);
+    }
+
+    #[test]
+    fn carry_transforms_velocity_as_vector_not_position() {
+        let mut state = ParticleState::new(1);
+        state.particles.push(particle(Vec3::X, Vec3::Y * 2.0));
+        let delta = Mat4::from_rotation_translation(
+            glam::Quat::from_rotation_z(std::f32::consts::FRAC_PI_2),
+            Vec3::Z * 10.0,
+        );
+        state.carry(delta);
+        assert!((state.particles[0].position - Vec3::new(0.0, 1.0, 10.0)).length() < 1e-5);
+        assert!((state.particles[0].velocity + Vec3::X * 2.0).length() < 1e-5);
+    }
+
+    #[test]
     fn simple_color_fades_and_blends() {
         let c = SimpleColor {
             fade_in: 0.1,
@@ -2806,10 +2901,7 @@ impl ParticleDesc {
     /// Sample manager-owned particle channels with the graph's blend weights.
     /// Geometry, modifier order and particle ages belong to the shared system;
     /// switching a leaf never clears its already emitted particles.
-    pub fn blended(&self, samples: &[(String, f32, f32)]) -> Option<Self> {
-        if samples.is_empty() {
-            return None;
-        }
+    fn blend_into(&self, samples: &[(String, f32, f32)], result: &mut Self) {
         let inputs: Vec<_> = samples
             .iter()
             .map(|(name, t, w)| {
@@ -2820,8 +2912,6 @@ impl ParticleDesc {
                 )
             })
             .collect();
-        let mut result = inputs[0].0.clone();
-        result.sequences.clear();
         let scalar = |sample: &dyn Fn(&ParticleDesc, f32) -> f32| {
             inputs
                 .iter()
@@ -2906,6 +2996,5 @@ impl ParticleDesc {
                 d.gravity.get(i).map_or(0.0, |g| g.active.sample(t))
             }));
         }
-        Some(result)
     }
 }

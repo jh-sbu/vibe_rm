@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 pub struct ActorFrame {
     pub transform: Mat4,
-    pub bones: HashMap<String, Mat4>,
+    pub bones: std::sync::Arc<HashMap<String, Mat4>>,
 }
 impl ActorFrame {
     pub fn node(&self, name: &str) -> Option<Mat4> {
@@ -49,7 +49,7 @@ mod tests {
     fn attachment_uses_actor_bones_then_default_then_root() {
         let frame = ActorFrame {
             transform: Mat4::from_translation(Vec3::X * 10.0),
-            bones: HashMap::from([("hand".into(), Mat4::from_translation(Vec3::Z * 4.0))]),
+            bones: HashMap::from([("hand".into(), Mat4::from_translation(Vec3::Z * 4.0))]).into(),
         };
         assert_eq!(
             frame.fallback("hand").w_axis.truncate(),

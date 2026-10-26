@@ -52,12 +52,19 @@ pub fn envelope(
     finite(alpha).clamp(0.0, 1.0)
 }
 fn color_keys(shader: &EffectShader, age: f32) -> Vec3 {
-    let colors = [0x10, 0x138, 0x13C].map(|o| Vec3::from_array(shader.color(o)));
+    let first = Vec3::from_array(shader.color(0x10));
+    let colors = [0x10, 0x138, 0x13C].map(|o| {
+        if shader.data.len() >= o + 4 {
+            Vec3::from_array(shader.color(o))
+        } else {
+            first
+        }
+    });
     let scales = [0x140, 0x144, 0x148].map(|o| shader.float(o));
     let times = [0x14C, 0x150, 0x154].map(|o| shader.float(o));
     let keys = std::array::from_fn::<_, 3, _>(|i| {
         colors[i]
-            * if shader.data.len() > 0x158 {
+            * if shader.data.len() >= 0x15C {
                 scales[i]
             } else {
                 1.0
@@ -68,7 +75,7 @@ fn color_keys(shader: &EffectShader, age: f32) -> Vec3 {
         result = result.lerp(keys[i], ramp(age, times[i - 1], times[i]));
     }
     result
-        * if shader.data.len() > 0x158 {
+        * if shader.data.len() >= 0x15C {
             shader.float(0x158)
         } else {
             1.0
@@ -140,6 +147,62 @@ pub fn material(shader: &EffectShader, age: f32, stopped: Option<f32>) -> Materi
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn shader_with_data(data: Vec<u8>) -> EffectShader {
+        EffectShader {
+            textures: Default::default(),
+            data,
+            addon_models: esp::FormId(0),
+            ambient_sound: esp::FormId(0),
+        }
+    }
+
+    #[test]
+    fn legacy_missing_color_keys_preserve_first_color() {
+        for len in [0x14, 0xF8, 0x138, 0x139, 0x13B] {
+            let mut data = vec![0; len];
+            data[0x10..0x14].copy_from_slice(&[255, 128, 64, 0]);
+            let shader = shader_with_data(data);
+            let expected = Vec3::from_array(shader.color(0x10));
+            for age in [0.0, 0.5, 10.0] {
+                assert_eq!(color_keys(&shader, age), expected, "len={len:#x}");
+            }
+        }
+    }
+
+    #[test]
+    fn missing_third_color_defaults_to_first_not_second() {
+        for len in 0x13C..=0x140 {
+            let mut data = vec![0; len];
+            data[0x10..0x14].copy_from_slice(&[255, 128, 64, 0]);
+            data[0x138..0x13C].copy_from_slice(&[0, 255, 0, 0]);
+            let shader = shader_with_data(data);
+            let expected = if len == 0x140 {
+                Vec3::ZERO
+            } else {
+                Vec3::from_array(shader.color(0x10))
+            };
+            assert_eq!(color_keys(&shader, 0.0), expected, "len={len:#x}");
+        }
+    }
+
+    #[test]
+    fn color_scale_requires_complete_float_at_boundary() {
+        let mut data = vec![0; 0x15C];
+        for offset in [0x10, 0x138, 0x13C] {
+            data[offset..offset + 4].copy_from_slice(&[255, 128, 64, 0]);
+        }
+        for offset in [0x140, 0x144, 0x148] {
+            data[offset..offset + 4].copy_from_slice(&2.0f32.to_le_bytes());
+        }
+        data[0x158..0x15C].copy_from_slice(&0.25f32.to_le_bytes());
+        for len in 0x158..=0x15C {
+            let shader = shader_with_data(data[..len].to_vec());
+            let first = Vec3::from_array(shader.color(0x10));
+            let expected = first * if len >= 0x15C { 0.5 } else { 1.0 };
+            assert_eq!(color_keys(&shader, 0.0), expected, "len={len:#x}");
+        }
+    }
+
     #[test]
     fn envelope_preserves_stop_level_and_fades_to_zero() {
         let env = |t, stop| envelope(t, stop, 2.0, 1.0, 2.0, 1.0, 0.25, 0.0, 1.0);
@@ -198,24 +261,45 @@ pub fn overlay_model(model: &GpuModel, material: &Arc<GpuMaterial>) -> Arc<GpuMo
         bound_radius: model.bound_radius,
     })
 }
-pub fn overlay_actor(
+fn is_weapon_model(path: &str) -> bool {
+    let path = path.replace('\\', "/").to_ascii_lowercase();
+    path.starts_with("weapons/")
+        || path.contains("/weapons/")
+        || path.ends_with("#blade")
+        || path.ends_with("#scb")
+}
+
+fn weapon_matches(
+    target: &crate::spell_fx::shaders::WeaponTarget,
+    path: &str,
+    bone: usize,
+) -> bool {
+    bone == target.bone
+        && path
+            .replace('\\', "/")
+            .eq_ignore_ascii_case(&target.path.replace('\\', "/"))
+}
+
+pub fn shader_target(
     actor: &ActorInstance,
-    rigid: &Arc<GpuMaterial>,
-    skin: &Arc<GpuMaterial>,
     flags: u32,
+    weapon: Option<&crate::spell_fx::shaders::WeaponTarget>,
 ) -> ActorInstance {
     let skin_only = flags & (1 << 5) != 0;
-    let no_weapons = flags & (1 << 10) != 0;
+    let no_weapons = weapon.is_none() && flags & (1 << 10) != 0;
     let meshes = actor
         .meshes
         .iter()
         .filter_map(|mesh| {
+            if weapon.is_some() {
+                return None;
+            }
             let part = mesh.model.skinned.get(mesh.part)?;
             if skin_only && !part.material.skin {
                 return None;
             }
             Some(ActorMesh {
-                model: overlay_model(&mesh.model, skin),
+                model: mesh.model.clone(),
                 part: mesh.part,
                 bone_map: mesh.bone_map.clone(),
             })
@@ -225,10 +309,12 @@ pub fn overlay_actor(
         .attachments
         .iter()
         .chain(&actor.equipment)
-        .filter(|(m, _, _)| {
-            !skin_only && !(no_weapons && m.path.to_ascii_lowercase().contains("weapons/"))
+        .filter(|(m, bone, _)| {
+            !skin_only
+                && weapon.is_none_or(|w| weapon_matches(w, &m.path, *bone))
+                && !(no_weapons && is_weapon_model(&m.path))
         })
-        .map(|(m, b, t)| (overlay_model(m, rigid), *b, *t))
+        .map(|(m, b, t)| (m.clone(), *b, *t))
         .collect();
     ActorInstance {
         meshes,
@@ -243,6 +329,23 @@ pub fn overlay_actor(
         skin_tone: None,
         weight: actor.weight,
     }
+}
+
+pub fn overlay_actor(
+    actor: &ActorInstance,
+    rigid: &Arc<GpuMaterial>,
+    skin: &Arc<GpuMaterial>,
+    flags: u32,
+    weapon: Option<&crate::spell_fx::shaders::WeaponTarget>,
+) -> ActorInstance {
+    let mut target = shader_target(actor, flags, weapon);
+    for mesh in &mut target.meshes {
+        mesh.model = overlay_model(&mesh.model, skin);
+    }
+    for (model, _, _) in &mut target.attachments {
+        *model = overlay_model(model, rigid);
+    }
+    target
 }
 
 /// D3DBLEND (EFSH) -> NiAlphaProperty factors (our ordinary pipeline).

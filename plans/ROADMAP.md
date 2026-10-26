@@ -16,8 +16,9 @@ game each piece unlocks.
   actors and rigid references. `VRM_NO_SPELL_FX=1` disables the new visuals.
   Active-effect visuals reconstruct after load; scripted visuals are transient
   pending the manual SE save/load probe (`test-mod spell-visuals`). Visual policy
-  and unverified comparisons: `known_ambiguities/spell-visuals.md` and
-  `known_ambiguities/effect-shaders.md`.
+  decisions: `known_ambiguities/spell-visuals.md` and
+  `known_ambiguities/effect-shaders.md`; pending comparisons and probe instructions:
+  `plans/spell-visuals.md` (Pending SE validation).
 - Sound, leveled-list and state natives (`vrm-tool pex-natives`, 88 of them):
   sound instances (`Sound.Play`, `StopInstance`, `SetInstanceVolume`,
   `PlayAndWait`) and the music queue (`MusicType.Add` / `Remove`; `MUSQ`);
@@ -1624,8 +1625,6 @@ game each piece unlocks.
   same Ignore External Damage gate; explosions are not done.
 
 ## Next
-- Skills menu: run the stars through their authored effect behavior graphs
-  rather than the current hand-coded states, using the spell effect runtime.
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done)
    - Pose modifiers: twist chains, non-additive modes and branch blending
      (`known_ambiguities/twist-modifier.md`), keyframe bones; foot IK locking planted feet, aligning the
@@ -1937,6 +1936,8 @@ game each piece unlocks.
      done: see Done): waiting's rest: getting into the bed first; the gamepad's d-pad
      favorites; the name popup with character creation; the gamepad (gilrs, as
      the spike)
+   - Skills menu: run the stars through their authored effect behavior graphs
+     rather than the current hand-coded states, using the spell effect runtime.
    - The skills menu's rest (done: see Done): the movie's `MoveCamera`
      alpha (what it drives is unknown), the camera moving in on a skill's
      constellation in place of the narrower field of view, the

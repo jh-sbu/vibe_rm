@@ -84,6 +84,26 @@ const FIRE_TIMEOUT: f32 = 1.5;
 /// to be a dual cast (seconds); a choice (`known_ambiguities/casting.md`).
 const DUAL_WINDOW: f32 = 0.2;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum CastSource {
+    Left,
+    Right,
+    Dual,
+    Other,
+}
+
+impl CastSource {
+    fn hand(hand: usize, dual: bool) -> Self {
+        if dual {
+            Self::Dual
+        } else if hand == LEFT {
+            Self::Left
+        } else {
+            Self::Right
+        }
+    }
+}
+
 /// A spell held ready in a hand.
 #[derive(Debug, Clone)]
 struct HandCast {
@@ -375,7 +395,13 @@ impl Engine {
             let cost = self.player_spell_cost(h.spell, h.dual);
             self.player_pay(h.spell, cost);
             self.count_spell_cast(PLAYER_REF, h.spell);
-            self.cast_with(PLAYER_REF, h.spell, 1.0, h.dual);
+            self.cast_with(
+                PLAYER_REF,
+                h.spell,
+                1.0,
+                h.dual,
+                CastSource::hand(hand, h.dual),
+            );
             self.use_up_scroll(h.spell);
         }
         true
@@ -598,7 +624,13 @@ impl Engine {
                     let cost = self.player_spell_cost(f.spell, f.dual);
                     self.player_pay(f.spell, cost);
                     self.count_spell_cast(PLAYER_REF, f.spell);
-                    self.cast_with(PLAYER_REF, f.spell, 1.0, f.dual);
+                    self.cast_with(
+                        PLAYER_REF,
+                        f.spell,
+                        1.0,
+                        f.dual,
+                        CastSource::hand(hand, f.dual),
+                    );
                     self.use_up_scroll(f.spell);
                 }
                 continue;
@@ -773,7 +805,13 @@ impl Engine {
                         self.count_spell_cast(PLAYER_REF, h.spell);
                         h.counted = true;
                     }
-                    self.cast_with(PLAYER_REF, h.spell, CONCENTRATION_TICK, h.dual);
+                    self.cast_with(
+                        PLAYER_REF,
+                        h.spell,
+                        CONCENTRATION_TICK,
+                        h.dual,
+                        CastSource::hand(hand, h.dual),
+                    );
                 }
             }
             self.casting.hands[hand] = Some(h);
@@ -1252,7 +1290,15 @@ impl Engine {
                     }
                     self.spend_weapon_charge(actor, staff, cost);
                     let dir = (aim - eye).normalize_or_zero();
-                    self.cast_from(actor, spell.spell, share, eye, dir, false);
+                    self.cast_from_source(
+                        actor,
+                        spell.spell,
+                        share,
+                        eye,
+                        dir,
+                        false,
+                        CastSource::Right,
+                    );
                     continue;
                 }
                 let cost = self.spell_cost(actor, spell.spell) * share;
@@ -1265,7 +1311,15 @@ impl Engine {
                 }
                 self.damage_actor_value(actor, av::MAGICKA, cost);
                 let dir = (aim - eye).normalize_or_zero();
-                self.cast_from(actor, spell.spell, share, eye, dir, dual);
+                self.cast_from_source(
+                    actor,
+                    spell.spell,
+                    share,
+                    eye,
+                    dir,
+                    dual,
+                    CastSource::hand(RIGHT, dual),
+                );
             }
         }
     }
@@ -1274,11 +1328,18 @@ impl Engine {
     /// way it faces), already paid for; `share` is the part of a second a
     /// concentration spell's landing stands for (1 for others).
     pub(crate) fn cast(&mut self, caster: FormId, spell: FormId, share: f32) {
-        self.cast_with(caster, spell, share, false);
+        self.cast_with(caster, spell, share, false, CastSource::Other);
     }
 
     /// A spell cast as `cast`, `dual`: dual cast.
-    fn cast_with(&mut self, caster: FormId, spell: FormId, share: f32, dual: bool) {
+    fn cast_with(
+        &mut self,
+        caster: FormId,
+        spell: FormId,
+        share: f32,
+        dual: bool,
+        source: CastSource,
+    ) {
         let (eye, dir) = if caster == PLAYER_REF {
             self.player_aim()
         } else {
@@ -1290,7 +1351,7 @@ impl Engine {
                 None => return,
             }
         };
-        self.cast_from(caster, spell, share, eye, dir, dual);
+        self.cast_from_source(caster, spell, share, eye, dir, dual, source);
     }
 
     /// A spell cast by `caster` from `eye` along `dir`.
@@ -1302,6 +1363,19 @@ impl Engine {
         eye: Vec3,
         dir: Vec3,
         dual: bool,
+    ) {
+        self.cast_from_source(caster, spell, share, eye, dir, dual, CastSource::Other);
+    }
+
+    fn cast_from_source(
+        &mut self,
+        caster: FormId,
+        spell: FormId,
+        share: f32,
+        eye: Vec3,
+        dir: Vec3,
+        dual: bool,
+        source: CastSource,
     ) {
         let Some(item) = self.magic_item(spell) else {
             return;
@@ -1354,7 +1428,7 @@ impl Engine {
                 });
                 match shot {
                     Some((proj, shot)) if projectile_type(&self.lo, proj) & PROJ_CONE != 0 => {
-                        self.request_spell_stream(caster, proj, eye, dir, None);
+                        self.request_spell_stream(caster, proj, eye, dir, None, source);
                         let spread = cone_spread(&self.lo, proj);
                         for (actor, at) in self.actors_in_cone(caster, eye, dir, shot.range, spread)
                         {
@@ -1366,7 +1440,7 @@ impl Engine {
                             self.spell_ray(eye, dir, shot.range, caster)
                                 .map_or(eye + dir * shot.range, |(t, _)| eye + dir * t)
                         });
-                        self.request_spell_stream(caster, proj, eye, dir, end);
+                        self.request_spell_stream(caster, proj, eye, dir, end, source);
                         if let Some((t, owner)) = self.spell_ray(eye, dir, shot.range, caster) {
                             self.spell_lands(caster, spell, owner, eye + dir * t, dir, dual);
                         }
@@ -1780,6 +1854,14 @@ mod cast_start_tests {
             delivery,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn cast_input_keeps_independent_hands_and_coalesces_only_true_dual_casts() {
+        assert_eq!(CastSource::hand(LEFT, false), CastSource::Left);
+        assert_eq!(CastSource::hand(RIGHT, false), CastSource::Right);
+        assert_eq!(CastSource::hand(LEFT, true), CastSource::Dual);
+        assert_eq!(CastSource::hand(RIGHT, true), CastSource::Dual);
     }
 
     #[test]

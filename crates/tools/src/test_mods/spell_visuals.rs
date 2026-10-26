@@ -2,6 +2,22 @@
 //! Play once, save, reload that save, compare; the persisted Ran guard prevents
 //! this quest from starting the shader again. Builds references to vanilla
 //! records, and exports no vanilla meshes, textures or scripts.
+//!
+//! Build `vrm-tools` first, then generate with:
+//! `target/debug/vrm-tool test-mod spell-visuals "<Skyrim SE>/Data" tests/assets/VrmSpellVisuals.esp`.
+//! The PEX is emitted beside the plugin in `tests/assets/Scripts/`. Do not install
+//! or run the game here; the user performs this probe on a disposable SE save.
+//!
+//! | Checkpoint | Predicted outcome (not an observed SE result) |
+//! | --- | --- |
+//! | First update | Oakflesh sheen appears; one indefinite Play, then RequestSave. |
+//! | Reload: SE persists shaders | Sheen remains without replay; contradicts our transient choice. |
+//! | Reload: SE discards shaders | Sheen absent without replay; supports our transient choice. |
+//! | `cqf VrmSpellVisualsQuest StopVisual` | Remaining sheen fades/stops; no replay. |
+//!
+//! Missing initial sheen invalidates the comparison. Reload the requested numbered
+//! save without calling Play again. Human observation is required; save inspection
+//! cannot report membrane visibility. See `plans/spell-visuals.md` for the protocol.
 use super::{TestMod, records, script::Code};
 use anyhow::{Context, Result};
 use esp::{

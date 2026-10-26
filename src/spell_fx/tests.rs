@@ -32,7 +32,18 @@ fn fixture() -> Fixture {
         mgef[offset..offset + 4].copy_from_slice(&0x800u32.to_le_bytes());
     }
     mgef[0x70..0x74].copy_from_slice(&1.75f32.to_le_bytes());
+    let mut projectile = [0u8; 84];
+    projectile[76..80].copy_from_slice(&0.5f32.to_le_bytes());
+    projectile[80..84].copy_from_slice(&0.05f32.to_le_bytes());
     let groups = [
+        Node::top(
+            b"PROJ",
+            vec![
+                RecordBuilder::new(b"PROJ", FormId(0x804))
+                    .field(b"DATA", &projectile)
+                    .zstring(b"MODL", "missing-stream.nif"),
+            ],
+        ),
         Node::top(
             b"EFSH",
             vec![RecordBuilder::new(b"EFSH", FormId(0x800)).field(b"DATA", &data)],
@@ -156,4 +167,513 @@ fn shader_lifetime_fades_after_dispel_and_one_shot_expires() {
     assert!(once.advance(0.1, true));
     assert!(once.stopped.is_some());
     assert!(!once.advance(0.6, true));
+}
+
+#[test]
+fn stream_start_uses_requested_hand_and_preserves_supplied_fallback() {
+    use crate::casting::CastSource;
+    let supplied = Vec3::new(1.0, 2.0, 30.0);
+    let mut frame = ActorFrame {
+        transform: Mat4::from_translation(Vec3::X * 100.0),
+        bones: HashMap::from([
+            (
+                "NPC L MagicNode [LMag]".into(),
+                Mat4::from_translation(Vec3::Y),
+            ),
+            (
+                "NPC R MagicNode [RMag]".into(),
+                Mat4::from_translation(-Vec3::Y),
+            ),
+        ])
+        .into(),
+    };
+    assert_eq!(
+        stream_start(Some(&frame), CastSource::Left, supplied),
+        Vec3::X * 100.0 + Vec3::Y
+    );
+    assert_eq!(
+        stream_start(Some(&frame), CastSource::Right, supplied),
+        Vec3::X * 100.0 - Vec3::Y
+    );
+    for source in [CastSource::Dual, CastSource::Other] {
+        assert_eq!(stream_start(Some(&frame), source, supplied), supplied);
+    }
+    std::sync::Arc::make_mut(&mut frame.bones).clear();
+    for source in [CastSource::Left, CastSource::Right] {
+        assert_eq!(stream_start(Some(&frame), source, supplied), supplied);
+        assert_eq!(stream_start(None, source, supplied), supplied);
+    }
+}
+
+#[test]
+#[ignore = "requires a headless GPU adapter"]
+fn stream_hands_refresh_and_expire_independently() {
+    use crate::casting::CastSource;
+    let f = fixture();
+    let mut engine = crate::stats::action_tests::headless_engine(&f.0, "Fx.esp");
+    let proj = FormId(0x804);
+    let key = (PLAYER_REF, proj);
+    engine.request_spell_stream(PLAYER_REF, proj, Vec3::X, Vec3::Y, None, CastSource::Left);
+    engine.request_spell_stream(PLAYER_REF, proj, -Vec3::X, Vec3::Y, None, CastSource::Right);
+    assert_eq!(engine.spell_fx.streams[&key].emitters.len(), 2);
+    engine.update_stream_fx(0.2);
+    engine.request_spell_stream(
+        PLAYER_REF,
+        proj,
+        Vec3::Z,
+        Vec3::X,
+        Some(Vec3::Y),
+        CastSource::Left,
+    );
+    let emitters = &engine.spell_fx.streams[&key].emitters;
+    assert_eq!(emitters.len(), 2);
+    assert_eq!(emitters[&CastSource::Left].from, Vec3::Z);
+    assert_eq!(emitters[&CastSource::Left].beam_end, Some(Vec3::Y));
+    assert_eq!(emitters[&CastSource::Right].from, -Vec3::X);
+    assert!(emitters[&CastSource::Right].remaining < emitters[&CastSource::Left].remaining);
+    engine.update_stream_fx(0.15);
+    assert_eq!(engine.spell_fx.streams[&key].emitters.len(), 1);
+    assert!(
+        engine.spell_fx.streams[&key]
+            .emitters
+            .contains_key(&CastSource::Left)
+    );
+    engine.update_stream_fx(0.2);
+    assert!(!engine.spell_fx.streams.contains_key(&key));
+}
+
+#[test]
+fn actor_pose_cache_reuses_maps_and_invalidates_without_changing_live_frames() {
+    use crate::world::skeleton::{Bone, Skeleton};
+    use std::sync::Arc;
+    let skeleton = Arc::new(Skeleton {
+        bones: vec![Bone {
+            name: "hand".into(),
+            parent: None,
+            bind: nif::Transform::default(),
+        }],
+        ..Default::default()
+    });
+    let mut cache = CachedActorPose::default();
+    let first = cache.bones(&skeleton, &[Mat4::IDENTITY]);
+    let same = cache.bones(&skeleton, &[Mat4::IDENTITY]);
+    assert!(Arc::ptr_eq(&first, &same));
+    let moved = Mat4::from_translation(Vec3::X);
+    let changed = cache.bones(&skeleton, &[moved]);
+    assert!(!Arc::ptr_eq(&first, &changed));
+    assert_eq!(first["hand"], Mat4::IDENTITY);
+    assert_eq!(changed["hand"], moved);
+
+    let mut replacement = (*skeleton).clone();
+    replacement.bones[0].name = "other".into();
+    let renamed = cache.bones(&Arc::new(replacement), &[moved]);
+    assert!(!renamed.contains_key("hand"));
+    assert_eq!(renamed["other"], moved);
+    let truncated = cache.bones(&skeleton, &[]);
+    assert!(truncated.is_empty());
+}
+
+#[test]
+fn drawn_enchant_targets_only_its_blade_and_respects_flag_context() {
+    use crate::render::{ActorInstance, GpuModel, membrane::shader_target};
+    use std::sync::Arc;
+    let model = |path: &str| {
+        Arc::new(GpuModel {
+            path: path.into(),
+            parts: Vec::new(),
+            skinned: Vec::new(),
+            particles: Vec::new(),
+            bound_center: Vec3::ZERO,
+            bound_radius: 1.0,
+        })
+    };
+    let blade = model("meshes/weapons/sword.nif#blade");
+    let mut actor = ActorInstance {
+        meshes: Vec::new(),
+        attachments: vec![(model("meshes/armor/helmet.nif"), 0, Mat4::IDENTITY)],
+        equipment: vec![
+            (blade.clone(), 1, Mat4::IDENTITY),
+            (blade.clone(), 2, Mat4::IDENTITY),
+            (model("meshes/weapons/sword.nif#scb"), 0, Mat4::IDENTITY),
+        ],
+        held_light: None,
+        transform: Mat4::IDENTITY,
+        pose: vec![Mat4::IDENTITY; 3],
+        lights: [0; 8],
+        radius: 1.0,
+        shadow_only: false,
+        skin_tone: None,
+        weight: 0.5,
+    };
+    let target = shaders::WeaponTarget {
+        form: FormId(0x900),
+        hand: crate::spells::RIGHT,
+        path: blade.path.clone(),
+        bone: 1,
+    };
+    for flags in [0, 1 << 10] {
+        let selected = shader_target(&actor, flags, Some(&target));
+        assert!(selected.meshes.is_empty());
+        assert_eq!(selected.attachments.len(), 1);
+        assert_eq!(selected.attachments[0].1, 1);
+        assert!(Arc::ptr_eq(&selected.attachments[0].0, &blade));
+    }
+    assert!(
+        shader_target(&actor, 1 << 5, Some(&target))
+            .attachments
+            .is_empty()
+    );
+    let body_only = shader_target(&actor, 1 << 10, None);
+    assert_eq!(body_only.attachments.len(), 1);
+    assert!(body_only.attachments[0].0.path.contains("helmet"));
+    assert_eq!(shader_target(&actor, 0, None).attachments.len(), 4);
+    let mut changed = target.clone();
+    changed.form = FormId(0x901);
+    assert_ne!(target, changed);
+    actor.equipment[0] = (model("meshes/weapons/sword.nif"), 0, Mat4::IDENTITY);
+    assert!(
+        shader_target(&actor, 0, Some(&target))
+            .attachments
+            .is_empty()
+    );
+}
+
+#[test]
+#[ignore = "requires a headless GPU adapter"]
+fn membrane_materials_reuse_gpu_bindings_while_uniforms_advance() {
+    let f = fixture();
+    let engine = crate::stats::action_tests::headless_engine(&f.0, "Fx.esp");
+    let shader = records::EffectShader::load(&engine.lo, FormId(0x800)).unwrap();
+    let first = crate::render::membrane::material(&shader, 0.0, None);
+    let material = engine.renderer.create_material(&first);
+    let binding = material.bind_group.clone();
+    let later = crate::render::membrane::material(&shader, 0.2, None);
+    engine.renderer.update_membrane_material(&material, &later);
+    assert_eq!(material.bind_group, binding);
+}
+
+fn lifecycle_fixture() -> Fixture {
+    let f = fixture();
+    let lo = esp::LoadOrder::load(&f.0, &["Fx.esp".into()]).unwrap();
+    let shader = lo
+        .get(FormId(0x800))
+        .unwrap()
+        .get(b"DATA")
+        .unwrap()
+        .to_vec();
+    let mut persistent = vec![0u8; 0x8C];
+    persistent[..4].copy_from_slice(&crate::magic::flags::FX_PERSIST.to_le_bytes());
+    persistent[0x20..0x24].copy_from_slice(&0x800u32.to_le_bytes());
+    persistent[0x60..0x64].copy_from_slice(&0x810u32.to_le_bytes());
+    let mut once = persistent.clone();
+    once[..4].fill(0);
+    let mut light = vec![0u8; 32];
+    light[4..8].copy_from_slice(&128u32.to_le_bytes());
+    light[8..11].copy_from_slice(&[255, 128, 64]);
+    std::fs::write(
+        f.0.join("Fx.esp"),
+        write_plugin(
+            0,
+            &[],
+            "test",
+            "lifecycle",
+            0x900,
+            &[
+                Node::top(
+                    b"EFSH",
+                    vec![RecordBuilder::new(b"EFSH", FormId(0x800)).field(b"DATA", &shader)],
+                ),
+                Node::top(
+                    b"MGEF",
+                    vec![
+                        RecordBuilder::new(b"MGEF", FormId(0x802)).field(b"DATA", &persistent),
+                        RecordBuilder::new(b"MGEF", FormId(0x803)).field(b"DATA", &once),
+                    ],
+                ),
+                Node::top(
+                    b"LIGH",
+                    vec![RecordBuilder::new(b"LIGH", FormId(0x820)).field(b"DATA", &light)],
+                ),
+            ],
+        ),
+    )
+    .unwrap();
+    f
+}
+
+fn lifecycle_hit(id: u64, target: FormId, persistent: bool) -> crate::magic::ActiveEffect {
+    crate::magic::ActiveEffect {
+        id,
+        target,
+        caster: Some(PLAYER_REF),
+        item: FormId::NULL,
+        index: 0,
+        effect: FormId(if persistent { 0x802 } else { 0x803 }),
+        magnitude: 1.0,
+        duration: 10.0,
+        elapsed: 0.0,
+        active: true,
+        held: [0.0; 2],
+        scripted: false,
+        done: false,
+        quiet: false,
+        at: None,
+        summoned: None,
+        dual: false,
+        channelled: false,
+    }
+}
+
+fn lifecycle_effect(length: f32) -> EffectInstance {
+    let anim = crate::world::loader::ModelAnim {
+        parts: Vec::new(),
+        sequences: vec![crate::render::model::Sequence {
+            name: "Idle".into(),
+            cycle: 0,
+            start: 0.0,
+            stop: length,
+            frequency: 1.0,
+            channels: Vec::new(),
+        }],
+        controllers: Vec::new(),
+        start: 0.0,
+        graph: None,
+    };
+    EffectInstance::from_parts(
+        Mat4::IDENTITY,
+        None,
+        Some(std::sync::Arc::new(anim)),
+        Vec::new(),
+        f32::INFINITY,
+    )
+}
+
+fn lifecycle_art(owners: Vec<u64>, persistent: bool) -> ArtEffect {
+    ArtEffect {
+        effect: lifecycle_effect(0.2),
+        default_node: "MagicEffectsNode".into(),
+        owners,
+        persistent,
+        flags: 4,
+        facing: None,
+        scale: 1.0,
+        stopping_age: None,
+    }
+}
+
+fn load_lifecycle_target(engine: &mut Engine, target: FormId) {
+    let model = std::sync::Arc::new(crate::render::GpuModel {
+        path: "synthetic.nif".into(),
+        parts: Vec::new(),
+        skinned: Vec::new(),
+        particles: Vec::new(),
+        bound_center: Vec3::ZERO,
+        bound_radius: 1.0,
+    });
+    let mut instance = crate::render::Instance::new(model, Mat4::IDENTITY);
+    instance.ref_id = target.0;
+    engine
+        .scene
+        .cells
+        .entry(crate::render::CellKey::Interior(FormId(0x900)))
+        .or_default()
+        .instances
+        .push(instance);
+}
+
+#[test]
+fn art_one_shot_uses_actual_subsecond_length_without_minimum_or_mesh_tail() {
+    let mut fx = lifecycle_effect(0.2);
+    fx.advance(0.19);
+    assert!(!art_one_shot_done(&fx));
+    fx.advance(0.02);
+    assert!(art_one_shot_done(&fx));
+    std::sync::Arc::get_mut(fx.anim.as_mut().unwrap())
+        .unwrap()
+        .sequences[0]
+        .frequency = -2.0;
+    fx.age = 0.1;
+    assert!(art_one_shot_done(&fx));
+}
+
+#[test]
+#[ignore = "requires a headless GPU adapter"]
+fn hit_observation_survives_unload_and_only_persistent_shaders_resume() {
+    let f = lifecycle_fixture();
+    let mut engine = crate::stats::action_tests::headless_engine(&f.0, "Fx.esp");
+    let target = FormId(0x901);
+    load_lifecycle_target(&mut engine, target);
+    engine.magic.effects = vec![
+        lifecycle_hit(1, target, false),
+        lifecycle_hit(2, target, true),
+    ];
+    engine.update_spell_fx(0.1);
+    let once = (target, FormId(0x800), 1);
+    let persistent = (target, FormId(0x800), 2);
+    assert_eq!(engine.spell_fx.shaders.len(), 2);
+    engine.update_spell_fx(0.1);
+    assert_eq!(engine.spell_fx.shaders[&persistent].age, 0.2);
+    engine.scene.cells.clear();
+    engine.update_spell_fx(0.1);
+    assert!(engine.spell_fx.shaders.is_empty());
+    assert_eq!(engine.spell_fx.observed.len(), 2);
+    load_lifecycle_target(&mut engine, target);
+    engine.update_spell_fx(0.1);
+    assert!(!engine.spell_fx.shaders.contains_key(&once));
+    assert!(engine.spell_fx.shaders.contains_key(&persistent));
+    engine.magic.effects[1].done = true;
+    engine.update_spell_fx(0.0);
+    assert!(engine.spell_fx.shaders[&persistent].stopped.is_some());
+    assert!(!engine.spell_fx.observed.contains(&2));
+    engine.update_spell_fx(0.6);
+    assert!(engine.spell_fx.shaders.is_empty());
+}
+
+#[test]
+#[ignore = "requires a headless GPU adapter"]
+fn unavailable_new_hits_are_observed_without_deferred_one_shot_replay() {
+    let f = lifecycle_fixture();
+    let mut engine = crate::stats::action_tests::headless_engine(&f.0, "Fx.esp");
+    let target = FormId(0x901);
+    engine.magic.effects = vec![
+        lifecycle_hit(1, target, false),
+        lifecycle_hit(2, target, true),
+    ];
+    engine.spell_fx.hits.push(engine.magic.effects[0].clone());
+    engine.update_spell_fx(0.0);
+    assert_eq!(engine.spell_fx.observed.len(), 2);
+    load_lifecycle_target(&mut engine, target);
+    engine.update_spell_fx(0.0);
+    assert_eq!(engine.spell_fx.shaders.len(), 1);
+    assert!(
+        engine
+            .spell_fx
+            .shaders
+            .contains_key(&(target, FormId(0x800), 2))
+    );
+}
+
+#[test]
+#[ignore = "requires a headless GPU adapter"]
+fn hit_art_shared_owners_dispel_one_shot_completion_refresh_and_summon_unload() {
+    let f = lifecycle_fixture();
+    let mut engine = crate::stats::action_tests::headless_engine(&f.0, "Fx.esp");
+    let target = FormId(0x901);
+    load_lifecycle_target(&mut engine, target);
+    let key = (target, ArtKey::Hit(FormId(0x810)));
+    let mut summon = lifecycle_hit(1, target, true);
+    summon.summoned = Some(FormId(0x902));
+    engine.magic.effects = vec![summon, lifecycle_hit(2, target, true)];
+    engine
+        .spell_fx
+        .art
+        .insert(key, lifecycle_art(vec![1], true));
+    engine.update_spell_fx(0.1);
+    assert_eq!(engine.spell_fx.art[&key].owners, vec![1, 2]);
+    engine.magic.effects[0].done = true;
+    engine.update_spell_fx(0.1);
+    assert_eq!(engine.spell_fx.art[&key].owners, vec![2]);
+    assert!(!engine.spell_fx.art[&key].effect.stopped);
+    engine.magic.effects[1].active = false;
+    engine.update_spell_fx(0.0);
+    assert!(engine.spell_fx.art[&key].effect.stopped);
+    assert!(engine.spell_fx.art[&key].stopping_age.is_some());
+    engine.scene.cells.clear();
+    engine.update_spell_fx(0.0);
+    assert!(engine.spell_fx.art.is_empty());
+    load_lifecycle_target(&mut engine, target);
+    engine.magic.effects = vec![lifecycle_hit(3, target, false)];
+    engine
+        .spell_fx
+        .art
+        .insert(key, lifecycle_art(vec![3], false));
+    engine.spell_fx.observed.insert(3);
+    engine.update_spell_fx(0.21);
+    assert!(!engine.spell_fx.art.contains_key(&key));
+    assert!(
+        engine
+            .spell_fx
+            .tails
+            .iter()
+            .all(|fx| fx.finished && fx.fade_duration == 0.0)
+    );
+    engine.update_spell_fx(0.1);
+    assert!(!engine.spell_fx.art.contains_key(&key));
+    engine
+        .spell_fx
+        .art
+        .insert(key, lifecycle_art(vec![3], false));
+    engine.magic.effects.push(lifecycle_hit(4, target, false));
+    engine.update_spell_fx(0.0);
+    assert!(!engine.spell_fx.art.contains_key(&key));
+    assert!(engine.spell_fx.observed.contains(&4));
+}
+
+#[test]
+#[ignore = "requires a headless GPU adapter"]
+fn projectile_pose_light_and_stop_follow_motion_and_lifetime_end() {
+    use crate::ai::archery::{Arrow, Projectile};
+    let f = lifecycle_fixture();
+    let mut engine = crate::stats::action_tests::headless_engine(&f.0, "Fx.esp");
+    let mut fx = lifecycle_effect(1.0);
+    fx.light = FormId(0x820);
+    fx.light_attach = Vec3::Y * 2.0;
+    engine.projectiles.push(Projectile {
+        shooter: PLAYER_REF,
+        arrow: Arrow {
+            ammo: FormId::NULL,
+            projectile: FormId::NULL,
+            damage: 0.0,
+            speed: 10.0,
+            gravity: 0.0,
+            range: 100.0,
+            model: None,
+        },
+        pos: Vec3::splat(1000.0),
+        vel: Vec3::X * 10.0,
+        damage: 0.0,
+        model: None,
+        fx: Some(fx),
+        age: 0.0,
+        stuck: None,
+        dir: Vec3::X,
+        spell: None,
+        dual: false,
+        poison: None,
+        lifetime: 10.0,
+    });
+    engine.update_projectiles(0.1);
+    engine.update_spell_fx(0.0);
+    let projectile = &engine.projectiles[0];
+    let fx = projectile.fx.as_ref().unwrap();
+    assert!(
+        fx.transform
+            .transform_vector3(Vec3::Y)
+            .abs_diff_eq(Vec3::X, 1e-5)
+    );
+    assert_eq!(fx.transform.w_axis.truncate(), projectile.pos);
+    let at = fx.transform.transform_point3(fx.light_attach);
+    assert_eq!(
+        engine.spell_fx.lights[0].pos_radius,
+        [at.x, at.y, at.z, 128.0]
+    );
+    engine.projectiles[0].vel = Vec3::Z * 10.0;
+    engine.update_projectiles(0.1);
+    engine.update_spell_fx(0.0);
+    assert!(
+        engine.projectiles[0]
+            .fx
+            .as_ref()
+            .unwrap()
+            .transform
+            .transform_vector3(Vec3::Y)
+            .abs_diff_eq(Vec3::Z, 1e-5)
+    );
+    engine.projectiles[0].lifetime = 0.0;
+    engine.update_projectiles(0.1);
+    assert!(engine.projectiles.is_empty());
+    assert_eq!(engine.spell_fx.tails.len(), 1);
+    assert!(engine.spell_fx.tails[0].stopped);
+    engine.update_spell_fx(0.0);
+    assert!(engine.spell_fx.lights.is_empty());
 }

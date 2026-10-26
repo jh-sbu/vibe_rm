@@ -2,13 +2,25 @@
 use super::records::EffectShader;
 use std::sync::Arc;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WeaponTarget {
+    pub form: esp::FormId,
+    pub hand: usize,
+    pub path: String,
+    pub bone: usize,
+}
+
 pub struct ShaderEffect {
     pub shader: Arc<EffectShader>,
     pub age: f32,
     pub stopped: Option<f32>,
     pub duration: f32,
     pub persistent: bool,
-    pub weapon: Option<esp::FormId>,
+    pub weapon: Option<WeaponTarget>,
+    pub membrane_materials: Option<(
+        Arc<crate::render::GpuMaterial>,
+        Arc<crate::render::GpuMaterial>,
+    )>,
     pub particles: super::particles::ShaderParticles,
     pub particle_material: Option<Arc<crate::render::GpuMaterial>>,
 }
@@ -21,6 +33,7 @@ impl ShaderEffect {
             duration,
             persistent,
             weapon: None,
+            membrane_materials: None,
             particles: Default::default(),
             particle_material: None,
         }

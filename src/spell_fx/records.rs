@@ -1,5 +1,9 @@
 //! Serialized visual records. Field order checked against the public xEdit
-//! TES5 definitions; see refs/spell-visuals/README.md. No xEdit code is used.
+//! TES5 definitions: https://raw.githubusercontent.com/TES5Edit/TES5Edit/dev-4.1.6/Core/wbDefinitionsTES5.pas
+//! See known_ambiguities/spell-visuals.md and
+//! known_ambiguities/effect-shaders.md for research and license context.
+//! UESP EFSH revision 3089075: https://en.uesp.net/w/index.php?oldid=3089075
+//! (its DATA layout is undocumented). No xEdit code is used.
 #![allow(dead_code)]
 use esp::{FormId, LoadOrder, LoadedRecord};
 

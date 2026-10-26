@@ -53,6 +53,80 @@ enchantment visuals, and dual-cast art scale. Magic sounds, explosions
 effect meshes are outside this plan. Each is noted where a step leaves room
 for it.
 
+## Pending SE validation
+
+These comparisons are unfinished work, not evidence of SE parity. The researched
+implementation decisions remain in `known_ambiguities/spell-visuals.md` and
+`known_ambiguities/effect-shaders.md`.
+
+- Casting selection/idle: compare Flames, Firebolt, Healing and a mixed-effect
+  spell in each hand while idle, charging and releasing; repeat with a staff to
+  check hand variables and event forwarding.
+- Attachment: compare untagged hit art on a human and creature, and both staff
+  hands. Check RFCT transform precedence with facing, camera attachment and
+  inherited rotation enabled together.
+- Visibility: compare an invisible actor's cloak and hand glow, and a quietly
+  applied ability (including No Hit Effect).
+- Lifetime: compare overlapping cloaks, dispel during begin, instantaneous hits
+  and unload/reload.
+- Streams: compare left/right Flames, dual Flames, a cone and a lightning bolt
+  at fixed distances.
+- Enchantments/dual scale: compare a sword drawn/sheathed and full/empty, and a
+  dual projectile beside a single cast.
+- Membranes: compare timed captures of Oakflesh's actual ShieldSpellFXS, Soul
+  Trap, fire burns and an RFCT holes dissolve; check close silhouette/occlusion
+  views for extrusion and depth placement.
+- Shape selection: compare head, body, clothing, armour, shield and weapons.
+- Stacking: apply two noncommuting colored shaders in opposite orders.
+- Particles: compare differently sized actors, a changing pose and animated
+  frames. Before implementing addon models, inspect an EFSH using DEBR to
+  establish spawn placement/timing.
+- Sequence generator: resolve the raw +0x50/+0x54 fields before assigning them
+  playback semantics.
+
+### Pending automated coverage
+
+The new lifecycle tests use synthetic records and geometry-free instances; they
+are not end-to-end gameplay or SE parity checks. GPU-dependent cases are ignored
+by default and require an explicit headless-adapter run.
+
+- Actual collider-driven projectile impact remains untested: the projectile test
+  forces lifetime expiry to exercise retirement, pose and light cleanup instead.
+  Add a collision fixture that verifies impact delivery and visual retirement.
+- Actual summon spawning/despawning remains untested: the hit-art test sets
+  `ActiveEffect.summoned` metadata and unloads the target, but does not create or
+  remove a summoned actor. Add a summon lifecycle integration test.
+- The manual SE shader save/load probe below is still pending; its predicted
+  outcomes are not observations and automated tests cannot replace it.
+
+### Manual shader save/load probe
+
+Build the tool before generating the plugin; keep outputs under ignored
+`tests/assets/` (the generated PEX is written into its `Scripts/` directory):
+
+```sh
+cargo build -p vrm-tools
+target/debug/vrm-tool test-mod spell-visuals "<Skyrim SE>/Data" tests/assets/VrmSpellVisuals.esp
+```
+
+Do not install the plugin or run Skyrim here. The user loads a disposable SE save
+with the plugin, notes the Oakflesh sheen in third person, then reloads the new
+numbered save requested by the quest without calling Play again. The persisted
+`Ran` guard prevents replay. After observation, `cqf VrmSpellVisualsQuest StopVisual`
+stops the shader. Screenshots stay outside the repository. The user can place
+resulting saves in `tests/results/` for `vrm-tool test-results tests/results`, but
+shader visibility still requires human observation; no Papyrus query supplies it.
+
+| Checkpoint | Predicted outcome / interpretation (not an SE result) |
+| --- | --- |
+| First update, before save | Oakflesh sheen appears; Play runs once with indefinite duration. |
+| Reload numbered save, shader persists in SE | Sheen remains without replay; contradicts our transient-script-visual choice. |
+| Reload numbered save, shader is transient in SE | Sheen is absent without replay; supports our current choice. |
+| After `StopVisual` | Any remaining sheen fades/stops; no new Play is issued. |
+
+A missing initial sheen invalidates the persistence comparison. Record the actual
+observation before changing the saving decision.
+
 ## Baseline before implementation
 
 - **Particles, controllers, addons, billboards** are done (ROADMAP Done:
@@ -451,8 +525,8 @@ burn glow, soul trap, paralysis, invisibility's shimmer and ethereal forms.
   beams, skinned art, wards' geometry, explosions, magic sounds, EFSH addon
   models) in their places.
 - `known_ambiguities/spell-visuals.md` and `effect-shaders.md` list each
-  choice made above with the evidence and the comparison that would settle
-  it.
+  choice made above with its evidence and remaining uncertainty. Pending
+  comparisons and probe instructions belong in this plan, not those files.
 
 ## Order and dependencies
 
@@ -468,7 +542,7 @@ least new rendering: no new pipeline, just sequences, graphs and
 attachments. Steps 6–7 reuse all of that. Step 8 is the first new
 render pass. Steps 8–9 can run in parallel with 5–7 once step 1 is in.
 
-## Open questions to seed the ambiguity files
+## Open research questions
 
 1. Untagged hit art's attach node (36 uses).
 2. Which of a multi-effect spell's casting arts show.
