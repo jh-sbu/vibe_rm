@@ -5,6 +5,19 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Spell visuals (`plans/spell-visuals.md`): MGEF visual fields and ARTO/EFSH/RFCT/DUAL
+  readers; NIF attachment tags; `vrm-tool spell-fx`; shared effect instances with
+  standalone and manager-owned transform, visibility, material and particle
+  animation; authored HKX named-sequence leaves and transition weights; casting
+  and hit art attached to actor bones, hand and projectile lights, animated spell
+  projectiles and visual flame/cone streams; EFSH membrane overlays and particles
+  sampled from currently posed/morphed skin; drawn weapon enchantment art/shaders,
+  dual-cast visual replacements/scale; EffectShader/VisualEffect Play/Stop on
+  actors and rigid references. `VRM_NO_SPELL_FX=1` disables the new visuals.
+  Active-effect visuals reconstruct after load; scripted visuals are transient
+  pending the manual SE save/load probe (`test-mod spell-visuals`). Visual policy
+  and unverified comparisons: `known_ambiguities/spell-visuals.md` and
+  `known_ambiguities/effect-shaders.md`.
 - Sound, leveled-list and state natives (`vrm-tool pex-natives`, 88 of them):
   sound instances (`Sound.Play`, `StopInstance`, `SetInstanceVolume`,
   `PlayAndWait`) and the music queue (`MusicType.Add` / `Remove`; `MUSQ`);
@@ -1611,6 +1624,8 @@ game each piece unlocks.
   same Ignore External Damage gate; explosions are not done.
 
 ## Next
+- Skills menu: run the stars through their authored effect behavior graphs
+  rather than the current hand-coded states, using the spell effect runtime.
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done)
    - Pose modifiers: twist chains, non-additive modes and branch blending
      (`known_ambiguities/twist-modifier.md`), keyframe bones; foot IK locking planted feet, aligning the
@@ -1768,9 +1783,7 @@ game each piece unlocks.
    stuck in actors, sneak shots, tempering
    and enchantments, killmoves and the decapitations they end in, the player's own weapon and
    animations), magic (see Done; next: native healing thresholds and timing, spells chosen by their
-   scores, NPCs raising wards against spells already in flight and arrows (`known_ambiguities/wards.md`), summons and buffs in combat, runes, effect visuals (spell projectiles' models run
-   behaviour graphs, particles and shader controllers; casting and hit art,
-   lights) and sounds, the other archetypes (Illusion's calm, fear, frenzy
+   scores, NPCs raising wards against spells already in flight and arrows (`known_ambiguities/wards.md`), summons and buffs in combat, runes, magic sounds, the other archetypes (Illusion's calm, fear, frenzy
    and rally, summons, bound weapons done: see Done): NPCs summoning, reanimation,
    bound weapons in the casting
    hand, light, paralysis,
@@ -1904,8 +1917,7 @@ game each piece unlocks.
      Repeating (flags parsed, not enforced; scope open in
      `known_ambiguities/dialogue-selection.md`); automatic Invisible Continue
    - Natives scripts call that still do nothing, most called first
-     (`vrm-tool pex-natives`; see Done for the last ones): effect shaders'
-     and visual effects' `Play` / `Stop`, `SetAlpha`, `SetSubGraphFloatVariable`,
+     (`vrm-tool pex-natives`; see Done for the last ones): `SetAlpha`, `SetSubGraphFloatVariable`,
      `TranslateTo` and the other translations, `HasLOS`,
      `MoveToPackageLocation`, `SetRace`, riding, flying, character creation,
      killmoves and beast forms; `SetOutfit`'s sleep outfits
@@ -1977,9 +1989,10 @@ game each piece unlocks.
    remaining modifiers (animated colliders, skinned/deformed and animated mesh emission,
    strips, LOD; see
    `known_ambiguities/particles.md`), distant LOD (BTR/BTO/trees),
-   grass shadows and the grass cache, spells' impacts; eye environment maps' per-eye centres, effect shaders' env maps; weather: auroras' brightness and order against the
+   grass shadows and the grass cache; eye environment maps' per-eye centres, effect shaders' env maps; weather: auroras' brightness and order against the
    clouds (see `known_ambiguities/weather.md`); weather's volumetric lighting, sun
-   glare and damage, lightning bolts, wind
+   glare and damage, procedural lightning bolts, skinned effect art, EFSH DEBR
+   addon models, wards' collision geometry; wind
    moving trees, grass and clouds; grass's vertex lighting flag and bending
    round actors;
    `ENVMAP_LIGHT_FADE` (`sf2` bit 15); unscripted trigger volumes (acoustic

@@ -1,10 +1,47 @@
 # Plan: spell visuals
 
-**Status: in progress** (2026-10-26).
+**Status: implemented** (2026-10-26); original-game visual comparisons remain
+unverified, with decisions recorded in `known_ambiguities/spell-visuals.md` and
+`known_ambiguities/effect-shaders.md`.
 
-Step 1 record readers, attachment tags and `vrm-tool spell-fx` are implemented.
-EFSH retains the complete DATA bytes with bounded typed accessors, including
-older optional tails. Subsequent steps remain in progress.
+The implementation reads all visual records and attachment tags, exposes the
+survey command, shares independently clocked effect instances with impacts,
+binds manager-owned node/material/particle channels, and runs authored HKX
+sequence leaves through the existing graph runtime. Actor art, casting and
+projectile lights, visual streams, hit lifetimes, membrane overlays, surface
+particles, drawn weapon enchantments, dual visual overrides and scripted
+Play/Stop use that state. Active effects reconstruct derived visuals after load.
+
+Implementation choices relative to the proposal:
+- Keep all moving magic lights in `SpellFx.lights`, merged alongside existing
+  held torch lights, without changing the torch's actor attachment format.
+- EFSH retains the entire DATA payload and uses bounded typed accessors, including
+  optional older tails. Membranes reuse existing rigid/skinned draw machinery
+  with private overlay materials and shared geometry instead of a separate pass.
+- Retain CPU vertex/index copies and skin only sampled vertices for EFSH surface
+  emission. General NiPSys skinned/deformed mesh emitters remain a Rendering item.
+- Raw sequence-generator fields, exact shader equations, stream reconstruction,
+  lifetime policy and script visual persistence are documented choices, not
+  assertions of SE parity. The manual `test-mod spell-visuals` probe generates
+  its own PEX and references a vanilla shader without copying assets.
+
+Validation: synthetic records/attachment strings, sequence visibility and
+emission switching, standalone impact posing, graph transition weights,
+envelopes, birth ramps, sampled skin/morph transforms and native Play/Stop;
+installed CastingBasic/BeginLoopEnd/IdleOnLoad/Autoplay graph fixtures; headless engine
+fixtures with `--include-ignored`. Offscreen `--screenshot --burst` captures of
+Flames hand art/lights and a script-played membrane were read back and inspected.
+Captures and asset inspection output stay in `/tmp`, outside the repository.
+Final validation: 974 tests passed across the engine, NIF, Havok and tool
+packages with `--include-ignored --test-threads=1` (the serial option avoids an
+existing AI fixture temp-directory collision). `pex-natives` still reports 929
+name-matched Play calls and 1898 Stop calls for each visual class, as expected:
+implementing natives changes no game scripts. The survey distinguishes model
+paths, readable models, tagged models and individual NamedNode tags, rather than
+assuming the proposal's snapshot counts are current load-order totals.
+
+The full SE screenshot comparison set still requires observations in SE; it is
+not represented as completed validation here.
 
 This plan covers the "effect visuals" clause of ROADMAP Next item 5 (magic):
 spell projectiles' models running their graphs, particles and shader
@@ -16,7 +53,7 @@ enchantment visuals, and dual-cast art scale. Magic sounds, explosions
 effect meshes are outside this plan. Each is noted where a step leaves room
 for it.
 
-## Where things stand
+## Baseline before implementation
 
 - **Particles, controllers, addons, billboards** are done (ROADMAP Done:
   particle systems, addon nodes, billboard nodes, shader property

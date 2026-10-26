@@ -23,7 +23,7 @@ Early but already visual:
 | Interior cells: references, lighting templates, point lights | done |
 | Exterior cells: objects, landscape heightmap with multi-layer splatting | done |
 | Weather / climate: sky gradient, clouds, sun, fog, directional ambient, time of day, transitions, rain and snow, wind, lightning, sky statics, auroras | done |
-| Effects: particle systems (fire, smoke, embers), billboards, addon nodes (candle flames, torches), animated shader properties (scrolling, pulsing), environment maps, grass, projected decals, impacts (blood sprays, sparks and their effect models' meshes and keyframes, and blood on the ground and on bodies from hits) | in progress |
+| Effects: particle systems (fire, smoke, embers), billboards, addon nodes (candle flames, torches), animated shader properties (scrolling, pulsing), environment maps, grass, projected decals, impacts (blood sprays, sparks and their effect models' meshes and keyframes, and blood on the ground and on bodies from hits), spell art/graphs/lights, EFSH membranes and surface particles | in progress |
 | Water, collision/physics, player controller, load doors and animated doors, cell streaming | done |
 | Sun shadows (cascaded shadow maps) | done |
 | Actors: NPC assembly, GPU skinning, Havok animation playback | done (idle/walk only) |
@@ -66,6 +66,13 @@ The HUD and message boxes are the game's own (`Interface/hudmenu.swf`,
 E or Enter); `--egui-hud` draws egui's instead (also used when the Interface
 files can't be read).
 
+`VRM_NO_SPELL_FX=1` disables casting/hit art, spell projectile animation and
+lights, effect shaders and enchantment visuals. Their fidelity choices and
+original-game comparisons are recorded in `known_ambiguities/spell-visuals.md`
+and `known_ambiguities/effect-shaders.md`. The `spell-visuals` test-mod generator
+provides a manual SE shader save/load probe; generated plugins and scripts belong
+outside this repository.
+
 The data directory is found from `--data`, `$SKYRIM_DATA`, or the default Steam
 locations on Linux.
 
@@ -92,7 +99,7 @@ toggles actor AI).
   native `.vrs` saving and loading lives in `src/save`
 - `crates/ui-swf`: the game's Interface menus (Scaleform `.swf`) through Ruffle
 - `crates/tools`: `vrm-tool` CLI for inspecting and verifying data
-  (`bsa-list`, `bsa-verify`, `esp-info`, `esp-dump`, `nif-verify`, `nif-dump`, `nif-materials`, `fsts`,
+  (`spell-fx <Data> [effect-or-spell]`, `bsa-list`, `bsa-verify`, `esp-info`, `esp-dump`, `nif-verify`, `nif-dump`, `nif-materials`, `fsts`,
   `navm-verify`, `hkb-tree`, `hkb-run` (a project directory or a creature's project file), `hkb-vars`, `pack-speeds`, `force-greets`, `alias-packages`, `alias-fills`, `ref-types`, `scenes`, `triggers`, `story`, `faction-owners`, `crime-factions`, `save-info`, ...), and `test-mod` / `test-results` (below)
 - `src/`: the engine (renderer, world, app)
 - `vendor/ruffle`: a subset of [Ruffle](https://ruffle.rs) with Scaleform
