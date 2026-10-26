@@ -265,7 +265,11 @@ impl ModelCache {
                                     m.skinned.len()
                                 );
                             }
-                            if !m.addons.is_empty() {
+                            // Animated parts carry their own (a flame spray's
+                            // fire rides its moving nodes).
+                            if !m.addons.is_empty()
+                                || m.animated.iter().any(|a| !a.model.addons.is_empty())
+                            {
                                 attach_addons(&mut m, &addons, vfs, &mut HashMap::new());
                             }
                             for mesh in &m.meshes {
