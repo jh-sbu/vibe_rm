@@ -236,21 +236,26 @@ impl EffectInstance {
             graph.set_variable(name, value);
         }
     }
+    pub(super) fn one_shot_duration(&self) -> f32 {
+        let Some(anim) = &self.anim else { return 1.0 };
+        if !anim.sequences.is_empty() {
+            return anim
+                .sequences
+                .iter()
+                .map(|s| (s.stop - s.start) / s.frequency.abs().max(1e-6))
+                .fold(0.0, f32::max);
+        }
+        anim.controllers
+            .iter()
+            .map(|c| (c.timing.stop - c.timing.start) / c.timing.frequency.abs().max(1e-6))
+            .filter(|span| span.is_finite() && *span > 0.0)
+            .reduce(f32::max)
+            .unwrap_or(1.0)
+    }
     pub fn stop(&mut self) {
         if !self.stopped {
             if self.graph.is_none() && self.duration.is_infinite() {
-                let longest = self
-                    .anim
-                    .as_ref()
-                    .map(|a| {
-                        a.sequences
-                            .iter()
-                            .map(|s| (s.stop - s.start) / s.frequency.abs().max(1e-6))
-                            .fold(0.0, f32::max)
-                    })
-                    .unwrap_or(0.0)
-                    .max(1.0);
-                self.finished |= self.age >= longest;
+                self.finished |= self.age >= self.one_shot_duration();
             }
             self.send_event("StopEffect");
             self.stopped = true;

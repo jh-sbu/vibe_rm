@@ -40,7 +40,14 @@ not claims about verified original-engine behavior.
   one-shot or stopping instance rather than stacking it; revisiting the same
   effect id does not restart it. Nonpersistent art ends at graph completion or
   the longest authored sequence duration, adjusted by absolute playback frequency,
-  with no minimum duration; models without sequences complete immediately.
+  with no minimum duration. Sequence-less models use the longest positive finite
+  standalone node-controller span, likewise frequency-adjusted; static art or art
+  without a usable span uses a one-second fallback. The same lifetime determines
+  completion when an indefinitely timed graphless effect stops; explicit impact
+  durations remain unchanged. ModelAnim retains the model start offset but no end
+  time, so controller spans supply this fallback rather than a model stop marker.
+  The references above do not establish SE's sequence-less lifetime; these spans
+  and the static fallback are choices to keep art visible beyond its first update.
   Completed/replaced one-shots retain live particles but no mesh fade tail.
   Persistent art stops when its last active owner ends, with graph completion or
   a three-second stopping cap. Other stopped effects retain their mesh fade

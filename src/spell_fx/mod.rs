@@ -79,13 +79,7 @@ impl CachedActorPose {
     }
 }
 fn art_one_shot_done(effect: &EffectInstance) -> bool {
-    let longest = effect.anim.as_ref().map(|a| {
-        a.sequences
-            .iter()
-            .map(|s| (s.stop - s.start) / s.frequency.abs().max(1e-6))
-            .fold(0.0, f32::max)
-    });
-    effect.finished || effect.age >= longest.unwrap_or(0.0)
+    effect.finished || effect.age >= effect.one_shot_duration()
 }
 
 fn enabled() -> bool {

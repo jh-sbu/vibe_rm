@@ -677,3 +677,135 @@ fn projectile_pose_light_and_stop_follow_motion_and_lifetime_end() {
     engine.update_spell_fx(0.0);
     assert!(engine.spell_fx.lights.is_empty());
 }
+
+#[test]
+fn sequence_less_art_uses_controller_span_and_stop_uses_same_lifetime() {
+    let mut fx = lifecycle_effect(0.2);
+    let anim = std::sync::Arc::get_mut(fx.anim.as_mut().unwrap()).unwrap();
+    anim.sequences.clear();
+    anim.start = 5.0;
+    anim.controllers = vec![crate::render::model::NodeChannel {
+        node: "synthetic".into(),
+        block: 0,
+        timing: nif::anim::Timing {
+            flags: 12,
+            frequency: -2.0,
+            phase: 0.0,
+            start: 5.0,
+            stop: 5.5,
+        },
+        drive: crate::render::model::NodeDrive::Visibility {
+            value: true,
+            keys: None,
+        },
+    }];
+    assert_eq!(fx.one_shot_duration(), 0.25);
+    fx.advance(0.24);
+    assert!(!art_one_shot_done(&fx));
+    fx.stop();
+    assert!(!fx.finished);
+    fx.stopped = false;
+    fx.duration = f32::INFINITY;
+    fx.advance(0.02);
+    assert!(art_one_shot_done(&fx));
+    fx.stop();
+    assert!(fx.finished);
+
+    let mut fx = lifecycle_effect(0.2);
+    fx.advance(0.21);
+    fx.stop();
+    assert!(fx.finished);
+}
+
+#[test]
+fn static_art_fallback_handles_missing_empty_and_unusable_animation() {
+    for span in [None, Some(0.0), Some(f32::INFINITY), Some(f32::NAN)] {
+        let mut fx = lifecycle_effect(0.2);
+        let anim = std::sync::Arc::get_mut(fx.anim.as_mut().unwrap()).unwrap();
+        anim.sequences.clear();
+        if let Some(stop) = span {
+            anim.controllers.push(crate::render::model::NodeChannel {
+                node: "synthetic".into(),
+                block: 0,
+                timing: nif::anim::Timing {
+                    flags: 12,
+                    frequency: 1.0,
+                    phase: 0.0,
+                    start: 0.0,
+                    stop,
+                },
+                drive: crate::render::model::NodeDrive::Visibility {
+                    value: true,
+                    keys: None,
+                },
+            });
+        }
+        assert_eq!(fx.one_shot_duration(), 1.0);
+        fx.advance(0.99);
+        assert!(!art_one_shot_done(&fx));
+        fx.advance(0.02);
+        assert!(art_one_shot_done(&fx));
+        fx.stop();
+        assert!(fx.finished);
+        fx.anim = None;
+        assert_eq!(fx.one_shot_duration(), 1.0);
+    }
+}
+
+#[test]
+#[ignore = "requires a headless GPU adapter"]
+fn static_hit_art_draws_on_first_update_and_expires_after_fallback() {
+    let f = lifecycle_fixture();
+    let mut engine = crate::stats::action_tests::headless_engine(&f.0, "Fx.esp");
+    let target = FormId(0x901);
+    load_lifecycle_target(&mut engine, target);
+    let model = std::sync::Arc::new(engine.renderer.upload_model(
+        &crate::render::model::CpuModel {
+            meshes: vec![crate::render::model::CpuMesh {
+                vertices: vec![bytemuck::Zeroable::zeroed(); 3],
+                indices: vec![0, 1, 2],
+                material: Default::default(),
+                bound_center: Vec3::ZERO,
+                bound_radius: 1.0,
+            }],
+            skinned: Vec::new(),
+            bound_center: Vec3::ZERO,
+            bound_radius: 1.0,
+            animated: Vec::new(),
+            sequences: Vec::new(),
+            particles: Vec::new(),
+            addons: Vec::new(),
+        },
+    ));
+    let key = (target, ArtKey::Hit(FormId(0x810)));
+    engine.magic.effects = vec![lifecycle_hit(1, target, false)];
+    engine.spell_fx.observed.insert(1);
+    let mut art = lifecycle_art(vec![1], false);
+    art.effect = EffectInstance::from_parts(
+        Mat4::IDENTITY,
+        Some(crate::render::Instance::new(model.clone(), Mat4::IDENTITY)),
+        None,
+        Vec::new(),
+        f32::INFINITY,
+    );
+    engine.spell_fx.art.insert(key, art);
+    engine.update_spell_fx(0.016);
+    assert!(engine.spell_fx.art.contains_key(&key));
+    assert!(
+        engine
+            .scene
+            .dynamic
+            .iter()
+            .any(|i| std::sync::Arc::ptr_eq(&i.model, &model))
+    );
+    engine.scene.dynamic.clear();
+    engine.update_spell_fx(1.0);
+    assert!(!engine.spell_fx.art.contains_key(&key));
+    assert!(
+        !engine
+            .scene
+            .dynamic
+            .iter()
+            .any(|i| std::sync::Arc::ptr_eq(&i.model, &model))
+    );
+}
