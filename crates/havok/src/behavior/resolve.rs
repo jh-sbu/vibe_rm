@@ -100,7 +100,7 @@ impl Project {
                 let root = self.graphs[other].1.root?;
                 self.descend(other, root, stack, nested, entered, depth + 1)
             }
-            Generator::Other(_) => None,
+            Generator::Sequence { .. } | Generator::Other(_) => None,
         }
     }
 

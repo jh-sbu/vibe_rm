@@ -21,6 +21,9 @@ use super::*;
 /// (`Animations\male\MT_Idle.hkx`).
 pub trait ClipSource {
     fn duration(&mut self, animation: &str) -> Option<f32>;
+    fn sequence_looping(&mut self, _name: &str) -> bool {
+        false
+    }
 
     /// Whether the animation is additive (an offset to apply on top of a pose,
     /// `hkaAnimationBinding::blendHint`).
@@ -547,6 +550,12 @@ impl Ctx<'_> {
     /// `ClipState` keeps the direction selected when it activated.
     /// User-controlled and ping-pong timing keep the existing speed path.
     fn effective_clip_speed(&self, gi: usize, g: GenId, length: f32, enforce: bool) -> f32 {
+        if matches!(
+            self.shared.graph(gi).generators[g],
+            Generator::Sequence { .. }
+        ) {
+            return 1.0;
+        }
         let Generator::Clip {
             speed,
             enforced_duration,
@@ -668,6 +677,24 @@ impl Ctx<'_> {
             Kind::Empty
         } else {
             match &graph.generators[g] {
+                Generator::Sequence { sequence, .. } => {
+                    let length = self.clips.duration(sequence).unwrap_or(0.0).max(0.0);
+                    let looping = self.clips.sequence_looping(sequence);
+                    Kind::Clip(ClipState {
+                        animation: sequence.as_str().into(),
+                        t: 0.0,
+                        prev: 0.0,
+                        length,
+                        offset: 0.0,
+                        reverse: false,
+                        additive: false,
+                        looping,
+                        user: false,
+                        ping_pong: false,
+                        wrapped: false,
+                        started: false,
+                    })
+                }
                 Generator::Clip {
                     animation,
                     mode,
@@ -1663,8 +1690,10 @@ impl Ctx<'_> {
 
     fn advance_clip(&mut self, gi: usize, g: GenId, c: &mut ClipState, dt: f32) {
         let graph = self.shared.graph(gi);
-        let Generator::Clip { user_fraction, .. } = &graph.generators[g] else {
-            return;
+        let user_fraction = match &graph.generators[g] {
+            Generator::Clip { user_fraction, .. } => *user_fraction,
+            Generator::Sequence { .. } => 0.0,
+            _ => return,
         };
         let speed = self.effective_clip_speed(gi, g, c.length, !c.user && !c.ping_pong);
         let first = !c.started;
@@ -1677,7 +1706,7 @@ impl Ctx<'_> {
         } else if c.user {
             let f = self
                 .bound(gi, g, "userControlledTimeFraction")
-                .unwrap_or(*user_fraction);
+                .unwrap_or(user_fraction);
             t = f.clamp(0.0, 1.0) * c.length;
         } else if c.ping_pong && t >= c.length {
             // Back the other way from the end.
@@ -2387,6 +2416,31 @@ impl Instance {
 
     /// Clips making up the pose now, with weights summing to 1 (per bone, where masked).
     pub fn samples(&self) -> Vec<Sample> {
+        self.all_samples()
+            .into_iter()
+            .filter(|s| {
+                !matches!(
+                    self.shared.graph(s.graph).generators[s.generator],
+                    Generator::Sequence { .. }
+                )
+            })
+            .collect()
+    }
+
+    /// Active NIF sequence leaves, with graph transition/blender weights.
+    pub fn sequence_samples(&self) -> Vec<Sample> {
+        self.all_samples()
+            .into_iter()
+            .filter(|s| {
+                matches!(
+                    self.shared.graph(s.graph).generators[s.generator],
+                    Generator::Sequence { .. }
+                )
+            })
+            .collect()
+    }
+
+    fn all_samples(&self) -> Vec<Sample> {
         let mut out = Vec::new();
         if let Some(root) = &self.root {
             let ctx = Ctx {
@@ -2834,6 +2888,35 @@ mod tests {
         let mut i = Instance::new(shared, 1);
         i.update(0.0, &mut durations);
         i
+    }
+
+    #[test]
+    fn sequence_leaves_keep_transition_weights_and_are_separate_from_clips() {
+        let mut g = graph();
+        for index in 1..g.generators.len() {
+            let name = g.generators[index].name().to_owned();
+            g.generators[index] = Generator::Sequence {
+                name: name.clone(),
+                sequence: name,
+                raw_50: 255,
+                raw_54: 3.0,
+            };
+        }
+        let mut i = instance(g);
+        assert!(i.samples().is_empty());
+        assert_eq!(i.sequence_samples()[0].animation.as_ref(), "Idle");
+        i.send_event("Sit");
+        i.update(0.25, &mut durations);
+        assert_eq!(i.sequence_samples()[0].animation.as_ref(), "Enter");
+        assert_eq!(i.sequence_samples()[0].time, 0.25);
+        i.send_event("Next");
+        i.update(0.0, &mut durations);
+        i.send_event("Stand");
+        i.update(0.25, &mut durations);
+        let samples = i.sequence_samples();
+        assert_eq!(samples.len(), 2);
+        assert!((samples.iter().map(|s| s.weight).sum::<f32>() - 1.0).abs() < 1e-6);
+        assert!(samples.iter().all(|s| s.weight > 0.0 && s.weight < 1.0));
     }
 
     fn playing(i: &Instance) -> Vec<(String, f32)> {

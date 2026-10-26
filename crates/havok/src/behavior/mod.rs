@@ -359,6 +359,14 @@ pub const BLEND_CYCLIC: u16 = 0x20;
 
 #[derive(Debug, Clone)]
 pub enum Generator {
+    /// Named NIF sequence, as authored in an HKX asset. The last two fields
+    /// retain their serialized values without assigning engine semantics.
+    Sequence {
+        name: String,
+        sequence: String,
+        raw_50: u8,
+        raw_54: f32,
+    },
     Clip {
         name: String,
         animation: String,
@@ -434,7 +442,8 @@ pub enum Generator {
 impl Generator {
     pub fn name(&self) -> &str {
         match self {
-            Generator::Clip { name, .. }
+            Generator::Sequence { name, .. }
+            | Generator::Clip { name, .. }
             | Generator::StateMachine { name, .. }
             | Generator::Blender { name, .. }
             | Generator::Selector { name, .. }
@@ -1264,6 +1273,12 @@ impl<'a> Reader<'a> {
         let class = self.class(o);
         let name = p.string(o + NODE_NAME).unwrap_or_default();
         let g = match class {
+            "BGSGamebryoSequenceGenerator" => Generator::Sequence {
+                name,
+                sequence: p.string(o + 0x48).unwrap_or_default(),
+                raw_50: p.u8(o + 0x50),
+                raw_54: p.f32(o + 0x54),
+            },
             "hkbClipGenerator" => Generator::Clip {
                 name,
                 animation: p.string(o + 0x48).unwrap_or_default(),

@@ -1325,6 +1325,12 @@ fn main() -> Result<()> {
                         }
                     }
                     G::Reference { name, behavior } => println!("{pad}ref {name} -> {behavior}"),
+                    G::Sequence {
+                        name,
+                        sequence,
+                        raw_50,
+                        raw_54,
+                    } => println!("{pad}sequence {name} -> {sequence} ({raw_50}, {raw_54})"),
                     G::Other(c) => println!("{pad}other {c}"),
                 }
             }
