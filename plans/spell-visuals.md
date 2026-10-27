@@ -136,36 +136,73 @@ by default and require an explicit headless-adapter run.
 - Actual summon spawning/despawning remains untested: the hit-art test sets
   `ActiveEffect.summoned` metadata and unloads the target, but does not create or
   remove a summoned actor. Add a summon lifecycle integration test.
-- The manual SE shader save/load probe below is still pending; its predicted
-  outcomes are not observations and automated tests cannot replace it.
+- The manual SE probe below is still pending; its predicted outcomes are not
+  observations and automated tests cannot replace it.
 
-### Manual shader save/load probe
+### Manual SE probe
 
-Build the tool before generating the plugin; keep outputs under ignored
-`tests/assets/` (the generated PEX is written into its `Scripts/` directory):
+One plugin, `test-mod spell-visuals`, covers every by-eye question above that
+a fixed scene can show: Oakflesh's shader across a reload, and Flames,
+Frostbite and Fireball cast by the player and by a test caster at a rock and
+into open air. Build the tool first; outputs stay under ignored `tests/assets/`
+(the PEX goes in its `Scripts/`):
 
 ```sh
 cargo build -p vrm-tools
 target/debug/vrm-tool test-mod spell-visuals "<Skyrim SE>/Data" tests/assets/VrmSpellVisuals.esp
 ```
 
-Do not install the plugin or run Skyrim here. The user loads a disposable SE save
-with the plugin, notes the Oakflesh sheen in third person, then reloads the new
-numbered save requested by the quest without calling Play again. The persisted
-`Ran` guard prevents replay. After observation, `cqf VrmSpellVisualsQuest StopVisual`
-stops the shader. Screenshots stay outside the repository. The user can place
-resulting saves in `tests/results/` for `vrm-tool test-results tests/results`, but
-shader visibility still requires human observation; no Papyrus query supplies it.
+Do not install the plugin or run Skyrim here. The user adds it to a disposable
+SE save. On its first update the quest moves the player to vibe_rm's default
+start (Tamriel 18432, -47104, facing a rock 350 units out at 140 degrees),
+gives Flames, Frostbite and Fireball with 1000 magicka, plays Oakflesh's
+shader, shows the steps and asks for a save. `cqf VrmFx Help` shows the steps
+again; the functions are listed in the module doc
+(`crates/tools/src/test_mods/spell_visuals.rs`). The steps:
+
+0. `fw 81a` for clear weather, as vibe_rm's captures use.
+1. Note the Oakflesh sheen, reload the numbered save the quest asked for
+   (the persisted `Ran` guard prevents replay), note whether the sheen is
+   still there, then `cqf VrmFx StopVisual`.
+2. `cqf VrmFx Rock`: hold Flames on the rock for 5 s, screenshots at about
+   1 s and 5 s. `cqf VrmFx Air`: hold it into open air, screenshot.
+3. `cqf VrmFx NpcFlames`, then `cqf VrmFx Side`: the test caster holds
+   Flames on the same rock point, seen side-on; screenshot, and walk around
+   it as useful. `cqf VrmFx NpcFlamesAir`, then `cqf VrmFx AirSide`: the
+   same into open air.
+4. The same for Frostbite (`NpcFrost`, `NpcFrostAir`, and the player's own),
+   and `NpcFireball`: try to catch the trail in flight.
+5. `cqf VrmFx Night`, then repeat steps 2 and 3 for Flames.
+   `cqf VrmFx NpcStop` ends the caster's casting.
+
+Screenshots go in `tests/results/spell-visuals/`, named by step (for example
+`2-rock-1s.png`, `3-npc-flames-side.png`), with a note of anything the
+caster did unexpectedly: it is new here and meant for later tests too.
+
+vibe_rm's reference captures of the same scenes come from the same plugin,
+loaded offscreen through a symlinked overlay of the game's Data directory
+(nothing is written to it):
+
+```sh
+scripts/spell-visuals-captures.sh   # into tests/captures/spell-visuals/
+```
+
+It writes each scene's frames, its log and a `manifest.txt` recording the
+commit and the exact commands, so a capture set can be regenerated from any
+later commit for comparison. The captures from 2026-10-27 (after the palette
+and multi-target emitter fixes) are kept in `tests/captures/spell-visuals/`.
 
 | Checkpoint | Predicted outcome / interpretation (not an SE result) |
 | --- | --- |
-| First update, before save | Oakflesh sheen appears; Play runs once with indefinite duration. |
-| Reload numbered save, shader persists in SE | Sheen remains without replay; contradicts our transient-script-visual choice. |
-| Reload numbered save, shader is transient in SE | Sheen is absent without replay; supports our current choice. |
-| After `StopVisual` | Any remaining sheen fades/stops; no new Play is issued. |
+| Oakflesh, first update | Sheen appears; Play runs once with indefinite duration. A missing sheen invalidates the comparison. |
+| Oakflesh after reload | Present: contradicts our transient script shaders. Absent: supports them. |
+| `StopVisual` | Any remaining sheen fades; no new Play. |
+| Flames on the rock | vibe_rm: a white-hot ball of impacts stacked every 0.25 s. A single steady impact in SE means impacts don't stack (or are capped). |
+| Flames density, rock and open air | vibe_rm: sparse fire along the spray. |
+| Flames' jet | vibe_rm: a faint red heat haze; check whether SE shows more along the spray. |
+| Frostbite, Fireball | vibe_rm: spray and fire trail forward along the projectile. |
 
-A missing initial sheen invalidates the persistence comparison. Record the actual
-observation before changing the saving decision.
+Record the observations before changing any decision.
 
 ## Baseline before implementation
 

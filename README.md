@@ -70,8 +70,9 @@ files can't be read).
 lights, effect shaders and enchantment visuals. Their fidelity choices and
 original-game comparisons are recorded in `known_ambiguities/spell-visuals.md`
 and `known_ambiguities/effect-shaders.md`. The `spell-visuals` test-mod generator
-provides a manual SE shader save/load probe; generated plugins and scripts belong
-outside this repository.
+provides the manual SE probe (`plans/spell-visuals.md`), and
+`scripts/spell-visuals-captures.sh` renders vibe_rm's captures of the same scenes;
+generated plugins, scripts and captures belong outside this repository.
 
 The data directory is found from `--data`, `$SKYRIM_DATA`, or the default Steam
 locations on Linux.
