@@ -18,7 +18,7 @@ pub(crate) struct WaterSurface {
 
 /// Half-open bounds give the cell to the east/north its own boundary, as
 /// grid_of does. Height is deliberately ignored: callers may query above water.
-fn surface_at<'a>(
+pub(crate) fn surface_at<'a>(
     surfaces: impl IntoIterator<Item = &'a WaterSurface>,
     at: Vec3,
 ) -> Option<&'a WaterSurface> {

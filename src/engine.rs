@@ -1544,6 +1544,19 @@ impl Engine {
                     "sprint",
                 )
                 .and_then(|(n, v)| Some((*types.get(&n)?, v)));
+                rt.swim_moves = if project.humanoid() {
+                    // The humanoid graph has no NPC swim iState constant; the
+                    // only swim constant in its subgraphs belongs to the mount.
+                    types
+                        .get("npcswimming")
+                        .map(|m| (*m, rt.moves.map_or(0.0, |(_, v)| v)))
+                } else {
+                    crate::world::movement::special_movement_type(
+                        project.shared.variables(),
+                        "swim",
+                    )
+                    .and_then(|(n, v)| Some((*types.get(&n)?, v)))
+                };
                 let humanoid = project.humanoid();
                 let mut g = crate::world::behavior::GraphAnim::new(
                     project,

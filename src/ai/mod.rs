@@ -348,6 +348,8 @@ pub struct ActorRuntime {
     pub(crate) sprinting: bool,
     sprint_told: bool,
     pub(crate) swimming: bool,
+    swim_told: bool,
+    pub swim_moves: Option<(MoveSpeeds, f32)>,
     /// Worn armor's speed multiplier, refreshed before each AI update. Keep
     /// movement types and clip speeds unmodified for animation playback.
     pub(crate) armor_speed_mult: f32,
@@ -516,6 +518,8 @@ impl ActorRuntime {
             sprinting: false,
             sprint_told: false,
             swimming: false,
+            swim_told: false,
+            swim_moves: None,
             armor_speed_mult: 1.0,
             anim: None,
             idle: None,
@@ -617,7 +621,7 @@ impl ActorRuntime {
     /// height, as far as the character's foot IK rays reach (40 up, 32 down for
     /// humanoids; 100 / 128 for giants). Furniture places the actor itself.
     fn stand_on_ground(&mut self, physics: &crate::physics::Physics, dt: f32) {
-        if self.in_furniture() {
+        if self.in_furniture() || self.swimming {
             self.lift = 0.0;
             return;
         }
@@ -2004,6 +2008,15 @@ impl ActorRuntime {
             .exec
             .goal
             .map_or((package::Gait::Walk, false), |g| (g.gait, g.sneak));
+        if self.swimming {
+            return self.swim_moves.map_or(walk, |(m, _)| {
+                if gait == package::Gait::Run {
+                    m.run
+                } else {
+                    m.walk
+                }
+            });
+        }
         if sneak {
             return self.sneak_moves.map_or(walk * 0.75, |(m, _)| {
                 if gait == package::Gait::Run {
@@ -2031,7 +2044,9 @@ impl ActorRuntime {
 
     /// Turn rate (radians per second) from the movement type, walking or standing.
     fn turn_rate(&self) -> f32 {
-        let m = if self.exec.goal.is_some_and(|g| g.sneak) {
+        let m = if self.swimming {
+            self.swim_moves.or(self.moves)
+        } else if self.exec.goal.is_some_and(|g| g.sneak) {
             self.sneak_moves.or(self.moves)
         } else {
             self.moves
@@ -2090,7 +2105,9 @@ impl ActorRuntime {
         let still = !walking && !self.in_furniture();
         let model = self.transform();
         let sneak = self.exec.goal.is_some_and(|g| g.sneak) && !self.in_furniture();
-        let state = if self.sprinting {
+        let state = if self.swimming {
+            self.swim_moves.or(self.moves)
+        } else if self.sprinting {
             self.sprint_moves.or(self.moves)
         } else if sneak {
             self.sneak_moves.or(self.moves)
@@ -2099,7 +2116,15 @@ impl ActorRuntime {
         }
         .map(|(_, s)| s);
         let g = self.graph.as_mut().expect("checked");
-        if sneak != self.sneaking {
+        if self.swimming != self.swim_told {
+            self.actions.send(g, "ActionSwimStateChange");
+            self.swim_told = self.swimming;
+            self.moving = false;
+            if self.swimming {
+                self.drawn = false;
+            }
+        }
+        if sneak != self.sneaking && !self.swimming {
             self.actions.send(g, "ActionSneak");
             self.sneaking = sneak;
         }
@@ -2114,6 +2139,9 @@ impl ActorRuntime {
         if let Some(direction) = crate::world::movement::direction(self.exec.heading, self.velocity)
         {
             g.set_variable("Direction", direction);
+            if self.swimming {
+                g.set_variable("SwimDirection", direction);
+            }
         }
         g.set_variable("TurnDelta", turn_delta);
         // Standing still and turning: the graph's turn-in-place loops (creatures).
@@ -3723,6 +3751,11 @@ impl Engine {
                 .as_ref()
                 .map_or(self.camera.yaw, |b| b.heading),
         );
+        let water: Vec<_> = self
+            .cells
+            .values()
+            .flat_map(|rt| rt.water.iter().copied())
+            .collect();
         let nav = std::mem::take(&mut self.nav);
         let mut furniture = std::mem::take(&mut self.furniture);
         let (lo, vfs) = (&self.lo, &self.vfs);
@@ -3950,6 +3983,12 @@ impl Engine {
                 a.look_at = (near || talking == Some(a.ref_id)).then_some(eye);
                 if let Some(&(at, _)) = scene_look.get(&a.ref_id) {
                     a.look_at = Some(at);
+                }
+                if a.swimming
+                    && let Some(surface) = crate::water::surface_at(&water, a.exec.pos)
+                {
+                    a.exec.pos.z = surface.height - crate::water::FLOAT_DEPTH;
+                    a.lift = 0.0;
                 }
                 a.stand_on_ground(&self.physics, dt);
                 a.find_ground(&self.physics);

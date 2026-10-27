@@ -1017,6 +1017,9 @@ impl ActorRuntime {
 
     pub(crate) fn run_speed(&self) -> f32 {
         let walk = self.walk_speed();
+        if self.swimming {
+            return self.swim_moves.map_or(walk, |(m, _)| m.run) * self.armor_speed_mult;
+        }
         self.moves
             .map(|(m, _)| m.run)
             .filter(|r| *r > walk)
@@ -1313,6 +1316,11 @@ impl ActorRuntime {
             return None;
         }
         let reach = self.reach();
+        if self.swimming {
+            self.sprinting = false;
+            self.chase(dt, w, target, self.run_speed());
+            return None;
+        }
         let distance = (target - self.exec.pos).truncate().length();
         self.sprinting = self
             .exec
@@ -1368,7 +1376,10 @@ impl ActorRuntime {
             && !self.drawn
             && let Some(g) = self.graph.as_mut()
         {
-            self.drawn = g.send_event("WeapEquip");
+            self.drawn = self
+                .actions
+                .event("ActionDraw")
+                .is_some_and(|event| g.send_event(event));
         }
         let unready = humanoid && !self.weapon_out && self.weapon_reach > 0.0;
         let c = self.exec.combat.as_mut()?;

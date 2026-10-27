@@ -26,7 +26,7 @@ const EXIT_EVENTS: [&str; 3] = ["idlechairexitstart", "idlefurnitureexit", "idle
 #[derive(Default)]
 pub(crate) struct LocomotionActions(pub Vec<(&'static str, Option<String>)>);
 impl LocomotionActions {
-    pub(crate) const NAMES: [&'static str; 9] = [
+    pub(crate) const NAMES: [&'static str; 10] = [
         "ActionMoveStart",
         "ActionMoveStop",
         "ActionTurnLeft",
@@ -36,6 +36,7 @@ impl LocomotionActions {
         "ActionSprintStart",
         "ActionSprintStop",
         "ActionSwimStateChange",
+        "ActionDraw",
     ];
     pub(crate) fn event(&self, action: &str) -> Option<&str> {
         self.0

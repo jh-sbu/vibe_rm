@@ -83,3 +83,17 @@ of exit hysteresis measured against the bed, so floating at the observed
 also leaves the state. The bed comes from static-world ground rays.
 Scale/race-dependent depth and Waterbreathing's influence on state remain
 unmeasured; use the same threshold for now. Autotest20 is deferred by the user.
+
+NPC swim locomotion selects graph-named swim MOVT states and uses water
+navmesh paths. Swimmers float at the observed surface-minus-92 feet height;
+land collision standing is suspended. No diving or race-specific float height
+is inferred. Swimming fighters pursue without attempting attacks or drawing.
+ActionDraw's vanilla tree, contrary to the planning sketch, has no general
+IsSwimming condition: avoiding a draw while swimming is an engine policy here.
+The humanoid swim blend actually binds `Direction`; `SwimDirection` is declared
+but has no binding in the inspected graph. Both are supplied the motion fraction.
+
+The humanoid graph declares no NPC swim iState constant (its HorseSwim
+constant is a mounted subgraph's). Humanoids therefore use NPCSwimming's
+speeds while retaining their default iState; creatures use their own authored
+swim constants. This avoids accidentally selecting mounted swim speeds.
