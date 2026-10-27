@@ -27,7 +27,7 @@ const SNEAK_STRIDE: f32 = 0.8;
 const MAX_AIRBORNE: f32 = 0.3;
 
 /// Feet further under water than this are swimming, not wading: no footsteps.
-const WADE_DEPTH: f32 = 100.0;
+const WADE_DEPTH: f32 = crate::water::SWIM_DEPTH;
 
 /// Water's material type.
 const WATER: FormId = FormId(0x12F40);
@@ -107,7 +107,14 @@ impl Engine {
         let Some(ipds) = step.set.impacts(&step.tag, step.gait) else {
             return;
         };
-        let Some(material) = self.ground_material(step.at) else {
+        let material = if step.gait == Gait::Swim {
+            self.water_level(step.at)
+                .filter(|h| *h > step.at.z)
+                .map(|_| WATER)
+        } else {
+            self.ground_material(step.at)
+        };
+        let Some(material) = material else {
             return;
         };
         let sounds = self.footsteps.impacts.sounds(&self.lo, ipds, material);
@@ -133,6 +140,11 @@ impl Engine {
     /// controller loses the ground for a frame now and then going over uneven
     /// meshes; only a while in the air (a jump, a fall) starts the stride over.
     pub(crate) fn update_player_footsteps(&mut self, dt: f32, moved: f32, run: bool, sprint: bool) {
+        if self.player.swimming {
+            self.footsteps.stride = 0.0;
+            self.footsteps.airborne = 0.0;
+            return;
+        }
         if self.player.noclip {
             return;
         }
@@ -190,6 +202,19 @@ impl Engine {
             self.player_step(&sprinting, gait);
         } else {
             self.player_step(&format!("foot{foot}"), gait);
+        }
+    }
+
+    /// Swimming strokes follow the clip annotations, rather than land strides.
+    pub(crate) fn player_swim_steps(&mut self, events: &[String]) {
+        if !self.player.swimming {
+            return;
+        }
+        let Some(set) = self.player_footstep_set() else {
+            return;
+        };
+        for tag in events.iter().filter(|t| set.has_tag(t)) {
+            self.player_step(tag, Gait::Swim);
         }
     }
 

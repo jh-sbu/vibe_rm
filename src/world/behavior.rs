@@ -220,6 +220,7 @@ pub struct GraphAnim {
     /// normal, from the AI's rays), and the ankles to cast from next.
     pub ground: Vec<Option<(f32, Vec3)>>,
     pub ankles: Vec<Vec3>,
+    pub foot_ik_enabled: bool,
     feet: FootIkState,
     bind: Vec<Transform>,
     scratch: Vec<havok::QsTransform>,
@@ -353,6 +354,7 @@ impl GraphAnim {
             hk_bones: None,
             ground: Vec::new(),
             ankles: Vec::new(),
+            foot_ik_enabled: true,
             feet: FootIkState::default(),
             bind: skeleton.bind_locals(),
             scratch: Vec::new(),
@@ -769,7 +771,10 @@ impl GraphAnim {
             let map = self
                 .hk_bones
                 .get_or_insert_with(|| anims.havok_bone_map(vfs, &self.skeleton_path, skeleton));
-            let gains = self.inst.foot_ik_controls();
+            let gains = self
+                .inst
+                .foot_ik_controls()
+                .filter(|_| self.foot_ik_enabled);
             self.ankles = footik::apply(
                 &mut self.feet,
                 ik,

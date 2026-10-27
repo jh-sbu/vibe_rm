@@ -661,6 +661,9 @@ impl ActorRuntime {
     /// movement type's run speed than its walk.
     pub(crate) fn gait(&self) -> crate::world::footsteps::Gait {
         use crate::world::footsteps::Gait;
+        if self.swimming {
+            return Gait::Swim;
+        }
         if self.sprinting {
             return Gait::Sprint;
         }
@@ -1963,6 +1966,11 @@ impl ActorRuntime {
         let (feet, heading, scale) = (self.feet(), self.exec.heading, self.scale);
         let in_furniture = self.in_furniture();
         let Some(g) = self.graph.as_mut() else { return };
+        g.foot_ik_enabled = !self.swimming;
+        if self.swimming {
+            g.ground.clear();
+            return;
+        }
         let on = !in_furniture
             && g.variable("bHumanoidFootIKDisable")
                 .is_none_or(|v| v == 0.0);

@@ -36,6 +36,7 @@ pub struct PlayerBody {
     sneak_state: Option<f32>,
     sprint_state: Option<f32>,
     swim_told: bool,
+    step_events: Vec<String>,
     /// How the graph was last told they move, and its state changes by then
     /// ([`GraphAnim::changes`]): told again when either changes.
     told: Option<Stance>,
@@ -242,6 +243,7 @@ impl Engine {
         let pose = body.animate(dt, &motion, &actions, &self.vfs, &mut self.anims);
         let transform = body.transform(feet);
         let events = std::mem::take(&mut body.combat_events);
+        let step_events = std::mem::take(&mut body.step_events);
         let shot = body
             .bow
             .update(events.arrow_release, can_shoot && body.drawn, dt);
@@ -260,6 +262,7 @@ impl Engine {
                 inst.equipment = equipment;
             }
         }
+        self.player_swim_steps(&step_events);
         self.update_player_swing(events.hit_frames, events.attack_stop, dt);
         self.player_spell_events(events.spell_fire, events.hand_equipped, dt);
         if let Some(held) = shot {
@@ -338,6 +341,7 @@ impl PlayerBody {
             sneak_state: None,
             sprint_state: None,
             swim_told: false,
+            step_events: Vec::new(),
             told: None,
             told_at: 0,
             airborne: None,
@@ -440,6 +444,7 @@ impl PlayerBody {
                 self.guard = false;
             }
         }
+        g.foot_ik_enabled = !m.swimming;
         let state = if m.sprinting {
             self.sprint_state.or(self.state)
         } else if m.sneaking {
@@ -557,6 +562,10 @@ impl PlayerBody {
     ) -> Option<Vec<Mat4>> {
         let frame = self.graph.as_mut()?.update(dt, vfs, anims, &self.skeleton);
         for r in &frame.raised {
+            let tag = r.event.to_ascii_lowercase();
+            if self.swim_told && !self.step_events.contains(&tag) {
+                self.step_events.push(tag);
+            }
             log::trace!(target: "player_events", "player raised {}{}", r.event, r.payload.as_deref().map(|p| format!(" ({p})")).unwrap_or_default());
             self.combat_events.record(&r.event, r.payload.as_deref());
             match r.event.to_ascii_lowercase().as_str() {

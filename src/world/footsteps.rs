@@ -13,6 +13,7 @@ pub enum Gait {
     Run = 1,
     Sprint = 2,
     Sneak = 3,
+    Swim = 4,
 }
 
 /// A footstep set: per gait, the event tags (lowercase) and their impact data sets.
@@ -59,7 +60,11 @@ impl FootstepSet {
     /// first group that has the tag (sprint-only tags, a creature's breathing).
     pub fn impacts(&self, tag: &str, gait: Gait) -> Option<FormId> {
         let find = |g: &Vec<(String, FormId)>| g.iter().find(|(t, _)| t == tag).map(|s| s.1);
-        find(&self.groups[gait as usize]).or_else(|| self.groups.iter().find_map(find))
+        find(&self.groups[gait as usize]).or_else(|| {
+            (gait != Gait::Swim)
+                .then(|| self.groups.iter().find_map(find))
+                .flatten()
+        })
     }
 }
 
