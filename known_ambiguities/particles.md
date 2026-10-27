@@ -66,7 +66,9 @@ are used below is this engine's reading.
   direction and speed variation, up to the generation count.
 - **Colour.** Particles' colour and fade go in their vertex colour; the
   material uses vertex colours, and vertex alpha unless the palette gives
-  the alpha (then the fade picks the palette's row only).
+  the alpha (then the fade picks the palette's row only). Likewise, when the
+  palette gives the colour, the vertex colour's red picks its row and does
+  not tint it as well; evidence below.
 - **Running.** Systems run while their object is within 6000 units of the
   camera; one first seen runs 3 seconds ahead so fires are burning. Particles are sorted with the other blended draws by their
   system's centre, not one by one, and aren't lit.
@@ -79,6 +81,41 @@ are used below is this engine's reading.
   master particle cap and flags). Here each node gets its own copy of the
   addon's systems, placed at the node's rest transform, so a chandelier's
   candles flicker independently.
+
+## Palette colour and vertex colour
+
+Effect shaders with Greyscale To Palette Color (shader flags 1, bit 4) look
+up the greyscale texture (palette) at the source texture's greyscale and a
+row picked by the vertex colour's red. Whether the vertex colour also
+multiplies the looked-up colour is not documented publicly. The Niftools
+schema names the flag only.
+
+Asset evidence (installed Skyrim SE meshes, read with `vrm-tool nif-dump`;
+a survey of the 1037 models under `meshes/magic`, `meshes/mps` and
+`meshes/effects`, 2026-10-26; no assets copied into this repository):
+
+- The palettes are two-dimensional, with brightness built into their rows.
+  `textures/effects/gradients/gradflame01.dds` (256x64) runs from dim red
+  with zero alpha in its top row to white-hot halfway down; its bottom row is
+  a separate blue strip. `gradsteamthin.dds` is light grey in every row.
+- Of the 568 particle systems that take their colour from a palette, 531
+  have greyscale `BSPSysSimpleColorModifier` colours, which fits the vertex
+  colour being a row index rather than a tint.
+- The steam breaths in `meshes/effects/trailerfx/` (`tfx01`, `tfx03`,
+  `tfxdragonbreath`, `tfxmanbreathfast`) use exactly black vertex colours
+  (alpha 0.7) with `GradSteamThin`, under ordinary alpha blending. As a tint
+  they would draw as black smoke; as a row index they draw as light steam.
+- Flames' spray (`firesprayfx01.nif`, `pFlameSpellBase04`) uses grey 0.067 on
+  `GradFlame01`, MPSFlamesFire and Firebolt's fire 0.192. As a tint these
+  draw at about a tenth and a quarter of the palette's brightness: offscreen
+  captures showed Flames' fire all but invisible, and orange once the tint
+  was dropped.
+
+Implemented policy: a palette that gives the colour replaces the vertex
+colour's tint; without one, vertex colours tint as before. Whether the
+vertex alpha still applies with a colour-only palette, and the row
+convention itself, are unverified. A headless GPU test
+(`render::effect_shader_tests`) draws both cases.
 
 ## Directional drag
 

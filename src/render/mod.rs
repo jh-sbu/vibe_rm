@@ -302,6 +302,9 @@ impl MaterialUniform {
 }
 
 #[cfg(test)]
+mod effect_shader_tests;
+
+#[cfg(test)]
 mod alpha_test_tests {
     use super::*;
 
