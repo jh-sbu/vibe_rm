@@ -26,6 +26,18 @@
 //! Load a save outdoors, out of combat, and leave the game alone for about
 //! 40 s (the player draws, blocks and plays the shout animation by
 //! script). The plugin name doesn't matter.
+//!
+//! Run in Skyrim SE once (2026-10-27, a save outdoors), every trial seen:
+//!
+//! | step | latencies (s) | mean |
+//! | ---- | ------------- | ---- |
+//! | `blockStart` (0.1 s blend) | 0.129-0.138 | 0.134 |
+//! | `blockStop` (none) | 0.121-0.134 | 0.125 |
+//! | `shoutStart` (0.2 s) | 0.128-0.140 | 0.132 |
+//! | `shoutStop` (0.2 s) | 0.132-0.143 | 0.136 |
+//!
+//! All within 0.011 s of each other, far under the blends: the state is
+//! published as the transition begins, as ours.
 
 use anyhow::Result;
 use esp::writer::{AttachedScript, Node, PropertyValue, write_plugin};

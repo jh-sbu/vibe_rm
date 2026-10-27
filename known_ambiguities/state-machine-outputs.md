@@ -19,27 +19,35 @@ Implemented in `crates/havok/src/behavior/runtime.rs`.
   member name, these bindings support interpreting it as an output of the
   machine's active state ID, rather than an input selecting a state.
 
-## Choices not resolved by those sources
+## Confirmed in Skyrim SE
 
-- Publish the actual state's ID on activation and when a transition begins,
-  before activating the new state's child. Child selectors and nested start
-  states can therefore use the value immediately. Publish the ID actually
-  selected when an invalid start ID falls back to the first state.
-- A pending transition retains the source ID until its initiate interval opens.
-  Once a cross-fade begins, publish the destination ID even while the source
-  pose still contributes. Do not republish the fading source's ID each frame.
-- Leave the last published value on deactivation; do not reset it or overwrite
-  script / expression writes on frames without a state change.
+Observed with test plugins on the player's `1HM_Behavior` (`i1HMState`) and
+`Blocking_Behavior` (`iBlockState`), 2026-10-27:
 
-Observed in Skyrim SE (`test-mod autotest17`, 2026-10-27, the player's
-`1HM_Behavior` and `Blocking_Behavior`): a `blockStop` waiting for its initiate
-interval during a block hit left `i1HMState` at the source's ID until the
-interval opened; `iBlockState` kept its last value (1) after its machine
-deactivated; and it read the start state (0) again once the machine activated.
-Those three choices match the game. Still unconfirmed: whether the destination
-ID is published when a blend begins or when it ends (one trial at Papyrus's
-0.17 s polling resolution couldn't separate the player's 0.1 s blend),
-publication order relative to modifiers within an update, and competing writers.
+- **Published as a transition begins**, not when its blend ends
+  (`test-mod autotest18`): over 8 trials each, `i1HMState` read the destination
+  a mean 0.134 s after `blockStart` (0.1 s blend), 0.132 s after `shoutStart`
+  and 0.136 s after `shoutStop` (0.2 s each), against 0.125 s after `blockStop`
+  (no blend). The 0.12 s floor is the send and one read.
+- **A pending transition keeps the source's ID** until its initiate interval
+  opens (`test-mod autotest17`): `blockStop` sent 0.13 s into a block hit left
+  `i1HMState` at 1 until 0.75 s into the hit, past the clip's 0.5 s
+  `InitiateWinBegin`.
+- **Deactivation keeps the last value; activation publishes the start state**
+  (autotest17): `iBlockState` stayed 1 after `BlockState` was left, and read 0
+  once `blockStart` activated `Blocking_Behavior` again.
+
+The runtime already does all three, so nothing changed.
+
+## Choices still unconfirmed
+
+- Publishing before the new state's child activates, so child selectors and
+  nested start states read the value at once; Papyrus reads it only between
+  updates, so the order within an update isn't observable this way.
+- Publishing the ID actually selected when an invalid start ID falls back to
+  the first state (no vanilla graph was checked for an invalid start ID).
+- Not overwriting script / expression writes on frames without a state change,
+  and competing writers during blends.
 
 Synthetic tests cover nonsequential IDs, child start-state reads, pending
 transitions and cross-fades, clip-triggered transitions, and local-to-project

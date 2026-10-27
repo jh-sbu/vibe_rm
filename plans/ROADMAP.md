@@ -527,6 +527,10 @@ game each piece unlocks.
 - Reversed clips (negative clip generator speed, root motion seen from the clip's end);
   loops that lead on by their own trigger (sitting variants play once and return through
   their reversed enter clip); `PlayIdle` on a seated actor plays in the seat
+- State machines' current state in their bound variables (`i1HMState`, `iBlockState`...),
+  timed as in SE (`test-mod autotest17`, `autotest18`): published as a transition begins,
+  whatever its blend; the source's kept while a transition waits for its initiate
+  interval; the last value kept on deactivation, the start state published on activation
 - Transition timing: trigger intervals (events outside them are ignored), initiate
   intervals (a transition triggered early waits for its window: woodcutters finish the
   swing, talking gestures and standing idles leave at their authored moment), both
@@ -1662,9 +1666,9 @@ game each piece unlocks.
      blend, so it can shift a change by a frame at most, and no vanilla machine sets
      a change notification. Twists, selectors' blends and character properties
      have no Papyrus-visible output either.
-   - State-machine outputs' timing (`known_ambiguities/state-machine-outputs.md`):
-     `autotest17` confirmed the pending-interval and deactivation choices; whether
-     a blend publishes at its start or end is `test-mod autotest18`'s (not yet run)
+   - State-machine outputs: within-update ordering and competing writers
+     (`known_ambiguities/state-machine-outputs.md`; autotest17 and autotest18
+     confirmed the publication timing, see Done)
    - Engine variables and events still missing: combat, first person;
      INFO listener idles (the speaker's are done, see Done); listeners' reactions
    - Footsteps: swimming (and swimming itself), splashes, decals
