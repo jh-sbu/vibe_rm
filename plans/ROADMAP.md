@@ -1630,7 +1630,8 @@ game each piece unlocks.
   same Ignore External Damage gate; explosions are not done.
 
 ## Next
-1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done)
+1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done).
+   The items unblocked as of 2026-10-27 are planned in `plans/animation-unblocked.md`
    - Pose modifiers: twist chains, non-additive modes and branch blending
      (`known_ambiguities/twist-modifier.md`), keyframe bones; foot IK locking planted feet, aligning the
      body with the ground (`alignWorldFromModelGain`), legs' ungrounded events;
