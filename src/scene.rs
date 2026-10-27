@@ -1784,7 +1784,8 @@ impl Engine {
         let Some(t) = crate::dialogue::topic(&self.lo, topic) else {
             return true;
         };
-        let Some(info) = self.select_info(&t, speaker) else {
+        let listener = self.scene_dialogue_listener(i, k).unwrap_or(PLAYER_REF);
+        let Some(info) = self.select_info_for(&t, speaker, listener) else {
             log::debug!("scene line {}: no INFO for {speaker}", t.editor_id);
             return !looping;
         };
@@ -1799,6 +1800,18 @@ impl Engine {
         }
         self.next_scene_line(i, k, speaker);
         false
+    }
+
+    fn scene_dialogue_listener(&self, i: usize, k: usize) -> Option<FormId> {
+        let run = &self.scenes.running[i];
+        let action = &run.def.scene.actions[k];
+        if action.flags & action_flags::HEADTRACK_PLAYER != 0 {
+            Some(PLAYER_REF)
+        } else if let ActionKind::Dialogue { headtrack, .. } = action.kind {
+            headtrack.and_then(|alias| self.alias_ref(run.def.scene.quest, alias))
+        } else {
+            None
+        }
     }
 
     /// Say the next response of the action's INFO.
@@ -1832,15 +1845,7 @@ impl Engine {
         let now = self.scripts.real_time;
         let idle = r.speaker_idle;
         let listener_idle = r.listener_idle;
-        let action = &self.scenes.running[i].def.scene.actions[k];
-        let listener = if action.flags & action_flags::HEADTRACK_PLAYER != 0 {
-            Some(PLAYER_REF)
-        } else if let ActionKind::Dialogue { headtrack, .. } = action.kind {
-            headtrack
-                .and_then(|alias| self.alias_ref(self.scenes.running[i].def.scene.quest, alias))
-        } else {
-            None
-        };
+        let listener = self.scene_dialogue_listener(i, k);
         self.scenes.running[i].actions[k].line = Some(SceneLine {
             speaker,
             name,

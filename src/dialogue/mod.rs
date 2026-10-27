@@ -6,6 +6,7 @@ use crate::condition::{self, Condition};
 use crate::engine::{Engine, PLAYER_REF};
 
 pub mod barks;
+mod social;
 
 pub mod info_flags {
     pub const GOODBYE: u16 = 0x1;
@@ -628,6 +629,15 @@ impl Engine {
 
     /// INFOs whose quest and speaker conditions pass, in topic order.
     fn eligible_infos(&mut self, topic: &Topic, npc_ref: FormId) -> Vec<Info> {
+        self.eligible_infos_for(topic, npc_ref, PLAYER_REF)
+    }
+
+    fn eligible_infos_for(
+        &mut self,
+        topic: &Topic,
+        npc_ref: FormId,
+        listener: FormId,
+    ) -> Vec<Info> {
         if !topic.quest.is_null()
             && !self
                 .scripts
@@ -637,7 +647,8 @@ impl Engine {
         {
             return Vec::new();
         }
-        let ctx = self.dialogue_ctx(npc_ref);
+        let mut ctx = self.dialogue_ctx(npc_ref);
+        ctx.target = Some(listener);
         if !topic.quest.is_null() {
             let qc = self.quest_dialogue_conditions(topic.quest);
             let mut c = ctx;
@@ -683,8 +694,17 @@ impl Engine {
     }
 
     pub fn select_info(&mut self, topic: &Topic, npc_ref: FormId) -> Option<Info> {
+        self.select_info_for(topic, npc_ref, PLAYER_REF)
+    }
+
+    pub(crate) fn select_info_for(
+        &mut self,
+        topic: &Topic,
+        npc_ref: FormId,
+        listener: FormId,
+    ) -> Option<Info> {
         let infos = self
-            .eligible_infos(topic, npc_ref)
+            .eligible_infos_for(topic, npc_ref, listener)
             .into_iter()
             .map(|i| (topic.clone(), i))
             .collect();

@@ -2705,6 +2705,7 @@ impl Engine {
         self.update_away();
         self.update_nav_obstacles();
         self.update_actors(world_dt);
+        self.update_npc_hellos();
         self.update_triggers(world_dt);
         self.update_hazards(world_dt);
         self.update_story();

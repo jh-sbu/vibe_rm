@@ -34,6 +34,7 @@ pub struct Bark {
 
 #[derive(Default)]
 pub struct Barks {
+    pub(crate) npc_hellos: super::social::HelloContacts,
     /// The line being said, if any.
     pub current: Option<Bark>,
     /// When each NPC last greeted the player, and when it may chatter next.

@@ -17,3 +17,20 @@ rules as humanoids. NPC head positions use 90% of scaled skeleton height;
 player targets use the eye. Species-specific attention, LOS rules and head
 points are not established by the graph bindings and remain unverified.
 The authored modifiers retain their own angular limits and easing.
+
+## Passing NPC hellos and scene listeners
+
+Step 7a's public Scenes documentation establishes passing AHEL events, not
+standalone HELO/IDLE reply chains. Running packages must allow Random
+Conversations (PKDT interrupt flags +8, bit 1). Moving/stationary contacts now
+send AHEL once on entering greeting range; normal Story Manager quests/scenes
+decide whether anything follows. We use fAIMinGreetingDistance (150 fallback)
+and a 32-unit exit band as a provisional proximity rule: the public text says
+"close enough" without specifying the exact AHEL threshold. Candidate order is
+FormID for determinism. No timer/chance algorithm is invented for ADIA here.
+
+Scene INFO run-on-target conditions and LNAM listener idles use the action's
+headtracking recipient where authored; actions without one retain the prior
+player context. Headtracking and dialogue-recipient identity may differ in
+some scenes; that link is an inference and needs a targeted SE observation.
+The larger ADIA approach/interrupt/phase-zero controller remains ROADMAP work.
