@@ -76,11 +76,31 @@ implementation decisions remain in `known_ambiguities/spell-visuals.md` and
   cone visibly travels out to its range. Cast input identifies independent
   left/right emitters and selects the corresponding magic node; missing nodes,
   dual casts and non-hand inputs retain the supplied cast origin.
-- Flame look: offscreen captures (2026-10-26) show the held Flames spray and
-  its MPSFlamesFire addons emitting, but the spray's own jet particles
-  (greyscale ~0.04-0.07 through GradFlame01) draw almost invisibly and the far
-  end reads as a white-hot ball, not orange flame. Compare against SE before
-  changing particle palette or brightness handling.
+- Flame look: offscreen captures (2026-10-26) of Flames sprayed at the rock
+  `--yaw 140` faces showed the fire all but invisible and a white-hot ball
+  where the spray struck. Asset inspection and captures with parts switched
+  off found two causes:
+  - Dim fire: palette-coloured particles were tinted by the vertex colour
+    that had already picked their palette row (Flames' jet 0.067,
+    MPSFlamesFire 0.192). Fixed; evidence in `known_ambiguities/particles.md`
+    (Palette colour and vertex colour). The hand and addon fire now draw
+    orange.
+  - The ball: each 0.25 s concentration tick lands a full impact
+    (`MAGFlames01ImpactSet` -> `FireballImpact01.nif` -> addon 9,
+    MPSFireBoltImpact01, an additive fireball explosion) at the same spot,
+    each with its own copy of the addon's particle systems, so four or more
+    overlap. With impacts switched off the ball was gone; neither the
+    projectile light, the spark-trail addon (5) nor billboards made it.
+    Open: whether SE lands an impact on every tick, and how its shared
+    master particle systems bound overlapping impacts (UESP's ADDN page has
+    the master particle cap always 0 in vanilla files, and addon 9 sets the
+    0x0002 "Always Loaded" flag). Watch Flames on a wall in SE.
+  - Still open: the spray's own jet (`pFlameSpellBase04`) wasn't seen
+    between the hand and the rock even with both fixed. It may be hidden
+    end-on behind the player; otherwise suspect the blended lifespan and
+    speed controllers (mSprayShort 0.033 s at 1500, mSprayLong 0.267 s at
+    2550) or its `BSPSysLODModifier` (begin 0.033, end 0.233). Capture it
+    from the side, then compare against SE.
 - Enchantments/dual scale: compare a sword drawn/sheathed and full/empty, and a
   dual projectile beside a single cast.
 - Membranes: compare timed captures of Oakflesh's actual ShieldSpellFXS, Soul
