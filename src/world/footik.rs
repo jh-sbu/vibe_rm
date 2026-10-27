@@ -22,6 +22,7 @@ pub struct FootIkState {
     tilts: Vec<Quat>,
     pins: Vec<Option<Vec3>>,
     locks: Vec<f32>,
+    alignment: Quat,
 }
 
 /// Fraction to close per update for a per-frame (30 Hz) gain.
@@ -31,6 +32,44 @@ fn step(gain: f32, dt: f32) -> f32 {
 
 fn rotation(m: &glam::Mat4) -> Quat {
     m.to_scale_rotation_translation().1
+}
+
+/// Fit z = ax + by + c through support hits. A degenerate footprint uses the
+/// hit normals, since two feet alone cannot determine a full support plane.
+fn support_normal(ankles: &[Vec3], ground: &[Option<(f32, Vec3)>]) -> Vec3 {
+    let points: Vec<_> = ankles
+        .iter()
+        .zip(ground)
+        .filter_map(|(a, hit)| hit.map(|(z, n)| (a.with_z(z), n)))
+        .collect();
+    if points.is_empty() {
+        return Vec3::Z;
+    }
+    let centre = points.iter().map(|(p, _)| *p).sum::<Vec3>() / points.len() as f32;
+    let (mut xx, mut yy, mut xy, mut xz, mut yz) = (0.0, 0.0, 0.0, 0.0, 0.0);
+    for (p, _) in &points {
+        let d = *p - centre;
+        xx += d.x * d.x;
+        yy += d.y * d.y;
+        xy += d.x * d.y;
+        xz += d.x * d.z;
+        yz += d.y * d.z;
+    }
+    let determinant = xx * yy - xy * xy;
+    if determinant.abs() > 1e-4 {
+        Vec3::new(
+            -(xz * yy - yz * xy) / determinant,
+            -(yz * xx - xz * xy) / determinant,
+            1.0,
+        )
+        .normalize()
+    } else {
+        points
+            .iter()
+            .map(|(_, n)| *n)
+            .sum::<Vec3>()
+            .normalize_or(Vec3::Z)
+    }
 }
 
 /// Place the feet of `locals` (one per NIF bone) on `ground`: per leg, the ground
@@ -80,6 +119,7 @@ pub fn apply(
         state.offsets.iter_mut().for_each(|o| *o = 0.0);
         state.tilts.iter_mut().for_each(|t| *t = Quat::IDENTITY);
         state.drop = 0.0;
+        state.alignment = Quat::IDENTITY;
         return ankles;
     }
     let g = gains.cloned().unwrap_or(FootIkGains {
@@ -121,8 +161,38 @@ pub fn apply(
         "foot IK offsets {:?} drop {drop:.1} weight {w:.2}",
         state.offsets
     );
+    let normal = support_normal(&ankles, ground);
+    let desired = if g.align_world_from_model > 0.0 {
+        let rotation = Quat::from_rotation_arc(Vec3::Z, normal);
+        let (axis, angle) = rotation.to_axis_angle();
+        let limit = ik
+            .legs
+            .iter()
+            .map(|l| l.max_ankle_degrees.to_radians())
+            .fold(std::f32::consts::FRAC_PI_2, f32::min)
+            .max(0.0);
+        Quat::from_axis_angle(axis, angle.min(limit))
+    } else {
+        Quat::IDENTITY
+    };
+    state.alignment = state
+        .alignment
+        .slerp(
+            desired,
+            step(
+                if g.align_world_from_model > 0.0 {
+                    g.align_world_from_model
+                } else {
+                    on_off
+                },
+                dt,
+            ),
+        )
+        .normalize();
     if let Some(root) = skeleton.bones.iter().position(|b| b.parent.is_none()) {
-        locals[root].translation.z += drop;
+        let align = Quat::IDENTITY.slerp(state.alignment, w);
+        locals[root].rotation = glam::Mat3::from_quat(align) * locals[root].rotation;
+        locals[root].translation = align * locals[root].translation + Vec3::Z * drop;
     }
     for (i, &(leg, hip, knee, ankle)) in legs.iter().enumerate() {
         // Thigh, calf and foot must be a direct chain.
@@ -340,5 +410,71 @@ mod tests {
         assert!(state.pins[0].is_none());
         let foot = moved.transform_point3(skeleton.model_space(&locals)[2].w_axis.truncate());
         assert!((foot.x - 10.0).abs() < 0.05);
+    }
+    #[test]
+    fn support_plane_handles_a_step_and_degenerate_contacts() {
+        let ankles = [
+            Vec3::new(-10.0, -10.0, 0.0),
+            Vec3::new(10.0, -10.0, 0.0),
+            Vec3::new(-10.0, 10.0, 0.0),
+            Vec3::new(10.0, 10.0, 0.0),
+        ];
+        let ground = [
+            Some((0.0, Vec3::Z)),
+            Some((0.0, Vec3::Z)),
+            Some((10.0, Vec3::Z)),
+            Some((10.0, Vec3::Z)),
+        ];
+        assert!(
+            support_normal(&ankles, &ground).distance(Vec3::new(0.0, -0.5, 1.0).normalize()) < 1e-5
+        );
+        assert_eq!(support_normal(&[], &[]), Vec3::Z);
+    }
+
+    #[test]
+    fn alignment_follows_slope_with_gain_and_keeps_zero_gain_upright() {
+        for gain in [0.0, 0.15] {
+            let (mut skeleton, mut ik, mut gains, bind) = fixture();
+            let mut locals = vec![Transform::default()];
+            locals.extend(bind);
+            skeleton.bones.insert(
+                0,
+                Bone {
+                    name: "root".into(),
+                    parent: None,
+                    bind: Transform::default(),
+                },
+            );
+            for b in &mut skeleton.bones[1..] {
+                b.parent = Some(b.parent.map_or(0, |p| p + 1));
+            }
+            ik.legs[0].hip = 1;
+            ik.legs[0].knee = 2;
+            ik.legs[0].ankle = 3;
+            gains.align_world_from_model = gain;
+            let ground = [Some((0.0, Vec3::new(0.0, -0.3, 1.0).normalize()))];
+            let mut state = FootIkState::default();
+            let initial = locals.clone();
+            for _ in 0..60 {
+                locals = initial.clone();
+                apply(
+                    &mut state,
+                    &ik,
+                    Some(&gains),
+                    &[Some(0), Some(1), Some(2), Some(3)],
+                    &skeleton,
+                    &mut locals,
+                    &ground,
+                    Mat4::IDENTITY,
+                    1.0 / 30.0,
+                );
+            }
+            let up = locals[0].rotation * Vec3::Z;
+            if gain == 0.0 {
+                assert!(up.distance(Vec3::Z) < 1e-5);
+            } else {
+                assert!(up.distance(ground[0].unwrap().1) < 0.001);
+            }
+        }
     }
 }
