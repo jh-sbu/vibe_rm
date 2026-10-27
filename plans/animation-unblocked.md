@@ -99,6 +99,26 @@ save requested). Its pages:
 The module doc gets its table of predictions (what each reading would mean for
 steps 2, 3 and 8) before it's handed over, as the earlier autotests' did.
 
+**Written** (2026-10-27, `crates/tools/src/test_mods/autotest19.rs`; waiting on
+a run in SE). Where it differs from the sketch above:
+
+- Page 1 also registers `FootRight` and `attackStart` (an event the script
+  sends in), and counts each event per source rather than logging every
+  occurrence. The walker runs a copy of a vanilla Travel package, to near the
+  player.
+- The combat target on page 2 and the sprint target are held by
+  `SetRestrained`. Page 4's coward and page 5's fighters are separate pages
+  (Sprint, Flee, Duel, Flank), each under 20 lines. Duel is
+  `csHumanMeleeLvl6`, Flank `csMercerFreyMelee` (vanilla's only humanoid
+  flanking melee style).
+- Papyrus reads take about 0.12 s each, so samples come about 0.6 s apart
+  (Sprint, Flee) and a Duel / Flank line (four `Direction` reads) about 2 s.
+  The report prints the times.
+- Swimming: `places::shore` picks the lake from `LAND` heights and the cell's
+  water (Tamriel (-3, -15), surface 600, west of Riverwood). The swim pages
+  run last and move the player back at the end. `IsSwimming` is read at 1 and
+  3 s, because ability conditions are rechecked about once a second.
+
 ## 1. Action trees as the source of AI graph events
 
 Today the AI sends hard-coded events (`moveStart`, `moveStop`, `turnLeft`,

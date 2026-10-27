@@ -24,6 +24,7 @@ mod autotest15;
 mod autotest16;
 mod autotest17;
 mod autotest18;
+mod autotest19;
 mod autotest2;
 mod autotest3;
 mod autotest4;
@@ -62,6 +63,7 @@ pub const NAMES: &[&str] = &[
     "autotest16",
     "autotest17",
     "autotest18",
+    "autotest19",
     "dualcast",
     "pex",
     "taper",
@@ -102,6 +104,7 @@ pub fn build(name: &str, lo: &LoadOrder) -> Result<TestMod> {
         "autotest16" => autotest16::build(lo),
         "autotest17" => autotest17::build(lo),
         "autotest18" => autotest18::build(lo),
+        "autotest19" => autotest19::build(lo),
         "dualcast" => dualcast::build(lo),
         "pex" => pex::build(),
         "taper" => taper::build(lo),

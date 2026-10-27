@@ -386,3 +386,172 @@ pub fn spots(
     }
     Ok(Spots { entry, pairs: out })
 }
+
+/// A slope into still water: points on the bed, along one straight line
+/// out from the shore, at each of the depths asked for below the surface.
+#[derive(Debug, Clone)]
+pub struct Shore {
+    pub cell: FormId,
+    pub grid: (i32, i32),
+    /// The water's surface height.
+    pub surface: f32,
+    /// A point on the bed per depth, in order.
+    pub points: Vec<[f32; 3]>,
+    /// The line's heading, out into the water (radians clockwise from
+    /// north, as references' `DATA` takes it).
+    pub heading: f32,
+}
+
+/// Vertices per side of a `LAND` record's heights, 128 units apart.
+const LAND_VERTS: usize = 33;
+
+/// `LAND` heights (`VHGT`): offset, then per row a delta from the row
+/// above's first vertex and deltas along the row, in units of 8.
+fn land_heights(lo: &LoadOrder, land: FormId) -> Option<Vec<f32>> {
+    let rec = lo.get(land)?;
+    let d = rec.get(b"VHGT")?;
+    if d.len() < 4 + LAND_VERTS * LAND_VERTS {
+        return None;
+    }
+    let mut heights = vec![0.0; LAND_VERTS * LAND_VERTS];
+    let mut offset = f32::from_le_bytes(d[0..4].try_into().ok()?);
+    for r in 0..LAND_VERTS {
+        offset += d[4 + r * LAND_VERTS] as i8 as f32;
+        let mut h = offset;
+        heights[r * LAND_VERTS] = h * 8.0;
+        for c in 1..LAND_VERTS {
+            h += d[4 + r * LAND_VERTS + c] as i8 as f32;
+            heights[r * LAND_VERTS + c] = h * 8.0;
+        }
+    }
+    Some(heights)
+}
+
+/// The height of `heights` at `(x, y)` units into the cell, bilinear.
+fn height_in_cell(heights: &[f32], x: f32, y: f32) -> f32 {
+    let (fx, fy) = (x / 128.0, y / 128.0);
+    let max = (LAND_VERTS - 2) as f32;
+    let (c, r) = (fx.floor().clamp(0.0, max), fy.floor().clamp(0.0, max));
+    let (tx, ty) = (fx - c, fy - r);
+    let (c, r) = (c as usize, r as usize);
+    let h = |c: usize, r: usize| heights[r * LAND_VERTS + c];
+    let top = h(c, r) * (1.0 - tx) + h(c + 1, r) * tx;
+    let bottom = h(c, r + 1) * (1.0 - tx) + h(c + 1, r + 1) * tx;
+    top * (1.0 - ty) + bottom * ty
+}
+
+/// A still lake's shore in `world` nearest `near` (XY), with the bed
+/// reaching each of `depths` (increasing) along a straight line from a
+/// point at most 24 deep: the bed's depth never falls back by more than
+/// 6 along it, consecutive points are at least 48 apart, and the line,
+/// at most 1600 long, stays 64 inside one cell. A lake is a cell of
+/// ordinary (not damaging) water at least a quarter of whose land lies
+/// 200 or more under it, which rules out the narrow rivers and their
+/// currents. Of a cell's lines, the one closest to 800 long.
+pub fn shore(lo: &LoadOrder, world: FormId, near: [f32; 2], depths: &[f32]) -> Result<Shore> {
+    let wrld = lo.get(world).context("not a worldspace")?;
+    let default_water = wrld
+        .get(b"DNAM")
+        .filter(|d| d.len() >= 8)
+        .map_or(0.0, |d| f32::from_le_bytes(d[4..8].try_into().unwrap()));
+    let default_type = wrld
+        .get(b"NAM2")
+        .map(|d| wrld.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))));
+    let index = lo.world(world).context("not a worldspace")?;
+    let mut cells: Vec<((i32, i32), FormId)> = index.cells.iter().map(|(g, c)| (*g, *c)).collect();
+    let distance = |g: (i32, i32)| {
+        let centre = [(g.0 as f32 + 0.5) * 4096.0, (g.1 as f32 + 0.5) * 4096.0];
+        (centre[0] - near[0]).hypot(centre[1] - near[1])
+    };
+    cells.sort_by(|a, b| distance(a.0).total_cmp(&distance(b.0)));
+    let deepest = *depths.last().context("no depths")?;
+    for (grid, cell) in cells {
+        let Some(rec) = lo.get(cell) else { continue };
+        let surface = rec.get(b"XCLW").map_or(default_water, |d| {
+            f32::from_le_bytes(d[0..4].try_into().unwrap())
+        });
+        if surface >= 1.0e30 {
+            continue;
+        }
+        let water_type = rec
+            .get(b"XCWT")
+            .map(|d| rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))))
+            .or(default_type);
+        let damaging = water_type
+            .and_then(|w| lo.get(w))
+            .and_then(|w| w.get(b"FNAM").and_then(|d| d.first()).copied())
+            .is_some_and(|flags| flags & 1 != 0);
+        if damaging {
+            continue;
+        }
+        let Some(heights) = lo
+            .cell(cell)
+            .and_then(|c| c.land)
+            .and_then(|l| land_heights(lo, l))
+        else {
+            continue;
+        };
+        let deep = heights.iter().filter(|h| surface - **h >= 200.0).count();
+        if deep * 4 < heights.len() {
+            continue;
+        }
+        let origin = [grid.0 as f32 * 4096.0, grid.1 as f32 * 4096.0];
+        let depth = |x: f32, y: f32| surface - height_in_cell(&heights, x, y);
+        let inside = |x: f32, y: f32| {
+            (64.0..4096.0 - 64.0).contains(&x) && (64.0..4096.0 - 64.0).contains(&y)
+        };
+        // (|length - 800|, points, heading)
+        let mut best: Option<(f32, Vec<[f32; 3]>, f32)> = None;
+        for r in 0..LAND_VERTS {
+            for c in 0..LAND_VERTS {
+                let (x0, y0) = (c as f32 * 128.0, r as f32 * 128.0);
+                if !inside(x0, y0) || !(0.0..=24.0).contains(&depth(x0, y0)) {
+                    continue;
+                }
+                for k in 0..16 {
+                    let heading = k as f32 * std::f32::consts::TAU / 16.0;
+                    let (dx, dy) = (heading.sin(), heading.cos());
+                    let mut points = Vec::new();
+                    let mut deepest_so_far = depth(x0, y0);
+                    let mut last_at = f32::MIN;
+                    let mut s = 0.0;
+                    while s <= 1600.0 && points.len() < depths.len() {
+                        s += 8.0;
+                        let (x, y) = (x0 + dx * s, y0 + dy * s);
+                        if !inside(x, y) {
+                            break;
+                        }
+                        let d = depth(x, y);
+                        if d < deepest_so_far - 6.0 {
+                            break;
+                        }
+                        deepest_so_far = deepest_so_far.max(d);
+                        if d >= depths[points.len()] {
+                            if s - last_at < 48.0 {
+                                break;
+                            }
+                            last_at = s;
+                            points.push([origin[0] + x, origin[1] + y, surface - d]);
+                        }
+                    }
+                    if points.len() == depths.len() && deepest_so_far >= deepest {
+                        let score = (s - 800.0).abs();
+                        if best.as_ref().is_none_or(|b| score < b.0) {
+                            best = Some((score, points, heading));
+                        }
+                    }
+                }
+            }
+        }
+        if let Some((_, points, heading)) = best {
+            return Ok(Shore {
+                cell,
+                grid,
+                surface,
+                points,
+                heading,
+            });
+        }
+    }
+    bail!("no lake shore reaching {depths:?}")
+}
