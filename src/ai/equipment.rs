@@ -189,6 +189,7 @@ impl Engine {
         else {
             return false;
         };
+        a.idle_weapon_time = 0.0;
         if a.drawn == draw {
             return true;
         }
@@ -200,6 +201,43 @@ impl Engine {
             a.drawn = draw;
         }
         took
+    }
+
+    /// Autotest19: an unalerted NPC out of combat sheathes 1–3 s after a
+    /// scripted draw. Two seconds is provisional; explicit alert also draws.
+    pub(crate) fn update_weapon_readiness(&mut self, dt: f32) {
+        let actors: Vec<_> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| !a.dead && a.graph.as_ref().is_some_and(|g| g.project().humanoid()))
+            .map(|a| {
+                let package_drawn = self
+                    .running_package(a.ref_id)
+                    .and_then(|p| self.lo.get(p))
+                    .and_then(|r| {
+                        r.get(b"PKDT")
+                            .filter(|d| d.len() >= 4)
+                            .map(|d| u32::from_le_bytes(d[..4].try_into().unwrap()) & 0x800000 != 0)
+                    })
+                    .unwrap_or(false);
+                (
+                    a.ref_id,
+                    !a.swimming
+                        && (self.is_alerted(a.ref_id) || a.exec.combat.is_some() || package_drawn),
+                )
+            })
+            .collect();
+        for (actor, wants) in actors {
+            let Some(a) = self.actor_mut(actor) else {
+                continue;
+            };
+            if idle_sheathe_due(&mut a.idle_weapon_time, a.drawn, wants, dt) {
+                self.draw_weapon(actor, false);
+            } else if wants && !a.drawn {
+                self.draw_weapon(actor, true);
+            }
+        }
     }
 
     pub fn weapon_drawn(&self, actor: FormId) -> bool {
@@ -595,5 +633,30 @@ impl Engine {
             }
             _ => {}
         }
+    }
+}
+
+/// Only time spent drawn and unwanted advances the idle-sheathing clock.
+fn idle_sheathe_due(elapsed: &mut f32, drawn: bool, wanted: bool, dt: f32) -> bool {
+    if !drawn || wanted {
+        *elapsed = 0.0;
+        return false;
+    }
+    *elapsed += dt.max(0.0);
+    *elapsed >= 2.0
+}
+
+#[cfg(test)]
+mod readiness_tests {
+    use super::idle_sheathe_due;
+    #[test]
+    fn idle_draw_sheathes_after_two_seconds_but_alert_or_combat_resets_delay() {
+        let mut elapsed = 0.0;
+        assert!(!idle_sheathe_due(&mut elapsed, true, false, 1.0));
+        assert!(!idle_sheathe_due(&mut elapsed, true, true, 10.0));
+        assert!(!idle_sheathe_due(&mut elapsed, true, false, 1.5));
+        assert!(idle_sheathe_due(&mut elapsed, true, false, 0.5));
+        assert!(!idle_sheathe_due(&mut elapsed, false, false, 10.0));
+        assert!(!idle_sheathe_due(&mut elapsed, true, false, 1.0));
     }
 }

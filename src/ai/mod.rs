@@ -348,6 +348,7 @@ pub struct ActorRuntime {
     pub sprint_moves: Option<(MoveSpeeds, f32)>,
     pub(crate) sprinting: bool,
     sprint_told: bool,
+    pub(crate) idle_weapon_time: f32,
     pub(crate) swimming: bool,
     swim_told: bool,
     pub swim_moves: Option<(MoveSpeeds, f32)>,
@@ -519,6 +520,7 @@ impl ActorRuntime {
             sprint_moves: None,
             sprinting: false,
             sprint_told: false,
+            idle_weapon_time: 0.0,
             swimming: false,
             swim_told: false,
             swim_moves: None,
@@ -3715,6 +3717,7 @@ impl Engine {
         self.update_magic_blocks();
         self.update_combat_spells(dt);
         self.update_actor_encumbrance();
+        self.update_weapon_readiness(dt);
         let talking = self.conversation.as_ref().map(|c| c.npc_ref).or(self
             .barks
             .current

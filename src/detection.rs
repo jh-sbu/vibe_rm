@@ -310,6 +310,9 @@ impl Engine {
         }
         if alerted {
             self.world_state.alerted.insert(actor);
+            if actor != PLAYER_REF {
+                self.draw_weapon(actor, true);
+            }
         } else {
             self.world_state.alerted.remove(&actor);
         }

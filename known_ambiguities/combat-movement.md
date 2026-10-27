@@ -30,3 +30,14 @@ NPCSprinting's. We choose the graph-named NPCSprinting record, rather than
 substituting the faster-turning AI record without evidence for when it applies.
 The original distinction remains uncertain. Stamina uses the existing player
 GMST formula, including equipped armor weight, for NPCs too.
+
+## Scripted draws and idle sheathing (autotest19)
+
+All four test NPCs drew on DrawWeapon, including unalerted commoners and guards.
+Unalerted NPCs out of combat sheathed again between the 1 s and 3 s readings;
+SetAlert(true) drew by itself. The native remains unconditional. The humanoid
+AI now draws while explicitly alerted, in combat, or running a Weapon Drawn
+package, and sheathes an otherwise unwanted draw after two seconds. The exact
+delay and whether repeated explicit DrawWeapon calls restart it were not
+measured; chosen here: two seconds since the last accepted/requested draw,
+reset while readiness is wanted. Swim state prevents automatic draws.
