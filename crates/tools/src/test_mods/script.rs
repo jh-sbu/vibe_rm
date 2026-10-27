@@ -195,6 +195,7 @@ Game
     global Bool IsFastTravelEnabled()
 Debug
     global None MessageBox(String asMessageBoxText)
+    global None SendAnimationEvent(ObjectReference arRef, String asEventName)
     global None Notification(String asNotificationText)
     global None Trace(String asTextToPrint, Int aiSeverity)
 Utility

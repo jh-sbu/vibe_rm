@@ -1657,7 +1657,15 @@ game each piece unlocks.
    - Delayed state changes (`FLAG_DELAY_STATE_CHANGE`; `vrm-tool hkb-flags` counts
      and lists the flags);
      change-notification activation / completion / interruption timing
-     (`known_ambiguities/state-machine-events.md`)
+     (`known_ambiguities/state-machine-events.md`). Neither can be observed by an
+     autotest: the 7 vanilla humanoid transitions with the delay flag all have no
+     blend, so it can shift a change by a frame at most, and no vanilla machine sets
+     a change notification. Twists, selectors' blends and character properties
+     have no Papyrus-visible output either.
+   - State-machine outputs' timing (`known_ambiguities/state-machine-outputs.md`):
+     `test-mod autotest17` (not yet run) sends blocking to an NPC and the player
+     and polls `i1HMState` / `iBlockState`: published at a blend's start or end,
+     during a wait for an initiate interval, and on deactivation
    - Engine variables and events still missing: combat, first person;
      INFO listener idles (the speaker's are done, see Done); listeners' reactions
    - Footsteps: swimming (and swimming itself), splashes, decals
