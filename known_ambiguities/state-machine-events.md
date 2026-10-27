@@ -43,6 +43,12 @@ until a later update, or follows another rule. Its interaction with current
 state outputs, enter / exit events, transition notifications, interruption and
 nested state machines also remains unresolved. The runtime's existing initiate
 interval handling must not be taken as an implementation of that flag.
+In the installed humanoid project the flag (0x10) is on 7 of 2,468
+transitions (`vrm-tool hkb-flags <Data> meshes/actors/character`, which now
+marks them): `MRhLeftHandOverride`'s three equip wildcards, two `attackStop`
+returns to idle and two mounted-combat `attackRelease` transitions. None has
+a blending effect, so in vanilla data the flag can delay a change by at most
+an update, too little for a Papyrus test to resolve.
 
 No engine binary data, disassembly, decompilation or leaked SDK documents were
 used to implement this change. Search results pointing to proprietary SDK

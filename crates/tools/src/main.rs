@@ -1457,7 +1457,12 @@ fn main() -> Result<()> {
                             .flat_map(|s| s.transitions.iter().map(move |t| (s.name.as_str(), t)));
                         for (from, t) in from.chain(wildcards.iter().map(|t| ("*", t))) {
                             total += 1;
-                            if t.trigger.is_some() || t.initiate.is_some() || t.uninterruptible() {
+                            let delayed = t.flags & 0x10 != 0;
+                            if t.trigger.is_some()
+                                || t.initiate.is_some()
+                                || t.uninterruptible()
+                                || delayed
+                            {
                                 let ev = |e: i32| g.event_name(e).unwrap_or("-");
                                 let iv = |i: &havok::behavior::Interval| {
                                     format!(
@@ -1473,7 +1478,7 @@ fn main() -> Result<()> {
                                     .find(|s| s.id == t.to_state)
                                     .map_or("?", |s| s.name.as_str());
                                 println!(
-                                    "{}: {from} -> {to} on {}{}{}{}",
+                                    "{}: {from} -> {to} on {}{}{}{}{}",
                                     node.name(),
                                     ev(t.event),
                                     t.trigger
@@ -1489,6 +1494,7 @@ fn main() -> Result<()> {
                                     } else {
                                         String::new()
                                     },
+                                    if delayed { " delay state change" } else { "" },
                                 );
                             }
                             for (b, c) in counts.iter_mut().enumerate() {
