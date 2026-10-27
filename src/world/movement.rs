@@ -107,6 +107,19 @@ pub fn graph_movement_types<'a>(
     (default, sneak)
 }
 
+/// An additional authored movement state, e.g. sprint or swim. Graph order
+/// gives the root graph precedence over identically named variables in subgraphs.
+pub fn special_movement_type<'a>(
+    vars: impl Iterator<Item = (&'a str, f32)>,
+    kind: &str,
+) -> Option<(String, f32)> {
+    vars.filter_map(|(name, value)| {
+        let name = name.strip_prefix("iState_")?.trim().to_ascii_lowercase();
+        name.contains(kind).then_some((name, value))
+    })
+    .next()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

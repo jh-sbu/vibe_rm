@@ -344,6 +344,9 @@ pub struct ActorRuntime {
     /// `iState` values that select them.
     pub moves: Option<(MoveSpeeds, f32)>,
     pub sneak_moves: Option<(MoveSpeeds, f32)>,
+    pub sprint_moves: Option<(MoveSpeeds, f32)>,
+    pub(crate) sprinting: bool,
+    sprint_told: bool,
     /// Worn armor's speed multiplier, refreshed before each AI update. Keep
     /// movement types and clip speeds unmodified for animation playback.
     pub(crate) armor_speed_mult: f32,
@@ -508,6 +511,9 @@ impl ActorRuntime {
             graph_walk_speed: None,
             moves: None,
             sneak_moves: None,
+            sprint_moves: None,
+            sprinting: false,
+            sprint_told: false,
             armor_speed_mult: 1.0,
             anim: None,
             idle: None,
@@ -649,6 +655,9 @@ impl ActorRuntime {
     /// movement type's run speed than its walk.
     pub(crate) fn gait(&self) -> crate::world::footsteps::Gait {
         use crate::world::footsteps::Gait;
+        if self.sprinting {
+            return Gait::Sprint;
+        }
         if self.sneaking {
             return Gait::Sneak;
         }
@@ -2079,7 +2088,9 @@ impl ActorRuntime {
         let still = !walking && !self.in_furniture();
         let model = self.transform();
         let sneak = self.exec.goal.is_some_and(|g| g.sneak) && !self.in_furniture();
-        let state = if sneak {
+        let state = if self.sprinting {
+            self.sprint_moves.or(self.moves)
+        } else if sneak {
             self.sneak_moves.or(self.moves)
         } else {
             self.moves
@@ -2132,9 +2143,23 @@ impl ActorRuntime {
             );
             if walking {
                 // Walking, not sprinting (horses' locomotion starts out in its sprint).
-                self.actions.send(g, "ActionSprintStop");
+                if !self.sprinting {
+                    self.actions.send(g, "ActionSprintStop");
+                }
             }
             self.moving = walking;
+        }
+        let sprint = self.sprinting && walking;
+        if sprint != self.sprint_told {
+            self.actions.send(
+                g,
+                if sprint {
+                    "ActionSprintStart"
+                } else {
+                    "ActionSprintStop"
+                },
+            );
+            self.sprint_told = sprint;
         }
         let frame = g.update(dt, clips.vfs, clips.anims, &self.skeleton);
         if self.in_furniture() {
@@ -3818,6 +3843,9 @@ impl Engine {
                     continue;
                 }
                 let was = a.exec.pos;
+                if a.exec.combat.is_none() {
+                    a.sprinting = false;
+                }
                 if talking == Some(a.ref_id) {
                     // Seated actors talk from where they are.
                     if !a.in_furniture() {
@@ -3998,6 +4026,7 @@ impl Engine {
         self.update_clear_shots();
         self.loose_arrows();
         self.npc_casts();
+        self.update_npc_sprint_stamina(dt);
         self.update_stamina(dt);
         self.update_threat(dt);
         if self.ai_enabled {

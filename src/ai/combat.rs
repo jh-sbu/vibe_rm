@@ -703,10 +703,10 @@ impl CombatStats {
                 attacks.push(a);
             }
         }
-        // Attacks for situations not handled yet: sprinting, on horseback.
+        // Mounted attacks wait for mounted combat.
         attacks.retain(|a| {
             let lower = a.event.to_ascii_lowercase();
-            !["sprint", "_mc"].iter().any(|k| lower.contains(k))
+            !lower.contains("_mc")
         });
         s.bare_handed = attacks.iter().any(|a| a.bare_handed());
         s.attacks = attacks;
@@ -1313,7 +1313,23 @@ impl ActorRuntime {
             return None;
         }
         let reach = self.reach();
-        let run = self.run_speed();
+        let distance = (target - self.exec.pos).truncate().length();
+        self.sprinting = self
+            .exec
+            .combat
+            .as_ref()
+            .is_some_and(|c| !c.fleeing && !c.swinging() && c.guard <= 0.0)
+            && !self.bow
+            && self.combat_spell.is_none()
+            && self.exec.stamina > 0.0
+            && self.sprint_moves.is_some()
+            && self.actions.event("ActionSprintStart").is_some()
+            && (distance > 1000.0 || self.sprinting);
+        let run = if self.sprinting {
+            self.sprint_moves.unwrap().0.run * self.armor_speed_mult
+        } else {
+            self.run_speed()
+        };
         let pos = self.exec.pos;
         // Those its hands can make (with none, as it did before it had
         // hands: the right hand's weapon attacks).
@@ -1322,13 +1338,28 @@ impl ActorRuntime {
                 .attacks
                 .iter()
                 .enumerate()
-                .filter(|(_, a)| a.flags & ATK_BASH == 0 && fit(a))
+                .filter(|(_, a)| {
+                    a.flags & ATK_BASH == 0
+                        && (a.event.to_ascii_lowercase().contains("sprint") == self.sprinting)
+                        && fit(a)
+                })
                 .map(|(i, a)| (i, a.chance.max(0.05)))
                 .collect()
         };
         let mut attacks = swings(&|a| a.fits(self.hands, self.stats.bare_handed));
         if attacks.is_empty() {
-            attacks = swings(&|a| a.side() == Side::Right && !a.bare_handed());
+            attacks = self
+                .stats
+                .attacks
+                .iter()
+                .enumerate()
+                .filter(|(_, a)| {
+                    a.flags & ATK_BASH == 0
+                        && !a.event.to_ascii_lowercase().contains("sprint")
+                        && a.fits(self.hands, self.stats.bare_handed)
+                })
+                .map(|(i, a)| (i, a.chance.max(0.05)))
+                .collect();
         }
         // Humanoids fight with their weapon out (the draw may not have been taken,
         // say mid-flinch: ask again).
@@ -3878,6 +3909,41 @@ impl Engine {
             .max(0.0);
         self.player_stamina_wait = set.regen_delay;
         true
+    }
+
+    pub(super) fn update_npc_sprint_stamina(&mut self, dt: f32) {
+        let set = self.combat_settings();
+        let costs: Vec<_> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| !a.dead && a.sprinting && a.speed > 5.0)
+            .map(|a| {
+                let weight: f32 = self
+                    .inventories
+                    .get(&a.ref_id)
+                    .into_iter()
+                    .flat_map(|i| i.equipped())
+                    .filter_map(|&f| {
+                        self.lo
+                            .get(f)
+                            .filter(|r| r.tag().0 == *b"ARMO")
+                            .and_then(|r| {
+                                r.get(b"DATA")
+                                    .filter(|d| d.len() >= 8)
+                                    .map(|d| f32_at(d, 4))
+                            })
+                    })
+                    .sum();
+                (
+                    a.ref_id,
+                    set.sprint * (set.sprint_base + set.sprint_weight * weight) * dt,
+                )
+            })
+            .collect();
+        for (actor, cost) in costs {
+            self.spend_stamina(actor, cost);
+        }
     }
 
     /// Stamina comes back by the race's rate (percent of the most a second),

@@ -1006,8 +1006,14 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         569 => b(subject.is_some_and(|s| e.is_blocking(s))),                   // IsBlocking
         // EPMagic_IsAdvanceSkill: the skill a use is advancing.
         681 => b(e.advancing_skill.get() == Some(c.p1)),
-        // IsSprinting: only the player sprints so far (NPCs run).
-        568 => b(subject == Some(crate::engine::PLAYER_REF) && e.player.sprinting),
+        // IsSprinting.
+        568 => b(subject.is_some_and(|s| {
+            if s == PLAYER_REF {
+                e.player.sprinting
+            } else {
+                e.actor_ref(s).is_some_and(|a| a.sprinting)
+            }
+        })),
         // GetLastHitCritical: the latest blow the subject took was a critical strike.
         508 => b(subject.is_some_and(|s| e.critically_hit.contains(&s))),
         // IsAttackType: the attack it is making has that type keyword.

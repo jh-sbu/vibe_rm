@@ -1539,6 +1539,11 @@ impl Engine {
                 );
                 rt.moves = default.and_then(|(n, v)| Some((*types.get(&n)?, v)));
                 rt.sneak_moves = sneak.and_then(|(n, v)| Some((*types.get(&n)?, v)));
+                rt.sprint_moves = crate::world::movement::special_movement_type(
+                    project.shared.variables(),
+                    "sprint",
+                )
+                .and_then(|(n, v)| Some((*types.get(&n)?, v)));
                 let humanoid = project.humanoid();
                 let mut g = crate::world::behavior::GraphAnim::new(
                     project,
@@ -2686,9 +2691,8 @@ impl Engine {
         let mut input = input;
         self.encumber_player(&mut input);
         if input.sprint && (input.forward != 0.0 || input.right != 0.0) && !self.player.noclip {
-            input.sprint = self.player_sprint(dt);
-            // Sprinting stands them up.
-            self.player.sneaking &= !input.sprint;
+            input.sprint =
+                self.action(PLAYER_REF, "ActionSprintStart").is_some() && self.player_sprint(dt);
         }
         self.update_player_attack(dt);
         self.update_casting(dt);
