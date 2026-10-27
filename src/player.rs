@@ -288,6 +288,8 @@ pub struct Player {
     pub moving: bool,
     pub running: bool,
     pub sprinting: bool,
+    pub swimming: bool,
+    pub(crate) swim_surface: Option<f32>,
     /// The highest the capsule has been since it left the ground.
     fall_top: Option<f32>,
     /// How far it came down, if it landed this update.
@@ -325,6 +327,8 @@ impl Player {
             moving: false,
             running: false,
             sprinting: false,
+            swimming: false,
+            swim_surface: None,
             fall_top: None,
             landed_from: None,
             last: eye - Vec3::Z * EYE_OFFSET,

@@ -967,7 +967,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
     }
 }
 
-const ITEM_COMMANDS: [&str; 48] = [
+const ITEM_COMMANDS: [&str; 49] = [
     "drop",
     "teachword",
     "unlockword",
@@ -990,6 +990,7 @@ const ITEM_COMMANDS: [&str; 48] = [
     "advlevel",
     "getlevel",
     "isindangerouswater",
+    "isswimming",
     "setcrimegold",
     "paycrimegold",
     "getrelationshiprank",
@@ -1125,6 +1126,10 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
             )]
         }
         "getlevel" => vec![format!("{r}: level {}", engine.actor_level(r))],
+        "isswimming" => vec![format!(
+            "{r}: IsSwimming = {}",
+            u8::from(engine.is_swimming(r))
+        )],
         "isindangerouswater" => vec![format!(
             "{r}: IsInDangerousWater = {}",
             u8::from(engine.is_in_dangerous_water(r))

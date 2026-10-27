@@ -43,10 +43,69 @@ fn dangerous_water_at(lo: &esp::LoadOrder, surfaces: &[WaterSurface], feet: Vec3
         .is_some_and(|flags| flags & 1 != 0)
 }
 
+/// Provisional feet depth until autotest20; the float height is observed in SE.
+pub(crate) const SWIM_DEPTH: f32 = 100.0;
+pub(crate) const FLOAT_DEPTH: f32 = 92.0;
+const SWIM_HYSTERESIS: f32 = 4.0;
+
+fn swim_state(surface: Option<f32>, feet: f32, bed: Option<f32>, was: bool) -> bool {
+    let Some(surface) = surface else { return false };
+    if was {
+        // Floating feet are shallower than the entry threshold. The bed, not
+        // the floated pose, determines leaving the swim state at the shore.
+        surface - feet >= FLOAT_DEPTH - SWIM_HYSTERESIS
+            && bed.is_none_or(|z| surface - z >= SWIM_DEPTH - SWIM_HYSTERESIS)
+    } else {
+        surface - feet > SWIM_DEPTH
+    }
+}
+
 impl Engine {
     /// The water surface height at a point in the currently loaded space.
     pub(crate) fn water_level(&self, at: Vec3) -> Option<f32> {
         surface_at(self.cells.values().flat_map(|c| &c.water), at).map(|w| w.height)
+    }
+
+    pub(crate) fn is_swimming(&self, actor: FormId) -> bool {
+        if actor == crate::engine::PLAYER_REF {
+            self.player.swimming
+        } else {
+            self.actor_ref(actor).is_some_and(|a| a.swimming)
+        }
+    }
+
+    pub(crate) fn update_swimming_states(&mut self) {
+        let states: Vec<_> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| !a.dead)
+            .map(|a| {
+                let feet = a.feet();
+                let surface = self.water_level(feet);
+                let bed = surface.and_then(|h| {
+                    self.physics
+                        .ground_ray(feet.with_z(h + 1.0), -Vec3::Z, 8192.0)
+                        .map(|(t, _)| h + 1.0 - t)
+                });
+                (a.ref_id, swim_state(surface, feet.z, bed, a.swimming))
+            })
+            .collect();
+        for (actor, swimming) in states {
+            if let Some(a) = self.actor_mut(actor) {
+                a.swimming = swimming;
+            }
+        }
+        let feet = self.player_feet();
+        let surface = self.water_level(feet);
+        let bed = surface.and_then(|h| {
+            self.physics
+                .ground_ray(feet.with_z(h + 1.0), -Vec3::Z, 8192.0)
+                .map(|(t, _)| h + 1.0 - t)
+        });
+        self.player.swimming =
+            !self.player.noclip && swim_state(surface, feet.z, bed, self.player.swimming);
+        self.player.swim_surface = surface;
     }
 
     /// An actor's feet touch water whose WATR has the Causes Damage flag.
@@ -186,5 +245,16 @@ mod tests {
                 "water type {id:08X}"
             );
         }
+    }
+    #[test]
+    fn swim_depth_has_hysteresis_and_uses_the_bed_while_floating() {
+        assert!(!swim_state(Some(200.0), 120.0, Some(120.0), false));
+        assert!(!swim_state(Some(200.0), 100.0, Some(100.0), false));
+        assert!(swim_state(Some(200.0), 99.0, Some(99.0), false));
+        assert!(swim_state(Some(200.0), 108.0, Some(20.0), true));
+        assert!(swim_state(Some(200.0), 108.0, Some(103.0), true));
+        assert!(!swim_state(Some(200.0), 108.0, Some(105.0), true));
+        assert!(!swim_state(None, 0.0, None, true));
+        assert!(!swim_state(Some(200.0), 300.0, Some(0.0), false));
     }
 }

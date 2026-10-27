@@ -347,6 +347,7 @@ pub struct ActorRuntime {
     pub sprint_moves: Option<(MoveSpeeds, f32)>,
     pub(crate) sprinting: bool,
     sprint_told: bool,
+    pub(crate) swimming: bool,
     /// Worn armor's speed multiplier, refreshed before each AI update. Keep
     /// movement types and clip speeds unmodified for animation playback.
     pub(crate) armor_speed_mult: f32,
@@ -514,6 +515,7 @@ impl ActorRuntime {
             sprint_moves: None,
             sprinting: false,
             sprint_told: false,
+            swimming: false,
             armor_speed_mult: 1.0,
             anim: None,
             idle: None,
@@ -3610,6 +3612,7 @@ impl Engine {
 
     /// Run AI and animation for every loaded actor.
     pub(crate) fn update_actors(&mut self, dt: f32) {
+        self.update_swimming_states();
         self.update_force_greets(dt);
         self.advance_sandbox_stops();
         self.evaluate_packages(dt);

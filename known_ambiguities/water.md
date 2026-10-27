@@ -32,7 +32,7 @@ contact with a surface whose WATR FNAM has bit 0 set. The console's
 - Contact uses the actor's feet strictly below the cell water surface.
   The exact immersion threshold, collision-shape/race/scale dependence,
   equality behavior and any hysteresis are not established by these sources.
-  Swimming remains unimplemented and condition 185 remains false.
+  Swimming now has a separate state and condition 185 reads it.
 - Queries use loaded cell surfaces. Unloaded actors return false; processing
   tier behavior and updates without attached 3D need observable game tests.
   Objects that are not actors return false. Deceased actors are not explicitly
@@ -72,3 +72,14 @@ The earlier sandboxed attempt could only access software OpenGL, whose
 16-fragment-texture limit is insufficient for the terrain pipeline's 17.
 These hardware checks validate this engine's integration; they do not
 confirm the original game's immersion threshold.
+
+## Swimming depth (autotest20 deferred)
+
+Autotest19 observed feet on the bed at depth 80 and floating at depths
+100–140, about 92 units below the surface. Its HasMagicEffect swim detector
+was inconclusive. Chosen entry depth is strictly over 100, with four units
+of exit hysteresis measured against the bed, so floating at the observed
+92 does not toggle the state. A swimmer lifted clear of that float band
+also leaves the state. The bed comes from static-world ground rays.
+Scale/race-dependent depth and Waterbreathing's influence on state remain
+unmeasured; use the same threshold for now. Autotest20 is deferred by the user.

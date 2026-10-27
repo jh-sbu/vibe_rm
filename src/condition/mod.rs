@@ -1097,8 +1097,9 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         102 => b(subject.is_some_and(|s| e.torch_out(s))),       // IsTorchOut
         580 => b(subject.is_some_and(|s| e.is_bleeding_out(s))), // IsBleedingOut
         332 => b(subject.is_some_and(|s| e.is_in_dangerous_water(s))),
-        // Nobody flies, swims, feeds or eats corpses yet.
-        101 | 185 | 226 | 227 => b(false),
+        185 => b(subject.is_some_and(|s| e.is_swimming(s))),
+        // Nobody flies, feeds or eats corpses yet.
+        101 | 226 | 227 => b(false),
         // Behaviour graph variables of the subject's graph (the idle-picking
         // fallback below answers for actors without one).
         675 | 447 if subject.is_some_and(|s| e.graph_variable(s, "").is_some()) => {
