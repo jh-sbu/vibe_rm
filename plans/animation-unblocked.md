@@ -362,6 +362,40 @@ animation.
   `ActionTalking`). Reuse the bark scheduler (one speaker at a time).
 - Commits: 7a (plan text only); 7b split as its scope dictates.
 
+### 7a findings and implementation scope (2026-10-27)
+
+The local UESP DIAL/INFO/CTDA pages establish HELO/IDLE subtypes, response
+idles and run-on-target conditions, but do not establish an NPC-to-NPC
+standalone response system:
+[DIAL revision 2640560](https://en.uesp.net/w/index.php?oldid=2640560),
+[INFO revision 2346674](https://en.uesp.net/w/index.php?oldid=2346674),
+[CTDA revision 2346685](https://en.uesp.net/w/index.php?oldid=2346685).
+Asset survey found only two target-conditioned IDLE lines (Brenuin's player
+begging variants); many HELO target checks explicitly require Player.
+
+The public [Creation Kit Scenes documentation mirror, revision 4348](https://tesck.ru/index.php?title=Категория:Сцены&oldid=4348)
+explains that Skyrim replaced the old conversation system with Story Manager
+AHEL and ADIA events starting quests/scenes. A moving NPC passing a stationary
+one emits AHEL when packages allow Random Conversations; the event itself
+does not redirect movement. ADIA instead requires an approach, interruption
+of both actors, and a scene held before phase one until they meet. Its cadence
+uses social radius/chance/timer settings and a same-partner cooldown. The
+mirror's old defaults differ from SE's assets (500 radius, 10% chance, 10–30 s
+timers). The official CK endpoint returned 403. A mod author's
+[Story Manager article](https://www.nexusmods.com/skyrimspecialedition/articles/12146)
+independently describes scene initiation through these settings. No source
+code was used for this research.
+
+**Chosen 7b scope:** implement NPC-to-NPC passing AHEL triggers, honoring the
+running package's Random Conversations interrupt flag (PKDT +8 bit 1;
+[PACK revision 2309013](https://en.uesp.net/w/index.php?oldid=2309013)). Let the
+existing Story Manager and scene runtime choose dialogue, gestures and heads.
+Give scene INFO selection its actual listener context when the action names
+one. Do not invent a standalone HELO/IDLE exchange scheduler or response chain.
+The ADIA approach/interruption/phase-zero controller is separate follow-up
+work in ROADMAP; its detailed pacing/failed-attempt behavior needs a probe.
+This replaces the speculative 7b sketch above, before implementation.
+
 ## 8. Probe follow-ups (after step 0's results)
 
 - **8a. Events to scripts.** autotest19: events carrying a payload
