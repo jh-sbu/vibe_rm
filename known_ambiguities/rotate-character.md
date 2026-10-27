@@ -3,9 +3,8 @@
 The reader now retains the authored character-rotation settings, and
 `Instance::character_rotations` exposes running modifiers with supported scalar
 inputs resolved, and `Instance::character_turn(dt)` turns them into a yaw. The
-engine adds that yaw to the frame's root-motion yaw (`world/behavior.rs`), which
-only furniture use consumes today; **ordinary NPC heading is still driven by the
-AI, so no walking or standing actor is turned by the modifier.**
+engine adds that yaw to the frame's root-motion yaw (`world/behavior.rs`), which furniture consumes. Ordinary NPCs and the player now let active rotate
+modifiers own yaw, without adding the AI/controller turn a second time.
 
 ## Public and asset evidence
 
@@ -57,10 +56,14 @@ Tests use invented packfile contents and graphs.
   and ordering when multiple rotation modifiers run remain unresolved. The
   current active-modifier traversal does not establish branch weights, masks,
   outgoing transition participation, or original enable-gate lifecycle behavior.
-  The yaw is therefore deliberately not fed to the AI's heading: the AI already
-  turns actors from the `turnLeft` / `turnRight` events, and adding the modifier
-  on top would double the turn. Only furniture, which already takes the root
-  motion yaw, sees it.
+  While a modifier is active, AI/player facing supplies the desired turn,
+  clamped to the movement type rate, as TurnDelta in degrees per second
+  (counter-clockwise positive). The controller suspends direct heading changes
+  and consumes character_turn(dt) once, clamped to the requested step so it
+  cannot overshoot. Normal controller turning resumes without a modifier.
+  A modifier activated during an update takes ownership on the next update;
+  the already applied controller turn is not applied again.
+
 - The AI and player body already supply `TurnDelta`, but its original-engine
   units and meaning relative to this modifier remain unverified.
 

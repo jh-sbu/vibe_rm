@@ -338,6 +338,7 @@ pub struct ActorRuntime {
     actions: idles::LocomotionActions,
     velocity: Vec3,
     target_heading: f32,
+    turn_request: Option<f32>,
     /// Ground speed of the graph's walk (its clips' root motion).
     pub graph_walk_speed: Option<f32>,
     /// Movement types of the graph's default and sneaking states, with the
@@ -511,6 +512,7 @@ impl ActorRuntime {
             actions: Default::default(),
             velocity: Vec3::ZERO,
             target_heading: 0.0,
+            turn_request: None,
             graph_walk_speed: None,
             moves: None,
             sneak_moves: None,
@@ -877,8 +879,13 @@ impl ActorRuntime {
         let d = angle_to(self.exec.heading, dir);
         let rate = self.turn_rate();
         let step = d.clamp(-rate * dt, rate * dt);
-        self.exec.heading += step;
-        d - step
+        if self.graph.as_ref().is_some_and(|g| g.rotates_character()) && !self.in_furniture() {
+            self.turn_request = Some(step);
+            d
+        } else {
+            self.exec.heading += step;
+            d - step
+        }
     }
 
     /// Step aside from other actors (and the player) within reach, preferring to
@@ -2106,7 +2113,17 @@ impl ActorRuntime {
         };
         self.graph_heading = self.exec.heading;
         let turn_delta = if dt > 1e-4 {
-            -turned.to_degrees() / dt
+            -self
+                .turn_request
+                .unwrap_or_else(|| {
+                    if self.graph.as_ref().is_some_and(|g| g.rotates_character()) {
+                        0.0
+                    } else {
+                        turned
+                    }
+                })
+                .to_degrees()
+                / dt
         } else {
             0.0
         };
@@ -2200,6 +2217,9 @@ impl ActorRuntime {
             self.sprint_told = sprint;
         }
         let frame = g.update(dt, clips.vfs, clips.anims, &self.skeleton);
+        if let Some(request) = self.turn_request.take() {
+            self.exec.heading += (-frame.character_turn).clamp(request.min(0.0), request.max(0.0));
+        }
         if self.in_furniture() {
             let (t, yaw) = frame.motion;
             self.exec.pos += furniture::to_world(t * self.scale, self.exec.heading);
@@ -3887,6 +3907,7 @@ impl Engine {
                     continue;
                 }
                 let was = a.exec.pos;
+                a.turn_request = None;
                 if a.exec.combat.is_none() {
                     a.sprinting = false;
                 }
@@ -4000,10 +4021,10 @@ impl Engine {
                 }
                 a.stand_on_ground(&self.physics, dt);
                 a.find_ground(&self.physics);
-                inst.transform = a.transform();
                 if let Some(pose) = a.animate(dt, &mut world.clips) {
                     inst.pose = pose;
                 }
+                inst.transform = a.transform();
                 if std::mem::take(&mut a.objects_changed) {
                     log::debug!("{} holds {:?}", a.ref_id, a.objects);
                     held.push((*key, index, a.objects.clone()));

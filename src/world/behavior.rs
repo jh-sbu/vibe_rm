@@ -196,6 +196,7 @@ pub struct Frame {
     /// Root motion this update, in the actor's frame (+Y forward), and its
     /// counter-clockwise yaw.
     pub motion: (Vec3, f32),
+    pub character_turn: f32,
     /// Events the graph raised (`AnimObjDraw`, `IdleFurnitureExit`...).
     pub raised: Vec<Raised>,
 }
@@ -603,6 +604,10 @@ impl GraphAnim {
         self.inst.active_states()
     }
 
+    pub fn rotates_character(&self) -> bool {
+        !self.inst.character_rotations().is_empty()
+    }
+
     /// Advance the graph and blend its clips.
     pub fn update(
         &mut self,
@@ -806,6 +811,7 @@ impl GraphAnim {
             pose: skeleton.model_space(&locals),
             locals,
             motion,
+            character_turn: turn,
             raised,
         }
     }

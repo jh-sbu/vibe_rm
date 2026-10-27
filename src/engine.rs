@@ -948,6 +948,19 @@ impl Engine {
         }
     }
 
+    pub(crate) fn player_turn_rate(&mut self) -> f32 {
+        self.move_types
+            .get_or_insert_with(|| crate::world::movement::movement_types(&self.lo))
+            .get("npcdefault")
+            .map_or(10.0, |m| {
+                if self.player.moving {
+                    m.turn_moving
+                } else {
+                    m.turn_walk
+                }
+            })
+    }
+
     /// Place the player with their feet at `feet`, facing `yaw` (radians).
     pub fn place_player(&mut self, feet: Vec3, yaw: f32) {
         let sneaking = self.player.sneaking;

@@ -26,6 +26,7 @@ pub struct PlayerBody {
     /// Facing, clockwise from +Y as the camera's yaw.
     pub heading: f32,
     graph_heading: f32,
+    turn_request: Option<f32>,
     /// What they had equipped when it was built: rebuilt when that changes.
     worn: (Vec<FormId>, Option<FormId>),
     /// What the hands and voice held when the graph was last told their
@@ -220,6 +221,7 @@ impl Engine {
             swimming: self.player.swimming,
         };
         let actions = self.locomotion_actions(PLAYER_REF);
+        let turn_rate = self.player_turn_rate();
         let Some(body) = self.player_body.as_mut() else {
             return;
         };
@@ -232,12 +234,21 @@ impl Engine {
         }
         // In first person, and with their weapon out, they face the view;
         // otherwise in third person where they go.
-        if !third || body.drawn {
-            body.heading = yaw;
-        } else if let Some(want) = motion.heading.filter(|_| walking) {
+        let want = if !third || body.drawn {
+            Some(yaw)
+        } else {
+            motion.heading.filter(|_| walking)
+        };
+        body.turn_request = None;
+        if let Some(want) = want {
             let d = wrap(want - body.heading);
-            let step = TURN_RATE * dt;
-            body.heading = wrap(body.heading + d.clamp(-step, step));
+            if body.graph.as_ref().is_some_and(|g| g.rotates_character()) {
+                body.turn_request = Some(d.clamp(-turn_rate * dt, turn_rate * dt));
+            } else if !third || body.drawn {
+                body.heading = yaw;
+            } else {
+                body.heading = wrap(body.heading + d.clamp(-TURN_RATE * dt, TURN_RATE * dt));
+            }
         }
         let out = body.weapon_out;
         let pose = body.animate(dt, &motion, &actions, &self.vfs, &mut self.anims);
@@ -335,6 +346,7 @@ impl PlayerBody {
             scale: 1.0,
             heading,
             graph_heading: f32::NAN,
+            turn_request: None,
             worn: Default::default(),
             held: [None; 3],
             state: None,
@@ -472,7 +484,11 @@ impl PlayerBody {
         g.set_variable(
             "TurnDelta",
             if dt > 1e-4 {
-                -turned.to_degrees() / dt
+                -self
+                    .turn_request
+                    .unwrap_or_else(|| if g.rotates_character() { 0.0 } else { turned })
+                    .to_degrees()
+                    / dt
             } else {
                 0.0
             },
@@ -561,6 +577,11 @@ impl PlayerBody {
         anims: &mut crate::world::animation::AnimationLibrary,
     ) -> Option<Vec<Mat4>> {
         let frame = self.graph.as_mut()?.update(dt, vfs, anims, &self.skeleton);
+        if let Some(request) = self.turn_request.take() {
+            self.heading = wrap(
+                self.heading + (-frame.character_turn).clamp(request.min(0.0), request.max(0.0)),
+            );
+        }
         for r in &frame.raised {
             let tag = r.event.to_ascii_lowercase();
             if self.swim_told && !self.step_events.contains(&tag) {
