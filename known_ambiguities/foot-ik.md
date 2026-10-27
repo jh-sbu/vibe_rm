@@ -39,8 +39,7 @@ and the member names it carries. What each gain does inside Havok isn't public.
   animated ankle is (1 for most; giants' raised feet 0.5).
 - **Ankle orientation** eases the planted foot's tilt with the ground.
 - Foot unlock and align world-from-model are implemented below. Hip
-  orientation is zero in vanilla; knee angle difference remains unsupported.
-  The survey below found no authored ungrounded events.
+  orientation is zero in vanilla. The survey found no authored ungrounded events.
 - **Actors stand on the collision surface** within a step of the navmesh's
   height. The step is the character's foot IK ray reach (humanoids 40 up and
   32 down, giants 100 / 128; 40 / 64 without foot IK data). The game's
@@ -54,8 +53,7 @@ controls modifiers and 80 control legs (shared graphs counted for each project).
 Every controls modifier authors unlock 1. Horse graphs author align 0.15;
 others author zero. Hip orientation is zero, including all bound defaults.
 Knee difference is nonzero on falmer/riekling (0.4), giant/lurker/vampire
-brute (0.2); its cross-leg interpretation remains future work. This corrects
-the earlier "0 everywhere" note. Humanoid controls have zero legs; creature
+brute (0.2), correcting the earlier "0 everywhere" note. Humanoid controls have zero legs; creature
 controls have two or four. All 80 ungrounded event IDs are -1: unused in
 vanilla, so step 5d adds no event-delivery implementation.
 
@@ -89,9 +87,9 @@ towards that plane using alignWorldFromModelGain, and conservatively cap its
 angle at the smallest leg max-ankle angle. Placement then solves the legs from
 the tilted body, preserving planted pins. Humanoids author zero, so stay upright;
 horses author 0.15. The support-plane fit and use of ankle limits as body limits
-are implementation choices; original body limits and cross-leg knee constraints
-need further evidence. Synthetic step/slope tests cover the plane fit, gain
-convergence and unchanged zero-gain bodies.
+are implementation choices; original body alignment limits need further evidence.
+Synthetic step/slope tests cover the plane fit, gain convergence and unchanged
+zero-gain bodies.
 
 Before/after offscreen capture bursts were inspected at
 `/tmp/footik-turn-{before,after}_*.png` (`--burst-from 10`, ten-frame spacing),

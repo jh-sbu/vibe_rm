@@ -145,8 +145,11 @@ stealth points.
   The flag lives in `WorldState`, so unloading or recreating a loaded actor
   runtime does not clear it. This implements the documented set/query contract;
   sharing it with the condition is a choice based on the command name. It
-  neither starts nor cancels combat/searches, changes hostility, draws weapons,
-  nor modifies detection values. Automatic detection-state transitions leave
+  neither starts nor cancels combat/searches, changes hostility,
+  nor modifies detection values. Autotest19 subsequently established that explicit
+  SetAlert(true) draws a loaded NPC; that posture is now implemented. Unalerted,
+  out-of-combat scripted draws sheathe after the documented provisional delay
+  (`known_ambiguities/combat-movement.md`). Automatic detection-state transitions leave
   this explicit flag alone until their relationship has a source.
 
 ## Open questions

@@ -1,6 +1,6 @@
 # Animation: the unblocked items
 
-**Status: planned** (2026-10-27). Covers what can be built today from ROADMAP
+**Status: complete within the researched scope** (2026-10-27). Covers what can be built today from ROADMAP
 Next item 1 (Animation), as sorted on 2026-10-27, plus what the state-output
 probes (`test-mod autotest17`, `autotest18`) turned up. The items blocked on
 evidence (twist modes, selectors' blends and choosers, character properties,
@@ -13,6 +13,68 @@ engine binaries; questions a plugin can settle go to a test mod the user runs;
 choices made without a source go in `known_ambiguities/`, open questions here
 or in ROADMAP. `cargo fmt` before each commit; one commit per step or
 sub-step as marked.
+
+## Completion record
+
+Implemented in the scheduled commits below. Autotest19 was already run before
+this pass; **autotest20 remains explicitly deferred by the user**. No autotest20
+code/plugin was written, generated or run. Swim entry depth and charge initiation
+retain the plan's placeholders, with evidence and uncertainty in
+`known_ambiguities/water.md` and `combat-movement.md`.
+
+| Step | Commit | Outcome |
+| --- | --- | --- |
+| 1a | `8069367` | Project-specific conditioned action dispatcher and safe cache |
+| 1b + 1c | `1e66f79` | NPC/player locomotion through actions |
+| 2a | `cf14446` | Motion direction and facing while backing away |
+| 2b | `fc4f9ae` | Combat-style circling, flanking and strafe policy |
+| 2c | `3e11ec8` | Charging sprints, stamina and sprint attacks |
+| 3a | `39baab4` | Swim state, hysteresis and IsSwimming |
+| 3b | `38379c1` | NPC swim graphs, movement and observed float height |
+| 3c | `cf7f125` | Player surface swimming |
+| 3d | `be97576` | Swim footsteps and foot-IK suppression |
+| 3e | `cab9434` | Breath exhaustion and WaterBreathing protection |
+| 4 | `529d3b5` | One owner for modifier-controlled yaw |
+| 5a | `a1366bd` | Reproducible vanilla animation survey |
+| 5b | `0745ddd` | Planted-foot world pins and unlock gain |
+| 5c | `8863f5f` | Support-plane body alignment |
+| 5d | skipped per plan | All 80 surveyed control-leg event IDs were -1 |
+| 6a | `1879f65` | Creature target bindings and asset fixtures |
+| 6b | `2056767` | Authored listener idles |
+| 7a | `fed745f` | Plan-only research and scope decision |
+| 7b | `c1ba59d` | Passing NPC AHEL events and scene listener context |
+| 8a | `6b079d4` | Payload-free script delivery, including the player body |
+| 8b | `ca035e4` | Alert drawing and idle scripted-draw sheathing |
+| 8c | `11d4c8c` | Arrival/flee, swim and sneak fixes; integration coverage |
+| 9 | documentation commit | This completion record and ROADMAP cleanup |
+
+Step 7's original standalone HELO/IDLE exchange sketch was superseded by 7a's
+public-source findings below. Passing hellos and listener context are complete;
+the larger ADIA approach/interruption/phase-zero controller remains ROADMAP work.
+The existing Story Manager already emits ADIA using provisional social timers;
+this pass does not add a second scheduler or claim to settle that controller.
+
+Validation completed:
+
+- `cargo test --bin vibe_rm -- --include-ignored --test-threads=1`: **840 passed**
+  with GPU access, including installed-asset locomotion/swim/look-at/rotate
+  fixtures, synthetic water/conditions, script notifications and weapon readiness.
+- `cargo test -p vrm-tools`: **41 passed, 3 ignored**.
+- `cargo fmt --check` and `git diff --check`: clean.
+- `vrm-tool animation-survey <Data>`: 49 projects, 26 referenced controls
+  modifiers, 80 control legs and no authored ungrounded event IDs.
+- Offscreen before/after turning/draw capture bursts were inspected, kept in
+  `/tmp`; no gross pose regression was visible. Quantitative world-lock and
+  slope checks use synthetic chains. These are implementation checks, not SE
+  parity claims. The sandbox's software OpenGL failed GPU setup; the complete
+  suite and captures passed with hardware GPU access outside the sandbox.
+
+Asset corrections to the sketch: the humanoid swim blend binds Direction, with
+no NPC swim iState constant; its mounted HorseSwim constant is not a humanoid
+movement type. The one-handed draw path does not run a rotate modifier; the
+fixture draws then sheathes to exercise the authored standing Unequip modifier.
+The HUD SWF exports no breath/oxygen meter interface. These findings are recorded
+alongside the implementation choices in the relevant ambiguity notes.
 
 ## What the survey changed
 
@@ -148,7 +210,7 @@ What it showed (slaughterfish attacked the player during the swimming pages):
   bands match the player body's (0.25 right, 0.75 left: a left strafe turned
   both headings clockwise). One run each: these give magnitudes, not rates.
 
-**Follow-up probe** (`autotest20`, to write): `IsSwimming` read through a
+**Follow-up probe** (`autotest20`, user-deferred; do not generate in this pass): `IsSwimming` read through a
 magic effect's script (`OnEffectStart` / `OnEffectFinish` fire as the
 condition changes) instead of `HasMagicEffect`, with a dry-land control, on
 the same markers (plus 90 and 95). Run it in Survival Mode off, or after
@@ -441,5 +503,12 @@ This replaces the speculative 7b sketch above, before implementation.
    floating height is settled: feet about 92 under the surface.
 4. Whether NPCs sprint to charge (autotest20; fleeing ones run). Circling
    magnitudes come from one run each (autotest19).
-5. The base breath time under water (step 3e research).
-6. How NPC-to-NPC conversations are paced (step 7a).
+5. Breath timing/formula: public timer reports conflict (20 versus 30 seconds).
+   The chosen 20-second default and GMST formula need an original-game probe.
+6. ADIA failed-attempt pacing, approach/interruption and the pre-phase-one wait.
+   Public documentation establishes the scene-based system (step 7a); the current
+   dispatcher has provisional timers and does not implement that controller.
+7. Foot IK knee-angle-difference settings: nonzero on several creatures; the
+   cross-leg rule remains unresolved and is tracked in ROADMAP.
+8. Diving controls after underwater rendering, and per-race/scale swimming depths
+   and floating/head heights.

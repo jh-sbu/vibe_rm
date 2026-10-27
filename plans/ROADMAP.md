@@ -5,6 +5,42 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Animation action dispatcher (`plans/animation-unblocked.md`, step 1): actor/project
+  idle-tree selection with conditions and unconditional-branch caching; NPC and
+  player movement, turns, sneak and sprint events use authored actions.
+- NPC combat movement (step 2): Direction follows velocity, retreating archers
+  face their targets; combat-style circling/flanking and lateral movement;
+  graph-named sprint movement, stamina and sprint attacks. Fleeing stays at a run.
+  Charge initiation remains provisional pending autotest20; rates/choices:
+  `known_ambiguities/combat-movement.md`.
+- Swimming (step 3): depth/hysteresis state and IsSwimming, NPC/player swim graphs
+  and movement types, observed feet-at-surface-minus-92 floating height, no surface
+  swim gravity, graph-authored swim footsteps and suppressed foot IK; breath
+  exhaustion and WaterBreathing protection. Swim depth and breath formula remain
+  documented policies in `known_ambiguities/water.md`; diving awaits rendering.
+- Turning ownership (step 4): while a rotate-character modifier runs, NPC/player
+  controllers supply requested TurnDelta and consume its yaw once, clamped against
+  overshoot. Otherwise controller turning continues. Choice:
+  `known_ambiguities/rotate-character.md`.
+- Foot IK follow-ups (step 5): `vrm-tool animation-survey` surveys controls gains,
+  leg events and look-at bindings; planted world-space pins with gain-based release,
+  support-plane body alignment (horses). No vanilla ungrounded event IDs were found,
+  so event raising is unused. Knee-difference settings remain Next;
+  `known_ambiguities/foot-ik.md`.
+- Look-at/listener follow-ups (step 6): supported creature modifiers receive their
+  authored target-input bindings, combat targets take priority, and response LNAM
+  idles play for listeners in dialogue, barks and scenes. Target choices:
+  `known_ambiguities/head-tracking.md`.
+- NPC passing hellos (step 7's researched scope): Random Conversations package
+  flags authorize moving-to-stationary AHEL events; Story Manager quests/scenes
+  select any response. Scene INFO conditions use an authored listener target.
+  The speculative standalone HELO/IDLE reply-chain system was rejected by public
+  documentation; ADIA's approach/phase-zero controller remains Next.
+- Autotest19 follow-ups (step 8): only payload-free raised events reach scripts
+  and animation waits, including the live player body's graph; incoming graph
+  events do not echo. Explicit alert draws an NPC; unwanted idle scripted draws
+  sheathe after a provisional two seconds. Evidence and limits:
+  `known_ambiguities/object-graphs.md`, `combat-movement.md`.
 - Spell visuals (`plans/spell-visuals.md`): MGEF visual fields and ARTO/EFSH/RFCT/DUAL
   readers; NIF attachment tags; `vrm-tool spell-fx`; shared effect instances with
   standalone and manager-owned transform, visibility, material and particle
@@ -421,9 +457,10 @@ game each piece unlocks.
   idle styles from the same tree (`AnimationDrivenIdleRoot`: hands on hips, hands down,
   motion-driven). The event -> clip resolver and furniture
   planning run on each actor's own project
-- Head tracking: humanoids' `BSLookAtModifier` (spine, neck, head and eye bones, each
+- Head tracking: humanoids' and creatures' `BSLookAtModifier` (spine, neck, head and eye bones, each
   within its limit, eased by the graph's gains, off past the overall limit) turns NPCs
-  towards the player close by and while talking (`bHeadTracking`, `LookAtOutOfRange`)
+  towards the player close by, combat targets and scene partners (authored
+  target-enable bindings and `LookAtOutOfRange`)
 - Single-bone additive LINEAR `hkbTwistModifier` poses: bound angle and enable,
   event activation, model and local axes, Havok-to-NIF bone mapping. Angle units,
   chains, other modes and blending limits: `known_ambiguities/twist-modifier.md`
@@ -431,7 +468,8 @@ game each piece unlocks.
   multiplier and aligned axis retained; scalar variable / character-property
   bindings and event gates exposed by the runtime; running modifiers' yaw
   (rate x multiplier x dt about the vertical axis) is added to the frame's root-motion
-  yaw. Open: `known_ambiguities/rotate-character.md`
+  yaw; ordinary NPC/player headings now follow the modifier while it owns yaw.
+  Open: `known_ambiguities/rotate-character.md`
 - Read-only scalar character properties on behaviour generators: clip start,
   playback speed and user-controlled time, selector index, blend parameter and
   state-machine start ID use the runtime's existing input paths, with graph
@@ -518,7 +556,8 @@ game each piece unlocks.
   only while the graph runs its `hkbFootIkControlsModifier` (humanoids' switched on by
   the engine through `bHumanoidFootIKEnable`, off in furniture and while the graph sets
   `bHumanoidFootIKDisable`), eased by its gains: on / off, ground ascending /
-  descending, body feedback and up / down bias, planted / raised, ankle orientation
+  descending, body feedback and up / down bias, planted / raised, ankle orientation,
+  foot unlock (world-space planted pins) and support-plane body alignment
   (open questions: `known_ambiguities/foot-ik.md`)
 - Talking gestures: each line of dialogue picks from the `ActionTalking` tree (hands on hips,
   hand gestures, angry / happy / expressive idles) by the line's emotion (`TRDT`) and the
@@ -672,8 +711,8 @@ game each piece unlocks.
   Power attacks cost `fStaminaAttackWeaponBase` + weapon weight x
   `fStaminaAttackWeaponMult`, times the attack's own multiplier (`ATKD`); NPCs short
   of it attack normally. Blocked blows cost `fStaminaBlockBase` + 0.25 x the damage
-  stopped; the player's sprinting drains it (`fSprintStaminaDrainMult`, armor weight)
-  and stops when it runs out. The player power attacks by holding the attack button
+  stopped; sprinting drains player and NPC stamina (`fSprintStaminaDrainMult`,
+  armor weight) and ends when it runs out. The player power attacks by holding the attack button
   (a basic swing without the stamina); HUD bar. Papyrus `GetActorValue` /
   `DamageActorValue` read and spend live health / stamina. Console `stamina`,
   `pattack`; vrm-tool `gmst <pattern>`
@@ -1347,13 +1386,14 @@ game each piece unlocks.
   Console `tsh`, `VRM_NO_SHADOWS`
 - Footstep sounds: the graph's footstep events (`FootLeft` / `FootRight`, creatures'
   `FootFront` / `FootBack`...) through the footstep set of what the actor wears on its
-  feet (ARMA `SNDD`, else its skin's) for its gait (walk, run, sneak), the impact
+  feet (ARMA `SNDD`, else its skin's) for its gait (walk, run, sprint, sneak, swim), the impact
   data set's sound for the ground below: the collision's Havok material per triangle
   (material types matched by the CRC-32 of their name, parents for missing pairs)
   or the landscape texture showing most there (LTEX material), water for feet in
-  shallow water (none deeper: swimming). The player steps by stride, sneaks (Ctrl:
-  slower by the sneaking movement type, the view lowered, sneak footsteps; sprinting
-  stands them up) and sounds their jumps and landings (`JumpUp` / `JumpDown`).
+  shallow water, with swimming sounds from the swim group and clip stroke events.
+  The player steps by stride on land, sneaks (Ctrl: slower by the sneaking movement
+  type, lowered view, sneak footsteps), and sounds jumps/landings. Sprint requests
+  pass through the action tree, including its sneak/block/perk gates.
   Console `probe` shows materials and water; `psneak`, `pjump`; vrm-tool `nif-materials`
 - Locks: doors and containers with a lock (`XLOC`) start locked; the player opens
   them with the key (a load door pair shares its lock; houses always let the
@@ -1631,19 +1671,20 @@ game each piece unlocks.
 
 ## Next
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done).
-   The items unblocked as of 2026-10-27 are planned in `plans/animation-unblocked.md`
+   The bounded work of `plans/animation-unblocked.md` is complete within its
+   researched scope; autotest20 is deferred by the user.
    - Pose modifiers: twist chains, non-additive modes and branch blending
-     (`known_ambiguities/twist-modifier.md`), keyframe bones; foot IK locking planted feet, aligning the
-     body with the ground (`alignWorldFromModelGain`), legs' ungrounded events;
-     creatures' look-at modifiers (unbound:
-     the game picks and aims them itself); NPCs looking at each other in conversation
+     (`known_ambiguities/twist-modifier.md`), keyframe bones; foot IK's authored
+     knee-angle-difference settings (nonzero on several creatures; formula open).
+     NPC conversations' ADIA approach/interruption and pre-phase-one wait, partner
+     cooldowns and failed-attempt pacing; existing ADIA dispatch uses provisional
+     social timers. Step 7a documents why standalone HELO/IDLE chains are not added.
    - Objects' behaviour graphs (see Done): graph state in saves (kept across
      cell loads in memory; only open states are saved, `GOPN`: levers,
      rockfalls and traps start over on load)
    - Chooser start states, selectors' own blends
      (`known_ambiguities/selectors.md`)
-   - NPCs strafing (`Direction`: see the player's body), sprinting; character
-     properties on remaining generator members (clip `enforcedDuration` and
+   - Character properties on remaining generator members (clip `enforcedDuration` and
      blender `indexOfSyncMasterChild` are supported), blender-child members
      beyond `weight` and `boneWeights`, and transition-effect members beyond `duration`,
      `selfTransitionMode`, `eventMode`, the supported subset of `blendCurve`,
@@ -1651,10 +1692,8 @@ game each piece unlocks.
      end-time behavior beyond direct single-play clips and transparent wrappers,
      runtime overrides and lifecycle gates (`known_ambiguities/character-properties.md`;
      `vrm-tool hkb-props` lists the bindings: the humanoid and dragon projects bind
-     only two modifiers' `enable`);
-     feeding `hkbRotateCharacterModifier`'s yaw (computed: see Done) into ordinary NPC
-     heading in place of the AI's own turning (`known_ambiguities/rotate-character.md`); the other action trees
-     (`ActionTurnLeft`...) as the way events are chosen
+     only two modifiers' `enable`); action trees beyond the supported locomotion
+     and existing idle/talking/activation paths
    - Carry furniture (wood piles done, see Done): packages or sandboxing that
      take a carrier to where the load goes (now any wood pile it happens to pick);
      buckets (`OffsetCarryBucketStart`: nothing in the idle tree sends it) and
@@ -1671,8 +1710,10 @@ game each piece unlocks.
      (`known_ambiguities/state-machine-outputs.md`; autotest17 and autotest18
      confirmed the publication timing, see Done)
    - Engine variables and events still missing: combat, first person;
-     INFO listener idles (the speaker's are done, see Done); listeners' reactions
-   - Footsteps: swimming (and swimming itself), splashes, decals
+     generic listener reactions beyond authored LNAM idles
+   - Footstep visuals: vanilla impacts name a missing FootImpactDust01 model
+     and no footstep decal texture sets; there is no usable vanilla visual to
+     implement. Water-surface ripples belong to Rendering below.
    - Later / separate: standalone controllers on skinned geometry, particle systems, attachments,
      distant and loose objects; collision following standalone transforms,
      persistence and driver arbitration (`known_ambiguities/node-controllers.md`);
@@ -1685,7 +1726,7 @@ game each piece unlocks.
    - Events waiting on their systems: crafting, NPCs'
      spell casts (combat suppression and concentration cadence need evidence;
      `known_ambiguities/story-cast-events.md`), new voice powers, bribe /
-     intimidate / flatter; hellos between NPCs and creatures'
+     intimidate / flatter
    - Secret relationship behavior (`known_ambiguities/relationships.md`)
 3. **Detection (stealth)** (see Done); what's left waits on other systems or
    sources:
@@ -1697,7 +1738,7 @@ game each piece unlocks.
      until then
    - Finding bodies by detection
    - Combat searches following a target through load doors; automatic alert-flag
-     changes and weapon-posture effects of `SetAlert` need evidence
+     changes still need evidence (explicit SetAlert drawing is done)
      (`known_ambiguities/detection.md`); witnesses who hear a sneak attack
      alerted (with action sounds)
 4. **AI depth**
@@ -1858,8 +1899,10 @@ game each piece unlocks.
      `ClearDestruction` now resets runtime state (see
      Done), but game effect restoration remains unresolved. Choices:
      `known_ambiguities/destruction.md`
-   - Water (loaded types and `IsInDangerousWater`: see Done): swimming and
-     `IsSwimming`, unloaded actors' contact, contact spells (`XNAM`);
+   - Water (surface swimming, IsSwimming and dangerous-water queries: see Done):
+     autotest20 depth/Waterbreathing-state validation, race/scale float heights,
+     breath-timing validation, diving controls after underwater rendering;
+     unloaded actors' contact, contact spells (`XNAM`);
      `WATR` `DATA` is unused in SSE per xEdit, not damage per second.
      See `known_ambiguities/water.md` and
      `known_ambiguities/triggers.md` (lava is scripted triggers, fires
@@ -1997,7 +2040,8 @@ game each piece unlocks.
    Audio menu's sliders; output models' reverb send and speaker output (acoustic spaces),
    sounds' priorities when voices run out
 8. **Rendering**: point light and interior shadows, static shadow caching (per-cell
-   caster batches), HDR: eye adaptation, bloom, tone mapping and the image
+   caster batches), water-surface ripples and underwater rendering (for diving),
+   HDR: eye adaptation, bloom, tone mapping and the image
    spaces' HDR values (sunlight / sky scale), depth of field; the modifiers'
    radial blur and motion blur (cinematic values and tint: see Done), particles'
    remaining modifiers (animated colliders, skinned/deformed and animated mesh emission,
