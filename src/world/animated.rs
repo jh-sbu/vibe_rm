@@ -1004,7 +1004,7 @@ impl Engine {
             }
         }
         let mut toggle = Vec::new();
-        let mut raised: Vec<(FormId, Vec<String>)> = Vec::new();
+        let mut raised: Vec<(FormId, Vec<havok::behavior::runtime::Raised>)> = Vec::new();
         let mut sounds: Vec<(String, Vec3)> = Vec::new();
         for (key, rt) in self.cells.iter_mut() {
             for obj in &mut rt.animated {
@@ -1042,13 +1042,13 @@ impl Engine {
                                 Some((k, s)) if k.eq_ignore_ascii_case("SoundPlay") => {
                                     Some(s.to_owned())
                                 }
-                                _ if r.event.eq_ignore_ascii_case("SoundPlay") => r.payload,
+                                _ if r.event.eq_ignore_ascii_case("SoundPlay") => r.payload.clone(),
                                 _ => None,
                             };
                             if let Some(s) = sound {
                                 sounds.push((s, obj.position));
                             }
-                            events.push(r.event);
+                            events.push(r);
                         }
                         raised.push((obj.ref_id, events));
                     }
@@ -1085,11 +1085,16 @@ impl Engine {
         }
         for (r, events) in raised {
             for ev in &events {
-                if let Some(s) = OpenState::after_event(ev, false) {
+                if let Some(s) = OpenState::after_event(&ev.event, false) {
                     self.world_state.graph_open.insert(r, s);
                 }
             }
-            self.raise_anim_events(r, &events);
+            let notifications: Vec<_> = events
+                .into_iter()
+                .filter(crate::anim_events::script_notification)
+                .map(|e| e.event)
+                .collect();
+            self.raise_anim_events(r, &notifications);
         }
     }
 }

@@ -11,6 +11,12 @@ use papyrus::{ObjectId, Value};
 
 use crate::engine::Engine;
 
+/// Autotest19: payload-free clip/graph notifications reach scripts. Payload
+/// notifications stay internal, including waits (see object-graphs.md).
+pub(crate) fn script_notification(event: &havok::behavior::runtime::Raised) -> bool {
+    event.payload.is_none()
+}
+
 /// How long `PlayAnimationAndWait` waits for an event that doesn't come (real
 /// seconds; no source: the game's wait has no limit, but graphs here may not
 /// raise every event the game's do).
@@ -109,11 +115,16 @@ impl AnimEvents {
 impl Engine {
     /// Whether `r` runs a behaviour graph now (an actor's or an object's).
     pub(crate) fn has_behavior_graph(&self, r: FormId) -> bool {
-        self.actor_ref(r).is_some_and(|a| a.graph.is_some()) || self.object_has_graph(r)
+        (r == crate::engine::PLAYER_REF && self.player_has_graph())
+            || self.actor_ref(r).is_some_and(|a| a.graph.is_some())
+            || self.object_has_graph(r)
     }
 
     /// The graph `r` runs: an object's, else an actor's.
     fn graph_mut(&mut self, r: FormId) -> Option<&mut crate::world::behavior::GraphAnim> {
+        if r == crate::engine::PLAYER_REF {
+            return self.player_body.as_mut()?.graph_mut();
+        }
         if self.object_has_graph(r) {
             return self.object_graph_mut(r);
         }
@@ -149,6 +160,9 @@ impl Engine {
         sender: FormId,
         event: &str,
     ) -> bool {
+        if sender == crate::engine::PLAYER_REF && !self.player_has_graph() {
+            self.build_player_body();
+        }
         if !self.has_behavior_graph(sender) {
             log::debug!("{receiver:?}: no graph on {sender} to register for {event}");
             return false;
@@ -214,5 +228,121 @@ impl Engine {
                 ));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use havok::behavior::runtime::{Instance, Shared};
+    use havok::behavior::{
+        BehaviorGraph, ClipMode, EventProperty, Generator, Project, State, Transition, Trigger,
+    };
+    use std::sync::Arc;
+
+    #[test]
+    fn incoming_events_do_not_echo_and_payload_notifications_stay_internal() {
+        let graph = BehaviorGraph::new(
+            "Events",
+            Some(0),
+            vec![
+                Generator::StateMachine {
+                    name: "Root".into(),
+                    start: 0,
+                    start_variable: None,
+                    start_mode: Default::default(),
+                    sync_variable: None,
+                    change_event: None,
+                    states: vec![
+                        State {
+                            id: 0,
+                            name: "Idle".into(),
+                            generator: None,
+                            transitions: vec![Transition::new(0, 1, None)],
+                            enter_events: vec![],
+                            exit_events: vec![],
+                        },
+                        State {
+                            id: 1,
+                            name: "Swing".into(),
+                            generator: Some(1),
+                            transitions: vec![],
+                            enter_events: vec![EventProperty {
+                                event: 3,
+                                payload: None,
+                            }],
+                            exit_events: vec![],
+                        },
+                    ],
+                    wildcards: vec![],
+                },
+                Generator::Clip {
+                    name: "Swing".into(),
+                    animation: "Synthetic".into(),
+                    mode: ClipMode::SinglePlay,
+                    speed: 1.0,
+                    enforced_duration: 0.0,
+                    user_fraction: 0.0,
+                    crop_start: 0.0,
+                    crop_end: 0.0,
+                    start_time: 0.0,
+                    triggers: vec![
+                        Trigger {
+                            time: 0.1,
+                            from_end: false,
+                            event: 1,
+                            payload: Some("swing".into()),
+                        },
+                        Trigger {
+                            time: 0.1,
+                            from_end: false,
+                            event: 2,
+                            payload: None,
+                        },
+                        Trigger {
+                            time: 0.1,
+                            from_end: false,
+                            event: 4,
+                            payload: Some(String::new()),
+                        },
+                    ],
+                },
+            ],
+            [
+                "attackStart",
+                "SoundPlay",
+                "FootLeft",
+                "Notify",
+                "EmptyPayload",
+            ]
+            .map(String::from)
+            .to_vec(),
+        );
+        let mut instance = Instance::new(
+            Shared::new(Arc::new(Project {
+                graphs: vec![("synthetic".into(), graph)],
+                character: None,
+            })),
+            1,
+        );
+        let mut clips = |_: &str| Some(1.0);
+        instance.update(0.0, &mut clips);
+        instance.take_raised();
+        assert!(instance.handle_event("attackStart", &mut clips));
+        instance.update(0.2, &mut clips);
+        let raised = instance.take_raised();
+        assert!(
+            raised
+                .iter()
+                .any(|r| r.event == "SoundPlay" && r.payload.is_some())
+        );
+        assert!(raised.iter().any(|r| r.event == "EmptyPayload"));
+        let mut scripts: Vec<_> = raised
+            .iter()
+            .filter(|e| script_notification(e))
+            .map(|e| e.event.as_str())
+            .collect();
+        scripts.sort();
+        assert_eq!(scripts, vec!["FootLeft", "Notify"]);
     }
 }

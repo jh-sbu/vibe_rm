@@ -127,3 +127,21 @@ This is implementation coverage, not a claim
 of original-engine lifecycle parity. Only the previously documented game-asset
 observations and repository code were used; no engine binaries were examined
 and no game assets were added.
+
+## Script notification filtering (autotest19)
+
+Every tested RegisterForAnimationEvent succeeded in SE. Payload-free clip
+annotations and graph-raised events reached OnAnimationEvent; SoundPlay with
+a payload did not. The incoming attackStart sent by Debug.SendAnimationEvent
+also did not echo to scripts. Only raised events are published here; input
+sends never enter the notification collector by themselves.
+
+Chosen rule: suppress every raised event carrying a payload (including an
+empty string), on actors, the player's body and objects. Generalizing from
+SoundPlay to other payload events is an inference, not an SE observation.
+Internal audio, combat, animation-object and open-state processing still sees
+all events. PlayAnimationAndWait uses the same filtered notification path;
+a wait for a payload event therefore reaches the existing timeout instead of
+finishing on it. That wait behavior remains unobserved in SE. Player body
+registration, graph variable access and raised notifications now use its live
+graph as NPCs do; body creation is ensured on an early player registration.

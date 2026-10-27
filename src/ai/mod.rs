@@ -2228,7 +2228,9 @@ impl ActorRuntime {
             if in_furniture {
                 self.note_untaken(&r);
             }
-            self.graph_events.push(r.event.clone());
+            if crate::anim_events::script_notification(&r) {
+                self.graph_events.push(r.event.clone());
+            }
             let e = r.event.to_ascii_lowercase();
             if self.exec.combat.is_some()
                 && log::log_enabled!(target: "combat_events", log::Level::Trace)
@@ -2382,6 +2384,9 @@ impl Engine {
     /// Play behaviour `event` on a loaded humanoid actor (Papyrus `PlayIdle` /
     /// `Debug.SendAnimationEvent`). Idle-stopping events return it to its AI.
     pub fn play_animation_event(&mut self, actor: FormId, event: &str) -> bool {
+        if actor == PLAYER_REF {
+            return self.player_graph_event(event);
+        }
         self.play_idle(actor, event, None)
     }
 
@@ -2859,6 +2864,15 @@ impl Engine {
     /// Papyrus `GetAnimationVariable*` reads it (0 for one its graph lacks); `None`
     /// when it runs no graph.
     pub fn graph_variable(&self, r: FormId, name: &str) -> Option<f32> {
+        if r == PLAYER_REF {
+            return Some(
+                self.player_body
+                    .as_ref()?
+                    .graph()?
+                    .variable(name)
+                    .unwrap_or(0.0),
+            );
+        }
         if self.object_has_graph(r) {
             return Some(self.object_graph(r)?.variable(name).unwrap_or(0.0));
         }
@@ -3063,6 +3077,13 @@ impl Engine {
 
     /// Set a behaviour graph variable of a loaded actor; false if it has no graph.
     pub fn set_graph_variable(&mut self, r: FormId, name: &str, value: f32) -> bool {
+        if r == PLAYER_REF {
+            return self
+                .player_body
+                .as_mut()
+                .and_then(|b| b.graph_mut())
+                .is_some_and(|g| g.set_script_variable(name, value));
+        }
         let Some(key) = self.actor_cells.get(&r) else {
             return false;
         };

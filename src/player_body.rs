@@ -38,6 +38,7 @@ pub struct PlayerBody {
     sprint_state: Option<f32>,
     swim_told: bool,
     step_events: Vec<String>,
+    script_events: Vec<String>,
     /// How the graph was last told they move, and its state changes by then
     /// ([`GraphAnim::changes`]): told again when either changes.
     told: Option<Stance>,
@@ -178,7 +179,9 @@ impl Engine {
             skin_tone: d.skin_tone,
             weight: d.weight,
         });
+        let script_events = std::mem::take(&mut body.script_events);
         self.player_body = Some(body);
+        self.raise_anim_events(PLAYER_REF, &script_events);
     }
 
     /// Place and animate the body after the player moved `moved` this update.
@@ -259,6 +262,7 @@ impl Engine {
         let transform = body.transform(feet);
         let events = std::mem::take(&mut body.combat_events);
         let step_events = std::mem::take(&mut body.step_events);
+        let script_events = std::mem::take(&mut body.script_events);
         let shot = body
             .bow
             .update(events.arrow_release, can_shoot && body.drawn, dt);
@@ -277,6 +281,7 @@ impl Engine {
                 inst.equipment = equipment;
             }
         }
+        self.raise_anim_events(PLAYER_REF, &script_events);
         self.player_swim_steps(&step_events);
         self.update_player_swing(events.hit_frames, events.attack_stop, dt);
         self.player_spell_events(events.spell_fire, events.hand_equipped, dt);
@@ -336,6 +341,12 @@ impl Stance {
 const FALL_AFTER: f32 = 0.3;
 
 impl PlayerBody {
+    pub(crate) fn graph(&self) -> Option<&GraphAnim> {
+        self.graph.as_ref()
+    }
+    pub(crate) fn graph_mut(&mut self) -> Option<&mut GraphAnim> {
+        self.graph.as_mut()
+    }
     pub(crate) fn graph_sneaking(&self) -> bool {
         self.told.is_some_and(|s| s.sneaking)
     }
@@ -358,6 +369,7 @@ impl PlayerBody {
             sprint_state: None,
             swim_told: false,
             step_events: Vec::new(),
+            script_events: Vec::new(),
             told: None,
             told_at: 0,
             airborne: None,
@@ -587,6 +599,9 @@ impl PlayerBody {
             );
         }
         for r in &frame.raised {
+            if crate::anim_events::script_notification(r) {
+                self.script_events.push(r.event.clone());
+            }
             let tag = r.event.to_ascii_lowercase();
             if self.swim_told && !self.step_events.contains(&tag) {
                 self.step_events.push(tag);
@@ -773,6 +788,9 @@ impl Engine {
 
     /// Send an event to the player's body's graph; whether it took it.
     pub(crate) fn player_graph_event(&mut self, ev: &str) -> bool {
+        if !self.player_has_graph() {
+            self.build_player_body();
+        }
         self.spell_fx.events.push((PLAYER_REF, ev.to_owned()));
         self.player_body.as_mut().is_some_and(|b| {
             let Some(g) = b.graph.as_mut() else {
