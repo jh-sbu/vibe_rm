@@ -290,6 +290,7 @@ pub struct Player {
     pub sprinting: bool,
     pub swimming: bool,
     pub(crate) swim_surface: Option<f32>,
+    pub(crate) swim_speed: f32,
     /// The highest the capsule has been since it left the ground.
     fall_top: Option<f32>,
     /// How far it came down, if it landed this update.
@@ -329,6 +330,7 @@ impl Player {
             sprinting: false,
             swimming: false,
             swim_surface: None,
+            swim_speed: WALK_SPEED,
             fall_top: None,
             landed_from: None,
             last: eye - Vec3::Z * EYE_OFFSET,
@@ -356,7 +358,7 @@ impl Player {
         if self.noclip || self.position.distance(self.last) > TELEPORT {
             self.fall_top = None;
         }
-        let crouch = if self.sneaking && !self.noclip {
+        let crouch = if self.sneaking && !self.noclip && !self.swimming {
             1.0
         } else {
             0.0
@@ -377,7 +379,9 @@ impl Player {
         }
         let fwd = Vec3::new(camera.yaw.sin(), camera.yaw.cos(), 0.0);
         let right = Vec3::new(camera.yaw.cos(), -camera.yaw.sin(), 0.0);
-        let speed = if input.sprint {
+        let speed = if self.swimming {
+            self.swim_speed
+        } else if input.sprint {
             SPRINT_SPEED
         } else if input.run {
             RUN_SPEED
@@ -386,6 +390,18 @@ impl Player {
         } * if self.sneaking { sneak_speed } else { 1.0 }
             * armor_speed;
         let horizontal = (fwd * input.forward + right * input.right).normalize_or_zero() * speed;
+        if self.swimming {
+            self.vertical_velocity = 0.0;
+            self.fall_top = None;
+            let desired_z = self.swim_surface.map_or(self.position.z, |h| {
+                h - crate::water::FLOAT_DEPTH + physics.player_half_height + physics.player_radius
+            });
+            let desired = horizontal * dt + Vec3::Z * (desired_z - self.position.z);
+            self.position = physics.move_player(self.position, desired, dt).0;
+            self.grounded = false;
+            self.last = self.position;
+            return;
+        }
         if self.grounded && input.jump {
             self.vertical_velocity = JUMP_SPEED;
             self.grounded = false;

@@ -97,3 +97,10 @@ The humanoid graph declares no NPC swim iState constant (its HorseSwim
 constant is a mounted subgraph's). Humanoids therefore use NPCSwimming's
 speeds while retaining their default iState; creatures use their own authored
 swim constants. This avoids accidentally selecting mounted swim speeds.
+
+Player movement holds the same floating feet height using collision movement,
+with no swim gravity or dive controls. The capsule's 64-unit half-extent and
+56-unit eye offset leave the eye 28 above the surface at that height. Swim
+speed uses NPCSwimming walk/run, scaled by the existing armor movement rule.
+Diving controls await underwater rendering; breath still applies to actors
+whose head is actually submerged (including externally placed actors).

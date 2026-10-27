@@ -2718,6 +2718,15 @@ impl Engine {
         }
         let sneak_speed = self.player_sneak_speed();
         let armor_speed = self.armor_speed_mult(PLAYER_REF);
+        if self.player.swimming {
+            let types = self
+                .move_types
+                .get_or_insert_with(|| crate::world::movement::movement_types(&self.lo));
+            if let Some(speeds) = types.get("npcswimming") {
+                self.player.swim_speed = if input.run { speeds.run } else { speeds.walk };
+            }
+            input.sprint = false;
+        }
         self.player
             .update(&mut self.physics, &cam, input, sneak_speed, armor_speed, dt);
         if let Some(h) = self.player.landed_from {
@@ -2727,6 +2736,7 @@ impl Engine {
         self.player.moving = dt > 0.0 && stride / dt > 1.0;
         self.player.running = self.player.moving && (run || sprint);
         self.player.sprinting = self.player.moving && sprint;
+        self.update_swimming_states();
         self.update_player_footsteps(dt, stride, run, sprint);
         self.camera.position = self.player.eye();
         self.update_player_body(self.player.position - before, dt);

@@ -34,6 +34,8 @@ pub struct PlayerBody {
     /// The graph's movement type states (`iState`): default and sneaking.
     state: Option<f32>,
     sneak_state: Option<f32>,
+    sprint_state: Option<f32>,
+    swim_told: bool,
     /// How the graph was last told they move, and its state changes by then
     /// ([`GraphAnim::changes`]): told again when either changes.
     told: Option<Stance>,
@@ -124,6 +126,9 @@ impl Engine {
                 crate::world::movement::graph_movement_types(project.shared.variables(), character);
             body.state = default.map(|(_, v)| v);
             body.sneak_state = sneak.map(|(_, v)| v);
+            body.sprint_state =
+                crate::world::movement::special_movement_type(project.shared.variables(), "sprint")
+                    .map(|(_, v)| v);
             let mut g = body
                 .graph
                 .take()
@@ -206,11 +211,12 @@ impl Engine {
             walking,
             speed: if dt > 0.0 { flat.length() / dt } else { 0.0 },
             heading: (flat.length_squared() > 1e-4).then(|| flat.x.atan2(flat.y)),
-            sneaking: self.player.sneaking,
+            sneaking: self.player.sneaking && !self.player.swimming,
             sprinting: walking && self.player.sprinting,
             jumped: self.player.jumped && !self.player.noclip,
-            grounded: self.player.grounded || self.player.noclip,
+            grounded: self.player.grounded || self.player.noclip || self.player.swimming,
             blocking: self.player_blocking,
+            swimming: self.player.swimming,
         };
         let actions = self.locomotion_actions(PLAYER_REF);
         let Some(body) = self.player_body.as_mut() else {
@@ -283,6 +289,7 @@ struct Motion {
     grounded: bool,
     /// Holding the guard up.
     blocking: bool,
+    swimming: bool,
 }
 
 /// Moving, sprinting and sneaking, as the graph is told them.
@@ -329,6 +336,8 @@ impl PlayerBody {
             held: [None; 3],
             state: None,
             sneak_state: None,
+            sprint_state: None,
+            swim_told: false,
             told: None,
             told_at: 0,
             airborne: None,
@@ -420,7 +429,20 @@ impl PlayerBody {
         };
         self.graph_heading = self.heading;
         let g = self.graph.as_mut()?;
-        let state = if m.sneaking {
+        if self.swim_told != m.swimming {
+            actions.send(g, "ActionSwimStateChange");
+            self.swim_told = m.swimming;
+            self.airborne = None;
+            self.fell = false;
+            self.told = None;
+            if m.swimming {
+                self.drawn = false;
+                self.guard = false;
+            }
+        }
+        let state = if m.sprinting {
+            self.sprint_state.or(self.state)
+        } else if m.sneaking {
             self.sneak_state.or(self.state)
         } else {
             self.state
@@ -437,6 +459,9 @@ impl PlayerBody {
             .map(|h| (wrap(h - self.heading) / std::f32::consts::TAU).rem_euclid(1.0));
         if let Some(d) = self.direction {
             g.set_variable("Direction", d);
+            if m.swimming {
+                g.set_variable("SwimDirection", d);
+            }
         }
         // Degrees per second, counter-clockwise positive as Havok has it.
         g.set_variable(
@@ -448,7 +473,7 @@ impl PlayerBody {
             },
         );
         // The guard goes up with the weapon out (and down when it is put away).
-        let guard = m.blocking && self.drawn;
+        let guard = m.blocking && self.drawn && !m.swimming;
         if guard != self.guard {
             let ev = if guard { "blockStart" } else { "blockStop" };
             let took = Self::event(g, ev, vfs, anims, &self.skeleton);
