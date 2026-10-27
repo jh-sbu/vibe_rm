@@ -36,7 +36,6 @@ use papyrus::pex::op;
 use super::TestMod;
 use super::autotest2::{Vanilla, line, put};
 use super::autotest4::report;
-use super::own;
 use super::records::Quest;
 use super::script::{Code, num, on_update, real_time};
 
@@ -239,6 +238,7 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_mods::own;
     use crate::test_mods::script::dry_run::{form, run};
 
     #[test]
