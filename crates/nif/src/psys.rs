@@ -224,7 +224,9 @@ pub struct ParticleController {
 pub enum ControllerKind {
     /// `NiPSysEmitterCtlr` (and `BSPSysMultiTargetEmitterCtlr`): the
     /// interpolator is the birth rate, `visibility` switches emitting on.
-    Emitter { visibility: Ref },
+    /// `multi_target`: a master particle system's, emitting at the addon
+    /// nodes using it.
+    Emitter { visibility: Ref, multi_target: bool },
     /// `NiPSysUpdateCtlr`: runs the system (no interpolator or modifier).
     Update,
     /// `NiPSysModifierActiveCtlr`: switches a modifier on and off.
@@ -577,11 +579,15 @@ pub(crate) fn parse(ty: &str, r: &mut Reader) -> Result<Option<crate::Block>> {
                 let kind = match ty {
                     "NiPSysEmitterCtlr" | "BSPSysMultiTargetEmitterCtlr" => {
                         let visibility = r.block_ref()?;
-                        if ty == "BSPSysMultiTargetEmitterCtlr" {
+                        let multi_target = ty == "BSPSysMultiTargetEmitterCtlr";
+                        if multi_target {
                             r.u16()?; // max emitters
                             r.i32()?; // master particle system
                         }
-                        ControllerKind::Emitter { visibility }
+                        ControllerKind::Emitter {
+                            visibility,
+                            multi_target,
+                        }
                     }
                     "NiPSysModifierActiveCtlr" => ControllerKind::ModifierActive,
                     "NiPSysGravityStrengthCtlr" => {

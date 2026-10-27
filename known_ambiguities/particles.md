@@ -80,7 +80,8 @@ are used below is this engine's reading.
   system emitting at every node using it (and the ADDN's `DNAM` holds a
   master particle cap and flags). Here each node gets its own copy of the
   addon's systems, placed at the node's rest transform, so a chandelier's
-  candles flicker independently.
+  candles flicker independently. Each copy's emitters take their
+  orientation from the addon node (see Multi-target emitters).
 
 ## Palette colour and vertex colour
 
@@ -116,6 +117,48 @@ colour's tint; without one, vertex colours tint as before. Whether the
 vertex alpha still applies with a colour-only palette, and the row
 convention itself, are unverified. A headless GPU test
 (`render::effect_shader_tests`) draws both cases.
+
+## Multi-target emitters
+
+Addon models are `BSMasterParticleSystem`s whose emitters are driven by
+`BSPSysMultiTargetEmitterCtlr`. The Niftools schema lists the controller's
+max emitters and master particle system but does not say how an emitter is
+placed at each addon node. UESP's ADDN page
+([rev 2308918](https://en.uesp.net/w/index.php?oldid=2308918)) gives the
+master particle cap and flags only.
+
+Asset evidence (installed Skyrim SE meshes read with `vrm-tool nif-dump`,
+2026-10-26; nothing copied into this repository): of the 140 emitters in the
+92 ADDN models, 20 sit under rotated nodes inside their addon. Every
+forward-shooting one inspected is turned -90 degrees about X there, and its
+host's addon node is turned the same way again:
+
+- Flames: `MPSFlamesFire` on `firesprayfx01.nif`'s Mover03-05.
+- Fireball: `MPSFireBoltFire01` on `fireballprojectile01.nif`'s `AddOnNode35`.
+- Frostbite: `MPSFrostMAGIceSpray` on `icesprayprojectile01.nif`'s
+  `AddOnNode18`.
+- Chaurus spit: `MPSChaurusSpit` on `magchaurusspitprojectile.nif`'s
+  `AddOnNode55`.
+- Dart traps: `MPSDartSmoke02` on `trapdartwooden01.nif`'s `AddOnNode48`.
+
+Composing both turns aims each of these 180 degrees from the emitter's
+axis, straight down relative to the projectile. Offscreen captures of
+Flames showed its fire landing on the ground beside the player. Either
+turn alone aims them forward. The Flames spray's movers also key their own
+turns (60 degrees either way about Z, 25 degrees about X), which only matter
+if the host node's turn is kept. Upward emitters (candles, torches, fire
+walls) have identity turns in both places.
+
+Implemented policy: an emitter driven by a multi-target controller takes
+the addon node's rotation and scale, at the position its own nodes give it.
+29 emitters are offset a few units inside their addons (none of them also
+turned) and keep those offsets. Other objects (gravity, wind, drag)
+keep their authored transforms. Unverified: whether the game drops the
+addon's inner transforms entirely (offsets too), and how many particles a
+master system emits per node: Flames' three MPSFlamesFire copies emit 12 a
+second each, which leaves the stream sparse. A synthetic test
+(`multi_target_emitters_point_the_way_of_their_addon_node`) covers both
+controller kinds.
 
 ## Directional drag
 

@@ -653,7 +653,7 @@ pub fn describe(
                 continue;
             }
             c.interpolator = Ref(-1);
-            if let ControllerKind::Emitter { visibility } = &mut c.kind {
+            if let ControllerKind::Emitter { visibility, .. } = &mut c.kind {
                 *visibility = Ref(-1);
             }
             let mut owned = false;
@@ -670,7 +670,7 @@ pub fn describe(
                     Some(Block::BoolInterpolator(_))
                         if matches!(c.kind, ControllerKind::Emitter { .. }) =>
                     {
-                        if let ControllerKind::Emitter { visibility } = &mut c.kind {
+                        if let ControllerKind::Emitter { visibility, .. } = &mut c.kind {
                             *visibility = cb.interpolator;
                         }
                     }
@@ -817,9 +817,22 @@ fn describe_base(
                 let ctl = ctlrs.iter().find(|c| {
                     c.modifier == m.name && matches!(c.kind, ControllerKind::Emitter { .. })
                 });
+                // A master particle system's emitter points the way of the
+                // addon node it emits at, not its own nodes' (see
+                // known_ambiguities/particles.md, Multi-target emitters).
+                let obj = match ctl.map(|c| &c.kind) {
+                    Some(ControllerKind::Emitter {
+                        multi_target: true, ..
+                    }) => {
+                        let mut o = root;
+                        o.w_axis = obj.w_axis;
+                        o
+                    }
+                    _ => obj,
+                };
                 let (birth_rate, visible) = match ctl {
                     Some(c) => {
-                        let ControllerKind::Emitter { visibility } = c.kind else {
+                        let ControllerKind::Emitter { visibility, .. } = c.kind else {
                             unreachable!()
                         };
                         (
@@ -1702,6 +1715,55 @@ mod tests {
     }
 
     #[test]
+    fn multi_target_emitters_point_the_way_of_their_addon_node() {
+        // An addon's emitter turned -90 degrees about X inside it (as
+        // MPSFlamesFire's is), at an addon node turned the same way.
+        let inner = nif::Transform {
+            translation: Vec3::new(0.0, 0.0, 5.0),
+            rotation: Mat3::from_rotation_x(-std::f32::consts::FRAC_PI_2),
+            scale: 1.0,
+        };
+        let host = Mat4::from_translation(Vec3::new(10.0, 0.0, 0.0))
+            * Mat4::from_rotation_x(-std::f32::consts::FRAC_PI_2);
+        let emitter = |multi_target| {
+            let (mut n, mut sys) = drag_nif_fixture(inner, Vec3::Z, 0.0, 0.0);
+            let ctl = n.blocks.len() as i32;
+            n.blocks
+                .push(Block::ParticleController(nif::psys::ParticleController {
+                    next: Ref(-1),
+                    timing: nif::anim::Timing {
+                        flags: 0x48,
+                        frequency: 1.0,
+                        phase: 0.0,
+                        start: 0.0,
+                        stop: 1.0,
+                    },
+                    interpolator: Ref(-1),
+                    modifier: "emitter".into(),
+                    kind: ControllerKind::Emitter {
+                        visibility: Ref(-1),
+                        multi_target,
+                    },
+                }));
+            sys.av.net.controller = Ref(ctl);
+            describe(&n, &sys, host, host).unwrap().emitters[0].object
+        };
+
+        // A master system's emits along the node's Z, from where it's placed.
+        let multi = emitter(true);
+        assert!(multi.z_axis.abs_diff_eq(host.z_axis, 1.0e-5), "{multi:?}");
+        assert!(
+            multi
+                .w_axis
+                .abs_diff_eq(Vec4::new(10.0, 5.0, 0.0, 1.0), 1.0e-5)
+        );
+        // An ordinary emitter keeps its own node's turn on top of the host's.
+        let single = emitter(false);
+        assert!(single.z_axis.abs_diff_eq(-Vec4::Z, 1.0e-5), "{single:?}");
+        assert_eq!(single.w_axis, multi.w_axis);
+    }
+
+    #[test]
     fn named_sequences_bind_manager_emitters_and_leave_unowned_emitters_off() {
         let (mut n, mut sys) = drag_nif_fixture(nif::Transform::default(), Vec3::Z, 0.0, 0.0);
         if let Block::ParticleModifier(m) = &mut n.blocks[4] {
@@ -1722,6 +1784,7 @@ mod tests {
                 modifier: "emitter".into(),
                 kind: ControllerKind::Emitter {
                     visibility: Ref(-1),
+                    multi_target: false,
                 },
             }));
         sys.av.net.controller = Ref(ctl);
