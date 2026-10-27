@@ -315,6 +315,10 @@ impl Stance {
 const FALL_AFTER: f32 = 0.3;
 
 impl PlayerBody {
+    pub(crate) fn project(&self) -> Option<&Arc<crate::world::behavior::ProjectRuntime>> {
+        Some(self.graph.as_ref()?.project())
+    }
+
     fn new(skeleton: Arc<Skeleton>, heading: f32) -> Self {
         Self {
             skeleton,

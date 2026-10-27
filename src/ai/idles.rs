@@ -1,6 +1,7 @@
 //! The IDLE record tree: which behaviour event an idle plays, which idles belong
 //! to furniture with a given keyword, and picking an idle by walking a subtree.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use esp::{FormId, LoadOrder};
@@ -31,6 +32,7 @@ struct Idle {
 #[derive(Default)]
 pub struct IdleIndex {
     idles: HashMap<FormId, Idle>,
+    actions: RefCell<HashMap<(String, FormId), Option<String>>>,
     children: HashMap<FormId, Vec<FormId>>,
     /// Keyword -> root idles conditioned on it.
     by_keyword: HashMap<FormId, Vec<FormId>>,
@@ -123,7 +125,12 @@ impl IdleIndex {
         root: FormId,
         ctx: condition::Context,
     ) -> Option<(FormId, String)> {
-        self.select_in(e, root, ctx, &is_humanoid_graph, 0)
+        self.select_in(
+            root,
+            &is_humanoid_graph,
+            &|c| condition::evaluate(e, c, ctx),
+            0,
+        )
     }
 
     /// Like [`IdleIndex::select`] for an actor of `project`: idles of its graphs.
@@ -134,7 +141,43 @@ impl IdleIndex {
         ctx: condition::Context,
         project: &ProjectRuntime,
     ) -> Option<(FormId, String)> {
-        self.select_in(e, root, ctx, &|b: &str| b.is_empty() || project.plays(b), 0)
+        self.select_in(
+            root,
+            &|b: &str| b.is_empty() || project.plays(b),
+            &|c| condition::evaluate(e, c, ctx),
+            0,
+        )
+    }
+
+    /// Resolve an action, caching only trees whose applicable branches have no
+    /// conditions. A failed conditioned selection must be retried next time.
+    pub fn action(
+        &self,
+        e: &crate::engine::Engine,
+        root: FormId,
+        ctx: condition::Context,
+        project: &ProjectRuntime,
+    ) -> Option<String> {
+        let key = (project.dir.clone(), root);
+        if let Some(event) = self.actions.borrow().get(&key) {
+            return event.clone();
+        }
+        let graphs = |b: &str| b.is_empty() || project.plays(b);
+        let event = self.select_for(e, root, ctx, project).map(|(_, ev)| ev);
+        if self.unconditional(root, &graphs, 0) {
+            self.actions.borrow_mut().insert(key, event.clone());
+        }
+        event
+    }
+
+    fn unconditional(&self, root: FormId, graphs: &dyn Fn(&str) -> bool, depth: u32) -> bool {
+        depth <= 16
+            && self.children.get(&root).into_iter().flatten().all(|&id| {
+                !graphs(self.behavior_of(id))
+                    || self.idles.get(&id).is_some_and(|i| {
+                        i.conditions.is_empty() && self.unconditional(id, graphs, depth + 1)
+                    })
+            })
     }
 
     /// Like [`IdleIndex::select`] over `roots` as if they were siblings, checking
@@ -145,32 +188,34 @@ impl IdleIndex {
         roots: &[FormId],
         ctx: condition::Context,
     ) -> Option<(FormId, String)> {
-        self.select_list(e, roots, ctx, &is_humanoid_graph, 0)
+        self.select_list(
+            roots,
+            &is_humanoid_graph,
+            &|c| condition::evaluate(e, c, ctx),
+            0,
+        )
     }
 
     fn select_in(
         &self,
-        e: &crate::engine::Engine,
         root: FormId,
-        ctx: condition::Context,
         graphs: &dyn Fn(&str) -> bool,
+        evaluate: &dyn Fn(&[Condition]) -> bool,
         depth: u32,
     ) -> Option<(FormId, String)> {
         self.select_list(
-            e,
             self.children.get(&root).map_or(&[], Vec::as_slice),
-            ctx,
             graphs,
+            evaluate,
             depth,
         )
     }
 
     fn select_list(
         &self,
-        e: &crate::engine::Engine,
         kids: &[FormId],
-        ctx: condition::Context,
         graphs: &dyn Fn(&str) -> bool,
+        evaluate: &dyn Fn(&[Condition]) -> bool,
         depth: u32,
     ) -> Option<(FormId, String)> {
         if depth > 16 {
@@ -183,16 +228,10 @@ impl IdleIndex {
             if !graphs(self.behavior_of(kid)) {
                 continue;
             }
-            if !condition::evaluate(e, &idle.conditions, ctx) {
-                if log::log_enabled!(log::Level::Trace) {
-                    log::trace!(
-                        "idle {kid} fails: {}",
-                        condition::explain(e, &idle.conditions, ctx)
-                    );
-                }
+            if !evaluate(&idle.conditions) {
                 continue;
             }
-            if let Some(found) = self.select_in(e, kid, ctx, graphs, depth + 1) {
+            if let Some(found) = self.select_in(kid, graphs, evaluate, depth + 1) {
                 return Some(found);
             }
             if !idle.event.is_empty() {
@@ -266,5 +305,71 @@ impl IdleIndex {
             }
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn actions_select_project_conditions_and_refusal() {
+        let mut ix = IdleIndex::default();
+        let root = FormId(1);
+        for (id, behavior, event, conditions) in [
+            (2, "fish", "SwimLeft", vec![]),
+            (
+                3,
+                "human",
+                "turnLeft",
+                vec![Condition {
+                    op: 0,
+                    or: false,
+                    use_global: false,
+                    swap: false,
+                    value: 0.0,
+                    global: FormId::NULL,
+                    func: 286,
+                    p1: 0,
+                    p2: 0,
+                    run_on: 0,
+                    reference: FormId::NULL,
+                    reference_raw: 0,
+                    string_p1: None,
+                    string_p2: None,
+                    pack_input: None,
+                    p1_input: false,
+                    package_data: None,
+                    p1_alias: false,
+                    p1_ref: None,
+                    event_member: [0; 2],
+                }],
+            ),
+        ] {
+            ix.children.entry(root).or_default().push(FormId(id));
+            ix.idles.insert(
+                FormId(id),
+                Idle {
+                    parent: root,
+                    event: event.into(),
+                    behavior: behavior.into(),
+                    conditions,
+                },
+            );
+        }
+        let fish = |b: &str| b == "fish";
+        let human = |b: &str| b == "human";
+        assert_eq!(
+            ix.select_in(root, &fish, &|_| true, 0).unwrap().1,
+            "SwimLeft"
+        );
+        assert!(ix.unconditional(root, &fish, 0));
+        assert!(!ix.unconditional(root, &human, 0));
+        assert!(ix.select_in(root, &human, &|c| c.is_empty(), 0).is_none());
+        assert_eq!(
+            ix.select_in(root, &human, &|_| true, 0).unwrap().1,
+            "turnLeft"
+        );
+        assert!(ix.select_in(root, &|_| false, &|_| true, 0).is_none());
     }
 }

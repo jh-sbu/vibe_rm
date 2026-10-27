@@ -2384,6 +2384,25 @@ impl Engine {
         true
     }
 
+    /// Pick an action's event for this actor's graph. `None` means refused.
+    pub(crate) fn action(&mut self, actor: FormId, name: &str) -> Option<String> {
+        let project = if actor == PLAYER_REF {
+            self.player_body.as_ref()?.project()?.clone()
+        } else {
+            self.actor_ref(actor)?.graph.as_ref()?.project().clone()
+        };
+        let root = self
+            .idles
+            .get_or_insert_with(|| idles::IdleIndex::build(&self.lo))
+            .find(&self.lo, name)?;
+        let ctx = crate::condition::Context {
+            subject: Some(actor),
+            idle: Some(crate::condition::IdleQuery::default()),
+            ..Default::default()
+        };
+        self.idles.as_ref()?.action(self, root, ctx, &project)
+    }
+
     /// Idles for actors that asked for one, from the `ActionIdle` tree's branches
     /// for their graphs (hands on hips, a sigh; a horse grazes, a chicken settles
     /// down to sit).
