@@ -191,6 +191,7 @@ pub const SNEAK: u32 = 15;
 pub const SPEECHCRAFT: u32 = 17;
 pub const ENCHANTING: u32 = 23;
 pub const LAST_SKILL: u32 = 23;
+pub const WATER_BREATHING: u32 = 57;
 pub const HEALTH: u32 = 24;
 pub const MAGICKA: u32 = 25;
 pub const STAMINA: u32 = 26;

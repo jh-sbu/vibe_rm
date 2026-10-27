@@ -104,3 +104,32 @@ with no swim gravity or dive controls. The capsule's 64-unit half-extent and
 speed uses NPCSwimming walk/run, scaled by the existing armor movement rule.
 Diving controls await underwater rendering; breath still applies to actors
 whose head is actually submerged (including externally placed actors).
+
+## Breath and drowning
+
+The local UESP [Waterbreathing revision 3380569](https://en.uesp.net/w/index.php?oldid=3380569)
+and [Argonian revision 3571436](https://en.uesp.net/w/index.php?oldid=3571436)
+establish that Waterbreathing prevents drowning, including Argonians' ability.
+Neither gives an unprotected breath timer. Public mod authors disagree:
+[Dynamic Breath](https://www.nexusmods.com/skyrimspecialedition/mods/100466)
+describes twenty seconds; [Nikolaf's More Realistic Underwater Breathing](https://www.nexusmods.com/skyrimspecialedition/mods/47886)
+describes thirty. These are author observations, not verified here.
+
+Installed WaterbreathingFFSelf is archetype 34 (Peak Value Modifier) of
+WaterBreathing (AV 57), already handled by the effect runtime. No new native
+or special race exemption is needed. The vanilla GMSTs are
+fActorSwimBreathMult=0.2 and fActorSwimBreathDamage=0.08; their names and values
+do not establish a formula. Chosen policy: capacity = 100 * breath multiplier
+seconds (20 by default), then damage = maximum health * damage multiplier
+per second. Only the portion of an update after exhaustion does damage.
+Surfacing or gaining WaterBreathing resets elapsed time. No stamina term is
+introduced. The hundred-unit capacity scale, recovery/reset policy and max
+health basis need an original-game probe; keep these as follow-up questions
+in the animation plan, without generating autotest20 now.
+
+NPC head immersion uses 90% of scaled skeleton height; player immersion uses
+the eye. Per-race breathing points and actors without loaded 3D are unresolved.
+Transient breath state clears on unloading. Diving controls remain future work.
+The inspected vanilla HUDMenu ActionScript (existing ignored
+spike/swf/out/hudmenu.dis) exports health, magicka, stamina, shout and charge
+meter setters, with no breath/oxygen symbol or setter. No custom meter is added.

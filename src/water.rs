@@ -60,6 +60,23 @@ fn swim_state(surface: Option<f32>, feet: f32, bed: Option<f32>, was: bool) -> b
     }
 }
 
+/// Time submerged without protection. A reset starts a fresh breath.
+#[derive(Default)]
+pub(crate) struct Breath {
+    elapsed: f32,
+}
+impl Breath {
+    fn tick(&mut self, submerged: bool, protected: bool, dt: f32, capacity: f32) -> f32 {
+        if !submerged || protected {
+            self.elapsed = 0.0;
+            return 0.0;
+        }
+        let before = self.elapsed;
+        self.elapsed += dt.max(0.0);
+        (self.elapsed - capacity).max(0.0) - (before - capacity).max(0.0)
+    }
+}
+
 impl Engine {
     /// The water surface height at a point in the currently loaded space.
     pub(crate) fn water_level(&self, at: Vec3) -> Option<f32> {
@@ -106,6 +123,48 @@ impl Engine {
         self.player.swimming =
             !self.player.noclip && swim_state(surface, feet.z, bed, self.player.swimming);
         self.player.swim_surface = surface;
+    }
+
+    pub(crate) fn update_breath(&mut self, dt: f32) {
+        use crate::engine::PLAYER_REF;
+        use esp::actor_value as av;
+        let setting = |name: &str, fallback| crate::ai::combat::gmst_f32(&self.lo, name, fallback);
+        // The GMST's original formula is unverified: see water.md.
+        let capacity = (100.0 * setting("fActorSwimBreathMult", 0.2)).max(0.0);
+        let rate = setting("fActorSwimBreathDamage", 0.08).max(0.0);
+        let mut heads: Vec<_> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| !a.dead)
+            .map(|a| (a.ref_id, a.feet() + Vec3::Z * a.height() * 0.9))
+            .collect();
+        if !self.player_dead() && !self.player.noclip {
+            heads.push((PLAYER_REF, self.player.eye()));
+        }
+        self.breath
+            .retain(|r, _| heads.iter().any(|(id, _)| r == id));
+        let mut damage = Vec::new();
+        for (actor, head) in heads {
+            let submerged = self.water_level(head).is_some_and(|h| head.z < h);
+            let protected = self.actor_value(actor, av::WATER_BREATHING) > 0.0;
+            let seconds = self
+                .breath
+                .entry(actor)
+                .or_default()
+                .tick(submerged, protected, dt, capacity);
+            if seconds > 0.0 {
+                let health = if actor == PLAYER_REF {
+                    self.player_max_health()
+                } else {
+                    self.actor_ref(actor).map_or(0.0, |a| a.stats.max_health)
+                };
+                damage.push((actor, seconds * health * rate));
+            }
+        }
+        for (actor, amount) in damage {
+            self.damage_actor_value(actor, av::HEALTH, amount);
+        }
     }
 
     /// An actor's feet touch water whose WATR has the Causes Damage flag.
@@ -256,5 +315,16 @@ mod tests {
         assert!(!swim_state(Some(200.0), 108.0, Some(105.0), true));
         assert!(!swim_state(None, 0.0, None, true));
         assert!(!swim_state(Some(200.0), 300.0, Some(0.0), false));
+    }
+    #[test]
+    fn breath_damage_counts_only_time_after_exhaustion_and_resets_on_protection() {
+        let mut breath = Breath::default();
+        assert_eq!(breath.tick(true, false, 19.0, 20.0), 0.0);
+        assert_eq!(breath.tick(true, false, 2.0, 20.0), 1.0);
+        assert_eq!(breath.tick(true, false, 0.5, 20.0), 0.5);
+        assert_eq!(breath.tick(true, true, 100.0, 20.0), 0.0);
+        assert_eq!(breath.tick(true, false, 20.0, 20.0), 0.0);
+        assert_eq!(breath.tick(false, false, 0.1, 20.0), 0.0);
+        assert_eq!(breath.tick(true, false, 20.0, 20.0), 0.0);
     }
 }

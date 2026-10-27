@@ -91,6 +91,7 @@ pub struct Engine {
     pub(crate) graphs: crate::world::behavior::GraphLibrary,
     /// Movement types (`MOVT`) by name, read on first use.
     move_types: Option<HashMap<String, crate::world::movement::MoveSpeeds>>,
+    pub(crate) breath: HashMap<FormId, crate::water::Breath>,
     /// Anim objects by lowercase editor id: model path and the bone it hangs from.
     anim_objects: HashMap<String, Option<(String, String)>>,
     /// Model path -> the bone a rigid model hangs from (its root's `Prn` string).
@@ -419,6 +420,7 @@ impl Engine {
             behaviors: Default::default(),
             graphs: Default::default(),
             move_types: None,
+            breath: HashMap::new(),
             anim_objects: Default::default(),
             parent_bones: Default::default(),
             inventories: Default::default(),
@@ -922,6 +924,7 @@ impl Engine {
         self.scene.particles.clear();
         self.projectiles.clear();
         self.cells.clear();
+        self.breath.clear();
         self.physics.clear();
         self.pending_loads.clear();
         self.world_persistent.clear();
@@ -2697,6 +2700,7 @@ impl Engine {
         self.update_projectiles(world_dt);
         self.update_skills(dt);
         self.update_magic(dt);
+        self.update_breath(world_dt);
         self.draw_impact_effects();
         self.update_animated(world_dt);
         self.update_skin_decals();
