@@ -222,6 +222,7 @@ pub struct GraphAnim {
     pub ground: Vec<Option<(f32, Vec3)>>,
     pub ankles: Vec<Vec3>,
     pub foot_ik_enabled: bool,
+    pub world_from_model: Mat4,
     feet: FootIkState,
     bind: Vec<Transform>,
     scratch: Vec<havok::QsTransform>,
@@ -356,6 +357,7 @@ impl GraphAnim {
             ground: Vec::new(),
             ankles: Vec::new(),
             foot_ik_enabled: true,
+            world_from_model: Mat4::IDENTITY,
             feet: FootIkState::default(),
             bind: skeleton.bind_locals(),
             scratch: Vec::new(),
@@ -788,6 +790,7 @@ impl GraphAnim {
                 skeleton,
                 &mut locals,
                 &self.ground,
+                self.world_from_model,
                 dt,
             );
         }

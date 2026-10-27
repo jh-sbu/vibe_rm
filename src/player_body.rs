@@ -251,6 +251,10 @@ impl Engine {
             }
         }
         let out = body.weapon_out;
+        let world_from_model = body.transform(feet);
+        if let Some(g) = body.graph.as_mut() {
+            g.world_from_model = world_from_model;
+        }
         let pose = body.animate(dt, &motion, &actions, &self.vfs, &mut self.anims);
         let transform = body.transform(feet);
         let events = std::mem::take(&mut body.combat_events);

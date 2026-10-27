@@ -67,3 +67,16 @@ names the vector, event ID/payload, vertical error and two flags in that order.
 Its MIT license (Wayne K, 2016) was checked against this project's MIT license
 before consulting it. Only field vocabulary/layout evidence is used; no
 implementation code was copied. No engine binaries were examined.
+
+## Planted-foot locking
+
+Chosen implementation: acquire a world-space ankle target when the existing
+planted/raised height blend reaches 0.8; ease lock weight towards that blend
+with footUnlockGain at 30 Hz. The pin includes the placed ground offset.
+Moving or turning the actor transforms the pin back into its current model
+space before the two-bone solve, keeping a planted foot fixed in the world.
+Lifting releases it, and missing ground, disabled controls, or a discontinuity
+larger than twice hip-to-ankle reach clears it. These thresholds and the gain's
+formula are implementation choices, not documented Havok behavior. The survey
+and public member names establish the gain's existence, not its algorithm.
+A synthetic chain verifies a foot stays put after moving the body, then lifts.

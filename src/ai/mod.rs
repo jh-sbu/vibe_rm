@@ -2141,6 +2141,7 @@ impl ActorRuntime {
         }
         .map(|(_, s)| s);
         let g = self.graph.as_mut().expect("checked");
+        g.world_from_model = model;
         if self.swimming != self.swim_told {
             self.actions.send(g, "ActionSwimStateChange");
             self.swim_told = self.swimming;

@@ -3,7 +3,7 @@
 //! drops to the lower foot's ground, the other legs bend (two-bone IK) to put
 //! their ankles on theirs, and planted feet tilt with the ground.
 
-use glam::{Quat, Vec3};
+use glam::{Mat4, Quat, Vec3};
 use havok::behavior::{FootIk, FootIkGains};
 use nif::Transform;
 
@@ -20,11 +20,13 @@ pub struct FootIkState {
     drop: f32,
     /// Each leg's ankle tilt with the ground.
     tilts: Vec<Quat>,
+    pins: Vec<Option<Vec3>>,
+    locks: Vec<f32>,
 }
 
 /// Fraction to close per update for a per-frame (30 Hz) gain.
 fn step(gain: f32, dt: f32) -> f32 {
-    1.0 - (1.0 - gain).powf(dt * 30.0)
+    1.0 - (1.0 - gain.clamp(0.0, 1.0)).powf(dt.max(0.0) * 30.0)
 }
 
 fn rotation(m: &glam::Mat4) -> Quat {
@@ -44,6 +46,7 @@ pub fn apply(
     skeleton: &Skeleton,
     locals: &mut [Transform],
     ground: &[Option<(f32, Vec3)>],
+    world_from_model: Mat4,
     dt: f32,
 ) -> Vec<Vec3> {
     let bone = |i: i16| hk_to_nif.get(i as usize).copied().flatten();
@@ -57,6 +60,15 @@ pub fn apply(
         .iter()
         .map(|(_, _, _, a)| model[*a].w_axis.truncate())
         .collect();
+    if legs.is_empty() {
+        return ankles;
+    }
+    state.pins.resize(legs.len(), None);
+    state.locks.resize(legs.len(), 0.0);
+    if gains.is_none() {
+        state.pins.fill(None);
+        state.locks.fill(0.0);
+    }
     state.offsets.resize(legs.len(), 0.0);
     state.tilts.resize(legs.len(), Quat::IDENTITY);
     // Off: fade out at the last gain the graph gave (the vanilla graphs all use 0.2).
@@ -109,9 +121,6 @@ pub fn apply(
         "foot IK offsets {:?} drop {drop:.1} weight {w:.2}",
         state.offsets
     );
-    if state.offsets.iter().all(|o| o.abs() < 0.01) && drop.abs() < 0.01 {
-        return ankles;
-    }
     if let Some(root) = skeleton.bones.iter().position(|b| b.parent.is_none()) {
         locals[root].translation.z += drop;
     }
@@ -137,7 +146,28 @@ pub fn apply(
         .clamp(0.0, 1.0);
         let leg_gain = g.foot_raised + (g.foot_planted - g.foot_raised) * planted;
         let lift = (state.offsets[i] * w - drop) * leg_gain.clamp(0.0, 1.0);
-        let target = a + Vec3::Z * lift;
+        let mut target = a + Vec3::Z * lift;
+        if gains.is_some() && ground.get(i).is_some_and(Option::is_some) {
+            let animated = world_from_model.transform_point3(ankles[i]);
+            if state.pins[i].is_some_and(|pin| pin.distance(animated) > (a - h).length() * 2.0) {
+                state.pins[i] = None; // A teleport or discontinuous animation.
+            }
+            if state.pins[i].is_none() && planted >= 0.8 {
+                state.pins[i] = Some(world_from_model.transform_point3(target));
+                state.locks[i] = planted;
+            }
+            state.locks[i] += (planted - state.locks[i]) * step(g.foot_unlock, dt);
+            if planted <= 0.01 && state.locks[i] <= 0.01 {
+                state.pins[i] = None;
+            }
+            if let Some(pin) = state.pins[i] {
+                let pinned = world_from_model.inverse().transform_point3(pin);
+                target = target.lerp(pinned, state.locks[i] * w);
+            }
+        } else {
+            state.pins[i] = None;
+            state.locks[i] = 0.0;
+        }
         // Knee: open or close it so that hip-to-ankle spans the distance to the target.
         let (la, lb) = ((k - h).length(), (a - k).length());
         if la < 1e-3 || lb < 1e-3 {
@@ -198,4 +228,117 @@ pub fn apply(
         locals[ankle].rotation = glam::Mat3::from_quat((rk2.inverse() * ra2).normalize());
     }
     ankles
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::world::skeleton::Bone;
+    use havok::behavior::FootIkLeg;
+
+    fn fixture() -> (Skeleton, FootIk, FootIkGains, Vec<Transform>) {
+        let mut locals = vec![Transform::default(); 3];
+        locals[0].translation = Vec3::Z * 80.0;
+        locals[1].translation = Vec3::new(0.0, 10.0, -40.0);
+        locals[2].translation = Vec3::new(0.0, -10.0, -40.0);
+        let skeleton = Skeleton {
+            bones: locals
+                .iter()
+                .enumerate()
+                .map(|(i, &bind)| Bone {
+                    name: i.to_string(),
+                    parent: i.checked_sub(1),
+                    bind,
+                })
+                .collect(),
+            ..Default::default()
+        };
+        let ik = FootIk {
+            legs: vec![FootIkLeg {
+                knee_axis: Vec3::X,
+                foot_end: Vec3::ZERO,
+                planted_ankle_height: 0.0,
+                raised_ankle_height: 20.0,
+                min_ankle_height: -100.0,
+                max_ankle_height: 100.0,
+                min_knee_degrees: 0.0,
+                max_knee_degrees: 180.0,
+                max_ankle_degrees: 45.0,
+                hip: 0,
+                knee: 1,
+                ankle: 2,
+            }],
+            raycast_up: 100.0,
+            raycast_down: 100.0,
+            original_ground_height: 0.0,
+            vertical_offset: 0.0,
+            forward_align: 1.0,
+            sideways_align: 0.0,
+        };
+        let gains = FootIkGains {
+            on_off: 1.0,
+            ground_ascending: 1.0,
+            ground_descending: 1.0,
+            foot_planted: 1.0,
+            foot_raised: 1.0,
+            foot_unlock: 1.0,
+            world_from_model_feedback: 1.0,
+            error_up_down_bias: 1.0,
+            ankle_orientation: 1.0,
+            ..Default::default()
+        };
+        (skeleton, ik, gains, locals)
+    }
+
+    #[test]
+    fn planted_foot_stays_in_world_space_then_unlocks_when_lifted() {
+        let (skeleton, ik, gains, bind) = fixture();
+        let mut state = FootIkState::default();
+        let map = [Some(0), Some(1), Some(2)];
+        let ground = [Some((0.0, Vec3::Z))];
+        let mut locals = bind.clone();
+        apply(
+            &mut state,
+            &ik,
+            Some(&gains),
+            &map,
+            &skeleton,
+            &mut locals,
+            &ground,
+            Mat4::IDENTITY,
+            1.0 / 30.0,
+        );
+        let first = skeleton.model_space(&locals)[2].w_axis.truncate();
+        let moved = Mat4::from_translation(Vec3::X * 10.0);
+        locals = bind.clone();
+        apply(
+            &mut state,
+            &ik,
+            Some(&gains),
+            &map,
+            &skeleton,
+            &mut locals,
+            &ground,
+            moved,
+            1.0 / 30.0,
+        );
+        let foot = moved.transform_point3(skeleton.model_space(&locals)[2].w_axis.truncate());
+        assert!(foot.distance(first) < 0.05, "{foot:?} vs {first:?}");
+        locals = bind;
+        locals[2].translation.z += 30.0;
+        apply(
+            &mut state,
+            &ik,
+            Some(&gains),
+            &map,
+            &skeleton,
+            &mut locals,
+            &ground,
+            moved,
+            1.0 / 30.0,
+        );
+        assert!(state.pins[0].is_none());
+        let foot = moved.transform_point3(skeleton.model_space(&locals)[2].w_axis.truncate());
+        assert!((foot.x - 10.0).abs() < 0.05);
+    }
 }
