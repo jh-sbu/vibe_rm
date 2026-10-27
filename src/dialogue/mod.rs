@@ -971,6 +971,7 @@ impl Engine {
         let voice_type = c.voice_type;
         let npc_ref = c.npc_ref;
         let idle = r.speaker_idle;
+        let listener_idle = r.listener_idle;
         let path = voice_path(&self.lo, voice_type, &topic, info_id, r.number);
         let at = self
             .ref_position(npc_ref)
@@ -1011,6 +1012,7 @@ impl Engine {
         }
         // Gesture along with the line.
         self.line_gesture(npc_ref, idle);
+        self.listener_gesture(PLAYER_REF, listener_idle);
     }
 
     pub fn end_conversation(&mut self) {

@@ -3001,6 +3001,24 @@ impl Engine {
         self.talking_gesture(actor);
     }
 
+    /// A response's authored listener idle, without a random speaker gesture.
+    pub(crate) fn listener_gesture(&mut self, listener: FormId, idle: Option<FormId>) {
+        if self.is_dead(listener) {
+            return;
+        }
+        let Some(idle) = idle else {
+            return;
+        };
+        let Some(event) = self.idle_event(idle) else {
+            return;
+        };
+        if listener == PLAYER_REF {
+            self.player_graph_event(&event);
+        } else if let Some(key) = self.actor_cells.get(&listener).copied() {
+            self.send_gesture(key, listener, "listener idle", &event);
+        }
+    }
+
     /// The conversation is over: standing speakers stop their dialogue idle.
     pub(crate) fn end_talking_gestures(&mut self, actor: FormId) {
         let Some(key) = self.actor_cells.get(&actor).copied() else {

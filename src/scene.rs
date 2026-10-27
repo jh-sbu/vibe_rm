@@ -1831,6 +1831,16 @@ impl Engine {
         log::info!("{name} (scene): {} [{}]", r.text, path.unwrap_or_default());
         let now = self.scripts.real_time;
         let idle = r.speaker_idle;
+        let listener_idle = r.listener_idle;
+        let action = &self.scenes.running[i].def.scene.actions[k];
+        let listener = if action.flags & action_flags::HEADTRACK_PLAYER != 0 {
+            Some(PLAYER_REF)
+        } else if let ActionKind::Dialogue { headtrack, .. } = action.kind {
+            headtrack
+                .and_then(|alias| self.alias_ref(self.scenes.running[i].def.scene.quest, alias))
+        } else {
+            None
+        };
         self.scenes.running[i].actions[k].line = Some(SceneLine {
             speaker,
             name,
@@ -1840,6 +1850,9 @@ impl Engine {
             response_index,
         });
         self.line_gesture(speaker, idle);
+        if let Some(listener) = listener.filter(|r| *r != speaker) {
+            self.listener_gesture(listener, listener_idle);
+        }
     }
 
     /// Give the actor the action's packages; true once the one it runs is done.
