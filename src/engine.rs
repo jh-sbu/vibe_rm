@@ -1582,6 +1582,7 @@ impl Engine {
                     self.rng ^ d.ref_id.0 as u64,
                 );
                 g.label = d.ref_id.to_string();
+                g.set_variable("IsNPC", 1.0);
                 if let Some(tail) = self.wearer_graph(d, &skel) {
                     g.attach_aux(tail);
                 }

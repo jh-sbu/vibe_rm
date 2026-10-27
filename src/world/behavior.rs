@@ -215,6 +215,8 @@ pub struct GraphAnim {
     /// Where to look (model space), for the graph's look-at modifier.
     pub look_target: Option<Vec3>,
     look: LookAtState,
+    look_inputs: Vec<String>,
+    has_look_at: bool,
     /// NIF bone of each Havok skeleton bone (look-at bone indices are Havok's).
     hk_bones: Option<Vec<Option<usize>>>,
     /// Foot placement: the ground under each leg's ankle (model space height and
@@ -343,7 +345,31 @@ impl GraphAnim {
         skeleton: &Skeleton,
         seed: u64,
     ) -> GraphAnim {
+        let has_look_at = project.shared.project.graphs.iter().any(|(_, graph)| {
+            graph
+                .modifiers
+                .iter()
+                .any(|m| matches!(m, havok::behavior::Modifier::LookAt(_)))
+        });
+        let mut look_inputs = Vec::new();
+        for (_, graph) in &project.shared.project.graphs {
+            for (index, modifier) in graph.modifiers.iter().enumerate() {
+                if !matches!(modifier, havok::behavior::Modifier::LookAt(_)) {
+                    continue;
+                }
+                for binding in &graph.modifier_bindings[index] {
+                    if binding.member == "lookAtTarget" {
+                        let name = graph.variables[binding.variable].clone();
+                        if !look_inputs.contains(&name) {
+                            look_inputs.push(name);
+                        }
+                    }
+                }
+            }
+        }
         GraphAnim {
+            look_inputs,
+            has_look_at,
             label: String::new(),
             inst: Instance::new(project.shared.clone(), seed),
             project,
@@ -608,6 +634,16 @@ impl GraphAnim {
 
     pub fn rotates_character(&self) -> bool {
         !self.inst.character_rotations().is_empty()
+    }
+
+    /// Supply the same model-space target to any supported look-at project,
+    /// enabling its authored target-input bindings without overriding graph gates.
+    pub fn aim_at(&mut self, target: Option<Vec3>) {
+        self.look_target = target.filter(|_| self.has_look_at);
+        let value = self.look_target.is_some() as u8 as f32;
+        for name in self.look_inputs.clone() {
+            self.set_variable(&name, value);
+        }
     }
 
     /// Advance the graph and blend its clips.
@@ -927,3 +963,7 @@ mod pin_tests {
         assert!(!p.holds("iLeftHandType", 1.0));
     }
 }
+
+#[cfg(test)]
+#[path = "animation_fixture_tests.rs"]
+mod animation_fixture_tests;

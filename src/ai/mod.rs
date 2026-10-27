@@ -2157,10 +2157,7 @@ impl ActorRuntime {
         if let Some(s) = state {
             g.set_variable("iState", s);
         }
-        // Head tracking (humanoids: their graph's look-at follows bHeadTracking).
-        let look = self.look_at.filter(|_| g.project().humanoid());
-        g.set_variable("bHeadTracking", if look.is_some() { 1.0 } else { 0.0 });
-        g.look_target = look.map(|w| model.inverse().transform_point3(w));
+        g.aim_at(self.look_at.map(|w| model.inverse().transform_point3(w)));
         g.set_variable("Speed", if walking { self.speed } else { 0.0 });
         if let Some(direction) = crate::world::movement::direction(self.exec.heading, self.velocity)
         {
@@ -3780,6 +3777,14 @@ impl Engine {
                 .as_ref()
                 .map_or(self.camera.yaw, |b| b.heading),
         );
+        let mut heads: std::collections::HashMap<_, _> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| !a.dead)
+            .map(|a| (a.ref_id, a.feet() + Vec3::Z * a.height() * 0.9))
+            .collect();
+        heads.insert(PLAYER_REF, eye);
         let water: Vec<_> = self
             .cells
             .values()
@@ -4011,6 +4016,9 @@ impl Engine {
                 // NPCs look at the player close by, and while talking to them.
                 let near = a.exec.pos.distance(player) < HEAD_TRACK_DISTANCE;
                 a.look_at = (near || talking == Some(a.ref_id)).then_some(eye);
+                if let Some(target) = a.exec.combat.as_ref().map(|c| c.target) {
+                    a.look_at = heads.get(&target).copied();
+                }
                 if let Some(&(at, _)) = scene_look.get(&a.ref_id) {
                     a.look_at = Some(at);
                 }
