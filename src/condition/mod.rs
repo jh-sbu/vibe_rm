@@ -239,6 +239,8 @@ pub struct Context {
 /// The subject's furniture state while picking an idle.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct IdleQuery {
+    /// The graph stance before an ActionSneak toggle (the player intent is already updated).
+    pub sneaking: Option<bool>,
     /// Furniture marker animation type: 1 sit, 2 lay, 4 lean (0 none).
     pub anim_type: u32,
     /// `IsFurnitureEntryType` value of the side used (front 0x10000, back 0x20000,
@@ -1071,7 +1073,10 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         579 => b(subject.is_some_and(|s| e.equipped_shout(s) == Some(p1))), // GetEquippedShout
         378 => b(subject.is_some_and(|s| e.has_shout(s, p1))),   // HasShout
         463 => b(e.grabbed_ref().is_some_and(|g| g == p1)),      // IsPlayerGrabbedRef
-        286 => b(subject.is_some_and(|s| e.is_sneaking(s))),     // IsSneaking
+        286 => b(ctx
+            .idle
+            .and_then(|q| q.sneaking)
+            .unwrap_or_else(|| subject.is_some_and(|s| e.is_sneaking(s)))), // IsSneaking
         45 => b(subject.is_some_and(|s| e.detects(s, p1))),      // GetDetected
         91 => b(subject.is_some_and(|s| e.is_alerted(s))),       // GetIsAlerted
         711 => Some(subject.map_or(0.0, |s| e.light_level(s))),  // GetLightLevel
@@ -1182,7 +1187,16 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         // Nor flees, attacks, staggers, recoils or is ridden.
         329 => b(subject.is_some_and(|s| e.is_fleeing(s))), // IsFleeing
         477 => Some(subject.map_or(0.0, |s| e.threat_ratio(s, p1))), // GetThreatRatio
-        672 | 701 | 702 | 714 => b(false),
+        672 => b(subject.is_some_and(|s| {
+            if s == PLAYER_REF {
+                e.player_swing.is_some()
+            } else {
+                e.actor_ref(s)
+                    .and_then(|a| a.exec.combat.as_ref())
+                    .is_some_and(|c| c.swinging())
+            }
+        })),
+        701 | 702 | 714 => b(false),
         // Positions and angles of the subject, along an axis ('X', 'Y' or 'Z').
         // Angles are in degrees, as scripts give them (`GetAngleZ` in Papyrus).
         6 => axis_component(c.p1, e.ref_position(subject?)?), // GetPos

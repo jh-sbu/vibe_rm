@@ -335,6 +335,7 @@ pub struct ActorRuntime {
     pub skeleton: Arc<Skeleton>,
     /// The actor's behaviour graph; actors without one play `anim`.
     pub graph: Option<GraphAnim>,
+    actions: idles::LocomotionActions,
     /// Ground speed of the graph's walk (its clips' root motion).
     pub graph_walk_speed: Option<f32>,
     /// Movement types of the graph's default and sneaking states, with the
@@ -499,6 +500,7 @@ impl ActorRuntime {
             npc,
             skeleton,
             graph: None,
+            actions: Default::default(),
             graph_walk_speed: None,
             moves: None,
             sneak_moves: None,
@@ -2081,7 +2083,7 @@ impl ActorRuntime {
         .map(|(_, s)| s);
         let g = self.graph.as_mut().expect("checked");
         if sneak != self.sneaking {
-            g.send_event(if sneak { "SneakStart" } else { "SneakStop" });
+            self.actions.send(g, "ActionSneak");
             self.sneaking = sneak;
         }
         if let Some(s) = state {
@@ -2100,19 +2102,29 @@ impl ActorRuntime {
             _ => 0,
         };
         if turning != self.turning {
-            g.send_event(match turning {
-                1 => "turnLeft",
-                -1 => "turnRight",
-                _ => "turnStop",
-            });
+            self.actions.send(
+                g,
+                match turning {
+                    1 => "ActionTurnLeft",
+                    -1 => "ActionTurnRight",
+                    _ => "ActionTurnStop",
+                },
+            );
             self.turning = turning;
         }
         g.set_variable("isInFurniture", if furniture { 1.0 } else { 0.0 });
         if walking != self.moving {
-            g.send_event(if walking { "moveStart" } else { "moveStop" });
+            self.actions.send(
+                g,
+                if walking {
+                    "ActionMoveStart"
+                } else {
+                    "ActionMoveStop"
+                },
+            );
             if walking {
                 // Walking, not sprinting (horses' locomotion starts out in its sprint).
-                g.send_event("SprintStop");
+                self.actions.send(g, "ActionSprintStop");
             }
             self.moving = walking;
         }
@@ -2397,10 +2409,30 @@ impl Engine {
             .find(&self.lo, name)?;
         let ctx = crate::condition::Context {
             subject: Some(actor),
-            idle: Some(crate::condition::IdleQuery::default()),
+            idle: Some(crate::condition::IdleQuery {
+                sneaking: (name == "ActionSneak").then(|| {
+                    if actor == PLAYER_REF {
+                        self.player_body
+                            .as_ref()
+                            .is_some_and(|b| b.graph_sneaking())
+                    } else {
+                        self.actor_ref(actor).is_some_and(|a| a.sneaking)
+                    }
+                }),
+                ..Default::default()
+            }),
             ..Default::default()
         };
         self.idles.as_ref()?.action(self, root, ctx, &project)
+    }
+
+    pub(crate) fn locomotion_actions(&mut self, actor: FormId) -> idles::LocomotionActions {
+        idles::LocomotionActions(
+            idles::LocomotionActions::NAMES
+                .into_iter()
+                .map(|name| (name, self.action(actor, name)))
+                .collect(),
+        )
     }
 
     /// Idles for actors that asked for one, from the `ActionIdle` tree's branches
@@ -3628,6 +3660,19 @@ impl Engine {
                 let route = Arc::new(self.patrol_route(s));
                 log::debug!("patrol route from {s}: {} points", route.len());
                 self.patrol_paths.insert(s, route);
+            }
+        }
+        let actors: Vec<_> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| !a.dead && a.graph.is_some())
+            .map(|a| a.ref_id)
+            .collect();
+        for actor in actors {
+            let actions = self.locomotion_actions(actor);
+            if let Some(a) = self.actor_mut(actor) {
+                a.actions = actions;
             }
         }
         let nav = std::mem::take(&mut self.nav);

@@ -212,6 +212,7 @@ impl Engine {
             grounded: self.player.grounded || self.player.noclip,
             blocking: self.player_blocking,
         };
+        let actions = self.locomotion_actions(PLAYER_REF);
         let Some(body) = self.player_body.as_mut() else {
             return;
         };
@@ -232,7 +233,7 @@ impl Engine {
             body.heading = wrap(body.heading + d.clamp(-step, step));
         }
         let out = body.weapon_out;
-        let pose = body.animate(dt, &motion, &self.vfs, &mut self.anims);
+        let pose = body.animate(dt, &motion, &actions, &self.vfs, &mut self.anims);
         let transform = body.transform(feet);
         let events = std::mem::take(&mut body.combat_events);
         let shot = body
@@ -298,15 +299,10 @@ impl Stance {
     /// moving (standing, the graph ignores `SprintStop`, and its locomotion
     /// sprints again at the next `moveStart`).
     fn events(self) -> [&'static str; 3] {
-        let sneak = if self.sneaking {
-            "SneakStart"
-        } else {
-            "SneakStop"
-        };
         match (self.moving, self.sprinting) {
-            (false, _) => [sneak, "SprintStop", "moveStop"],
-            (true, false) => [sneak, "moveStart", "SprintStop"],
-            (true, true) => [sneak, "moveStart", "SprintStart"],
+            (false, _) => ["ActionSneak", "ActionSprintStop", "ActionMoveStop"],
+            (true, false) => ["ActionSneak", "ActionMoveStart", "ActionSprintStop"],
+            (true, true) => ["ActionSneak", "ActionMoveStart", "ActionSprintStart"],
         }
     }
 }
@@ -315,6 +311,9 @@ impl Stance {
 const FALL_AFTER: f32 = 0.3;
 
 impl PlayerBody {
+    pub(crate) fn graph_sneaking(&self) -> bool {
+        self.told.is_some_and(|s| s.sneaking)
+    }
     pub(crate) fn project(&self) -> Option<&Arc<crate::world::behavior::ProjectRuntime>> {
         Some(self.graph.as_ref()?.project())
     }
@@ -410,6 +409,7 @@ impl PlayerBody {
         &mut self,
         dt: f32,
         m: &Motion,
+        actions: &crate::ai::idles::LocomotionActions,
         vfs: &vfs::Vfs,
         anims: &mut crate::world::animation::AnimationLibrary,
     ) -> Option<Vec<Mat4>> {
@@ -504,8 +504,15 @@ impl PlayerBody {
         if (self.airborne.is_none() || !self.fell)
             && (self.told != Some(stance) || g.changes() != self.told_at)
         {
-            for ev in stance.events() {
-                g.send_event(ev);
+            for action in stance.events() {
+                if action == "ActionSneak"
+                    && self
+                        .told
+                        .map_or(!stance.sneaking, |s| s.sneaking == stance.sneaking)
+                {
+                    continue;
+                }
+                actions.send(g, action);
             }
             if self.told != Some(stance) {
                 log::debug!("player body: {stance:?}");

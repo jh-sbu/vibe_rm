@@ -21,6 +21,36 @@ const GET_ITEM_COUNT: u16 = 47;
 /// Events that leave furniture rather than enter it.
 const EXIT_EVENTS: [&str; 3] = ["idlechairexitstart", "idlefurnitureexit", "idlestop"];
 
+/// Resolved before borrowing the actor update loop, so conditions read live
+/// engine state and the graph can consume the events in this update.
+#[derive(Default)]
+pub(crate) struct LocomotionActions(pub Vec<(&'static str, Option<String>)>);
+impl LocomotionActions {
+    pub(crate) const NAMES: [&'static str; 9] = [
+        "ActionMoveStart",
+        "ActionMoveStop",
+        "ActionTurnLeft",
+        "ActionTurnRight",
+        "ActionTurnStop",
+        "ActionSneak",
+        "ActionSprintStart",
+        "ActionSprintStop",
+        "ActionSwimStateChange",
+    ];
+    pub(crate) fn event(&self, action: &str) -> Option<&str> {
+        self.0
+            .iter()
+            .find(|(name, _)| *name == action)?
+            .1
+            .as_deref()
+    }
+    pub(crate) fn send(&self, graph: &mut crate::world::behavior::GraphAnim, action: &str) {
+        if let Some(ev) = self.event(action) {
+            graph.send_event(ev);
+        }
+    }
+}
+
 struct Idle {
     parent: FormId,
     event: String,
