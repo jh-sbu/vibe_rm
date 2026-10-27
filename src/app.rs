@@ -236,7 +236,7 @@ pub fn run(opts: Options) -> Result<()> {
                     engine.player.position =
                         engine.camera.position - (engine.player.eye() - engine.player.position);
                 }
-                if opts.burst.is_some_and(|n| n > 0 && i % n == 0) {
+                if i >= opts.burst_from && opts.burst.is_some_and(|n| n > 0 && i % n == 0) {
                     let (scene, camera) = frame_parts(
                         &engine.map_view,
                         &engine.stats_view,

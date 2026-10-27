@@ -123,6 +123,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "alarm [faction] / jail [faction] / servetime   send the faction's guards to arrest the player, jail them, serve the sentence".into(),
             "pickpocket <ref> [[place] item [n]]  open their pockets, or try to take (or place) an item, sneaking (psneak first)".into(),
             "cgf <Class.Func> [@self] [args]  call a Papyrus native (cgf Actor.GetCombatState @<ref>)".into(),
+            "cqf <quest> <function>  call a function of a quest's scripts".into(),
             "loose [n]             the loose objects nearest the player (position, mass, motion)".into(),
             "sv <ref> [var]        a reference's script variables".into(),
             "grab [ref | off]      grab what the crosshair (or a ref) is on, say what is held, let go".into(),
@@ -187,6 +188,20 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
         "epc" | "enableplayercontrols" => {
             engine.disabled_controls = Default::default();
             vec![engine.disabled_controls.describe()]
+        }
+        "cqf" => {
+            // A quest script's function, run as the game's console runs it.
+            let (Some(quest), Some(func)) = (args.first(), args.get(1)) else { return vec!["usage: cqf <quest> <function>".into()] };
+            let Some(q) = engine.resolve_form(quest) else { return vec![format!("unknown quest '{quest}'")] };
+            let obj = papyrus::ObjectId::Form(q.0);
+            let mut vm = std::mem::take(&mut engine.vm);
+            let scripts = vm.attached_scripts(obj).to_vec();
+            let called = {
+                let mut host = crate::script::EngineHost { engine: &mut *engine };
+                scripts.iter().any(|s| vm.call_method(&mut host, obj, s, func, vec![]))
+            };
+            engine.vm = vm;
+            if called { vec![format!("{quest}: {func} called")] } else { vec![format!("{quest}: no script on it has {func}")] }
         }
         "cgf" => {
             let Some((class, func)) = args.first().and_then(|f| f.split_once('.')) else { return vec!["usage: cgf <Class.Func> [@self] [args]".into()] };

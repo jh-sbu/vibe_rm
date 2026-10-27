@@ -122,6 +122,8 @@ pub struct Options {
     pub menu_keys: Vec<String>,
     /// While waiting, also save a screenshot every this many frames.
     pub burst: Option<u32>,
+    /// The first frame a burst saves.
+    pub burst_from: u32,
     /// Keep the camera in front of this actor while waiting.
     pub watch: Option<String>,
     /// Degrees to orbit the --watch camera around the actor (0: in front).
@@ -188,6 +190,7 @@ fn parse_args() -> Result<Options> {
             "--choose" => o.choose.push(val()?.parse()?),
             "--menu-key" => o.menu_keys.push(val()?),
             "--burst" => o.burst = Some(val()?.parse()?),
+            "--burst-from" => o.burst_from = val()?.parse()?,
             "--watch" => o.watch = Some(val()?),
             "--console" => o.console.push(val()?),
             "--watch-angle" => o.watch_angle = val()?.parse::<f32>()?.to_radians(),
