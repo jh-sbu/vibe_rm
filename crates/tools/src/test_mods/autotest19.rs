@@ -81,6 +81,61 @@
 //! alone for about 3 minutes: the player draws, blocks and swings by
 //! script, NPCs fight near them (not with them), and the player is moved
 //! to a lake and back. The plugin name doesn't matter.
+//!
+//! Run in Skyrim SE once (2026-10-27, outdoors; Survival Mode's plugin
+//! loaded). Slaughterfish attacked the player during the swimming pages.
+//!
+//! - **Events**: every registration returned True. Heard from the player:
+//!   `weaponDraw` (0.73 s), `InitiateWinBegin` (4.04, 0.61 s after
+//!   `blockHitStart`), `blockHitStop` (4.33) and `HitFrame` (6.29); from
+//!   the walker, `FootLeft` 9 times and `FootRight` 8 (it walked 798 >
+//!   127 units). **Never heard**: `SoundPlay` from either, although the
+//!   swing played (its `HitFrame` came) and the walker stepped, and
+//!   `attackStart`, which the script sent in itself. So annotations without
+//!   a payload and graph-raised events reach scripts. `SoundPlay` (always
+//!   carrying a payload) and events sent into the graph don't.
+//!   autotest17's silence came from its setup, not from SE.
+//! - **Draw**: `SetAlert(true)` drew the alerted NPC's weapon before
+//!   `DrawWeapon` was called. The one in combat had drawn too (combat state
+//!   2). After `DrawWeapon`, all four were drawn at 1 s. At 3 and 10 s the
+//!   unalerted commoner and the guard (unalerted, not in combat) had
+//!   sheathed again, while the alerted and fighting ones stayed drawn. So
+//!   Papyrus draws for anyone, and an NPC neither alerted nor in combat
+//!   sheathes within 1-3 s. autotest17 read its NPC 3 s after drawing.
+//! - **Sprint**: inconclusive. The fighter walked (`W` throughout) from
+//!   1447 to about 1000 units and stopped there in combat state 2
+//!   (searching): it never found its target at that range, so it never
+//!   charged.
+//! - **Flee**: the coward walked for about 2 s, then **ran** (`R`, never
+//!   `S`) from 385 to 1519 units in about 4 s (about 290 units/s), then
+//!   walked at about 1630.
+//! - **Duel** (`csHumanMeleeLvl6`): the first two lines matched Flank's
+//!   to within 0.001 (the same approach). `Direction` was in the strafe
+//!   bands (0.15-0.35 right, 0.65-0.85 left) in 17 of 40 samples, near 0.5
+//!   (backing off) in 3, and near 0 / 1 (forward) or stopped in the rest. It
+//!   circled left (about 0.75) from about 5 to 11 s at 74-180 units, mean
+//!   `Speed` 15-61, while both headings turned about 40 degrees the same
+//!   way. Then it strafed right (about 0.25) at 13.8 s. Health lost: 27 and
+//!   20.
+//! - **Flank** (`csMercerFreyMelee`): strafing in 9 of 40 samples, all
+//!   right (about 0.25) in the last 4 s. One of those lines had mean
+//!   `Speed` 350 (a run), with the headings swinging 150-250 degrees. From
+//!   5 to 9 s it stood (`Direction` 0, `Speed` 0-31) at 85-162 units.
+//! - **Swimming**: the detector read True at every depth on all three
+//!   pages, at 40 too, where the player's feet were on the bed
+//!   (standing). That is most likely `HasMagicEffect` counting the
+//!   ability's effect while its condition fails, so **`IsSwimming` stays
+//!   unanswered**: the probe had no dry-land control. The heights (player
+//!   page) do settle the floating height. Feet were on the bed at 40, 60
+//!   and 80 (-42, -62, -82). At 100 and 120 they held at -91 / -92, though
+//!   the bed was deeper. At 140 they read -139 twice, and at 180 rose from
+//!   -148 to -132 (still rising at 3 s). The Waterbreathing page held at
+//!   -92 from 100 to 140; its 180 (-209, below the bed) and the NPC page
+//!   (feet above the surface at 60 and 100 by 3 s) are noisy. That is
+//!   likely the slaughterfish, and both are left unread. A swimmer's feet
+//!   float about 92 under the surface, so an actor stands where the water
+//!   is shallower than that. `SwimDirection` was 0 throughout (no one moved
+//!   by choice).
 
 use anyhow::Result;
 use esp::writer::{AttachedScript, Node, PropertyValue, RecordBuilder, write_plugin};

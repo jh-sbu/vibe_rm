@@ -99,8 +99,8 @@ save requested). Its pages:
 The module doc gets its table of predictions (what each reading would mean for
 steps 2, 3 and 8) before it's handed over, as the earlier autotests' did.
 
-**Written** (2026-10-27, `crates/tools/src/test_mods/autotest19.rs`; waiting on
-a run in SE). Where it differs from the sketch above:
+**Run** (2026-10-27; `crates/tools/src/test_mods/autotest19.rs` has the
+readings). Where it differs from the sketch above:
 
 - Page 1 also registers `FootRight` and `attackStart` (an event the script
   sends in), and counts each event per source rather than logging every
@@ -118,6 +118,43 @@ a run in SE). Where it differs from the sketch above:
   water (Tamriel (-3, -15), surface 600, west of Riverwood). The swim pages
   run last and move the player back at the end. `IsSwimming` is read at 1 and
   3 s, because ability conditions are rechecked about once a second.
+
+What it showed (slaughterfish attacked the player during the swimming pages):
+
+- **Events to scripts**: every registration succeeds. Payload-free clip
+  annotations (`weaponDraw`, `InitiateWinBegin`, `HitFrame`, `FootLeft` /
+  `FootRight`) and the graph-raised `blockHitStop` arrive. `SoundPlay`
+  (always with a payload) never arrived, and neither did `attackStart`,
+  which the script sent in. Our runtime forwards every raised event by name,
+  `SoundPlay` included (`src/ai/mod.rs`, `graph_events`). Step 8a now has a
+  concrete rule.
+- **Papyrus `DrawWeapon`** draws for every NPC. One neither alerted nor in
+  combat (a commoner, an idle guard) sheathes again within 1-3 s.
+  `SetAlert(true)` draws by itself. So step 8b is about sheathing, not a
+  gate on drawing.
+- **Swimming**: the `IsSwimming` detector read True everywhere, even
+  standing at 40 deep. The likely cause is `HasMagicEffect` counting an
+  effect whose condition fails, so the swim depth stays open. Settled: a
+  floating swimmer's feet hold about 92 under the surface (100-140 deep),
+  while at 80 and shallower the feet stand on the bed. Waterbreathing's
+  effect and NPCs' heights were too noisy to read (the fish).
+- **Sprinting**: the charge never happened: the fighter couldn't find a
+  target 1500 off and searched at a walk. A fleeing coward **ran**, never
+  sprinted (about 290 units/s), and stopped at about 1600.
+- **Circling**: dueling (`csHumanMeleeLvl6`, circle 0.73) strafed in 17 of
+  40 samples, mostly left, at 74-200 units and walking `Speed` (15-60), and
+  backed off in 3. Flanking (`csMercerFreyMelee`) strafed in 9 of 40, once
+  at a run (`Speed` 350), and stood still for about 4 s. `Direction`'s
+  bands match the player body's (0.25 right, 0.75 left: a left strafe turned
+  both headings clockwise). One run each: these give magnitudes, not rates.
+
+**Follow-up probe** (`autotest20`, to write): `IsSwimming` read through a
+magic effect's script (`OnEffectStart` / `OnEffectFinish` fire as the
+condition changes) instead of `HasMagicEffect`, with a dry-land control, on
+the same markers (plus 90 and 95). Run it in Survival Mode off, or after
+clearing the slaughterfish (`places::shore` could prefer a cell without
+them). Also a charge that starts detected: the fighter in combat with the
+held target at 300 units, then the target moved 1500 away in the open.
 
 ## 1. Action trees as the source of AI graph events
 
@@ -178,9 +215,9 @@ asking for them.
 - **2c. Sprinting.** `ActionSprintStart` / `ActionSprintStop` through the
   dispatcher, and `iState` from the movement type's sprint state (`MOVT`
   `NPC_Sprinting_MT`, `MNAM` `NPCSprinting`; vanilla also has
-  `AIControlledNPC_Sprinting_MT`, whose use 2c's research settles). When: from step 0 page 4 (charging from far, fleeing);
-  placeholder: a fighter more than 1000 units from its target, and fleeing
-  actors, sprint. Stamina drain uses the existing `fSprintStaminaDrainMult`
+  `AIControlledNPC_Sprinting_MT`, whose use 2c's research settles). When: fleeing actors run, not sprint
+  (autotest19). Charging is untested (autotest20). Placeholder: a fighter
+  more than 1000 units from a target it has found sprints. Stamina drain uses the existing `fSprintStaminaDrainMult`
   path (`src/ai/combat.rs`, used today for the player). Sprinting power attacks
   (`attackStartSprint`) were left out of the attack data: include them once
   NPCs sprint (`combat.rs` "Attacks for situations not handled yet").
@@ -200,8 +237,8 @@ the data doesn't show.
 
 - **3a. Depth and state.** `water.rs` gives the surface height. An actor whose
   feet are deeper than the swim depth swims (placeholder: `WADE_DEPTH` 100,
-  already used by `src/footsteps.rs` to stop footsteps, until step 0 page 3
-  says otherwise). Hysteresis of a few units, so an actor at the threshold
+  already used by `src/footsteps.rs` to stop footsteps, until autotest20
+  says otherwise; autotest19 bounds it: standing at 80, floating at 100). Hysteresis of a few units, so an actor at the threshold
   doesn't flicker; recorded as a choice. Condition 185 `IsSwimming` and the
   console's `isswimming` answer from it (`src/condition/mod.rs`; today always
   false).
@@ -209,7 +246,7 @@ the data doesn't show.
   `ActionSwimStateChange`'s event through the dispatcher; locomotion uses the
   swim movement type's speeds (`world/movement.rs` already skips "swim" names
   when choosing default states: give them their own state). Swimmers hold at
-  the floating height (from step 0; placeholder: eyes at the surface) instead
+  the floating height (autotest19: feet about 92 under the surface) instead
   of standing on the bed: `stand_on_ground` / `find_ground` in `src/ai/mod.rs`
   skip while swimming, and pathing keeps to the navmesh (water navmesh exists
   in vanilla). Weapons: the graph's `swimForceEquip` path sheathes; the AI
@@ -327,18 +364,28 @@ animation.
 
 ## 8. Probe follow-ups (after step 0's results)
 
-- **8a. Events to scripts.** If page 1 shows clip triggers or other kinds of
-  event don't reach `OnAnimationEvent`, filter them in `src/anim_events.rs`
-  by the kind the runtime raised them as. That needs the raise to carry its
-  kind (`Raised` in the havok runtime). `PlayAnimationAndWait` uses the same
-  path: keep its matching consistent with the filter. Update
-  `known_ambiguities/object-graphs.md`.
-- **8b. Papyrus `DrawWeapon`.** If page 2 confirms unalerted actors don't
-  draw, gate `actor.drawweapon` on whatever made the others draw (alerted, a
-  guard, in combat). Update the console path only if the game's console
-  differs, which needs its own observation, so leave it otherwise.
-- **8c.** Feed page 3–5 answers into steps 2 and 3: replace the placeholders,
-  and remove each settled choice from `known_ambiguities/`.
+- **8a. Events to scripts.** autotest19: events carrying a payload
+  (`SoundPlay`) and events sent into the graph (`attackStart` by
+  `SendAnimationEvent`) don't reach `OnAnimationEvent`. Clip annotations
+  without one and graph-raised events do. Keep raised events with a payload
+  out of `raise_anim_events`'s script delivery (`Raised.payload` is already
+  there), and check that events sent in aren't delivered. Whether other
+  payload events (`AnimObjLoad`, `Ragdoll`...) are dropped likewise is
+  inference from one event: record it in `known_ambiguities/object-graphs.md`.
+  `PlayAnimationAndWait` waits on the same path: decide whether its wait
+  still ends on a payload event (no observation: record the choice).
+- **8b. Papyrus `DrawWeapon`.** autotest19: it draws for any NPC, so keep
+  the native. An NPC neither alerted nor in combat sheathes again within
+  1-3 s. Check that our AI does that, and that `SetAlert(true)` draws the
+  weapon. The exact delay is unmeasured (between 1 and 3 s): record the
+  choice.
+- **8c.** Feed the answers into steps 2 and 3. Floating height: feet about
+  92 under the surface (3b's placeholder goes). Fleeing NPCs run, not
+  sprint (2c's "fleeing actors sprint" placeholder goes). Circling magnitudes
+  for 2b: strafes at walking speed at 74-200 units, about 40% of the time
+  dueling and 20% flanking, from one run each. Swim depth and charging
+  sprints wait for autotest20. Remove each settled choice from
+  `known_ambiguities/`.
 
 ## 9. Roadmap and docs
 
@@ -351,10 +398,14 @@ animation.
 
 ## Open questions
 
-1. Which graph event kinds reach `OnAnimationEvent` in SE (step 0, page 1).
-2. Whether unalerted NPCs draw on Papyrus `DrawWeapon` (step 0, page 2).
-3. The swim depth, floating height and Waterbreathing's effect on the state
-   (step 0, page 3).
-4. When NPCs sprint (step 0, page 4) and how much they circle (page 5).
+1. ~~Which graph event kinds reach `OnAnimationEvent`~~: payload-free
+   annotations and graph-raised events; not `SoundPlay` or events sent in
+   (autotest19). Other payload events are inferred, not seen.
+2. ~~Whether unalerted NPCs draw on `DrawWeapon`~~: they do, then sheathe
+   within 1-3 s (autotest19).
+3. The swim depth and Waterbreathing's effect on the state (autotest20). The
+   floating height is settled: feet about 92 under the surface.
+4. Whether NPCs sprint to charge (autotest20; fleeing ones run). Circling
+   magnitudes come from one run each (autotest19).
 5. The base breath time under water (step 3e research).
 6. How NPC-to-NPC conversations are paced (step 7a).
