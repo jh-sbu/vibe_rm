@@ -31,10 +31,15 @@ Implemented in `crates/havok/src/behavior/runtime.rs`.
 - Leave the last published value on deactivation; do not reset it or overwrite
   script / expression writes on frames without a state change.
 
-Public declarations and assets do not settle publication order relative to
-modifiers, per-frame output refresh, deactivation resets, or competing writers
-(especially during blends). These need observable tests in Skyrim SE before
-the choices above can be treated as confirmed compatibility behavior.
+Observed in Skyrim SE (`test-mod autotest17`, 2026-10-27, the player's
+`1HM_Behavior` and `Blocking_Behavior`): a `blockStop` waiting for its initiate
+interval during a block hit left `i1HMState` at the source's ID until the
+interval opened; `iBlockState` kept its last value (1) after its machine
+deactivated; and it read the start state (0) again once the machine activated.
+Those three choices match the game. Still unconfirmed: whether the destination
+ID is published when a blend begins or when it ends (one trial at Papyrus's
+0.17 s polling resolution couldn't separate the player's 0.1 s blend),
+publication order relative to modifiers within an update, and competing writers.
 
 Synthetic tests cover nonsequential IDs, child start-state reads, pending
 transitions and cross-fades, clip-triggered transitions, and local-to-project

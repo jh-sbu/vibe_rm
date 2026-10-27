@@ -50,6 +50,28 @@
 //! Load a save outdoors on open ground, out of combat, and leave the game
 //! alone for about 40 s (the player's weapon is drawn and blocks by
 //! script). The plugin name doesn't matter.
+//!
+//! Run in Skyrim SE once (2026-10-27, a save outdoors):
+//!
+//! - **The NPC never drew its weapon** (`IsWeaponDrawn` False after
+//!   `DrawWeapon`, an unalerted commoner), so it ignored `blockStart`: both
+//!   NPC pages are void. The player drew and nothing else drove its graph.
+//! - **Polling** took about 0.17 s a sample (7 in 1.14 s idle): each
+//!   iteration's two variable reads wait on the frame.
+//! - **No animation events were heard**, not even `InitiateWinBegin` from
+//!   the block hit clip that evidently played.
+//! - **Blend** (player): `i1HMState` 0 > 1 0.18 s after `blockStart` (0.1 s
+//!   blend), 1 > 0 0.17 s after `blockStop` (none). Inconclusive: one trial
+//!   each at that resolution can't separate a 0.1 s offset.
+//! - **Pending** (player): `blockHitStart` 1.149, `blockStop` 1.278;
+//!   `iBlockState` 0 > 1 at 1.492, but `i1HMState` stayed 1 until 1.894,
+//!   about 0.75 s after the hit began, past the clip's 0.5 s
+//!   `InitiateWinBegin`. The transition waited, keeping the source's ID: as
+//!   ours.
+//! - **Deactivation**: `iBlockState` stayed 1 after `i1HMState` 1 > 0 until
+//!   the next `blockStart` (sent 2.714): `i1HMState` 0 > 1 at 2.894,
+//!   `iBlockState` 1 > 0 read at 2.987 in the same poll. Kept on
+//!   deactivation, the start state published on activating again: as ours.
 
 use anyhow::Result;
 use esp::writer::{AttachedScript, Node, PropertyValue, write_plugin};

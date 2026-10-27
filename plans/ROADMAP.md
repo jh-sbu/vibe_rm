@@ -1663,9 +1663,8 @@ game each piece unlocks.
      a change notification. Twists, selectors' blends and character properties
      have no Papyrus-visible output either.
    - State-machine outputs' timing (`known_ambiguities/state-machine-outputs.md`):
-     `test-mod autotest17` (not yet run) sends blocking to an NPC and the player
-     and polls `i1HMState` / `iBlockState`: published at a blend's start or end,
-     during a wait for an initiate interval, and on deactivation
+     `autotest17` confirmed the pending-interval and deactivation choices; whether
+     a blend publishes at its start or end is `test-mod autotest18`'s (not yet run)
    - Engine variables and events still missing: combat, first person;
      INFO listener idles (the speaker's are done, see Done); listeners' reactions
    - Footsteps: swimming (and swimming itself), splashes, decals
