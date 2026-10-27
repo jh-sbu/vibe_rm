@@ -369,6 +369,11 @@ pub struct CombatStats {
     pub bash_vs_power: f32,
     /// How readily it backs off from a target close in (`CSCR` fallback multiplier).
     pub fallback: f32,
+    pub circle: f32,
+    pub flank_distance: f32,
+    pub stalk_time: f32,
+    pub strafe: f32,
+    pub flanking: bool,
     /// How much its combat style weighs fighting hand to hand against magic
     /// (`CSGD` melee and magic score multipliers): casters prefer spells.
     pub melee_mult: f32,
@@ -750,6 +755,26 @@ impl CombatStats {
             .and_then(|r| r.get(b"CSCR"))
             .filter(|d| d.len() >= 8)
             .map_or(0.11, |d| f32_at(d, 4));
+        let cscr = style.as_ref().and_then(|r| r.get(b"CSCR")).unwrap_or(&[]);
+        let mult = |offset| {
+            cscr.get(offset..offset + 4)
+                .map_or(0.2, |d| f32::from_le_bytes(d.try_into().unwrap()))
+                .max(0.0)
+        };
+        s.circle = mult(0);
+        s.flank_distance = mult(8);
+        s.stalk_time = mult(12);
+        s.strafe = style
+            .as_ref()
+            .and_then(|r| r.get(b"CSLR"))
+            .filter(|d| d.len() >= 4)
+            .map_or(0.2, |d| f32_at(d, 0))
+            .max(0.0);
+        s.flanking = style
+            .as_ref()
+            .and_then(|r| r.get(b"DATA"))
+            .filter(|d| d.len() >= 4)
+            .is_some_and(|d| u32::from_le_bytes(d[..4].try_into().unwrap()) & 2 != 0);
         s.max_health = s.max_health.max(5.0);
         s.max_stamina = s.max_stamina.max(10.0);
         if let Some(d) = src
@@ -782,6 +807,9 @@ pub struct Combat {
     unreachable: Option<Vec3>,
     /// Seconds until it may attack again, and left of the swing it is in.
     pub(crate) cooldown: f32,
+    pub(crate) maneuver: f32,
+    maneuver_side: f32,
+    maneuver_back: bool,
     swing: f32,
     /// The attack being made (index into the stats' attacks); whether it is
     /// over (cut short); its blows landed, and seconds since each hand's last
@@ -874,6 +902,9 @@ impl Combat {
             repath: 0.0,
             unreachable: None,
             cooldown: 0.8,
+            maneuver: 0.0,
+            maneuver_side: 1.0,
+            maneuver_back: false,
             swing: 0.0,
             attack: None,
             struck: false,
@@ -1179,6 +1210,94 @@ impl ActorRuntime {
         true
     }
 
+    /// Walk around the target between attacks. Timing is a documented policy,
+    /// calibrated to autotest19's magnitudes, rather than a claim of SE's rates.
+    pub(crate) fn combat_maneuver(
+        &mut self,
+        dt: f32,
+        w: &mut World,
+        target: Vec3,
+        ranged: bool,
+    ) -> bool {
+        let radius = (self.exec.pos - target).truncate().length();
+        let reach = self.reach();
+        if radius < 1.0 {
+            return false;
+        }
+        let c = match self.exec.combat.as_mut() {
+            Some(c) => c,
+            None => return false,
+        };
+        if c.maneuver <= 0.0 {
+            let mult = if ranged {
+                self.stats.strafe
+            } else {
+                self.stats.circle
+            };
+            let rate = if self.stats.flanking { 0.25 } else { 0.6 };
+            if uniform(w.rand, 0.0, 1.0) >= mult * rate * dt {
+                return false;
+            }
+            c.maneuver = if self.stats.flanking {
+                1.0 + self.stats.stalk_time * 3.0
+            } else {
+                uniform(w.rand, 0.7, 1.7)
+            };
+            c.maneuver_side = if uniform(w.rand, 0.0, 1.0) < 0.5 {
+                -1.0
+            } else {
+                1.0
+            };
+            c.maneuver_back =
+                !ranged && radius < reach * 0.65 && uniform(w.rand, 0.0, 1.0) < self.stats.fallback;
+        }
+        c.maneuver -= dt;
+        let side = c.maneuver_side;
+        let back = c.maneuver_back;
+        let walk = self.walk_speed() * self.armor_speed_mult;
+        let radial = (self.exec.pos - target).with_z(0.0);
+        let angle = if self.stats.flanking && !ranged {
+            // Stalk towards a side of the target, then hold that position.
+            let desired = self.target_heading + side * std::f32::consts::FRAC_PI_2;
+            let current = radial.x.atan2(radial.y);
+            super::wrap_angle(desired - current).clamp(-walk * dt / radius, walk * dt / radius)
+        } else {
+            side * walk * dt / radius
+        };
+        let desired_radius = if back {
+            radius + walk * dt
+        } else if self.stats.flanking && !ranged {
+            let want = reach * (0.75 + self.stats.flank_distance * 0.25);
+            radius + (want - radius).clamp(-walk * dt * 0.25, walk * dt * 0.25)
+        } else {
+            radius
+        };
+        let h = radial.x.atan2(radial.y) + if back { 0.0 } else { angle };
+        let mut next =
+            (target + Vec3::new(h.sin(), h.cos(), 0.0) * desired_radius).with_z(self.exec.pos.z);
+        if w.nav.height_at(self.exec.pos).is_some() {
+            let Some(z) = w.nav.height_at(next).filter(|z| (z - next.z).abs() < 30.0) else {
+                self.speed = 0.0;
+                return false;
+            };
+            next.z = z;
+        }
+        self.speed = if dt > 0.0 {
+            (next - self.exec.pos).truncate().length() / dt
+        } else {
+            0.0
+        };
+        self.exec.pos = next;
+        self.state = State::Walk {
+            path: vec![],
+            next: 0,
+            budget: 1.0,
+            to_seat: false,
+        };
+        self.turn_towards((target - next).with_z(0.0).normalize_or_zero(), dt);
+        true
+    }
+
     /// Fight on: close in on the target at a run, face it, attack when in reach
     /// (or run from it, fleeing). Returns the graph event of an attack started
     /// this frame.
@@ -1315,7 +1434,11 @@ impl ActorRuntime {
         let target_guarding = c.target_guarding;
         let bash = c.bash.filter(|b| dist <= b.reach * self.scale);
         let off = self.turn_towards(to.normalize_or_zero(), dt).abs();
-        if cooldown > 0.0 || off > 0.35 || attacks.is_empty() {
+        if cooldown > 0.0 {
+            self.combat_maneuver(dt, w, target, false);
+            return None;
+        }
+        if off > 0.35 || attacks.is_empty() {
             return None;
         }
         // A bash, as readily as its combat style bashes: mostly to break a

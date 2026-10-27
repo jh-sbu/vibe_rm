@@ -337,6 +337,7 @@ pub struct ActorRuntime {
     pub graph: Option<GraphAnim>,
     actions: idles::LocomotionActions,
     velocity: Vec3,
+    target_heading: f32,
     /// Ground speed of the graph's walk (its clips' root motion).
     pub graph_walk_speed: Option<f32>,
     /// Movement types of the graph's default and sneaking states, with the
@@ -503,6 +504,7 @@ impl ActorRuntime {
             graph: None,
             actions: Default::default(),
             velocity: Vec3::ZERO,
+            target_heading: 0.0,
             graph_walk_speed: None,
             moves: None,
             sneak_moves: None,
@@ -3681,6 +3683,18 @@ impl Engine {
                 a.actions = actions;
             }
         }
+        let mut headings: std::collections::HashMap<_, _> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .map(|a| (a.ref_id, a.exec.heading))
+            .collect();
+        headings.insert(
+            PLAYER_REF,
+            self.player_body
+                .as_ref()
+                .map_or(self.camera.yaw, |b| b.heading),
+        );
         let nav = std::mem::take(&mut self.nav);
         let mut furniture = std::mem::take(&mut self.furniture);
         let (lo, vfs) = (&self.lo, &self.vfs);
@@ -3835,6 +3849,7 @@ impl Engine {
                     // only one gone (dead, unloaded) is lost.
                     match positions.get(&target) {
                         Some(&tp) => {
+                            a.target_heading = headings.get(&target).copied().unwrap_or(0.0);
                             let step = a.combat_step(dt, &mut world, tp);
                             if let Some(ev) = step.as_deref().filter(|e| e.starts_with("BeginCast"))
                             {

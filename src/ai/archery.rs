@@ -293,6 +293,9 @@ impl ActorRuntime {
             self.chase(dt, w, target, run);
             return None;
         }
+        if draw == Draw::Idle && c.cooldown > 0.0 && self.combat_maneuver(dt, w, target, true) {
+            return None;
+        }
         self.speed = 0.0;
         self.state = State::Idle(1.0);
         let to = (target - self.exec.pos).normalize_or_zero();

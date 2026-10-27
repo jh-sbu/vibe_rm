@@ -283,3 +283,22 @@ fn an_archer_backs_off_facing_its_target() {
         Some(0.5)
     );
 }
+
+#[test]
+fn dueling_circle_keeps_distance_and_reports_sideways_motion() {
+    let mut a = actor();
+    a.exec.pos = -Vec3::Y * 110.0;
+    a.exec.combat = Some(combat::Combat::new(FormId(3)));
+    a.exec.combat.as_mut().unwrap().maneuver = 3.0;
+    let initial = a.exec.pos;
+    with_world(|w| {
+        for _ in 0..30 {
+            let before = a.exec.pos;
+            assert!(a.combat_maneuver(0.05, w, Vec3::ZERO, false));
+            assert!((a.exec.pos.length() - 110.0).abs() < 0.01);
+            let d = crate::world::movement::direction(a.exec.heading, a.exec.pos - before).unwrap();
+            assert!((d - 0.25).abs().min((d - 0.75).abs()) < 0.02);
+        }
+    });
+    assert!(initial.distance(a.exec.pos) > 60.0);
+}
