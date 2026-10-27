@@ -143,7 +143,12 @@ host's addon node is turned the same way again:
 
 Composing both turns aims each of these 180 degrees from the emitter's
 axis, straight down relative to the projectile. Offscreen captures of
-Flames showed its fire landing on the ground beside the player. Either
+Flames showed its fire landing on the ground beside the player. Offscreen
+runs logging the mean particle direction against the projectile's axes
+(2026-10-26) found Frostbite's spray and Fireball's fire pointing straight
+down (-0.9 to -1.0 along its up axis) before the change and forward (0.9 to
+1.0) after it; a night capture shows Fireball's fire trailing along its
+flight path. Either
 turn alone aims them forward. The Flames spray's movers also key their own
 turns (60 degrees either way about Z, 25 degrees about X), which only matter
 if the host node's turn is kept. Upward emitters (candles, torches, fire
