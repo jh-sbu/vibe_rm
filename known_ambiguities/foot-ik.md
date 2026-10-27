@@ -46,3 +46,24 @@ and the member names it carries. What each gain does inside Havok isn't public.
   32 down, giants 100 / 128; 40 / 64 without foot IK data). The game's
   character controller does this with its capsule, whose step height isn't
   public. Pathing still runs at the navmesh's height.
+
+## Follow-up survey (2026-10-27)
+
+`vrm-tool animation-survey <Data>` examined 49 project files, referencing 26
+controls modifiers and 80 control legs (shared graphs counted for each project).
+Every controls modifier authors unlock 1. Horse graphs author align 0.15;
+others author zero. Hip orientation is zero, including all bound defaults.
+Knee difference is nonzero on falmer/riekling (0.4), giant/lurker/vampire
+brute (0.2); its cross-leg interpretation remains future work. This corrects
+the earlier "0 everywhere" note. Humanoid controls have zero legs; creature
+controls have two or four. All 80 ungrounded event IDs are -1: unused in
+vanilla, so step 5d adds no event-delivery implementation.
+
+The survey reads the controls-leg array at +0x80, 0x30 bytes per leg, with
+an event ID at +0x10. Horse asset words show four repeated blocks, each with
+-1 at that offset. The public Skyrim Behavior Editor's
+[hkbfootikcontrolsmodifier.h](https://github.com/BrannigansLaw/Skyrim-Behavior-Editor-/blob/master/src/hkxclasses/behavior/modifiers/hkbfootikcontrolsmodifier.h)
+names the vector, event ID/payload, vertical error and two flags in that order.
+Its MIT license (Wayne K, 2016) was checked against this project's MIT license
+before consulting it. Only field vocabulary/layout evidence is used; no
+implementation code was copied. No engine binaries were examined.

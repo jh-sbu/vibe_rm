@@ -1,5 +1,6 @@
 use anyhow::{Context, Result, bail};
 
+mod animation_survey;
 #[path = "../../../src/condition/functions.rs"]
 #[allow(dead_code)]
 mod functions;
@@ -1049,6 +1050,7 @@ fn main() -> Result<()> {
                 }
             }
         }
+        Some("animation-survey") => animation_survey::run(&args[1])?,
         Some("hkb-events") => {
             // hkb-events <data dir> <project dir, e.g. meshes/actors/character> <event>...
             // (ALL=1: every clip event the plays raise, not only those with a payload)
