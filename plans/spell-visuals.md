@@ -95,12 +95,19 @@ implementation decisions remain in `known_ambiguities/spell-visuals.md` and
     master particle systems bound overlapping impacts (UESP's ADDN page has
     the master particle cap always 0 in vanilla files, and addon 9 sets the
     0x0002 "Always Loaded" flag). Watch Flames on a wall in SE.
-  - Still open: the spray's own jet (`pFlameSpellBase04`) wasn't seen
-    between the hand and the rock even with both fixed. It may be hidden
-    end-on behind the player; otherwise suspect the blended lifespan and
-    speed controllers (mSprayShort 0.033 s at 1500, mSprayLong 0.267 s at
-    2550) or its `BSPSysLODModifier` (begin 0.033, end 0.233). Capture it
-    from the side, then compare against SE.
+  - Missing stream: the spray's own jet (`pFlameSpellBase04`) works as
+    authored. About 11 particles are alive, living 0.139 s at 1975 units/s,
+    so it reaches about 275 units along the spray. Its colour row (0.067)
+    is a dim red and its alpha fades by mid-life, so it draws as faint heat.
+    The visible fire is MPSFlamesFire (addon 34) on Mover03-05, and its
+    emitters pointed straight down, so its fire landed beside the player.
+    Fixed by aiming multi-target emitters along their addon node
+    (`known_ambiguities/particles.md`, Multi-target emitters). Side
+    captures now show fire travelling out to the target.
+  - Still open: the stream is sparse. Each of the three MPSFlamesFire copies
+    emits 12 a second (about 5 alive), and how a master particle system
+    shares or caps emission across its nodes is unknown. Compare density
+    against SE.
 - Enchantments/dual scale: compare a sword drawn/sheathed and full/empty, and a
   dual projectile beside a single cast.
 - Membranes: compare timed captures of Oakflesh's actual ShieldSpellFXS, Soul
