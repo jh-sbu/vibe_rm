@@ -72,3 +72,10 @@ signed scalar values, authored disable, live scalar bindings, event gates,
 character-property inputs and variable precedence, unavailable scalar properties,
 and vector variable/property omission. They verify this implementation's data
 handling, not original-engine rotation parity.
+
+Installed-asset fixture correction: the one-handed standing draw path in
+weapequip.hkx does not activate a rotate modifier. After drawing, the
+standing Unequip path in 0_master.hkx does (`1HM_Unequip_ModifierGenerator`).
+The integration fixture therefore draws and then sheathes before checking
+modifier-owned turning, exact requested rate and no overshoot. The plan's
+suggestion to check the active modifier during that draw alone was inaccurate.

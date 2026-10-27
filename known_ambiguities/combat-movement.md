@@ -41,3 +41,10 @@ package, and sheathes an otherwise unwanted draw after two seconds. The exact
 delay and whether repeated explicit DrawWeapon calls restart it were not
 measured; chosen here: two seconds since the last accepted/requested draw,
 reset while readiness is wanted. Swim state prevents automatic draws.
+
+Review follow-up: reaching melee range ends the charging locomotion stance;
+a sprint attack may still be selected on that arrival update. Entering flee
+clears any prior sprint request before the flee step returns. Existing search
+readiness is preserved, and fleeing cowards are not automatically drawn by
+the idle-readiness update. Synthetic regressions cover charge arrival and
+transition to flee; IsRunning counts the sprint gait as for the player's path.

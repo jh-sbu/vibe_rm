@@ -1305,6 +1305,9 @@ impl ActorRuntime {
     /// (or run from it, fleeing). Returns the graph event of an attack started
     /// this frame.
     pub(crate) fn combat_step(&mut self, dt: f32, w: &mut World, target: Vec3) -> Option<String> {
+        if self.exec.combat.as_ref().is_some_and(|c| c.fleeing) {
+            self.sprinting = false;
+        }
         // A swing under way is finished first.
         if self
             .exec
@@ -1322,7 +1325,8 @@ impl ActorRuntime {
             return None;
         }
         let distance = (target - self.exec.pos).truncate().length();
-        self.sprinting = self
+        let was_sprinting = self.sprinting;
+        let can_sprint = self
             .exec
             .combat
             .as_ref()
@@ -1331,8 +1335,10 @@ impl ActorRuntime {
             && self.combat_spell.is_none()
             && self.exec.stamina > 0.0
             && self.sprint_moves.is_some()
-            && self.actions.event("ActionSprintStart").is_some()
-            && (distance > 1000.0 || self.sprinting);
+            && self.actions.event("ActionSprintStart").is_some();
+        let sprint_attack = can_sprint && was_sprinting && distance <= reach * 0.85;
+        self.sprinting =
+            can_sprint && distance > reach * 0.85 && (distance > 1000.0 || was_sprinting);
         let run = if self.sprinting {
             self.sprint_moves.unwrap().0.run * self.armor_speed_mult
         } else {
@@ -1348,7 +1354,7 @@ impl ActorRuntime {
                 .enumerate()
                 .filter(|(_, a)| {
                     a.flags & ATK_BASH == 0
-                        && (a.event.to_ascii_lowercase().contains("sprint") == self.sprinting)
+                        && (a.event.to_ascii_lowercase().contains("sprint") == sprint_attack)
                         && fit(a)
                 })
                 .map(|(i, a)| (i, a.chance.max(0.05)))

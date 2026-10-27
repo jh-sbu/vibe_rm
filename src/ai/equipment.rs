@@ -224,7 +224,10 @@ impl Engine {
                 (
                     a.ref_id,
                     !a.swimming
-                        && (self.is_alerted(a.ref_id) || a.exec.combat.is_some() || package_drawn),
+                        && (self.is_alerted(a.ref_id)
+                            || a.exec.search.is_some()
+                            || a.exec.combat.as_ref().is_some_and(|c| !c.fleeing)
+                            || package_drawn),
                 )
             })
             .collect();

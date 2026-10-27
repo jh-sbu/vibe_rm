@@ -263,6 +263,47 @@ mod control_tests {
     }
 }
 
+#[cfg(test)]
+mod swimming_tests {
+    use super::*;
+    #[test]
+    fn surface_swimming_uses_its_speed_holds_height_and_cancels_falling() {
+        let mut physics = Physics::new();
+        let camera = Camera {
+            position: Vec3::ZERO,
+            yaw: 0.0,
+            pitch: 0.0,
+            fov_y: 1.0,
+        };
+        let mut player = Player::new(Vec3::Z * 100.0);
+        player.swimming = true;
+        player.swim_surface = Some(200.0);
+        player.swim_speed = 80.0;
+        player.vertical_velocity = -500.0;
+        player.sneaking = true;
+        let start = player.position;
+        for _ in 0..30 {
+            player.update(
+                &mut physics,
+                &camera,
+                MoveInput {
+                    forward: 1.0,
+                    jump: true,
+                    ..Default::default()
+                },
+                0.1,
+                0.5,
+                1.0 / 30.0,
+            );
+            assert!(!player.jumped && !player.grounded);
+            assert_eq!(player.vertical_velocity, 0.0);
+            assert!((player.position.z - (200.0 - crate::water::FLOAT_DEPTH + 64.0)).abs() < 0.01);
+            assert!(player.eye().z > 200.0);
+        }
+        assert!((player.position.y - start.y - 40.0).abs() < 0.01);
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 pub struct MoveInput {
     pub forward: f32,
@@ -387,8 +428,11 @@ impl Player {
             RUN_SPEED
         } else {
             WALK_SPEED
-        } * if self.sneaking { sneak_speed } else { 1.0 }
-            * armor_speed;
+        } * if self.sneaking && !self.swimming {
+            sneak_speed
+        } else {
+            1.0
+        } * armor_speed;
         let horizontal = (fwd * input.forward + right * input.right).normalize_or_zero() * speed;
         if self.swimming {
             self.vertical_velocity = 0.0;

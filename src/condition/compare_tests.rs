@@ -299,3 +299,67 @@ fn get_pc_misc_stat_reads_the_named_journal_statistic() {
     other[0].string_p1 = Some("never counted".into());
     assert!(!crate::condition::evaluate(&e, &other, subject));
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn is_swimming_reads_player_and_npc_state_instead_of_water_contact() {
+    let (_fixture, mut e) = fixture();
+    let key = crate::render::CellKey::Interior(FormId(0x890));
+    let mut actor = crate::ai::ActorRuntime::new(
+        ALLY_REF,
+        ALLY,
+        std::sync::Arc::new(crate::world::skeleton::Skeleton::default()),
+        glam::Mat4::IDENTITY,
+        vec![],
+        0.0,
+    );
+    actor.swimming = true;
+    e.actor_cells.insert(ALLY_REF, key);
+    e.cells.entry(key).or_default().actors.push(actor);
+    assert!(holds(&e, ALLY_REF, 185, 0));
+    assert!(!holds(&e, PLAYER_REF, 185, 0));
+    e.player.swimming = true;
+    assert!(holds(&e, PLAYER_REF, 185, 0));
+    e.actor_mut(ALLY_REF).unwrap().swimming = false;
+    assert!(!holds(&e, ALLY_REF, 185, 0));
+    assert!(!holds(&e, FOE_REF, 185, 0));
+}
+
+#[test]
+#[ignore = "requires a headless GPU and installed vanilla Skyrim SE assets"]
+fn explicit_alert_draws_and_unalerted_script_draw_sheathes_through_ai_readiness() {
+    let (_fixture, mut e) = fixture();
+    let data = vfs::locate_data_dir().expect("Skyrim SE Data");
+    let assets = vfs::Vfs::new(&data, &esp::LoadOrder::default_plugin_list(&data, None));
+    let project = crate::world::behavior::GraphLibrary::default()
+        .project(&assets, "meshes/actors/character/defaultmale.hkx")
+        .unwrap();
+    let skeleton = std::sync::Arc::new(crate::world::skeleton::Skeleton::default());
+    let mut actor = crate::ai::ActorRuntime::new(
+        ALLY_REF,
+        ALLY,
+        skeleton.clone(),
+        glam::Mat4::IDENTITY,
+        vec![],
+        0.0,
+    );
+    actor.graph = Some(crate::world::behavior::GraphAnim::new(
+        project, "", false, &skeleton, 1,
+    ));
+    let key = crate::render::CellKey::Interior(FormId(0x890));
+    e.actor_cells.insert(ALLY_REF, key);
+    e.cells.entry(key).or_default().actors.push(actor);
+    assert!(e.draw_weapon(ALLY_REF, true));
+    assert!(e.weapon_drawn(ALLY_REF));
+    e.update_weapon_readiness(1.0);
+    assert!(e.weapon_drawn(ALLY_REF));
+    e.update_weapon_readiness(1.0);
+    assert!(!e.weapon_drawn(ALLY_REF));
+    e.set_alerted(ALLY_REF, true);
+    assert!(e.weapon_drawn(ALLY_REF));
+    e.update_weapon_readiness(5.0);
+    assert!(e.weapon_drawn(ALLY_REF));
+    e.set_alerted(ALLY_REF, false);
+    e.update_weapon_readiness(2.0);
+    assert!(!e.weapon_drawn(ALLY_REF));
+}

@@ -302,3 +302,102 @@ fn dueling_circle_keeps_distance_and_reports_sideways_motion() {
     });
     assert!(initial.distance(a.exec.pos) > 60.0);
 }
+
+#[test]
+fn a_charge_stops_sprinting_in_reach_and_a_flee_never_keeps_a_charge_stance() {
+    let mut a = actor();
+    Arc::make_mut(&mut a.stats).unarmed_reach = 100.0;
+    a.exec.combat = Some(combat::Combat::new(FormId(3)));
+    a.exec.stamina = 100.0;
+    a.sprint_moves = Some((
+        MoveSpeeds {
+            walk: 500.0,
+            run: 500.0,
+            turn_walk: 4.0,
+            turn_run: 4.0,
+            turn_moving: 4.0,
+        },
+        1.0,
+    ));
+    a.actions = idles::LocomotionActions(vec![("ActionSprintStart", Some("SprintStart".into()))]);
+    with_world(|w| {
+        a.combat_step(0.1, w, Vec3::Y * 1500.0);
+    });
+    assert!(a.sprinting);
+    assert!(a.speed > 400.0);
+    with_world(|w| {
+        a.combat_step(0.1, w, a.exec.pos + Vec3::Y * 50.0);
+    });
+    assert!(!a.sprinting);
+    a.sprinting = true;
+    a.exec.combat.as_mut().unwrap().fleeing = true;
+    with_world(|w| {
+        a.combat_step(0.1, w, Vec3::Y * 1500.0);
+    });
+    assert!(!a.sprinting);
+}
+
+#[test]
+#[ignore = "requires installed vanilla Skyrim SE assets"]
+fn a_humanoid_draw_and_sheathe_cycle_has_one_turn_owner_without_overshooting() {
+    let data = vfs::locate_data_dir().expect("Skyrim SE Data");
+    let vfs = vfs::Vfs::new(&data, &esp::LoadOrder::default_plugin_list(&data, None));
+    let project = crate::world::behavior::GraphLibrary::default()
+        .project(&vfs, "meshes/actors/character/defaultmale.hkx")
+        .unwrap();
+    let mut a = actor();
+    a.exec.goal = None;
+    let mut graph = GraphAnim::new(
+        project,
+        "meshes/actors/character/character assets/skeleton.nif",
+        false,
+        &a.skeleton,
+        1,
+    );
+    for (name, value) in [
+        ("IsNPC", 1.0),
+        ("i1stPerson", 0.0),
+        ("IsFirstPerson", 0.0),
+        ("iRightHandType", 1.0),
+    ] {
+        graph.set_variable(name, value);
+    }
+    let mut animations = crate::world::animation::AnimationLibrary::default();
+    let mut behaviors = crate::world::animation::BehaviorLibrary::default();
+    graph.update(0.1, &vfs, &mut animations, &a.skeleton);
+    assert!(graph.handle_event("WeapEquip", &vfs, &mut animations, &a.skeleton));
+    graph.update(0.03, &vfs, &mut animations, &a.skeleton);
+    assert!(
+        !graph.rotates_character(),
+        "this vanilla draw path has no rotate modifier"
+    );
+    for _ in 0..120 {
+        graph.update(1.0 / 60.0, &vfs, &mut animations, &a.skeleton);
+    }
+    assert!(graph.handle_event("Unequip", &vfs, &mut animations, &a.skeleton));
+    graph.update(0.03, &vfs, &mut animations, &a.skeleton);
+    assert!(graph.rotates_character());
+    a.graph = Some(graph);
+    let mut clips = Clips {
+        vfs: &vfs,
+        anims: &mut animations,
+        behaviors: &mut behaviors,
+    };
+    let target = 0.1f32;
+    let direction = Vec3::new(target.sin(), target.cos(), 0.0);
+    let dt = 1.0 / 60.0;
+    for _ in 0..10 {
+        let before = a.exec.heading;
+        a.turn_request = None;
+        a.turn_towards(direction, dt);
+        assert_eq!(
+            a.exec.heading, before,
+            "controller must defer to active modifier"
+        );
+        a.animate(dt, &mut clips);
+        let expected = (target - before).min(a.turn_rate() * dt);
+        assert!((a.exec.heading - before - expected).abs() < 0.0001);
+        assert!(a.exec.heading <= target + 0.0001);
+    }
+    assert!((a.exec.heading - target).abs() < 0.0001);
+}

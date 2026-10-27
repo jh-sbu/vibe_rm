@@ -2152,7 +2152,8 @@ impl ActorRuntime {
                 self.drawn = false;
             }
         }
-        if sneak != self.sneaking && !self.swimming {
+        let graph_sneaking = g.variable("IsSneaking").map_or(self.sneaking, |v| v != 0.0);
+        if sneak != graph_sneaking && !self.swimming {
             self.actions.send(g, "ActionSneak");
             self.sneaking = sneak;
         }
@@ -2217,6 +2218,7 @@ impl ActorRuntime {
             self.sprint_told = sprint;
         }
         let frame = g.update(dt, clips.vfs, clips.anims, &self.skeleton);
+        self.sneaking = g.variable("IsSneaking").map_or(self.sneaking, |v| v != 0.0);
         if let Some(request) = self.turn_request.take() {
             self.exec.heading += (-frame.character_turn).clamp(request.min(0.0), request.max(0.0));
         }
@@ -2512,7 +2514,12 @@ impl Engine {
                             .as_ref()
                             .is_some_and(|b| b.graph_sneaking())
                     } else {
-                        self.actor_ref(actor).is_some_and(|a| a.sneaking)
+                        self.actor_ref(actor).is_some_and(|a| {
+                            a.graph
+                                .as_ref()
+                                .and_then(|g| g.variable("IsSneaking"))
+                                .map_or(a.sneaking, |v| v != 0.0)
+                        })
                     }
                 }),
                 ..Default::default()
@@ -2905,7 +2912,7 @@ impl Engine {
         self.cells
             .get(key)
             .and_then(|c| c.actors.iter().find(|a| a.ref_id == r))
-            .is_some_and(|a| a.speed() > 1.0 && a.gait() == Gait::Run)
+            .is_some_and(|a| a.speed() > 1.0 && matches!(a.gait(), Gait::Run | Gait::Sprint))
     }
 
     /// Gesture along with a line of dialogue: an idle from the `ActionTalking`

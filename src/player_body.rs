@@ -348,7 +348,10 @@ impl PlayerBody {
         self.graph.as_mut()
     }
     pub(crate) fn graph_sneaking(&self) -> bool {
-        self.told.is_some_and(|s| s.sneaking)
+        self.graph
+            .as_ref()
+            .and_then(|g| g.variable("IsSneaking"))
+            .map_or_else(|| self.told.is_some_and(|s| s.sneaking), |v| v != 0.0)
     }
     pub(crate) fn project(&self) -> Option<&Arc<crate::world::behavior::ProjectRuntime>> {
         Some(self.graph.as_ref()?.project())
@@ -460,6 +463,7 @@ impl PlayerBody {
             0.0
         };
         self.graph_heading = self.heading;
+        let graph_sneaking = self.graph_sneaking();
         let g = self.graph.as_mut()?;
         if self.swim_told != m.swimming {
             actions.send(g, "ActionSwimStateChange");
@@ -567,11 +571,7 @@ impl PlayerBody {
             && (self.told != Some(stance) || g.changes() != self.told_at)
         {
             for action in stance.events() {
-                if action == "ActionSneak"
-                    && self
-                        .told
-                        .map_or(!stance.sneaking, |s| s.sneaking == stance.sneaking)
-                {
+                if action == "ActionSneak" && graph_sneaking == stance.sneaking {
                     continue;
                 }
                 actions.send(g, action);
