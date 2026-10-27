@@ -1041,6 +1041,17 @@ impl ActorRuntime {
     /// where it can't be reached (up on a rock, off the navmesh), as near as the
     /// navmesh goes. Only an actor off the navmesh itself heads straight for it.
     pub(crate) fn chase(&mut self, dt: f32, w: &mut World, target: Vec3, run: f32) {
+        self.chase_facing(dt, w, target, run, None);
+    }
+
+    pub(crate) fn chase_facing(
+        &mut self,
+        dt: f32,
+        w: &mut World,
+        target: Vec3,
+        run: f32,
+        face: Option<Vec3>,
+    ) {
         let pos = self.exec.pos;
         let Some(c) = self.exec.combat.as_mut() else {
             return;
@@ -1069,8 +1080,13 @@ impl ActorRuntime {
         }
         let way = c.path.get(c.next).copied().unwrap_or(target);
         let d = (way - pos).truncate();
-        let remaining = self.turn_towards(d.normalize_or_zero().extend(0.0), dt);
-        let speed = run * remaining.cos().max(0.0).powi(2);
+        let facing = face.map_or(d, |p| (p - pos).truncate());
+        let remaining = self.turn_towards(facing.normalize_or_zero().extend(0.0), dt);
+        let speed = if face.is_some() {
+            run
+        } else {
+            run * remaining.cos().max(0.0).powi(2)
+        };
         self.speed = speed;
         self.state = State::Walk {
             path: Vec::new(),
@@ -1078,7 +1094,11 @@ impl ActorRuntime {
             budget: 1.0,
             to_seat: false,
         };
-        let fwd = Vec3::new(self.exec.heading.sin(), self.exec.heading.cos(), 0.0);
+        let fwd = if face.is_some() {
+            d.normalize_or_zero().extend(0.0)
+        } else {
+            Vec3::new(self.exec.heading.sin(), self.exec.heading.cos(), 0.0)
+        };
         let mut p = pos + fwd * (speed * dt).min(d.length().max(1.0));
         // Off the navmesh, keep level rather than heading for the target's height.
         let nz = w.nav.height_at(Vec3::new(p.x, p.y, pos.z));

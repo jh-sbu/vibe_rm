@@ -280,7 +280,7 @@ impl ActorRuntime {
             }
         }
         if let Some(to) = c.away_to {
-            self.chase(dt, w, to, run);
+            self.chase_facing(dt, w, to, run, Some(target));
             return None;
         }
         let in_range = dist < BOW_RANGE * 0.9 && c.clear_shot;

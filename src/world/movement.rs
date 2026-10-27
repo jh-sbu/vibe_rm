@@ -5,6 +5,13 @@ use std::collections::HashMap;
 
 use esp::LoadOrder;
 
+/// Clockwise fraction from the actor's forward axis to its horizontal velocity.
+/// None at rest, so a graph keeps its last direction while blending to idle.
+pub fn direction(heading: f32, velocity: glam::Vec3) -> Option<f32> {
+    (velocity.truncate().length_squared() > 1e-4)
+        .then(|| ((velocity.x.atan2(velocity.y) - heading) / std::f32::consts::TAU).rem_euclid(1.0))
+}
+
 /// Forward speeds (units per second) and turn rates (radians per second) of a
 /// movement type (`SPED`).
 #[derive(Debug, Clone, Copy, PartialEq)]

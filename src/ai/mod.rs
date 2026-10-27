@@ -336,6 +336,7 @@ pub struct ActorRuntime {
     /// The actor's behaviour graph; actors without one play `anim`.
     pub graph: Option<GraphAnim>,
     actions: idles::LocomotionActions,
+    velocity: Vec3,
     /// Ground speed of the graph's walk (its clips' root motion).
     pub graph_walk_speed: Option<f32>,
     /// Movement types of the graph's default and sneaking states, with the
@@ -501,6 +502,7 @@ impl ActorRuntime {
             skeleton,
             graph: None,
             actions: Default::default(),
+            velocity: Vec3::ZERO,
             graph_walk_speed: None,
             moves: None,
             sneak_moves: None,
@@ -2094,6 +2096,10 @@ impl ActorRuntime {
         g.set_variable("bHeadTracking", if look.is_some() { 1.0 } else { 0.0 });
         g.look_target = look.map(|w| model.inverse().transform_point3(w));
         g.set_variable("Speed", if walking { self.speed } else { 0.0 });
+        if let Some(direction) = crate::world::movement::direction(self.exec.heading, self.velocity)
+        {
+            g.set_variable("Direction", direction);
+        }
         g.set_variable("TurnDelta", turn_delta);
         // Standing still and turning: the graph's turn-in-place loops (creatures).
         let turning = match (still, turn_delta) {
@@ -3888,6 +3894,11 @@ impl Engine {
                     }
                 }
                 a.collide(&self.physics, &nav, was);
+                a.velocity = if dt > 0.0 {
+                    (a.exec.pos - was) / dt
+                } else {
+                    Vec3::ZERO
+                };
                 // NPCs look at the player close by, and while talking to them.
                 let near = a.exec.pos.distance(player) < HEAD_TRACK_DISTANCE;
                 a.look_at = (near || talking == Some(a.ref_id)).then_some(eye);

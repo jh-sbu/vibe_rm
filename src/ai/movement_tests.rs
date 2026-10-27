@@ -265,3 +265,21 @@ fn equipped_armor_draw_state_and_perks_refresh_npc_movement() {
     e.update_actor_encumbrance();
     assert_eq!(speed(&e), 100.0);
 }
+
+#[test]
+fn an_archer_backs_off_facing_its_target() {
+    let mut a = actor();
+    a.exec.combat = Some(combat::Combat::new(FormId(3)));
+    a.exec.combat.as_mut().unwrap().away_to = Some(-Vec3::Y * 600.0);
+    let before = a.exec.pos;
+    with_world(|w| {
+        a.archer_step(0.1, w, Vec3::Y * 100.0, 100.0);
+    });
+    let velocity = a.exec.pos - before;
+    assert!(velocity.y < 0.0);
+    assert!(a.exec.heading.abs() < 1e-5);
+    assert_eq!(
+        crate::world::movement::direction(a.exec.heading, velocity),
+        Some(0.5)
+    );
+}
