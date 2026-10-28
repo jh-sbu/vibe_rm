@@ -2261,11 +2261,21 @@ impl Renderer {
             .write_buffer(&self.frame_buf, 0, bytemuck::bytes_of(&fu));
         let nl = scene.lights.len().min(MAX_LIGHTS);
         if nl > 0 {
-            self.queue.write_buffer(
-                &self.light_buf,
-                0,
-                bytemuck::cast_slice(&scene.lights[..nl]),
-            );
+            let lights: Vec<_> = scene.lights[..nl]
+                .iter()
+                .map(|l| {
+                    let mut light = *l;
+                    let distance = Vec3::from_array(l.pos_radius[..3].try_into().unwrap())
+                        .distance(camera.position);
+                    let gain = distance::fade_from(distance, self.distances.lights);
+                    for c in &mut light.color[..3] {
+                        *c *= gain;
+                    }
+                    light
+                })
+                .collect();
+            self.queue
+                .write_buffer(&self.light_buf, 0, bytemuck::cast_slice(&lights));
         }
 
         // Batch visible instances by (model, part).

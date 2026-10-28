@@ -7,6 +7,7 @@ pub struct Distances {
     pub objects: f32,
     pub grass: f32,
     pub shadows: f32,
+    pub lights: f32,
 }
 impl Default for Distances {
     fn default() -> Self {
@@ -16,6 +17,7 @@ impl Default for Distances {
             objects: f32::INFINITY,
             grass: crate::world::grass::FADE_START,
             shadows: 12000.,
+            lights: f32::INFINITY,
         }
     }
 }
@@ -79,4 +81,8 @@ pub fn item_tag(tag: &[u8; 4]) -> bool {
             | b"SLGM"
             | b"SCRL"
     )
+}
+
+pub fn fade_from(distance: f32, start: f32) -> f32 {
+    alpha(distance, start * 1.25)
 }
