@@ -49,6 +49,10 @@ impl Queue {
         self.entries.len() != n
     }
 
+    pub fn remove_engine(&mut self, music: FormId) {
+        self.entries.retain(|e| e.music != music || e.script);
+    }
+
     pub fn contains(&self, music: FormId) -> bool {
         self.entries.iter().any(|e| e.music == music)
     }

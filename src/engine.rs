@@ -871,6 +871,11 @@ impl Engine {
 
     /// The music type to play and whether it is a queued one.
     fn choose_music(&self, location: Option<FormId>) -> (Option<FormId>, bool) {
+        if self.audio_director.inputs.stats
+            && let Some(m) = self.audio_defaults.get(b"SSSC")
+        {
+            return (Some(m), true);
+        }
         match self
             .music
             .queue
@@ -2782,9 +2787,9 @@ impl Engine {
             a.set_listener(self.camera.position, self.camera.right());
             a.update();
         }
-        self.update_music();
         self.update_script_sounds();
         self.update_audio_director();
+        self.update_music();
         self.update_conversation();
         self.update_barks();
         self.update_imagespace(dt);
@@ -2822,9 +2827,9 @@ impl Engine {
         if let Some(a) = self.audio.as_mut() {
             a.update();
         }
-        self.update_music();
         self.update_script_sounds();
         self.update_audio_director();
+        self.update_music();
     }
 
     fn update_look_target(&mut self) {

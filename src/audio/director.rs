@@ -14,6 +14,7 @@ pub struct Inputs {
     pub menu: bool,
     pub loading: bool,
     pub dialogue: bool,
+    pub stats: bool,
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Target {
@@ -56,6 +57,7 @@ impl Director {
             },
         );
         self.pause(b"PDLC", inputs.loading, 0.0);
+        self.gain(b"SMSC", if inputs.stats { 0.0 } else { 1.0 }, 0.005);
         self.gain(
             b"SFDC",
             if inputs.dialogue {
@@ -97,9 +99,17 @@ impl crate::engine::Engine {
             menu: self.in_menu_mode(),
             loading: false,
             dialogue: self.conversation.is_some(),
+            stats: self.menu == Some(crate::items::Menu::Skills),
         };
         self.audio_director
             .update(input, &self.script_sounds.categories);
+        if let Some(music) = self.audio_defaults.get(b"SSSC") {
+            if input.stats {
+                self.music.queue.add(music, false);
+            } else {
+                self.music.queue.remove_engine(music);
+            }
+        }
         if let Some(audio) = &self.audio {
             for (&id, target) in &self.audio_director.targets {
                 audio.set_category(id, target.state, target.seconds);
@@ -117,6 +127,20 @@ mod tests {
             (*b"PDMC", FormId(2)),
             (*b"PDLC", FormId(3)),
         ]))
+    }
+    #[test]
+    fn stats_mutes_region_ambience_and_restores_it() {
+        let mut d = Director::new(AudioDefaults::from_entries([(*b"SMSC", FormId(4))]));
+        d.update(
+            Inputs {
+                stats: true,
+                ..Default::default()
+            },
+            &HashMap::new(),
+        );
+        assert_eq!(d.targets[&4].state.volume, 0.0);
+        d.update(Inputs::default(), &HashMap::new());
+        assert_eq!(d.targets[&4].state.volume, 1.0);
     }
     #[test]
     fn only_player_conversation_ducks_the_dialogue_fade_category() {

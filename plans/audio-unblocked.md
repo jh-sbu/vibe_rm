@@ -404,3 +404,4 @@ sounds, and lip sync if 9a stalls. Answer open questions in the
 - 1c: DOBJ categories and dialogue/player/interface model fallbacks replace editor-ID guesses; INFO barks use DDSC.
 - 2a: device-free director composes script/category policy; menu pause/fade and reserved loading input, with engine integration test.
 - 2b: player dialogue fades SFDC by the documented provisional -6 dB / 3 s / 1 s choice; director test covers recovery.
+- 2c: skills menu mutes SMSC and queues/forces SSSC until closing; music transition fade follows 4a.
