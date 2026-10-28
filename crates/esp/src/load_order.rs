@@ -408,6 +408,44 @@ impl LoadOrder {
         }
     }
 
+    /// DOBJ is a keyed table: later plugins can contain sparse named updates.
+    /// Returns each named entry's last value, including explicit null targets.
+    pub fn default_objects(&self) -> HashMap<[u8; 4], FormId> {
+        let mut objects = HashMap::new();
+        for info in &self.plugins {
+            for item in info.plugin.top_level() {
+                let Item::Group(header, offset) = item else {
+                    continue;
+                };
+                if header.label != *b"DOBJ" {
+                    continue;
+                }
+                for item in info.plugin.group_items(&header, offset) {
+                    let Item::Record(h, offset) = item else {
+                        continue;
+                    };
+                    if h.tag.0 != *b"DOBJ" {
+                        continue;
+                    }
+                    let Ok(rec) = info.plugin.record_at(offset) else {
+                        continue;
+                    };
+                    for e in rec.get(b"DNAM").unwrap_or_default().chunks_exact(8) {
+                        let key: [u8; 4] = e[..4].try_into().unwrap();
+                        if key == [0; 4] {
+                            continue;
+                        }
+                        objects.insert(
+                            key,
+                            info.globalize(FormId(u32::from_le_bytes(e[4..].try_into().unwrap()))),
+                        );
+                    }
+                }
+            }
+        }
+        objects
+    }
+
     pub fn ids_of_type(&self, tag: &[u8; 4]) -> &[FormId] {
         self.by_type
             .get(&Tag(*tag))

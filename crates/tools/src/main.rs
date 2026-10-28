@@ -1,6 +1,7 @@
 use anyhow::{Context, Result, bail};
 
 mod animation_survey;
+mod audio_survey;
 #[path = "../../../src/condition/functions.rs"]
 #[allow(dead_code)]
 mod functions;
@@ -402,6 +403,7 @@ fn main() -> Result<()> {
                 );
             }
         }
+        Some("audio-defaults") => audio_survey::defaults(&args[1])?,
         Some("sndr-stats") => {
             // sndr-stats <data dir>: the sound descriptors' BNAM fields (frequency
             // shift and variance in percent, dB variance, static attenuation in dB):
@@ -410,22 +412,28 @@ fn main() -> Result<()> {
             let data = std::path::Path::new(&args[1]);
             let names = esp::LoadOrder::default_plugin_list(data, None);
             let lo = esp::LoadOrder::load(data, &names)?;
-            let mut counts: BTreeMap<(i8, u8, u8, u16), (usize, String)> = BTreeMap::new();
+            let mut counts: BTreeMap<(i8, u8, u8, u8, u16), (usize, String)> = BTreeMap::new();
             for &id in lo.ids_of_type(b"SNDR") {
                 let Some(rec) = lo.get(id) else { continue };
                 let Some(b) = rec.get(b"BNAM").filter(|b| b.len() >= 6) else {
                     continue;
                 };
                 let e = counts
-                    .entry((b[0] as i8, b[1], b[3], u16::from_le_bytes([b[4], b[5]])))
+                    .entry((
+                        b[0] as i8,
+                        b[1],
+                        b[2],
+                        b[3],
+                        u16::from_le_bytes([b[4], b[5]]),
+                    ))
                     .or_insert_with(|| (0, rec.editor_id().unwrap_or_default().to_owned()));
                 e.0 += 1;
             }
             let mut v: Vec<_> = counts.into_iter().collect();
             v.sort_by_key(|e| std::cmp::Reverse(e.1.0));
-            for ((shift, var, dbvar, att), (n, edid)) in v {
+            for ((shift, var, priority, dbvar, att), (n, edid)) in v {
                 println!(
-                    "{n:5} shift {shift:4}% variance {var:3}% dB variance {dbvar:3} attenuation {:.2} dB {edid}",
+                    "{n:5} shift {shift:4}% variance {var:3}% priority {priority:3} dB variance {dbvar:3} attenuation {:.2} dB {edid}",
                     att as f32 / 100.0
                 );
             }
