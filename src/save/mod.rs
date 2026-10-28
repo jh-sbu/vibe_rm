@@ -244,6 +244,7 @@ impl Engine {
         }
         let bytes = snapshot.write().to_bytes();
         write_save_bytes(path, &bytes)?;
+        self.last_save.set(std::time::Instant::now());
         log::info!("saved {} ({} bytes)", path.display(), bytes.len());
         Ok(())
     }
@@ -253,6 +254,7 @@ impl Engine {
         let bytes = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
         let snapshot = Snapshot::read(&SaveFile::from_bytes(&bytes)?)?;
         snapshot.apply(self)?;
+        self.last_save.set(std::time::Instant::now());
         log::info!("loaded {}", path.display());
         Ok(())
     }

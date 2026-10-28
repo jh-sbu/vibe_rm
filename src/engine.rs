@@ -180,6 +180,8 @@ pub struct Engine {
     /// Saves scripts asked for (`Game.RequestSave`), written next update:
     /// name, and whether it is an autosave.
     pub pending_save_load: Option<String>,
+    pub(crate) last_save: std::cell::Cell<std::time::Instant>,
+    pub(crate) last_pause_menu: Option<crate::items::Menu>,
     pub autosave: crate::save::autosave::Preferences,
     pub save_thumbnail: Option<crate::save::metadata::Thumbnail>,
     pub(crate) save_requests: Vec<(String, bool)>,
@@ -554,6 +556,8 @@ impl Engine {
             player_attack_recovery: 0.0,
             striking: None,
             save_requests: Vec::new(),
+            last_save: std::cell::Cell::new(std::time::Instant::now()),
+            last_pause_menu: None,
             autosave: Default::default(),
             save_thumbnail: None,
             pending_save_load: None,
@@ -2924,6 +2928,7 @@ impl Engine {
     pub fn update(&mut self, mut input: crate::player::MoveInput, dt: f32, time_scale: f32) {
         self.scripts.wall_time += dt as f64;
         self.frame_seconds = dt;
+        self.check_pause_autosave();
         self.flush_save_requests();
         // The gift menu went: its script carries on.
         if let Some(g) = &self.gift

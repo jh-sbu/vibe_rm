@@ -10,3 +10,11 @@ write first, ties by descending filename. Quick/autosaves use their type label.
 META retains a global increasing number on overwrite; new manual files use
 “Save N - name location”. Legacy rows use filename and unknown metadata.
 These native .vrs filenames are our format, not a claim about ESS naming.
+
+## Save on Pause
+
+The movie provides a 5/10/15/30/45/60/Disabled stepper; launcher preferences
+have bSaveOnPause=0 and fAutosaveEveryXMins=15. Until direct SE observation,
+opening either the journal or tween after the interval requests an autosave.
+Use monotonic elapsed real time since any successful save, including time in
+menus, reset on load. Repeated frames of an open menu do not repeat requests.
