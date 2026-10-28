@@ -215,7 +215,9 @@ pub fn apply(
             / (leg.raised_ankle_height - leg.planted_ankle_height).max(1e-3))
         .clamp(0.0, 1.0);
         let leg_gain = g.foot_raised + (g.foot_planted - g.foot_raised) * planted;
-        let lift = (state.offsets[i] * w - drop) * leg_gain.clamp(0.0, 1.0);
+        // Offsets were measured before root alignment and translation. Remove
+        // their ankle displacement so the slope is not applied a second time.
+        let lift = (state.offsets[i] * w - (a.z - ankles[i].z)) * leg_gain.clamp(0.0, 1.0);
         let mut target = a + Vec3::Z * lift;
         if gains.is_some() && ground.get(i).is_some_and(Option::is_some) {
             let animated = world_from_model.transform_point3(ankles[i]);
@@ -432,49 +434,67 @@ mod tests {
     }
 
     #[test]
-    fn alignment_follows_slope_with_gain_and_keeps_zero_gain_upright() {
+    fn aligned_quadruped_keeps_uphill_and_downhill_feet_on_their_contacts() {
         for gain in [0.0, 0.15] {
-            let (mut skeleton, mut ik, mut gains, bind) = fixture();
-            let mut locals = vec![Transform::default()];
-            locals.extend(bind);
-            skeleton.bones.insert(
-                0,
-                Bone {
-                    name: "root".into(),
-                    parent: None,
-                    bind: Transform::default(),
-                },
-            );
-            for b in &mut skeleton.bones[1..] {
-                b.parent = Some(b.parent.map_or(0, |p| p + 1));
-            }
-            ik.legs[0].hip = 1;
-            ik.legs[0].knee = 2;
-            ik.legs[0].ankle = 3;
+            let (_, mut ik, mut gains, leg_bind) = fixture();
             gains.align_world_from_model = gain;
-            let ground = [Some((0.0, Vec3::new(0.0, -0.3, 1.0).normalize()))];
+            let mut skeleton = Skeleton::default();
+            let mut bind = vec![Transform::default()];
+            skeleton.bones.push(Bone {
+                name: "root".into(),
+                parent: None,
+                bind: bind[0],
+            });
+            let mut ground = Vec::new();
+            let normal = Vec3::new(-0.2, 0.0, 1.0).normalize();
+            let leg = ik.legs[0].clone();
+            ik.legs.clear();
+            for (x, y) in [(-40.0, -30.0), (40.0, -30.0), (-40.0, 30.0), (40.0, 30.0)] {
+                let hip = bind.len();
+                let mut locals = leg_bind.clone();
+                locals[0].translation += Vec3::new(x, y, 0.0);
+                for (i, &local) in locals.iter().enumerate() {
+                    skeleton.bones.push(Bone {
+                        name: format!("leg{hip}_{i}"),
+                        parent: Some(if i == 0 { 0 } else { hip + i - 1 }),
+                        bind: local,
+                    });
+                }
+                bind.extend(locals);
+                let mut leg = leg.clone();
+                leg.hip = hip as i16;
+                leg.knee = hip as i16 + 1;
+                leg.ankle = hip as i16 + 2;
+                ik.legs.push(leg);
+                ground.push(Some((x * 0.2, normal)));
+            }
+            let map: Vec<_> = (0..bind.len()).map(Some).collect();
             let mut state = FootIkState::default();
-            let initial = locals.clone();
+            let mut locals = bind.clone();
             for _ in 0..60 {
-                locals = initial.clone();
+                locals.clone_from(&bind);
                 apply(
                     &mut state,
                     &ik,
                     Some(&gains),
-                    &[Some(0), Some(1), Some(2), Some(3)],
+                    &map,
                     &skeleton,
                     &mut locals,
                     &ground,
                     Mat4::IDENTITY,
                     1.0 / 30.0,
                 );
+                let model = skeleton.model_space(&locals);
+                for (leg, contact) in ik.legs.iter().zip(&ground) {
+                    let foot = model[leg.ankle as usize].w_axis.truncate();
+                    assert!(
+                        (foot.z - contact.unwrap().0).abs() < 0.05,
+                        "gain {gain}: foot {foot:?}, contact {contact:?}"
+                    );
+                }
             }
             let up = locals[0].rotation * Vec3::Z;
-            if gain == 0.0 {
-                assert!(up.distance(Vec3::Z) < 1e-5);
-            } else {
-                assert!(up.distance(ground[0].unwrap().1) < 0.001);
-            }
+            assert!(up.distance(if gain == 0.0 { Vec3::Z } else { normal }) < 0.001);
         }
     }
 }
