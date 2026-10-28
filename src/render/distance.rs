@@ -8,6 +8,7 @@ pub struct Distances {
     pub grass: f32,
     pub shadows: f32,
     pub lights: f32,
+    pub specular: f32,
 }
 impl Default for Distances {
     fn default() -> Self {
@@ -18,6 +19,7 @@ impl Default for Distances {
             grass: crate::world::grass::FADE_START,
             shadows: 12000.,
             lights: f32::INFINITY,
+            specular: 1e30,
         }
     }
 }

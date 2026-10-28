@@ -2232,7 +2232,12 @@ impl Renderer {
             fog_near_color: env.fog_near_color.extend(1.0).to_array(),
             fog_far_color: env.fog_far_color.extend(1.0).to_array(),
             fog: [env.fog_near, env.fog_far, env.fog_power, env.fog_max],
-            misc: [self.time, scene.lights.len() as f32, 0.0, self.grass_clock],
+            misc: [
+                self.time,
+                scene.lights.len() as f32,
+                self.distances.specular,
+                self.grass_clock,
+            ],
             amb: match env.dalc {
                 Some(d) => {
                     let mut a = [[0f32; 4]; 6];

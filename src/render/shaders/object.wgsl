@@ -561,7 +561,8 @@ fn fs_main(in: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
         emit *= textureSample(t_glow, s_main, in.uv).rgb;
     }
     diffuse += emit;
-    let color = albedo * diffuse + specular * mat.specular.rgb + env;
+    let spec_fade=1.0-clamp((distance(in.world_pos,frame.cam_pos.xyz)-frame.misc.z)/max(frame.misc.z*0.25,0.001),0.0,1.0);
+    let color = albedo * diffuse + (specular * mat.specular.rgb + env) * spec_fade;
     return vec4<f32>(apply_fog(color * in.tint.rgb, in.world_pos), alpha * in.tint.a);
 }
 
@@ -745,7 +746,8 @@ fn fs_decal(in: DecalOut) -> @location(0) vec4<f32> {
             specular += light.color.rgb * pow(max(dot(n, h), 0.0), gloss) * spec_mask * att;
         }
     }
-    var color = albedo * diffuse + specular * mat.specular.rgb;
+    let spec_fade=1.0-clamp((distance(world,frame.cam_pos.xyz)-frame.misc.z)/max(frame.misc.z*0.25,0.001),0.0,1.0);
+    var color = albedo * diffuse + specular * mat.specular.rgb * spec_fade;
     if (mat.params.w > 0.5 && mat.params.w < 1.5) {
         let glow = textureSampleGrad(t_glow, s_main, uv, ddx, ddy);
         color += glow.rgb * mat.emissive.rgb * mat.emissive.w;
