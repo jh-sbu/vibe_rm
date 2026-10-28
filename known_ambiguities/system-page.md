@@ -32,3 +32,12 @@ Neither installed preference file supplies fSpecularLODStartFade. Use 2000,
 the Skyrim_Default.ini fSpecularLODMaxStartFade value, pending SE observation.
 The other defaults and their sections come directly from the installed files
 as recorded in research/ui/system-page.md and settings.rs SPECS.
+
+## Look sensitivity
+
+The movie slider is 0–1 in twentieths and installed preferences default to
+fMouseHeadingSensitivity=0.0125. No asset specifies its mapping. Use linear
+0–0.025, centered on that default; a 0.2 conversion retains the host's prior
+0.0025 radians per mouse unit at default. Invert Y reverses only mouse pitch.
+The HUD has FloatingQuestMarker_mc but no host floating marker population;
+the floating-marker toggle is stored until that rendering path exists.

@@ -2122,3 +2122,9 @@ game each piece unlocks.
      default race (vehicles, player control); the execution and Alduin
      (killmoves, dragons, particles, image spaces); Helgen Keep (the player's
      combat, magic, leveling, help messages, journal); character creation last
+
+### System page follow-up: floating quest markers
+
+The Gameplay preference bShowFloatingQuestMarkers is stored. Populate the HUD
+FloatingQuestMarker_mc clips with in-world tracked objectives and gate them
+with this preference; the host currently supplies compass targets only.

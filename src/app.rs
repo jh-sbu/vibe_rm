@@ -664,11 +664,16 @@ impl ApplicationHandler for App {
             && !s.menu_takes_mouse()
             && !s.engine.disabled_controls.looking
         {
-            let sens = 0.0025;
+            let sens = s.engine.settings.get("fMouseHeadingSensitivity") * 0.2;
+            let invert = if s.engine.settings.enabled("bInvertYValues") {
+                -1.0
+            } else {
+                1.0
+            };
             s.engine.input_event("Look");
             s.engine.camera.yaw += delta.0 as f32 * sens;
             s.engine.camera.pitch =
-                (s.engine.camera.pitch - delta.1 as f32 * sens).clamp(-1.55, 1.55);
+                (s.engine.camera.pitch - delta.1 as f32 * sens * invert).clamp(-1.55, 1.55);
         }
     }
 
