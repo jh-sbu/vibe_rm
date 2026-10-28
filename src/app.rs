@@ -734,6 +734,19 @@ impl ApplicationHandler for App {
                     }
                     match event.state {
                         ElementState::Pressed => {
+                            if code == KeyCode::F5 && !event.repeat {
+                                s.engine.request_save(false);
+                            }
+                            if code == KeyCode::F9 && !event.repeat {
+                                if let Some(save) = s
+                                    .engine
+                                    .save_list()
+                                    .into_iter()
+                                    .find(|s| !s.corrupt && !s.obsolete)
+                                {
+                                    s.engine.pending_save_load = Some(save.name);
+                                }
+                            }
                             if code == KeyCode::F3 && !event.repeat {
                                 s.ui.show_debug = !s.ui.show_debug;
                             }
