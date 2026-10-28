@@ -173,6 +173,9 @@ mod listing_tests {
                 .filter(|s| !s.corrupt)
                 .all(|s| s.obsolete)
         );
+        assert!(crate::save::delete_save_in(&dir, "../outside").is_err());
+        crate::save::delete_save_in(&dir, "legacy").unwrap();
+        assert!(!dir.join("legacy.vrs").exists());
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

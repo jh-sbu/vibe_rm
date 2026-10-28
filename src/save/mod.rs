@@ -172,6 +172,11 @@ fn next_file_num_in(dir: &Path) -> Result<u32> {
     highest.checked_add(1).context("save numbering exhausted")
 }
 
+fn delete_save_in(dir: &Path, name: &str) -> Result<()> {
+    let path = save_path_in(dir, name).context("invalid save name")?;
+    std::fs::remove_file(&path).with_context(|| format!("deleting {}", path.display()))
+}
+
 fn write_save_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
@@ -251,6 +256,10 @@ impl Engine {
         };
         self.save_game_to(&path)?;
         Ok(path)
+    }
+
+    pub fn delete_save(&self, name: &str) -> Result<()> {
+        delete_save_in(&save_dir(), name)
     }
 
     pub fn load_game(&mut self, name: &str) -> Result<()> {
