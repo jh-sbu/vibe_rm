@@ -1110,6 +1110,61 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records and graph only"]
+    fn sprint_input_exits_sneak_before_checking_the_action_and_keeps_stance_on_refusal() {
+        use esp::writer::{Node, RecordBuilder, write_plugin};
+        let dir = std::env::temp_dir().join(format!("vrm-sprint-stance-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let root = FormId(0x800);
+        let mut condition = [0u8; 32];
+        condition[8..10].copy_from_slice(&286u16.to_le_bytes()); // IsSneaking == 0
+        let mut parent = [0u8; 8];
+        parent[..4].copy_from_slice(&root.0.to_le_bytes());
+        let records = [
+            Node::top(
+                b"AACT",
+                vec![RecordBuilder::new(b"AACT", root).zstring(b"EDID", "ActionSprintStart")],
+            ),
+            Node::top(
+                b"IDLE",
+                vec![
+                    RecordBuilder::new(b"IDLE", FormId(0x801))
+                        .field(b"ANAM", &parent)
+                        .zstring(b"ENAM", "SprintStart")
+                        .field(b"CTDA", &condition),
+                ],
+            ),
+        ];
+        std::fs::write(
+            dir.join("Sprint.esp"),
+            write_plugin(0, &[], "test", "sprint stance", 0x900, &records),
+        )
+        .unwrap();
+        let mut e = crate::stats::action_tests::headless_engine(&dir, "Sprint.esp");
+        e.player_body = Some(equipment_body());
+        e.player.sneaking = true;
+        e.player_stamina = 100.0;
+        assert!(e.action(PLAYER_REF, "ActionSprintStart").is_none());
+        assert!(e.player_start_sprint(0.1));
+        assert!(!e.player.sneaking);
+        assert!(e.player_stamina < 100.0);
+        e.player.sneaking = true;
+        e.player_stamina = 0.0;
+        assert!(!e.player_start_sprint(0.1));
+        assert!(e.player.sneaking);
+        e.player_stamina = 100.0;
+        e.player.swimming = true;
+        assert!(!e.player_start_sprint(0.1));
+        assert!(e.player.sneaking);
+        assert_eq!(e.player_stamina, 100.0);
+        e.player.swimming = false;
+        e.player_body = None;
+        assert!(!e.player_start_sprint(0.1));
+        assert!(e.player.sneaking);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn equipment_refresh_preserves_draw_progress_and_consumes_zero_time_notifications() {
         let vfs = vfs::Vfs::new("/tmp/vrm-synthetic-player-no-assets", &[]);
         let mut anims = crate::world::animation::AnimationLibrary::default();

@@ -2723,8 +2723,7 @@ impl Engine {
         let mut input = input;
         self.encumber_player(&mut input);
         if input.sprint && (input.forward != 0.0 || input.right != 0.0) && !self.player.noclip {
-            input.sprint =
-                self.action(PLAYER_REF, "ActionSprintStart").is_some() && self.player_sprint(dt);
+            input.sprint = self.player_start_sprint(dt);
         }
         self.update_player_attack(dt);
         self.update_casting(dt);

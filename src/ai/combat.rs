@@ -3922,6 +3922,21 @@ impl Engine {
         );
     }
 
+    /// Sprint input stands the player up before checking the sprint action's
+    /// IsSneaking condition. A refused sprint preserves the previous stance.
+    pub(crate) fn player_start_sprint(&mut self, dt: f32) -> bool {
+        if self.player.swimming {
+            return false;
+        }
+        let sneaking = std::mem::replace(&mut self.player.sneaking, false);
+        if self.action(PLAYER_REF, "ActionSprintStart").is_some() && self.player_sprint(dt) {
+            true
+        } else {
+            self.player.sneaking = sneaking;
+            false
+        }
+    }
+
     /// Sprinting drains the player's stamina, the more the heavier their armor;
     /// out of it, they can't. Returns whether they may sprint.
     pub(crate) fn player_sprint(&mut self, dt: f32) -> bool {
