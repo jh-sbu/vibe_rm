@@ -263,6 +263,10 @@ pub type OwnedFuture<T, E> = Pin<Box<dyn Future<Output = Result<T, E>> + 'static
 
 /// A backend interacting with a browser environment.
 pub trait NavigatorBackend: Any {
+    /// Scaleform host-owned images. Encoded PNG/JPEG bytes, keyed by the
+    /// name following img://. No filesystem or network lookup is performed.
+    fn host_image(&self, _name: &str) -> Option<Vec<u8>> { None }
+
     /// Cause a browser navigation to a given URL.
     ///
     /// The URL given may be any URL scheme a browser can support. This may not

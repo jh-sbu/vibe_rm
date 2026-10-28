@@ -68,6 +68,18 @@ fn load_clip<'gc>(
                 _ => None,
             };
             if let Some(target) = target {
+                if let Some(name) = url.to_utf8_lossy().strip_prefix("img://") {
+                    let Some(bytes) = activation.context.navigator.host_image(name) else {
+                        return Ok(false.into());
+                    };
+                    let base_clip = activation.base_clip();
+                    let loaded = crate::loader::LoadManager::load_movie_into_clip_bytes(
+                        activation.context, target, bytes, url.to_utf8_lossy().into_owned(),
+                        MovieLoaderVMData::Avm1 { broadcaster: Some(this), base_clip },
+                    );
+                    return Ok(loaded.is_ok().into());
+                }
+
                 let future = activation.context.load_manager.load_movie_into_clip(
                     activation.context.player_handle(),
                     target,
