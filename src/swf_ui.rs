@@ -931,7 +931,16 @@ impl SwfUi {
             return false;
         };
         if code == KeyCode::Escape && journal.system_panel_open() {
-            return false;
+            // SystemPage handles Cancel as CLIK TAB, not ESCAPE.
+            for key in ui_swf::input::keys(KeyCode::Tab) {
+                journal
+                    .menu
+                    .handle_event(ui_swf::PlayerEvent::KeyDown { key });
+                journal
+                    .menu
+                    .handle_event(ui_swf::PlayerEvent::KeyUp { key });
+            }
+            return true;
         }
         if code == KeyCode::Escape
             || crate::input_map::scan_code(code)
