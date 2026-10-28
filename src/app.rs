@@ -329,6 +329,7 @@ pub fn run(opts: Options) -> Result<()> {
         if let Some(swf) = &mut swf {
             // A second of the HUD: its meters and messages fade in.
             for _ in 0..60 {
+                engine.apply_pending_save_load();
                 swf.update(&mut engine, 1.0 / 60.0);
             }
             for name in &opts.menu_keys {
@@ -355,6 +356,7 @@ pub fn run(opts: Options) -> Result<()> {
                 // menu mode: scripts, hours passing).
                 for _ in 0..20 {
                     engine.update(MoveInput::default(), 1.0 / 60.0, 20.0);
+                    engine.apply_pending_save_load();
                     swf.update(&mut engine, 1.0 / 60.0);
                 }
             }
@@ -979,6 +981,7 @@ impl ApplicationHandler for App {
                     r.poll(&mut s.engine);
                 }
                 s.engine.console_open = s.ui.console.open;
+                s.engine.apply_pending_save_load();
                 s.engine.update(input, dt, scale);
                 if let Some(swf) = &mut s.swf {
                     swf.update(&mut s.engine, dt);

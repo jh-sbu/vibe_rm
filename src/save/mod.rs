@@ -188,6 +188,16 @@ fn write_save_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 impl Engine {
+    /// Called by the app before advancing a frame, after the SWF responder
+    /// and its movie stack have returned.
+    pub fn apply_pending_save_load(&mut self) {
+        if let Some(name) = self.pending_save_load.take() {
+            if let Err(error) = self.load_game(&name) {
+                self.debug_message_box(format!("Could not load: {error:#}"));
+            }
+        }
+    }
+
     pub fn new_save_name(&self) -> Result<String> {
         let number = next_file_num_in(&save_dir())?;
         let meta = metadata::Metadata::capture(self);

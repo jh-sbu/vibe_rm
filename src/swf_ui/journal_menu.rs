@@ -303,6 +303,36 @@ impl JournalMenu {
     /// menus' shared ones.
     pub fn answer(&mut self, engine: &mut Engine, call: &GameCall, saved: &mut Saved) -> bool {
         match call.name.as_str() {
+            "IsOKtoLoad" => {
+                let listing = super::journal_system::index(call)
+                    .and_then(|i| self.system.lock().unwrap().visible.get(i).cloned());
+                match listing {
+                    Some(s) if !s.corrupt && !s.obsolete => {
+                        self.menu.callback("ConfirmOKToLoad", &[]);
+                    }
+                    Some(s) => engine.debug_message_box(if s.corrupt {
+                        engine
+                            .gmst_string("sSaveGameCorrupt")
+                            .unwrap_or_else(|| "This save is corrupt.".into())
+                    } else {
+                        engine
+                            .gmst_string("sLoadingObsoleteSave")
+                            .unwrap_or_else(|| {
+                                "This save was made with a different plugin list.".into()
+                            })
+                    }),
+                    None => engine.debug_message_box("This save is no longer available.".into()),
+                }
+            }
+            "LoadGame" => {
+                if let Some(save) = super::journal_system::index(call)
+                    .and_then(|i| self.system.lock().unwrap().visible.get(i).cloned())
+                    .filter(|s| !s.corrupt && !s.obsolete)
+                {
+                    engine.pending_save_load = Some(save.name);
+                    engine.menu = None;
+                }
+            }
             "SaveGame" => {
                 let index = super::journal_system::index(call).unwrap_or(0);
                 let name = if index == 0 {
