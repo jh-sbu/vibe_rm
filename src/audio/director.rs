@@ -9,6 +9,16 @@ pub const MENU_FADE_IN: f32 = 1.0;
 pub const MUSIC_DUCK: f32 = 6.0;
 pub const MUSIC_UNDUCK: f32 = 8.0;
 
+/// Incoming MUSC WNAM owns the fade. Abrupt types bypass it.
+pub fn music_fade(flags: u32, seconds: f32) -> f32 {
+    if flags & crate::music::ABRUPT_TRANSITION != 0 {
+        0.0
+    } else if seconds.is_finite() {
+        seconds.max(0.0)
+    } else {
+        0.0
+    }
+}
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Inputs {
     pub menu: bool,
@@ -180,6 +190,11 @@ mod tests {
             (*b"PDMC", FormId(2)),
             (*b"PDLC", FormId(3)),
         ]))
+    }
+    #[test]
+    fn incoming_music_type_controls_fade_and_abrupt_types_cut() {
+        assert_eq!(music_fade(0, 9.0), 9.0);
+        assert_eq!(music_fade(crate::music::ABRUPT_TRANSITION, 9.0), 0.0);
     }
     #[test]
     fn submerged_targets_mute_only_flagged_categories_and_request_the_loop() {

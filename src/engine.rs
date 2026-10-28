@@ -798,14 +798,11 @@ impl Engine {
     }
 
     fn update_music(&mut self) {
-        if self.audio.is_none() {
-            return;
-        }
         let now = self.scripts.real_time;
         let playing = self
             .music
             .voice
-            .is_some_and(|v| self.audio.as_ref().unwrap().is_playing(v));
+            .is_some_and(|v| self.audio.as_ref().is_some_and(|a| a.is_playing(v)));
         let location = self.location_music();
         let (mut want, mut queued) = self.choose_music(location);
         // A queued type that plays one selection is done once its track ends:
@@ -826,16 +823,22 @@ impl Engine {
             (want, queued) = self.choose_music(location);
         }
         if want != self.music.music_type {
-            // Queue changes wait for the track to end unless the new type
-            // is an abrupt transition; the location's changes cut it off.
-            let graceful = playing
-                && (queued || self.music.from_queue)
-                && want.is_some_and(|w| self.music_flags(w) & crate::music::ABRUPT_TRANSITION == 0);
-            if graceful {
-                return;
-            }
-            if let Some(v) = self.music.voice.take() {
-                self.audio.as_ref().unwrap().stop(v);
+            let fade = want.map_or(0.0, |m| {
+                let seconds = self
+                    .lo
+                    .get(m)
+                    .and_then(|r| {
+                        r.get(b"WNAM")
+                            .filter(|d| d.len() >= 4)
+                            .map(|d| f32::from_le_bytes(d[..4].try_into().unwrap()))
+                    })
+                    .unwrap_or(0.0);
+                crate::audio::director::music_fade(self.music_flags(m), seconds)
+            });
+            if let Some(v) = self.music.voice.take()
+                && let Some(a) = &self.audio
+            {
+                a.stop_with_fade(v, fade);
             }
             self.music.music_type = want;
             self.music.from_queue = queued;
@@ -844,7 +847,7 @@ impl Engine {
                 want.and_then(|w| self.lo.get(w))
                     .and_then(|r| r.editor_id())
             );
-            self.music.next_at = now + 1.0;
+            self.music.next_at = now;
             return;
         }
         if !playing && now >= self.music.next_at {
@@ -871,7 +874,10 @@ impl Engine {
                     b"----",
                     None,
                 );
-                self.music.voice = self.audio.as_mut().unwrap().play(vfs, &track, params);
+                self.music.voice = self
+                    .audio
+                    .as_mut()
+                    .and_then(|a| a.play(vfs, &track, params));
             }
             // Silence between tracks, like the original.
             self.music.next_at = now + 20.0 + (self.rand() % 40) as f64;
