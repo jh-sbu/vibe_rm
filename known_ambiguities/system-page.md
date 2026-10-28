@@ -84,3 +84,13 @@ separate LST/BTT billboard path, absent from the current BTR/BTO host. Apply
 fTreesMidLODSwitchDist as the full tree's fade/cull distance in the interim;
 there is currently no billboard replacement. This is a functional distance
 control, not a verified SE full-to-billboard transition.
+
+## Remapping conflicts
+
+The SWF debounces for 200 ms, then calls StartRemapMode and expects
+FinishRemapMode(success). No public asset specifies conflict handling. Choose
+to unbind the conflicting remappable keyboard/mouse event, displaying unknown
+button art; do not change gamepad or fixed events. Esc, console, F3 and the
+developer noclip key N are reserved. Both capture press and release are
+consumed before the movie and gameplay. SE swap/refusal behavior awaits the
+observation requested in the plan.

@@ -27,6 +27,8 @@ pub struct System {
     pub save_disabled: bool,
     pub settings: crate::settings::Settings,
     pub audio: Vec<Value>,
+    pub input: crate::input_map::Shared,
+    pub remapping: Option<String>,
     filter: Filter,
     pub callbacks: Vec<(String, Vec<Value>)>,
 }
@@ -39,6 +41,8 @@ impl System {
             save_disabled: engine.saving_disabled() || engine.player_dead(),
             settings: engine.settings.clone(),
             audio: audio_rows(engine),
+            input: engine.input_map.clone(),
+            remapping: None,
             filter: Filter::All,
             callbacks: Vec::new(),
         }))
@@ -52,6 +56,24 @@ impl System {
     }
     pub fn respond(&mut self, call: &GameCall, movie: &mut Movie<'_, '_>) -> Option<Vec<Value>> {
         match call.name.as_str() {
+            "RequestInputMappings" => {
+                movie.set(
+                    MAPPINGS,
+                    Value::List(mapping_rows(&self.input.read().unwrap())),
+                );
+            }
+            "ResetControlsToDefaults" => {
+                self.input.write().unwrap().reset();
+            }
+            "StartRemapMode" => {
+                self.remapping = call.args.first().and_then(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.clone())
+                    } else {
+                        None
+                    }
+                });
+            }
             "RequestAudioOptions" => {
                 movie.set(
                     &format!("{S}.OptionsListsPanel.OptionsLists.List_mc.entryList"),
@@ -257,4 +279,30 @@ pub fn audio_rows(engine: &Engine) -> Vec<Value> {
         ])
     }));
     rows
+}
+pub const MAPPINGS: &str =
+    "_root.QuestJournalFader.Menu_mc.SystemFader.Page_mc.InputMappingPanel.List_mc.entryList";
+pub fn mapping_rows(map: &crate::input_map::InputMap) -> Vec<Value> {
+    map.events()
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.remappable[0] || e.remappable[1])
+        .map(|(i, e)| {
+            let key = map.first(&e.name, 0);
+            let mouse = map.first(&e.name, 1);
+            let art = key
+                .and_then(super::keyboard_art)
+                .or_else(|| mouse.and_then(super::mouse_art))
+                .unwrap_or_else(|| "UnknownKey".into());
+            object([
+                ("text", text(&e.name)),
+                ("buttonName", text(&art)),
+                (
+                    "buttonID",
+                    Value::Number(key.or_else(|| mouse.map(|m| m + 256)).unwrap_or(255) as f64),
+                ),
+                ("sortIndex", num(i as f32)),
+            ])
+        })
+        .collect()
 }

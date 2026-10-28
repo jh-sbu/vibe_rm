@@ -54,6 +54,7 @@ pub(super) struct JournalMenu {
     /// the next update. `FormId::NULL` is the miscellaneous objectives'.
     toggles: Arc<Mutex<Vec<(FormId, bool)>>>,
     system: Arc<Mutex<super::journal_system::System>>,
+    captured: Option<crate::input_map::Button>,
 }
 
 fn object(fields: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
@@ -278,6 +279,7 @@ impl JournalMenu {
             menu,
             toggles,
             system,
+            captured: None,
         })
     }
 
@@ -452,6 +454,73 @@ impl JournalMenu {
             "QuitToDesktop" => engine.quit_requested = true,
             _ => return false,
         }
+        true
+    }
+
+    /// Capture before ordinary menu or developer-key handling, including
+    /// the matching key-up so it cannot activate a newly rebound menu row.
+    pub fn capture(&mut self, event: &winit::event::WindowEvent) -> bool {
+        use winit::{
+            event::{ElementState, WindowEvent},
+            keyboard::PhysicalKey,
+        };
+        let (button, pressed) = match event {
+            WindowEvent::KeyboardInput { event, .. }
+                if let PhysicalKey::Code(code) = event.physical_key =>
+            {
+                (
+                    crate::input_map::Button::Key(code),
+                    event.state == ElementState::Pressed,
+                )
+            }
+            WindowEvent::MouseInput { state, button, .. } => {
+                let Some(code) = crate::input_map::mouse_code(*button) else {
+                    return false;
+                };
+                (
+                    crate::input_map::Button::Mouse(code),
+                    *state == ElementState::Pressed,
+                )
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let n = match delta {
+                    winit::event::MouseScrollDelta::LineDelta(_, y) => *y,
+                    winit::event::MouseScrollDelta::PixelDelta(p) => p.y as f32,
+                };
+                (
+                    crate::input_map::Button::Mouse(if n > 0. { 8 } else { 9 }),
+                    true,
+                )
+            }
+            _ => return false,
+        };
+        if self.captured == Some(button) {
+            if !pressed {
+                self.captured = None;
+            }
+            return true;
+        }
+        let pending = self.system.lock().unwrap().remapping.clone();
+        let Some(name) = pending else {
+            return false;
+        };
+        if !pressed {
+            return true;
+        }
+        let input = self.system.lock().unwrap().input.clone();
+        let success = input.write().unwrap().remap(&name, button);
+        self.system.lock().unwrap().remapping = None;
+        self.captured = if matches!(event, WindowEvent::MouseWheel { .. }) {
+            None
+        } else {
+            Some(button)
+        };
+        self.menu.set(
+            super::journal_system::MAPPINGS,
+            Value::List(super::journal_system::mapping_rows(&input.read().unwrap())),
+        );
+        self.menu
+            .callback("FinishRemapMode", &[Value::Bool(success)]);
         true
     }
 

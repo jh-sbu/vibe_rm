@@ -366,3 +366,72 @@ mod tests {
         assert_eq!(n.events()[0].columns[2], "0x1000");
     }
 }
+impl InputMap {
+    pub fn remap(&mut self, event: &str, button: Button) -> bool {
+        let (device, code) = match button {
+            Button::Key(key) => {
+                if matches!(key, K::Escape | K::Backquote | K::F3 | K::KeyN) {
+                    return false;
+                }
+                (0, scan_code(key))
+            }
+            Button::Mouse(code) => (1, (code <= 9).then_some(code)),
+        };
+        let Some(code) = code else {
+            return false;
+        };
+        let Some(index) = self
+            .events()
+            .iter()
+            .position(|e| e.name == event && e.remappable[device])
+        else {
+            return false;
+        };
+        let conflicts: Vec<_> = self
+            .events()
+            .iter()
+            .enumerate()
+            .filter(|(i, e)| {
+                *i != index
+                    && e.remappable[device]
+                    && self
+                        .bindings(&e.name, device)
+                        .iter()
+                        .any(|c| c.last() == Some(&code))
+            })
+            .map(|(i, _)| i)
+            .collect();
+        for i in conflicts {
+            self.contexts[0][i].columns[device] = "0xff".into();
+        }
+        self.contexts[0][index].columns[0] = "0xff".into();
+        self.contexts[0][index].columns[1] = "0xff".into();
+        self.contexts[0][index].columns[device] = format!("0x{code:x}");
+        self.generation += 1;
+        true
+    }
+}
+#[cfg(test)]
+mod remap_tests {
+    use super::*;
+    #[test]
+    fn capture_reserved_conflict_and_custom_round_trip() {
+        let mut m = InputMap::parse(
+            "Activate\t0x12\t0xff\t0x1000\t1\t1\t1\nJump\t0x39\t0xff\t0x8000\t1\t1\t1\n",
+        );
+        assert!(!m.remap("Activate", Button::Key(K::Escape)));
+        assert!(m.remap("Activate", Button::Key(K::Space)));
+        assert_eq!(m.first("Jump", 0), None);
+        assert!(m.triggered(
+            "Activate",
+            Button::Key(K::Space),
+            &HashSet::new(),
+            &HashSet::new()
+        ));
+        let b = InputMap::parse(&m.encode());
+        assert_eq!(b.first("Activate", 0), Some(0x39));
+        assert_eq!(b.events()[0].columns[2], "0x1000");
+        m.reset();
+        assert_eq!(m.first("Activate", 0), Some(0x12));
+    }
+}

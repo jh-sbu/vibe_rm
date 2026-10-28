@@ -673,6 +673,14 @@ impl SwfUi {
         if !self.wants_input() {
             return false;
         }
+        if self.message_box.shown.is_none()
+            && self
+                .journal
+                .as_mut()
+                .is_some_and(|journal| journal.capture(event))
+        {
+            return true;
+        }
         // The map's camera: its keys and the wheel are its own; the mouse
         // is the movie's too.
         if self.message_box.shown.is_none()
