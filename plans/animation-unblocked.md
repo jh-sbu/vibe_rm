@@ -513,6 +513,7 @@ This replaces the speculative 7b sketch above, before implementation.
 7. Foot IK knee-angle-difference settings: nonzero on several creatures; the
    cross-leg rule remains unresolved and is tracked in ROADMAP.
 8. Diving controls after underwater rendering, and per-race/scale swimming depths
-   and floating/head heights. Surface swimming currently requires both RACE
-   Swims and Walks flags; swim-only races retain their depth. Creature breath
-   damage is disabled until their float/head heights are resolved.
+   and floating/head heights. Surface swimming excludes only RACE Swims without
+   Walks; horses retain their authored swimming despite lacking Swims. Creature
+   breath damage is disabled until float/head heights are resolved. Whether
+   walking-only trolls and giants have authored swim graphs remains unchecked.

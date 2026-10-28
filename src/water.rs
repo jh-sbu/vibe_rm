@@ -78,11 +78,11 @@ impl Breath {
 }
 
 impl Engine {
-    /// Surface swimming is for races that both walk and swim. Swim-only
-    /// creatures (e.g. slaughterfish) must keep their authored underwater Z.
+    /// Exclude only swim-only races (e.g. slaughterfish), which must keep their
+    /// underwater Z. Swims is not a capability gate: horses swim without it.
     fn surface_swimmer(&self, actor: FormId) -> bool {
         self.race_of(actor)
-            .is_some_and(|race| self.race_flag(race, 0x40) && self.race_flag(race, 0x100))
+            .is_none_or(|race| !self.race_flag(race, 0x40) || self.race_flag(race, 0x100))
     }
 
     /// The water surface height at a point in the currently loaded space.
@@ -335,8 +335,12 @@ mod tests {
         let mut races = Vec::new();
         let mut npcs = Vec::new();
         let mut refs = Vec::new();
-        // Fish, dog, humanoid, and a race that cannot swim.
-        for (i, flags) in [0x40u32, 0x140, 0x140, 0x100].into_iter().enumerate() {
+        // Fish, dog, humanoid, HorseRace's flags, and another walking-only race.
+        // Absence of Swims does not establish absence of surface swimming.
+        for (i, flags) in [0x40u32, 0x140, 0x140, 0x00508908, 0x100]
+            .into_iter()
+            .enumerate()
+        {
             let race = FormId(0x800 + i as u32);
             let mut data = [0u8; 36];
             data[32..36].copy_from_slice(&flags.to_le_bytes());
@@ -370,7 +374,7 @@ mod tests {
             .or_default()
             .water
             .push(surface(0.0, 0.0, 0));
-        for (i, dir) in ["slaughterfish", "canine", "character", "other"]
+        for (i, dir) in ["slaughterfish", "canine", "character", "horse", "other"]
             .into_iter()
             .enumerate()
         {
@@ -397,14 +401,28 @@ mod tests {
                 files: vec![],
             });
             actor.graph = Some(GraphAnim::new(project, "rig", false, &skeleton, 1));
+            if dir == "horse" {
+                actor.swim_moves = Some((
+                    crate::world::movement::MoveSpeeds {
+                        walk: 150.0,
+                        run: 300.0,
+                        back_walk: 75.0,
+                        back_run: 150.0,
+                        turn_walk: 1.0,
+                        turn_run: 1.0,
+                        turn_moving: 1.0,
+                    },
+                    1.0,
+                ));
+            }
             Arc::make_mut(&mut actor.stats).max_health = 50.0;
-            // Clear stale surface-swimming state for races that do not use it.
-            actor.swimming = true;
+            // Clear a fish's stale state; land swimmers must enter from dry.
+            actor.swimming = dir == "slaughterfish";
             e.actor_cells.insert(id, key);
             e.cells.get_mut(&key).unwrap().actors.push(actor);
         }
         e.update_swimming_states();
-        for (i, swimming) in [false, true, true, false].into_iter().enumerate() {
+        for (i, swimming) in [false, true, true, true, true].into_iter().enumerate() {
             assert_eq!(
                 e.actor_ref(FormId(0x820 + i as u32)).unwrap().swimming,
                 swimming
@@ -413,7 +431,7 @@ mod tests {
         for _ in 0..60 {
             e.update_breath(1.0);
         }
-        for id in [0x820, 0x821, 0x823] {
+        for id in [0x820, 0x821, 0x823, 0x824] {
             assert!(!e.breath.contains_key(&FormId(id)));
             assert!(!e.actor_ref(FormId(id)).unwrap().dead);
             assert_eq!(e.actor_health(FormId(id)), Some((50.0, 50.0)));

@@ -17,8 +17,9 @@ game each piece unlocks.
   and movement types, observed feet-at-surface-minus-92 floating height, no surface
   swim gravity, graph-authored swim footsteps and suppressed foot IK; breath
   exhaustion and WaterBreathing protection. Swim depth and breath formula remain
-  documented policies in `known_ambiguities/water.md`; surface swimming requires
-  RACE Swims + Walks, and creature breath awaits per-race float/head heights.
+  documented policies in `known_ambiguities/water.md`; surface swimming excludes
+  RACE Swims without Walks, preserving horse swimming despite its missing Swims
+  flag. Creature breath awaits per-race float/head heights.
   Diving awaits rendering.
 - Turning ownership (step 4): while a rotate-character modifier runs, NPC/player
   controllers supply requested TurnDelta and consume its yaw once, clamped against

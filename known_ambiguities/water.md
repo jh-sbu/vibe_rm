@@ -86,10 +86,18 @@ unmeasured; use the same threshold for land-capable swimmers for now.
 Autotest20 is deferred by the user.
 
 The local UESP [RACE revision 3650080](https://en.uesp.net/w/index.php?oldid=3650080)
-documents Swims (0x40) and Walks (0x100). Surface swimming now requires both.
-Swim-only races such as SlaughterfishRace retain their underwater position
-instead of being raised to the humanoid float height. This is a scope guard,
-not evidence for the original game's aquatic movement controller.
+documents Swims (0x40) and Walks (0x100). Chosen scope guard: exclude only
+races with Swims but without Walks from surface swimming. Swim-only races such
+as SlaughterfishRace retain their underwater position instead of being raised
+to the humanoid float height. Other races keep the existing depth-based state;
+this is not evidence for the original game's aquatic movement controller.
+
+Vanilla asset evidence supplied in review: HorseRace has flags 0x00508908
+(Walks, without Swims), yet has Horse_Swim_MT (`MNAM` HorseSwim) and
+`iState_HorseSwim` / `bInSwimState` in horsebehavior.hkx. Requiring Swims
+therefore incorrectly prevented horses from entering their authored swim state.
+Absence of Swims is not treated as proof that a race cannot surface-swim.
+The precise meaning of that flag across races remains uncertain.
 
 NPC swim locomotion selects graph-named swim MOVT states and uses water
 navmesh paths. Swimmers float at the observed surface-minus-92 feet height;
