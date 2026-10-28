@@ -1,7 +1,7 @@
 # Sound descriptors' frequency and dB variance
 
 Implemented in `src/world/sound.rs` (`SoundDesc::variation`), the mixer's
-per-voice rate (`Audio::play_pitched`) and the engine's playing of
+per-voice rate (`VoiceParams::rate`) and the engine's playing of
 descriptors (`Engine::play_sound`, looping sounds of references, thunder,
 weather loops). Source: UESP's [SNDR
 page](https://en.uesp.net/w/index.php?oldid=2309034): `BNAM` is int8 "%
@@ -26,10 +26,9 @@ dB variance (1 to 16, mostly 2 to 6: footsteps, impacts, voices' effects).
   scripts and events play), thunder, and the loops of references (a fixed
   draw per reference) and of the weather (a rate drawn when the loop
   starts; the weather's own volume follows the transition, so no gain
-  variance there). The mixer resamples without interpolation, so a rate
-  well off 1 is rougher than the game's.
-- **Not used.** The priority (`BNAM` byte 2: which voices to drop when the
-  game runs out of them) and the rumble send (`LNAM`).
+  variance there). The mixer now resamples with linear interpolation (audio plan 0b).
+- Priority (`BNAM` byte 2) now drives the voice budget (`voices.md`). Rumble
+  send (`LNAM`) remains unused.
 
 ## Mixer smoothing (audio plan 0a)
 

@@ -31,8 +31,10 @@ pub struct Layer {
 }
 impl Playback {
     pub fn active(&self, now: f64, playing: &impl Fn(crate::audio::VoiceId) -> bool) -> bool {
-        self.until.is_some_and(|end| now < end)
-            || self.voices.iter().any(|&v| playing(v))
+        if let Some(end) = self.until {
+            return now < end;
+        }
+        self.voices.iter().any(|&v| playing(v))
             || self.layers.iter().any(|l| l.playing.active(now, playing))
     }
     pub fn voice_ids(&self, ids: &mut Vec<crate::audio::VoiceId>) {
@@ -113,7 +115,8 @@ pub struct Queue {
 impl Queue {
     /// Queue `music`; one already queued stays where it is.
     pub fn add(&mut self, music: FormId, script: bool) -> bool {
-        if self.entries.iter().any(|e| e.music == music) {
+        if let Some(e) = self.entries.iter_mut().find(|e| e.music == music) {
+            e.script |= script;
             return false;
         }
         self.entries.push(Entry {
@@ -256,7 +259,20 @@ impl Engine {
 
     /// Restore the script entries a save kept, in place of this session's queue.
     pub(crate) fn restore_music_queue(&mut self, music: Vec<FormId>) {
+        let mut voices = Vec::new();
+        self.music.playback.voice_ids(&mut voices);
+        for b in &self.music.background {
+            b.playback.voice_ids(&mut voices);
+        }
+        if let Some(a) = &self.audio {
+            for voice in voices {
+                a.stop_with_fade(voice, 0.0);
+            }
+        }
+        self.music = Default::default();
         self.music.queue.restore(music);
+        self.audio_director.inputs = Default::default();
+        self.audio_director.regions = Default::default();
     }
 }
 
@@ -278,6 +294,70 @@ mod tests {
     }
 
     #[test]
+    fn script_add_promotes_an_engine_entry_without_moving_it() {
+        let mut q = Queue::default();
+        q.add(A, false);
+        q.add(B, true);
+        assert!(!q.add(A, true));
+        assert_eq!(q.script_entries(), [A, B]);
+        q.remove_engine(A);
+        assert!(q.contains(A));
+    }
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn ducking_resumes_the_underlying_selection_and_restore_restarts_policy() {
+        use esp::writer::{Node, RecordBuilder, write_plugin};
+        let dir = std::env::temp_dir().join(format!("vrm-music-stack-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let records = [
+            Node::top(
+                b"MUST",
+                vec![
+                    RecordBuilder::new(b"MUST", FormId(0x810))
+                        .u32(b"CNAM", crate::world::sound::MUST_SILENT)
+                        .field(b"FLTV", &30f32.to_le_bytes()),
+                ],
+            ),
+            Node::top(
+                b"MUSC",
+                vec![
+                    RecordBuilder::new(b"MUSC", A)
+                        .field(b"PNAM", &[60, 0, 0, 0])
+                        .u32(b"TNAM", 0x810),
+                    RecordBuilder::new(b"MUSC", B)
+                        .field(b"PNAM", &[10, 0, 0x58, 2])
+                        .u32(b"FNAM", DUCKS_CURRENT)
+                        .u32(b"TNAM", 0x810),
+                ],
+            ),
+        ];
+        std::fs::write(
+            dir.join("Music.esp"),
+            write_plugin(0, &[], "test", "stack", 0x900, &records),
+        )
+        .unwrap();
+        let mut e = crate::stats::action_tests::headless_engine(&dir, "Music.esp");
+        e.add_music(A);
+        e.update_music();
+        assert_eq!(e.music.playback.until, Some(30.0));
+        e.add_music(B);
+        e.update_music();
+        assert_eq!(e.music.music_type, Some(B));
+        assert_eq!(e.music.background[0].music, A);
+        e.scripts.wall_time = 5.0;
+        e.remove_music(B);
+        e.update_music();
+        assert_eq!(e.music.music_type, Some(A));
+        assert!(e.music.background.is_empty());
+        assert_eq!(e.music.playback.until, Some(30.0));
+        e.restore_music_queue(vec![A]);
+        assert!(e.music.music_type.is_none());
+        assert!(e.music.playback.until.is_none());
+        e.update_music();
+        assert_eq!(e.music.playback.until, Some(35.0));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
     fn silent_playback_uses_its_duration_and_cues_choose_the_next_boundary() {
         let p = Playback {
             until: Some(15.0),
@@ -288,6 +368,21 @@ mod tests {
         assert!(!p.active(15.0, &|_| false));
         assert_eq!(p.next_cue(3.0), Some(6.0));
         assert_eq!(p.next_cue(13.0), None);
+        let palette = Playback {
+            until: Some(10.0),
+            layers: vec![Layer {
+                candidates: vec![],
+                playing: Box::new(Playback {
+                    until: Some(20.0),
+                    ..Default::default()
+                }),
+            }],
+            ..Default::default()
+        };
+        assert!(
+            !palette.active(10.0, &|_| false),
+            "a palette deadline bounds even a longer layer"
+        );
     }
     #[test]
     #[ignore = "needs a headless GPU adapter; synthetic records only"]
@@ -299,6 +394,24 @@ mod tests {
             .into_iter()
             .flat_map(u32::to_le_bytes)
             .collect();
+        std::fs::create_dir_all(dir.join("sound/fx")).unwrap();
+        let mut wav = b"RIFF".to_vec();
+        wav.extend(16036u32.to_le_bytes());
+        wav.extend(b"WAVEfmt ");
+        wav.extend(16u32.to_le_bytes());
+        wav.extend(1u16.to_le_bytes());
+        wav.extend(1u16.to_le_bytes());
+        wav.extend(8000u32.to_le_bytes());
+        wav.extend(16000u32.to_le_bytes());
+        wav.extend(2u16.to_le_bytes());
+        wav.extend(16u16.to_le_bytes());
+        wav.extend(b"data");
+        wav.extend(16000u32.to_le_bytes());
+        wav.extend([0; 16000]);
+        std::fs::write(dir.join("sound/fx/test.wav"), wav).unwrap();
+        let mut loops = 0.25f32.to_le_bytes().to_vec();
+        loops.extend(0.75f32.to_le_bytes());
+        loops.extend(2u32.to_le_bytes());
         let records = [Node::top(
             b"MUST",
             vec![
@@ -310,6 +423,10 @@ mod tests {
                     .field(b"FLTV", &10f32.to_le_bytes())
                     .field(b"DNAM", &1f32.to_le_bytes())
                     .field(b"SNAM", &ids),
+                RecordBuilder::new(b"MUST", FormId(0x802))
+                    .u32(b"CNAM", crate::world::sound::MUST_SINGLE)
+                    .zstring(b"ANAM", "fx/test.wav")
+                    .field(b"LNAM", &loops),
             ],
         )];
         std::fs::write(
@@ -327,6 +444,8 @@ mod tests {
         e.scripts.wall_time = 9.0;
         e.tick_music_track(&mut run, 0);
         assert!(run.fading);
+        let single = e.start_music_track(FormId(0x802), 0).unwrap();
+        assert_eq!(single.until, Some(11.0));
         std::fs::remove_dir_all(dir).unwrap();
     }
     #[test]

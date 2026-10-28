@@ -98,6 +98,11 @@ impl Ramp {
     }
     fn set(&mut self, target: f32, seconds: f32, rate: u32) {
         if self.target == target {
+            if seconds <= 0.0 {
+                self.current = target;
+                self.left = 0;
+                self.step = 0.0;
+            }
             return;
         }
         self.target = target;
@@ -715,6 +720,15 @@ mod tests {
         (m, out)
     }
 
+    #[test]
+    fn an_immediate_target_finishes_an_existing_fade_to_the_same_value() {
+        let mut ramp = Ramp::new(1.0);
+        ramp.set(0.0, 1.0, 1000);
+        ramp.advance();
+        ramp.set(0.0, 0.0, 1000);
+        assert_eq!(ramp.current, 0.0);
+        assert_eq!(ramp.left, 0);
+    }
     #[test]
     fn voice_cap_prefers_priority_then_audibility_and_virtualizes_loops() {
         let mut m = mixer(1.0);

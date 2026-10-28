@@ -1,8 +1,8 @@
 # Sound categories
 
-Implemented in `src/world/sound.rs` (`category_volume`, folded into
-`SoundDesc::volume` for static gain; menu gain is dynamic), with the music and dialogue voice volumes taken
-from the music and voice categories (`music_volume`, `voice_volume`).
+Implemented in `src/world/sound.rs` (static/category volume and DOBJ routing)
+and `src/audio/director.rs` (dynamic category policy and menu settings).
+Music and dialogue carry MDSC/DDSC category chains alongside descriptors.
 Sources: UESP's [SNCT page](https://en.uesp.net/w/index.php?oldid=3508410)
 (`FNAM` flags, `PNAM` parent, `VNAM` static volume multiplier, `UNAM`
 default menu value, and the 16-bit float coding), the [SNDR

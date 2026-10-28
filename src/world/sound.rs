@@ -559,7 +559,7 @@ mod tests {
     }
 
     #[test]
-    fn descriptors_take_their_categories_volume_at_the_menus_defaults() {
+    fn descriptors_keep_static_gain_while_sliders_replace_menu_defaults() {
         let dir = std::env::temp_dir().join(format!("vrm-sound-categories-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let snct = |id: u32, parent: Option<u32>, flags: u32, volume: u16, menu: Option<u16>| {
@@ -606,7 +606,7 @@ mod tests {
         let vfs = vfs::Vfs::new(&dir, &names);
         let _ = std::fs::remove_dir_all(&dir);
         let near = |a: f32, b: f32| (a - b).abs() < 1e-3;
-        // The menu category: its multiplier and its default, then the master's.
+        // Static multipliers are baked in; menu settings remain dynamic.
         let want = 0.9 * 0.9;
         let d = descriptor(&lo, &vfs, FormId(0x810)).unwrap();
         assert!(near(d.volume, want), "{}", d.volume);

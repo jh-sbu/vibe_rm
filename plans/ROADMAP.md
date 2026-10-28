@@ -1526,9 +1526,9 @@ game each piece unlocks.
   such draws. `VRM_NO_SOFT_EFFECTS=1` turns it off; vrm-tool `soft-effects` lists the
   flag and depths. Open questions: `known_ambiguities/soft-effects.md`
 - Sound categories: a sound descriptor's volume carries its category's (`GNAM` -> SNCT:
-  `VNAM` static volume multipliers and, for the Audio menu's four categories, their
-  `UNAM` defaults, up through the master category); music plays at the music
-  category's volume and dialogue lines at the voice category's. Open questions:
+  `VNAM` static volume multipliers, up through the master category); menu
+  settings dynamically replace `UNAM` defaults for existing and new voices.
+  Music/dialogue category chains come from DOBJ MDSC/DDSC. Open questions:
   `known_ambiguities/audio-categories.md`
 - Sound descriptors' variance: each playing of a one-shot, a reference's loop, thunder
   or a weather loop draws its playback rate (`BNAM` frequency shift and variance,

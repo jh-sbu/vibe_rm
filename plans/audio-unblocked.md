@@ -29,7 +29,7 @@ own default INI (`Skyrim_Default.ini`, a game file). Write these up as
 
 ### Default objects name the behaviour categories
 
-Skyrim.esm's `DOBJ` (xEdit's names, UESP has no page on them) binds the
+Skyrim.esm's `DOBJ` (xEdit labels; UESP revision 3089074 documents the table) binds the
 categories whose editor ids describe a behaviour:
 
 | DOBJ | xEdit name | Skyrim.esm target |
@@ -383,7 +383,7 @@ sounds, and lip sync if 9a stalls. Answer open questions in the
 `known_ambiguities/` files named above. Write the research notes under
 `research/audio/`.
 
-## Open questions (collected; decide in the step named)
+## Original research questions (choices now recorded in the named notes)
 
 - Dialogue fade level and times (2b). Fade-in of the immediate category (2a).
 - Music: whose fade time (4a), palette layers and cue points (4d), the combat
@@ -391,7 +391,7 @@ sounds, and lip sync if 9a stalls. Answer open questions in the
 - Acoustic spaces: rotation of placed spaces, crossfade time (5a / 5b); reverb
   field mappings and 2D sends (5c); `RDSA` chance semantics (5d).
 - `ONAM` level scale (6b); voice cap and priority direction (7).
-- `.lip` and `.tri` decoding (9a).
+- `.lip` and `.tri` decoding (9a): still gated as described below.
 
 ## Implementation log
 
@@ -418,7 +418,7 @@ sounds, and lip sync if 9a stalls. Answer open questions in the
 - 6a: eight-speaker internal dry bus and device-channel mapping/downmix, including mono/quad/5.1/stereo.
 - 6b: percentage ONAM mono/stereo rows, retained source channel metadata and per-speaker mixing tests.
 - 6c: equal-power spatial pan and mild rear attenuation/filtering, with documented HRTF/radius limits.
-- 7: BNAM priority, cap of 64 non-exempt audible voices, audibility tie-breaks and virtual loops; cap-2 mixer tests.
+- 7: BNAM priority, cap of 64 non-exempt mixed voices, audibility tie-breaks and virtual loops; cap-2 mixer tests.
 - 8: persistent AudioMenu settings, shared setter/console API and environment overrides; runtime sliders replace UNAM independently of headroom, with round-trip/volume tests.
 - 9a: FUZE/LIP diagnostics and TRI survey/reader; 560/569 TRI variants validate to EOF. LIP packing/key mapping remains unproven: **9b/9c are gated**, per `research/audio/lip-format.md`.
 
@@ -430,3 +430,25 @@ sounds, and lip sync if 9a stalls. Answer open questions in the
   category state remain dependent on their respective systems.
 - Listening comparisons can refine choices recorded in known_ambiguities;
   none is claimed as verified by running Skyrim SE.
+
+## Verification follow-up
+
+Final review additionally covers immediate retargets during a ramp, background
+music removal/resume, restarting playback and director trigger edges on load,
+and preserving a script's ownership when it adds an engine-queued music type.
+Device-free single tracks obtain their duration through the existing asset
+decoder; silent/palette timing stays entirely independent of a mixer.
+
+Validation (host Vulkan adapter for engine construction):
+
+- `WGPU_BACKEND=vulkan cargo test --workspace`: passed (733 tests; 348
+  intentionally ignored across the workspace).
+- `WGPU_BACKEND=vulkan cargo test --bin vibe_rm audio:: -- --include-ignored`:
+  28 passed, including menu/settings engine integration without an audio device.
+- `WGPU_BACKEND=vulkan cargo test --bin vibe_rm music:: -- --include-ignored`:
+  11 passed, including palette/silent/decoded-single timing, duck-stack resume
+  and restore. The final hard palette-deadline assertion also passed separately.
+- `cargo fmt --check`, `git diff --check`: clean.
+- `audio-defaults`, `sndr-stats`, `music-survey`, `aspc-survey`, `lip-dump`
+  and `tri-dump --survey` exercised against installed game assets without
+  exporting or committing assets. No Skyrim executable was inspected or run.

@@ -882,6 +882,15 @@ impl Engine {
             None,
         );
         params.loop_region = loop_region;
+        if self.audio.is_none()
+            && let Some(bytes) = self.vfs.read(&path)
+            && let Some(clip) = crate::audio::decode::decode(&path, &bytes, 44100)
+        {
+            let extra = loop_region.map_or(0.0, |l| {
+                (l.end.min(clip.duration()) - l.begin.max(0.0)).max(0.0) * l.count as f32
+            });
+            run.until = Some(now + clip.duration() as f64 + extra as f64);
+        }
         if let Some(a) = &mut self.audio
             && let Some(v) = a.play(&self.vfs, &path, params)
         {
@@ -934,9 +943,23 @@ impl Engine {
             }
         }
     }
-    fn update_music(&mut self) {
+    pub(crate) fn update_music(&mut self) {
         let now = self.scripts.wall_time;
+        let location = self
+            .location_music()
+            .or_else(|| self.audio_defaults.get(b"DFMS"));
         let mut background = std::mem::take(&mut self.music.background);
+        background.retain(|b| {
+            let keep = if b.from_queue {
+                self.music.queue.contains(b.music)
+            } else {
+                Some(b.music) == location
+            };
+            if !keep {
+                self.stop_music_track(&b.playback, 0.005);
+            }
+            keep
+        });
         for b in &mut background {
             self.tick_music_track(&mut b.playback, 0);
         }
@@ -947,9 +970,7 @@ impl Engine {
         let playing = self.music_track_active(&run);
         let had_track = !run.voices.is_empty() || run.until.is_some() || !run.layers.is_empty();
         self.music.playback = run;
-        let location = self
-            .location_music()
-            .or_else(|| self.audio_defaults.get(b"DFMS"));
+
         let (mut want, mut queued) = self.choose_music(location);
         if queued
             && let Some(m) = want
@@ -965,6 +986,9 @@ impl Engine {
         {
             self.music.queue.remove(m);
             (want, queued) = self.choose_music(location);
+        }
+        if want == self.music.music_type {
+            self.music.transition = None;
         }
         if want != self.music.music_type {
             let flags = want.map_or(0, |m| self.music_flags(m));
@@ -1015,6 +1039,7 @@ impl Engine {
                 self.music.playback = b.playback;
                 self.music.from_queue = b.from_queue;
                 self.music.music_type = want;
+                self.music.next_at = now;
                 let mut ids = Vec::new();
                 self.music.playback.voice_ids(&mut ids);
                 let gain = self.audio_defaults.get(b"MDSC").map_or(1.0, |c| {
@@ -1063,6 +1088,7 @@ impl Engine {
             self.music.next_at = now;
             self.apply_music_ducking(crate::audio::director::MUSIC_DUCK);
         } else if !playing && had_track {
+            self.music.transition = None;
             self.music.playback = Default::default();
             self.music.next_at = now + 20.0 + (self.rand() % 40) as f64;
         }
@@ -1134,6 +1160,9 @@ impl Engine {
             a.stop_all();
         }
         self.music.playback = Default::default();
+        self.music.music_type = None;
+        self.music.next_at = 0.0;
+        self.ambient_voices.clear();
         self.music.background.clear();
         self.music.transition = None;
         let keys: Vec<CellKey> = self.cells.keys().copied().collect();

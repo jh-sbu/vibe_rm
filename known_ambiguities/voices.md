@@ -6,7 +6,7 @@ comparison direction. `sndr-stats` found priorities 64/68/88/100/128/192/255
 (counts 529/4/53/27/2338/228/7). Vocal/shout descriptors commonly use 64,
 regional wind beds/gusts 192: we choose smaller numbers as higher priority.
 
-The provisional cap is 64 audible non-exempt voices. Ties prefer current
+The provisional cap is 64 mixed non-exempt voices. Ties prefer current
 smoothed gain times category gain times falloff; exact ties prefer earlier
 voice IDs. Unselected one-shots are dropped, loops become virtual and keep
 sample time (including rate and loop regions), then return when a slot frees.
