@@ -3,11 +3,13 @@
 #[derive(Clone, Copy, Debug)]
 pub struct Distances {
     pub actors: f32,
+    pub items: f32,
 }
 impl Default for Distances {
     fn default() -> Self {
         Self {
             actors: f32::INFINITY,
+            items: f32::INFINITY,
         }
     }
 }
@@ -30,10 +32,44 @@ mod tests {
     use super::*;
     #[test]
     fn actor_fade_uses_radius_and_culls_at_limit() {
-        let p = Distances { actors: 10. };
+        let p = Distances {
+            actors: 10.,
+            ..Default::default()
+        };
         assert_eq!(p.actor(79., 10.), 1.);
         assert!((p.actor(90., 10.) - 0.5).abs() < 0.001);
         assert_eq!(p.actor(100., 10.), 0.);
         assert_eq!(Distances::default().actor(1e6, 10.), 1.);
     }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Class {
+    #[default]
+    Object,
+    Item,
+    Tree,
+}
+impl Distances {
+    pub fn instance(&self, class: Class, distance: f32, radius: f32) -> f32 {
+        match class {
+            Class::Item => alpha(distance, self.items * radius.max(1.)),
+            _ => 1.,
+        }
+    }
+}
+pub fn item_tag(tag: &[u8; 4]) -> bool {
+    matches!(
+        tag,
+        b"WEAP"
+            | b"ARMO"
+            | b"AMMO"
+            | b"ALCH"
+            | b"INGR"
+            | b"BOOK"
+            | b"MISC"
+            | b"KEYM"
+            | b"SLGM"
+            | b"SCRL"
+    )
 }

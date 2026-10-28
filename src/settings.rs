@@ -183,6 +183,7 @@ impl crate::engine::Engine {
         })
     }
     pub fn sync_settings(&mut self) {
+        self.renderer.distances.items = self.settings.get("fLODFadeOutMultItems");
         self.renderer.distances.actors = self.settings.get("fLODFadeOutMultActors");
         self.renderer.gamma = self.settings.get("fGamma");
         self.autosave.rest = self.settings.enabled("bSaveOnRest");

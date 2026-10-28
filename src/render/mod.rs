@@ -667,6 +667,7 @@ impl GpuModel {
 }
 
 pub struct Instance {
+    pub fade_class: distance::Class,
     pub ref_id: u32,
     /// The reference's base form (0 when it has none).
     pub base: u32,
@@ -697,6 +698,7 @@ impl Instance {
             .max(transform.z_axis.truncate().length());
         let world_radius = model.bound_radius * scale;
         Instance {
+            fade_class: Default::default(),
             ref_id: 0,
             base: 0,
             hidden: false,
@@ -2304,6 +2306,19 @@ impl Renderer {
                 stats.culled += 1;
                 continue;
             }
+            let fade = if inst.sky {
+                1.
+            } else {
+                self.distances.instance(
+                    inst.fade_class,
+                    inst.world_center.distance(camera.position),
+                    inst.world_radius,
+                )
+            };
+            if fade <= 0. {
+                stats.culled += 1;
+                continue;
+            }
             let xf = if inst.sky {
                 Mat4::from_translation(camera.position) * inst.transform
             } else {
@@ -2315,7 +2330,7 @@ impl Renderer {
                 model: xf.to_cols_array_2d(),
                 lights: pack_lights(l),
                 tint: inst.tint.to_array(),
-                params: [if inst.sky { 0.0 } else { 1.0 }, 0.0, 0.0, 0.0],
+                params: [if inst.sky { 0.0 } else { 1.0 }, 1.0 - fade, 0.0, 0.0],
             };
             for (pi, part) in inst.model.parts.iter().enumerate() {
                 if part.material.key.blend == BlendMode::Opaque {

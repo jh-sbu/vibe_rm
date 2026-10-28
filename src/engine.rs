@@ -1334,6 +1334,13 @@ impl Engine {
                 let mut inst = Instance::new(m, o.transform);
                 inst.ref_id = o.ref_id.0;
                 inst.base = o.base.0;
+                if self
+                    .lo
+                    .tag_of(o.base)
+                    .is_some_and(|t| crate::render::distance::item_tag(&t.0))
+                {
+                    inst.fade_class = crate::render::distance::Class::Item;
+                }
                 inst.hidden = hidden;
                 rc.instances.push(inst);
             }
@@ -1351,6 +1358,14 @@ impl Engine {
                     let mut inst =
                         Instance::new(part.model.clone(), o.transform * part.parent * part.rest);
                     inst.ref_id = o.ref_id.0;
+                    inst.base = o.base.0;
+                    if self
+                        .lo
+                        .tag_of(o.base)
+                        .is_some_and(|t| crate::render::distance::item_tag(&t.0))
+                    {
+                        inst.fade_class = crate::render::distance::Class::Item;
+                    }
                     inst.hidden = hidden;
                     drawn.push((Some(part.node.clone()), rc.instances.len()));
                     rc.instances.push(inst);
