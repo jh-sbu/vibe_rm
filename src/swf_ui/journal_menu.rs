@@ -307,10 +307,20 @@ impl JournalMenu {
                 if let (Some(id), Some(Value::Number(value))) =
                     (super::journal_system::index(call), call.args.get(1))
                 {
-                    if let Err(e) = engine.change_option(id, *value as f32) {
+                    let result = if id >= super::journal_system::AUDIO_ID {
+                        engine.set_audio_volume(
+                            (id > super::journal_system::AUDIO_ID)
+                                .then(|| FormId((id - super::journal_system::AUDIO_ID - 1) as u32)),
+                            *value as f32,
+                        )
+                    } else {
+                        engine.change_option(id, *value as f32)
+                    };
+                    if let Err(e) = result {
                         log::warn!("option: {e}");
                     }
                     self.system.lock().unwrap().settings = engine.settings.clone();
+                    self.system.lock().unwrap().audio = super::journal_system::audio_rows(engine);
                 }
             }
             "SaveSettings" => match engine.save_settings() {

@@ -206,7 +206,9 @@ impl crate::engine::Engine {
         Ok(())
     }
     pub fn save_settings(&mut self) -> io::Result<()> {
-        if let Some(path)=&self.audio_settings_path {self.audio_settings.write(path)?;}
+        if let Some(path) = &self.audio_settings_path {
+            self.audio_settings.write(path)?;
+        }
         if let Some(path) = path() {
             self.settings.write(&path)?;
         }

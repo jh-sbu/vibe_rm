@@ -535,3 +535,7 @@ Validation: full workspace suite passed on host Vulkan; all 43 audio tests and
 11 music tests passed with `--include-ignored`. Shared-reference rendering/order
 and cold neighbour discovery have synthetic-record regressions. `cargo fmt
 --check` and `git diff --check` are clean. No original game executable was run.
+
+The System page now supplies Master and each in-menu SNCT slider. Changes use
+Engine::set_audio_volume and SaveSettings writes audio.ini with settings.ini.
+The former slider-UI follow-up is implemented.

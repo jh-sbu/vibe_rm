@@ -26,6 +26,7 @@ pub struct System {
     current: u64,
     pub save_disabled: bool,
     pub settings: crate::settings::Settings,
+    pub audio: Vec<Value>,
     filter: Filter,
     pub callbacks: Vec<(String, Vec<Value>)>,
 }
@@ -37,6 +38,7 @@ impl System {
             current: engine.scripts.character_id,
             save_disabled: engine.saving_disabled() || engine.player_dead(),
             settings: engine.settings.clone(),
+            audio: audio_rows(engine),
             filter: Filter::All,
             callbacks: Vec::new(),
         }))
@@ -50,6 +52,12 @@ impl System {
     }
     pub fn respond(&mut self, call: &GameCall, movie: &mut Movie<'_, '_>) -> Option<Vec<Value>> {
         match call.name.as_str() {
+            "RequestAudioOptions" => {
+                movie.set(
+                    &format!("{S}.OptionsListsPanel.OptionsLists.List_mc.entryList"),
+                    Value::List(self.audio.clone()),
+                );
+            }
             "RequestGameplayOptions" | "RequestDisplayOptions" => {
                 let list = format!("{S}.OptionsListsPanel.OptionsLists.List_mc.entryList");
                 let count = match movie.get(&format!("{list}.length")) {
@@ -194,4 +202,59 @@ fn row(save: &SaveListing) -> Value {
         ("corrupt", Value::Bool(save.corrupt)),
         ("obsolete", Value::Bool(save.obsolete)),
     ])
+}
+pub const AUDIO_ID: usize = 1000;
+pub fn audio_rows(engine: &Engine) -> Vec<Value> {
+    let mut categories: Vec<_> = engine.audio_preferences.menus.iter().collect();
+    let rank = |name: &str| match name.to_ascii_lowercase().as_str() {
+        "audiocategorysfx" => 0,
+        "audiocategoryfst" => 1,
+        "audiocategoryvocgeneral" => 2,
+        "audiocategorymus" => 3,
+        _ => 4,
+    };
+    categories.sort_by_key(|c| (rank(&c.name), c.id.0));
+    let mut rows = vec![object([
+        ("text", text("$Master")),
+        ("ID", Value::Number(AUDIO_ID as f64)),
+        (
+            "value",
+            num(engine.audio_preferences.master(&engine.audio_settings)),
+        ),
+        ("defaultVal", num(1.)),
+        ("movieType", num(0.)),
+    ])];
+    rows.extend(categories.into_iter().map(|c| {
+        let gmst = match c.name.to_ascii_lowercase().as_str() {
+            "audiocategorysfx" => Some(("sEffectsVolume", "Effects")),
+            "audiocategoryfst" => Some(("sFootstepsVolume", "Footsteps")),
+            "audiocategoryvocgeneral" => Some(("sVoiceVolume", "Voice")),
+            "audiocategorymus" => Some(("sMusicVolume", "Music")),
+            _ => None,
+        };
+        let name = gmst
+            .map(|(key, fallback)| engine.gmst_string(key).unwrap_or_else(|| fallback.into()))
+            .unwrap_or_else(|| {
+                let full = engine.form_name(c.id);
+                if full.is_empty() {
+                    c.name.clone()
+                } else {
+                    full
+                }
+            });
+        object([
+            ("text", text(&name)),
+            ("ID", Value::Number((AUDIO_ID + 1) as f64 + c.id.0 as f64)),
+            (
+                "value",
+                num(engine
+                    .audio_preferences
+                    .category(&engine.audio_settings, c.id)
+                    .unwrap_or(c.default)),
+            ),
+            ("defaultVal", num(c.default)),
+            ("movieType", num(0.)),
+        ])
+    }));
+    rows
 }
