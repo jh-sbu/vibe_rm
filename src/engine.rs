@@ -609,13 +609,25 @@ impl Engine {
         };
         let i = (self.rand() % desc.files.len() as u64) as usize;
         let v = self.roll_variation(&desc);
-        self.audio.as_mut().and_then(|a| {
-            a.play(
-                &self.vfs,
-                &desc.files[i],
-                desc.params(v, desc.positional.then_some(at), false),
-            )
-        });
+        let mut params = desc.params(v, Some(at), false);
+        if desc.output_model.is_none() {
+            let key = if self.in_menu_mode() {
+                Some(b"IOPM")
+            } else if at.distance_squared(self.player.position) < 1.0 {
+                Some(if self.third_person { b"P3OM" } else { b"POPM" })
+            } else {
+                None
+            };
+            if let Some(model) = key
+                .and_then(|k| self.audio_defaults.get(k))
+                .and_then(|id| crate::world::sound::output_model(&self.lo, id))
+            {
+                model.apply(&mut params);
+            }
+        }
+        self.audio
+            .as_mut()
+            .and_then(|a| a.play(&self.vfs, &desc.files[i], params));
     }
 
     /// How this playing of `desc` differs from its recording (frequency and
@@ -841,16 +853,14 @@ impl Engine {
             {
                 log::info!("music: {track}");
                 let vfs = &self.vfs;
-                let volume = crate::world::sound::music_volume(&self.lo);
-                self.music.voice = self.audio.as_mut().unwrap().play(
-                    vfs,
-                    &track,
-                    crate::audio::VoiceParams {
-                        volume,
-                        exempt: true,
-                        ..Default::default()
-                    },
+                let params = crate::world::sound::default_params(
+                    &self.lo,
+                    &self.audio_defaults,
+                    b"MDSC",
+                    b"----",
+                    None,
                 );
+                self.music.voice = self.audio.as_mut().unwrap().play(vfs, &track, params);
             }
             // Silence between tracks, like the original.
             self.music.next_at = now + 20.0 + (self.rand() % 40) as f64;

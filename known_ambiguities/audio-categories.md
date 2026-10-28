@@ -31,8 +31,7 @@ SNCT`, `esp-dump`).
   defaults are the `UNAM` values and multiply into the sound's volume
   isn't stated anywhere public. The mixer's own master of 0.8 (headroom,
   made up) stays on top.
-- **Music and voice have no descriptor.** Music tracks play at the music
-  category's volume (`AudioCategoryMUS`, replacing a hard-coded 0.45) and
-  dialogue lines at `AudioCategoryVOC`'s (`VOC`'s parent `VOCGeneral` is the
-  menu's Voice). Which categories the engine really files them under isn't
-  public.
+- **Descriptor-free categories are now sourced.** DOBJ DDSC supplies dialogue
+  (including INFO barks and scene responses), MDSC music. Barks play INFO voice
+  files, so they remain dialogue, not NDSC grunts. No descriptor-free non-dialogue
+  vocal path exists yet; NDSC is available when one does. See research/audio/defaults.md.

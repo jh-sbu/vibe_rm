@@ -35,6 +35,7 @@ pub struct SoundDesc {
     /// Heard from where it plays: its output model attenuates with distance
     /// (the 2D ones, the menus' and the dialogue's, don't).
     pub positional: bool,
+    pub output_model: Option<OutputModel>,
     /// Linear volume from the static attenuation (dB) in BNAM, times the
     /// sound's category's ([`category_volume`]).
     pub volume: f32,
@@ -78,18 +79,40 @@ pub fn parse_output_model(nam1: Option<&[u8]>, anam: Option<&[u8]>) -> OutputMod
     }
 }
 
-fn output_model(lo: &LoadOrder, id: FormId) -> Option<OutputModel> {
+pub fn output_model(lo: &LoadOrder, id: FormId) -> Option<OutputModel> {
     let rec = lo.get(id).filter(|r| r.tag().0 == *b"SOPM")?;
     Some(parse_output_model(rec.get(b"NAM1"), rec.get(b"ANAM")))
 }
 
-/// Dialogue lines have no sound descriptor either: they fade with the default
-/// dialogue output model's distances (`SOMDialogue3DDefault`: 70 to 3000
-/// units).
-pub fn voice_falloff(lo: &LoadOrder) -> Falloff {
-    lo.find_editor_id("SOMDialogue3DDefault")
-        .and_then(|m| output_model(lo, m))
-        .map_or(Falloff::new(400.0, 3000.0), |m| m.falloff)
+/// Descriptor-free voices still carry the categories and model named by DOBJ.
+pub fn default_params(
+    lo: &LoadOrder,
+    defaults: &AudioDefaults,
+    category: &[u8; 4],
+    model: &[u8; 4],
+    position: Option<glam::Vec3>,
+) -> crate::audio::VoiceParams {
+    let mut p = crate::audio::VoiceParams {
+        position,
+        exempt: true,
+        ..Default::default()
+    };
+    if let Some(c) = defaults.get(category) {
+        p.volume = category_volume(lo, c);
+        p.categories = category_chain(lo, c);
+    }
+    if let Some(m) = defaults.get(model).and_then(|id| output_model(lo, id)) {
+        m.apply(&mut p);
+    }
+    p
+}
+impl OutputModel {
+    pub fn apply(self, p: &mut crate::audio::VoiceParams) {
+        p.falloff = self.falloff;
+        if !self.positional {
+            p.position = None;
+        }
+    }
 }
 
 /// A number in [0, 1) from the top bits of a random 64-bit one.
@@ -112,7 +135,7 @@ impl SoundDesc {
         position: Option<glam::Vec3>,
         looping: bool,
     ) -> crate::audio::VoiceParams {
-        crate::audio::VoiceParams {
+        let mut p = crate::audio::VoiceParams {
             volume: self.volume * variation.gain,
             rate: variation.pitch,
             looping,
@@ -120,7 +143,11 @@ impl SoundDesc {
             falloff: self.falloff,
             categories: self.categories.clone(),
             ..Default::default()
+        };
+        if let Some(m) = self.output_model {
+            m.apply(&mut p);
         }
+        p
     }
 
     /// The variation for two random numbers in [0, 1): the playback rate is
@@ -224,16 +251,6 @@ pub fn named_category_volume(lo: &LoadOrder, edid: &str) -> f32 {
         .map_or(1.0, |c| category_volume(lo, c))
 }
 
-/// Dialogue lines have no sound descriptor: they're the voice category's.
-pub fn voice_volume(lo: &LoadOrder) -> f32 {
-    named_category_volume(lo, "AudioCategoryVOC")
-}
-
-/// Music tracks have no sound descriptor either: they're the music category's.
-pub fn music_volume(lo: &LoadOrder) -> f32 {
-    named_category_volume(lo, "AudioCategoryMUS")
-}
-
 /// Normalise a sound path from a record ("Data\\Sound\\FX\\x.wav") into a VFS path.
 pub fn sound_path(s: &str, vfs: &vfs::Vfs) -> String {
     let n = vfs::normalize_path(s);
@@ -279,6 +296,7 @@ pub fn descriptor(lo: &LoadOrder, vfs: &vfs::Vfs, id: FormId) -> Option<SoundDes
         looping,
         falloff: Falloff::new(200.0, 2000.0),
         positional: true,
+        output_model: None,
         volume: 1.0,
         frequency_shift: 0.0,
         frequency_variance: 0.0,
@@ -308,6 +326,7 @@ pub fn descriptor(lo: &LoadOrder, vfs: &vfs::Vfs, id: FormId) -> Option<SoundDes
             rec.fid(FormId(u32::from_le_bytes(o[0..4].try_into().ok()?))),
         )
     {
+        desc.output_model = Some(m);
         desc.falloff = m.falloff;
         desc.positional = m.positional;
     }
@@ -436,6 +455,7 @@ mod tests {
             looping: false,
             falloff: Falloff::new(0.0, 0.0),
             positional: true,
+            output_model: None,
             volume: 1.0,
             frequency_shift: shift,
             frequency_variance: variance,

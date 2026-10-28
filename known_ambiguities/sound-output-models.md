@@ -29,10 +29,13 @@ models (80 have an `ANAM`).
   interpolation isn't documented), and within the minimum distance a sound
   has the first point's gain (the `0, 50, 100, 50, 0` models are silent up
   close).
-- **Voices** have no sound descriptor, so no output model of their own: they
-  take `SOMDialogue3DDefault`'s distances and curve (70 to 3000 units,
-  `100, 50, 20, 5, 0`), replacing a hard-coded 400 to 3000 that made speech
-  near the speaker quieter. Which model the engine uses for them isn't known.
+- **Dialogue mode.** DOBJ names the two dialogue output models; the actual
+  DOP2 model is 3D, DOP3 2D (opposite xEdit's labels). We choose DOP3 for the
+  player's conversation, DOP2 for barks and scenes. Data names the models but
+  does not specify the conversation-mode switch; listening remains useful.
+  Descriptor-free player/menu sounds fall back to POPM/P3OM/IOPM. The generic
+  point playback path recognizes the player at the player's position; callers
+  with an explicit descriptor model always keep it.
 - **Not used.** The type (HRTF or speaker output: `Stereo Rad` models'
   stereo radius), the reverb send, rumble and the three channels of speaker
   output values (`ONAM`): the mixer pans mono by the listener's right vector

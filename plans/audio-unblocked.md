@@ -401,3 +401,4 @@ sounds, and lip sync if 9a stalls. Answer open questions in the
 - 0d: separate dry/send buses, fixed per-frame scratch (allocation-free for every callback size). Send remains silent until 5c.
 - 1a: `audio-defaults` and priority in `sndr-stats`; public/data evidence in `research/audio/defaults.md`.
 - 1b: cached `AudioDefaults`, with sparse override/null handling and synthetic DOBJ tests.
+- 1c: DOBJ categories and dialogue/player/interface model fallbacks replace editor-ID guesses; INFO barks use DDSC.

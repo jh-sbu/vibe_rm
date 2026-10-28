@@ -999,22 +999,21 @@ impl Engine {
         let mut voice = None;
         let words = r.text.split_whitespace().count() as f64;
         let mut duration = (words * 0.32).max(2.0);
+        let params = crate::world::sound::default_params(
+            &self.lo,
+            &self.audio_defaults,
+            b"DDSC",
+            if self.conversation.is_some() {
+                b"DOP3"
+            } else {
+                b"DOP2"
+            },
+            at,
+        );
         if let (Some(p), Some(audio)) = (&path, self.audio.as_mut())
             && self.vfs.exists(p)
         {
-            voice = audio.play(
-                &self.vfs,
-                p,
-                crate::audio::VoiceParams {
-                    volume: crate::world::sound::voice_volume(&self.lo),
-                    rate: 1.0,
-                    looping: false,
-                    position: at,
-                    falloff: crate::world::sound::voice_falloff(&self.lo),
-                    exempt: true,
-                    ..Default::default()
-                },
-            );
+            voice = audio.play(&self.vfs, p, params);
             duration = duration.max(1.0);
         }
         log::info!(

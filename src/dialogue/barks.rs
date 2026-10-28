@@ -179,22 +179,17 @@ impl Engine {
             let at = self.ref_position(speaker).map(|p| p + Vec3::Z * 110.0);
             let now = self.scripts.real_time;
             let mut voice = None;
+            let params = crate::world::sound::default_params(
+                &self.lo,
+                &self.audio_defaults,
+                b"DDSC",
+                b"DOP2",
+                at,
+            );
             if let (Some(p), Some(audio)) = (&path, self.audio.as_mut())
                 && self.vfs.exists(p)
             {
-                voice = audio.play(
-                    &self.vfs,
-                    p,
-                    crate::audio::VoiceParams {
-                        volume: crate::world::sound::voice_volume(&self.lo),
-                        rate: 1.0,
-                        looping: false,
-                        position: at,
-                        falloff: crate::world::sound::voice_falloff(&self.lo),
-                        exempt: true,
-                        ..Default::default()
-                    },
-                );
+                voice = audio.play(&self.vfs, p, params);
             }
             // Silent lines (and without audio) last a reading time.
             let duration = (r.text.split_whitespace().count() as f64 * 0.32).max(2.0);
