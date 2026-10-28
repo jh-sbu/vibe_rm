@@ -105,3 +105,12 @@ and the shared Engine/message path are covered with synthetic data.
 
 Travel and load doors now carry actively following loaded teammates as well as
 summons. Selection, placement and save policies: `known_ambiguities/followers.md`.
+
+## Travel autosave choice
+
+The journal asset exposes Save on Travel and launcher preferences default it
+on. The public transport research above does not establish native timing.
+Choose a synchronous autosave after destination/time validation but before
+advancing time or unloading the departure cell. It therefore restores departure
+state even if arrival fails. This implements the System plan's pre-arrival
+policy; exact SE ordering remains unverified. Disabled saving uses sCantSaveNow.

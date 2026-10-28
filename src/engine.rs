@@ -180,6 +180,7 @@ pub struct Engine {
     /// Saves scripts asked for (`Game.RequestSave`), written next update:
     /// name, and whether it is an autosave.
     pub pending_save_load: Option<String>,
+    pub autosave: crate::save::autosave::Preferences,
     pub save_thumbnail: Option<crate::save::metadata::Thumbnail>,
     pub(crate) save_requests: Vec<(String, bool)>,
     /// The skill whose use is passing through "Mod Skill Use"
@@ -553,6 +554,7 @@ impl Engine {
             player_attack_recovery: 0.0,
             striking: None,
             save_requests: Vec::new(),
+            autosave: Default::default(),
             save_thumbnail: None,
             pending_save_load: None,
             advancing_skill: Default::default(),

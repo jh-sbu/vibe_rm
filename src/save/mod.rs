@@ -3,6 +3,7 @@
 //! original game's `.ess` saves is the `ess` crate's separate, read-only job.
 //! `known_ambiguities/saves.md`.
 
+pub mod autosave;
 pub mod codec;
 mod continuity;
 pub mod file;

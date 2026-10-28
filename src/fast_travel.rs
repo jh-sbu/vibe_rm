@@ -142,6 +142,10 @@ impl Engine {
         }
         let destination = self.map_travel_destination(marker)?;
         let (hours, seconds) = self.map_travel_time(destination)?;
+        if self.autosave.travel {
+            self.request_autosave(crate::save::autosave::Trigger::Travel);
+            self.flush_save_requests();
+        }
         self.advance_travel_time(hours, seconds);
         let result = match destination.place {
             Place::Exterior(world, _) => {

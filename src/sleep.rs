@@ -155,6 +155,11 @@ impl Engine {
     }
 
     fn finish_waiting(&mut self, sleeping: bool, interrupted: bool) {
+        self.request_autosave(if sleeping {
+            crate::save::autosave::Trigger::Rest
+        } else {
+            crate::save::autosave::Trigger::Wait
+        });
         self.waiting = None;
         self.menu = None;
         if sleeping {
