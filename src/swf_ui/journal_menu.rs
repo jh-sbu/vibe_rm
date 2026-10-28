@@ -179,6 +179,7 @@ impl JournalMenu {
         saved: &Saved,
         buttons: Arc<Buttons>,
     ) -> anyhow::Result<Self> {
+        engine.capture_save_thumbnail();
         let menu = ui.open("quest_journal.swf", size)?;
         let mut data = Data::of(engine);
         let toggles: Arc<Mutex<Vec<(FormId, bool)>>> = Default::default();

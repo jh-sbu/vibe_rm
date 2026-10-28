@@ -179,6 +179,7 @@ pub struct Engine {
     pub(crate) striking: Option<(FormId, Option<FormId>)>,
     /// Saves scripts asked for (`Game.RequestSave`), written next update:
     /// name, and whether it is an autosave.
+    pub save_thumbnail: Option<crate::save::metadata::Thumbnail>,
     pub(crate) save_requests: Vec<(String, bool)>,
     /// The skill whose use is passing through "Mod Skill Use"
     /// (`EPMagic_IsAdvanceSkill`).
@@ -468,9 +469,10 @@ impl Engine {
             sound_descs: Default::default(),
             footsteps: Default::default(),
             idles: None,
-            scripts: crate::script::ScriptState {
-                character_id: crate::save::metadata::new_character_id(),
-                ..Default::default()
+            scripts: {
+                let mut scripts = crate::script::ScriptState::default();
+                scripts.character_id = crate::save::metadata::new_character_id();
+                scripts
             },
             vm: papyrus::Vm::new(),
             day: 0,
@@ -550,6 +552,7 @@ impl Engine {
             player_attack_recovery: 0.0,
             striking: None,
             save_requests: Vec::new(),
+            save_thumbnail: None,
             advancing_skill: Default::default(),
             critically_hit: Default::default(),
             third_person: false,

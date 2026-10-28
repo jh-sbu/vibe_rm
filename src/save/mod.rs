@@ -285,6 +285,9 @@ impl Engine {
     }
 
     fn flush_save_requests_in(&mut self, dir: &Path) {
+        if !self.save_requests.is_empty() && !self.menu_up() {
+            self.capture_save_thumbnail();
+        }
         for (name, auto) in std::mem::take(&mut self.save_requests) {
             if self.player_dead() || self.saving_disabled() {
                 let msg = self.gmst_string("sCantSaveNow");
