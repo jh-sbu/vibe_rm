@@ -286,6 +286,9 @@ impl App {
             "input: mouse, keyboard and gamepad go to the movie. Menu keys: W/S/A/D or arrows move,\n       \
              E/Enter accept, Tab/Esc cancel; gamepad A/B, d-pad, left stick. Q cycles quality, F10 quits"
         );
+        if name == "quest_journal" {
+            state.ops(&crate::journal::start());
+        }
         state.start_driver();
         for op in &self.ops {
             crate::apply(&state.player, op)?;

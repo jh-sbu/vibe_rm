@@ -10,6 +10,7 @@ mod dis;
 mod fontconfig;
 mod fonts;
 mod input;
+mod journal;
 mod view;
 
 use std::sync::{Arc, Mutex};
@@ -46,7 +47,10 @@ pub static GAME_CALLS: Mutex<Vec<(String, Vec<Value>)>> = Mutex::new(Vec::new())
 /// and queues it in `GAME_CALLS`.
 struct Game;
 impl ExternalInterfaceProvider for Game {
-    fn call_method(&self, _: &mut UpdateContext<'_>, name: &str, args: &[Value]) -> Value {
+    fn call_method(&self, context: &mut UpdateContext<'_>, name: &str, args: &[Value]) -> Value {
+        if journal::respond(context, name, args) {
+            return Value::Undefined;
+        }
         println!("[game] {name}({args:?})");
         GAME_CALLS
             .lock()
@@ -100,6 +104,10 @@ pub fn make_player(
     swf: &str,
     (w, h): (u32, u32),
 ) -> anyhow::Result<(Arc<Mutex<Player>>, NullExecutor)> {
+    journal::ENABLED.store(
+        swf.contains("quest_journal"),
+        std::sync::atomic::Ordering::Relaxed,
+    );
     let movie = movie_from_path(swf, None).map_err(|e| anyhow!(e.to_string()))?;
     println!(
         "movie {}x{} {} fps v{}",
