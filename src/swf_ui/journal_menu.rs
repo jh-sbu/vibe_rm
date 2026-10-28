@@ -1,8 +1,8 @@
 //! The journal as the game shows it (`quest_journal.swf`): the Quests page
 //! (the quests, a quest's latest log entry and its objectives, toggling
 //! which are tracked), the Stats page and the bottom bar's date and level.
-//! The System page (saving, loading, settings) is the menu's own; nothing
-//! behind it is built yet.
+//! The System page connects native saves, preferences, remapping and the
+//! PC help manual through `journal_system`.
 //!
 //! The game opens it with `InitExtensions`, `SetPlatform` and the
 //! `RestoreSavedSettings` callback (the tab to show). The pages then ask:
@@ -450,7 +450,12 @@ impl JournalMenu {
             // The tab shown, kept with `CloseMenu`; showing a target on the
             // map (not offered) and the System page's saving, loading and
             // settings, which aren't built. There is no main menu to quit to.
-            "RememberCurrentTabIndex" | "ShowTargetOnMap" | "SetVersionText" => {}
+            "SetVersionText" => self.menu.set(
+                "_root.QuestJournalFader.Menu_mc.SystemFader.Page_mc.VersionText.text",
+                text(concat!("VibeRM ", env!("CARGO_PKG_VERSION"))),
+            ),
+            "RememberCurrentTabIndex" | "ShowTargetOnMap" => {}
+            "QuitToMainMenu" => log::warn!("QuitToMainMenu requires startmenu.swf support"),
             "QuitToDesktop" => engine.quit_requested = true,
             _ => return false,
         }

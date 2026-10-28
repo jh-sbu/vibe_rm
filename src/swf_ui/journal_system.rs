@@ -59,13 +59,24 @@ impl System {
     }
     pub fn respond(&mut self, call: &GameCall, movie: &mut Movie<'_, '_>) -> Option<Vec<Value>> {
         match call.name.as_str() {
-            "SetVersionText"=>{movie.set(&format!("{S}.VersionText.text"),text(concat!("VibeRM ",env!("CARGO_PKG_VERSION"))));}
-            "RequestIsOnPC"=>{
+            "SetVersionText" => {
+                movie.set(
+                    &format!("{S}.VersionText.text"),
+                    text(concat!("VibeRM ", env!("CARGO_PKG_VERSION"))),
+                );
+            }
+            "RequestIsOnPC" => {
                 // The movie hard-codes desktop to list index 1 in both its
                 // confirmation and dispatch. Keep index 0 as an inert blank.
-                movie.set(&format!("{S}.PCQuitList.entryList"),Value::List(vec![object([("text",text("")),("disabled",Value::Bool(true))]),object([("text",text("$Desktop")),("disabled",Value::Bool(false))])]));
-                movie.set(&format!("{S}.PCQuitList.selectedIndex"),num(1.));
-                movie.invoke(&format!("{S}.PCQuitList.UpdateList"),&[]);
+                movie.set(
+                    &format!("{S}.PCQuitList.entryList"),
+                    Value::List(vec![
+                        object([("text", text("")), ("disabled", Value::Bool(true))]),
+                        object([("text", text("$Desktop")), ("disabled", Value::Bool(false))]),
+                    ]),
+                );
+                movie.set(&format!("{S}.PCQuitList.selectedIndex"), num(1.));
+                movie.invoke(&format!("{S}.PCQuitList.UpdateList"), &[]);
                 return Some(vec![Value::Bool(true)]);
             }
             "PopulateHelpTopics" => {

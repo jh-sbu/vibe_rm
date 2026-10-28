@@ -129,6 +129,12 @@ its data isn't public; the choices below are what the movie's code allows.
   current leader. The displayed value is the weapon form's normal localized
   name. These event and tie policies are inferences and need comparison with
   Skyrim SE gameplay.
-- **The System page**: the Creations entry is left out (`ShouldShowMod`
-  false). With the game's menus, Esc no longer lets go of the mouse or
-  quits: it opens the journal (egui's HUD keeps the old Esc).
+- **The System page** connects saving/loading, settings, PC controls and Help.
+  Creations is left out (`ShouldShowMod` false); Installed Content is disabled.
+  Until startmenu.swf exists, no Main Menu option is shown. Asset inspection
+  found desktop dispatch hard-coded to index 1, so replacing the quit list
+  with a single entry would call QuitToMainMenu and show the wrong confirmation.
+  Keep an unselectable blank at index 0 and Desktop at index 1 instead, selecting
+  Desktop before the PC callback. QuitToMainMenu remains logged and unanswered.
+  This inert index is a host compatibility choice, not claimed native behavior.
+  Other System choices: `known_ambiguities/system-page.md`.
