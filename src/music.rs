@@ -220,10 +220,9 @@ impl Engine {
             .music
             .music_type
             .map_or(1.0, |m| self.music_duck_gain(m));
-        let base = self
-            .audio_defaults
-            .get(b"MDSC")
-            .map_or(1.0, |c| crate::world::sound::category_volume(&self.lo, c));
+        let base = self.audio_defaults.get(b"MDSC").map_or(1.0, |c| {
+            crate::world::sound::category_static_volume(&self.lo, c)
+        });
         let mut changes = Vec::new();
         for b in self.music.background.iter().rev() {
             let mut voices = Vec::new();

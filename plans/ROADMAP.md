@@ -5,6 +5,9 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Audio settings (`plans/audio-unblocked.md`, 8): persistent AudioMenu-compatible
+  master/category values, console/shared API and offscreen environment overrides;
+  dynamic gains update existing voices. Slider UI awaits the System page.
 - Voice budget (`plans/audio-unblocked.md`, 7): descriptor priority and
   audibility selection, virtual looping playback, exempt music/dialogue. Cap
   and ordering evidence: `known_ambiguities/voices.md`.
@@ -2060,11 +2063,10 @@ game each piece unlocks.
    - Character creation: the race menu (`ShowRaceMenu`, `SetInChargen`) and the
      player's face built live from FaceGen data (sliders, head parts, tints);
      NPCs only use pre-baked heads
-7. **Audio**: lip sync; the
-   Audio menu's sliders; output models' reverb send and speaker output (acoustic spaces),
-   sounds' priorities when voices run out. Plan for the unblocked parts (with
-   default music types, acoustic-space ambience and region sounds):
-   `plans/audio-unblocked.md` (implementation progress and completed sub-steps logged there)
+7. **Audio**: lip sync (research gate in `plans/audio-unblocked.md`, 9a); Audio
+   menu sliders' UI on the System page; loading-menu pause reporting; kill-move
+   sound category activation (waits on killmoves). Completed work and remaining
+   listening questions: `plans/audio-unblocked.md`.
 8. **Rendering**: point light and interior shadows, static shadow caching (per-cell
    caster batches), water-surface ripples and underwater rendering (for diving),
    HDR: eye adaptation, bloom, tone mapping and the image

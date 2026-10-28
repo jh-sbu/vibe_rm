@@ -167,3 +167,14 @@ VibeRM is licensed under the [MIT License](LICENSE), except as noted below.
 `src/condition/functions.rs` contains a condition function table derived from
 [xEdit](https://github.com/TES5Edit/TES5Edit)'s record definitions and is
 licensed under the [Mozilla Public License 2.0](https://mozilla.org/MPL/2.0/).
+
+Audio preferences are stored in `$XDG_CONFIG_HOME/vibe_rm/audio.ini` (or
+`~/.config/vibe_rm/audio.ini`), using `[AudioMenu]` master and decimal
+`uIDn`/`fValn` pairs. `audio` lists settings; `audio music 0.4`,
+`audio voice 0.8`, `audio effects 1`, `audio footsteps 0.6` and
+`audio master 0.7` save changes. Category editor IDs or form IDs also work.
+`VRM_AUDIO_SETTINGS` overrides the path; `VRM_AUDIO_MASTER`,
+`VRM_AUDIO_MUSIC`, `VRM_AUDIO_VOICE`, `VRM_AUDIO_EFFECTS`,
+`VRM_AUDIO_FOOTSTEPS`, or `VRM_AUDIO_<8-digit-form-ID>` override startup
+values for offscreen runs. SkyrimPrefs.ini is never imported automatically;
+its AudioMenu section can be copied to this engine's file explicitly.

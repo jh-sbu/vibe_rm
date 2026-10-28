@@ -39,6 +39,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
         return item_command(engine, r, &lower, &args);
     }
     match lower.as_str() {
+        "audio" => engine.audio_command(&args),
         "getgs" => {
             let Some(name) = args.first() else {
                 return vec!["usage: getgs <game setting>".into()];
@@ -56,6 +57,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
         }
         "help" => vec![
             "click a reference (console open) / prid <ref>   select it: [ref.] commands and those on a <ref> act on it".into(),
+            "audio [master|category [value]]  read/set audio preferences (0–1)".into(),
             "getgs <name>          a game setting's value".into(),
             "coc <cell>            center on cell (editor id)".into(),
             "tcl                   toggle collision (noclip)".into(),

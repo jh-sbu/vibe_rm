@@ -119,6 +119,8 @@ pub struct Engine {
     pub(crate) cond_rng: std::cell::Cell<u64>,
     pending_moveto: Option<FormId>,
     pub audio: Option<crate::audio::Audio>,
+    pub(crate) audio_settings: crate::audio::settings::Settings,
+    pub(crate) audio_settings_path: Option<std::path::PathBuf>,
     pub(crate) audio_spaces: crate::audio::spaces::Spaces,
     pub(crate) ambient_voices: HashMap<FormId, crate::audio::VoiceId>,
     pub(crate) audio_director: crate::audio::director::Director,
@@ -393,6 +395,18 @@ impl Engine {
         if std::env::var_os("VRM_NO_ADDONS").is_none() {
             models.set_addons(loader::addon_models(&lo));
         }
+        let audio_settings_path = crate::audio::settings::path();
+        let mut audio_settings = audio_settings_path
+            .as_ref()
+            .and_then(|p| match crate::audio::settings::Settings::read(p) {
+                Ok(s) => Some(s),
+                Err(e) => {
+                    log::warn!("audio settings: {e}");
+                    None
+                }
+            })
+            .unwrap_or_default();
+        audio_settings.apply_environment(&lo);
         let audio_spaces = crate::audio::spaces::Spaces::load(&lo);
         let audio_defaults = crate::world::sound::AudioDefaults::load(&lo);
         let mut audio_director = crate::audio::director::Director::new(audio_defaults.clone());
@@ -468,6 +482,8 @@ impl Engine {
             audio: None,
             audio_director,
             audio_spaces,
+            audio_settings,
+            audio_settings_path,
             ambient_voices: HashMap::new(),
             audio_defaults,
             music: MusicState::default(),
@@ -1001,10 +1017,9 @@ impl Engine {
                 self.music.music_type = want;
                 let mut ids = Vec::new();
                 self.music.playback.voice_ids(&mut ids);
-                let gain = self
-                    .audio_defaults
-                    .get(b"MDSC")
-                    .map_or(1.0, |c| crate::world::sound::category_volume(&self.lo, c));
+                let gain = self.audio_defaults.get(b"MDSC").map_or(1.0, |c| {
+                    crate::world::sound::category_static_volume(&self.lo, c)
+                });
                 if let Some(a) = &mut self.audio {
                     for v in ids {
                         a.set_volume_with_fade(v, gain, crate::audio::director::MUSIC_UNDUCK);

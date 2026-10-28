@@ -4,6 +4,7 @@ pub mod decode;
 pub mod director;
 pub mod regions;
 pub mod reverb;
+pub mod settings;
 pub mod spaces;
 pub mod speakers;
 
@@ -211,7 +212,8 @@ struct Mixer {
     listener: Vec3,
     listener_right: Vec3,
     rate: u32,
-    master: f32,
+    master: Ramp,
+    headroom: f32,
     voice_limit: usize,
     /// Fixed frame buses: no allocation, even for an unexpected callback size.
     dry: [f32; 8],
@@ -383,6 +385,10 @@ impl Mixer {
             self.dry[0] += wet[0];
             self.dry[1] += wet[1];
             speakers::write(&self.dry, frame);
+            for sample in frame {
+                *sample = (*sample * self.master.current * self.headroom).clamp(-1.0, 1.0);
+            }
+            self.master.advance();
             for c in self.categories.values_mut() {
                 c.gain.advance();
             }
@@ -392,9 +398,6 @@ impl Mixer {
                 && v.clip.frames() > 0
                 && (v.params.looping || v.pos < v.clip.frames() as f64)
         });
-        for s in out {
-            *s = (*s * self.master).clamp(-1.0, 1.0);
-        }
     }
 }
 
@@ -421,7 +424,8 @@ impl Audio {
             listener: Vec3::ZERO,
             listener_right: Vec3::X,
             rate: 44100,
-            master: 0.8,
+            master: Ramp::new(1.0),
+            headroom: 0.8,
             voice_limit: 64,
             dry: [0.0; 8],
             send: [0.0; 2],
@@ -522,7 +526,8 @@ impl Audio {
 
     pub fn set_master(&self, v: f32) {
         if let Ok(mut m) = self.mixer.lock() {
-            m.master = v;
+            let rate = m.rate;
+            m.master.set(v.clamp(0.0, 1.0), 0.005, rate);
         }
     }
 
@@ -898,7 +903,8 @@ mod tests {
             listener: Vec3::ZERO,
             listener_right: Vec3::X,
             rate: 1000,
-            master: 1.0,
+            master: Ramp::new(1.0),
+            headroom: 1.0,
             voice_limit: 64,
             dry: [0.0; 8],
             send: [0.0; 2],

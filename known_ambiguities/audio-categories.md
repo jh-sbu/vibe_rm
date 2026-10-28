@@ -1,7 +1,7 @@
 # Sound categories
 
 Implemented in `src/world/sound.rs` (`category_volume`, folded into
-`SoundDesc::volume`), with the music and dialogue voice volumes taken
+`SoundDesc::volume` for static gain; menu gain is dynamic), with the music and dialogue voice volumes taken
 from the music and voice categories (`music_volume`, `voice_volume`).
 Sources: UESP's [SNCT page](https://en.uesp.net/w/index.php?oldid=3508410)
 (`FNAM` flags, `PNAM` parent, `VNAM` static volume multiplier, `UNAM`
@@ -29,8 +29,8 @@ SNCT`, `esp-dump`).
   the master category's own 0.9. The data gives SFX 0.81, footsteps 0.65,
   voice 0.65, music 0.32 (MUS 0.7 x 0.5 x master 0.9). That the sliders'
   defaults are the `UNAM` values and multiply into the sound's volume
-  isn't stated anywhere public. The mixer's own master of 0.8 (headroom,
-  made up) stays on top.
+  isn't stated anywhere public. A separate 0.8 headroom factor stays on top of the user's master slider.
+  The headroom is a mixer choice, not an AudioMenu setting.
 - **Descriptor-free categories are now sourced.** DOBJ DDSC supplies dialogue
   (including INFO barks and scene responses), MDSC music. Barks play INFO voice
   files, so they remain dialogue, not NDSC grunts. No descriptor-free non-dialogue
@@ -43,3 +43,13 @@ Neither public SNCT/DOBJ documentation nor the records specify fade gain or
 timing. We choose -6 dB, 3 seconds out and 1 second in (the menu fade times).
 Only a player conversation counts, not scenes or INFO barks. Listening in SE
 could refine this choice. Script state multiplies with this policy.
+
+## Settings (8)
+
+Stored slider values replace UNAM, including a zero default. Descriptor and
+music/voice gains now carry only VNAM multipliers; the director applies the
+current menu gain to all existing/new descendants. Master preferences remain
+separate from 0.8 mixer headroom. Layout follows SkyrimPrefs AudioMenu, while
+storage belongs to this engine (not Skyrim's INI or save). Invalid/nonfinite
+values are rejected. Config is read at startup; explicit API/console changes
+write it atomically. Environment overrides are effective startup values.

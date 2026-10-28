@@ -49,6 +49,7 @@ pub struct Director {
     pub targets: HashMap<u32, Target>,
     pub submerged_categories: Vec<u32>,
     pub regions: super::regions::Schedule,
+    pub menu_gains: HashMap<u32, f32>,
     pub underwater_reverb: Option<esp::FormId>,
     pub loops: Vec<esp::FormId>,
     pub music_commands: Vec<MusicCommand>,
@@ -63,6 +64,7 @@ impl Director {
             submerged_categories: Vec::new(),
             underwater_reverb: None,
             regions: Default::default(),
+            menu_gains: HashMap::new(),
             loops: Vec::new(),
             music_commands: Vec::new(),
             reverb: None,
@@ -116,6 +118,13 @@ impl Director {
                     seconds: 0.005,
                 },
             );
+        }
+        for (&id, &gain) in &self.menu_gains {
+            let t = self.targets.entry(id).or_insert(Target {
+                state: CategoryState::default(),
+                seconds: 0.005,
+            });
+            t.state.volume *= gain;
         }
         self.pause(b"PIMC", inputs.menu, 0.0);
         self.pause(
@@ -177,6 +186,7 @@ impl Director {
 }
 impl crate::engine::Engine {
     pub(crate) fn update_audio_director(&mut self) {
+        self.refresh_audio_settings();
         let space = self.acoustic_space();
         let reverb = space
             .and_then(|id| self.audio_spaces.records.get(&id))

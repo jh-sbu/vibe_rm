@@ -38,7 +38,7 @@ pub struct SoundDesc {
     pub positional: bool,
     pub output_model: Option<OutputModel>,
     /// Linear volume from the static attenuation (dB) in BNAM, times the
-    /// sound's category's ([`category_volume`]).
+    /// sound's static category chain (menu gain is applied by the director).
     pub volume: f32,
     /// `BNAM`'s frequency shift (percent, signed), frequency variance
     /// (percent) and dB variance: how each playing differs from the recording.
@@ -121,7 +121,7 @@ pub fn default_params(
         ..Default::default()
     };
     if let Some(c) = defaults.get(category) {
-        p.volume = category_volume(lo, c);
+        p.volume = category_static_volume(lo, c);
         p.categories = category_chain(lo, c);
     }
     if let Some(m) = defaults.get(model).and_then(|id| output_model(lo, id)) {
@@ -248,6 +248,30 @@ pub fn category_volume(lo: &LoadOrder, id: FormId) -> f32 {
     chain_volume(id, |c| category(lo, c))
 }
 
+/// Static record multipliers; menu defaults/settings are applied dynamically by the director.
+pub fn category_static_volume(lo: &LoadOrder, id: FormId) -> f32 {
+    chain_volume(id, |id| {
+        category(lo, id).map(|mut c| {
+            c.menu = 1.0;
+            c
+        })
+    })
+}
+pub fn category_volume_with_settings(
+    lo: &LoadOrder,
+    id: FormId,
+    settings: &crate::audio::settings::Settings,
+) -> f32 {
+    chain_volume(id, |id| {
+        category(lo, id).map(|mut c| {
+            if c.in_menu {
+                c.menu = settings.categories.get(&id.0).copied().unwrap_or(c.menu);
+            }
+            c
+        })
+    })
+}
+
 /// [`category_volume`] over any source of categories (a cycle, which no
 /// record has, ends the walk).
 fn chain_volume(id: FormId, get: impl Fn(FormId) -> Option<Category>) -> f32 {
@@ -349,7 +373,7 @@ pub fn descriptor(lo: &LoadOrder, vfs: &vfs::Vfs, id: FormId) -> Option<SoundDes
         && g.len() >= 4
     {
         let c = rec.fid(FormId(u32::from_le_bytes(g[0..4].try_into().unwrap())));
-        desc.volume *= category_volume(lo, c);
+        desc.volume *= category_static_volume(lo, c);
         desc.categories = category_chain(lo, c);
     }
     if let Some(o) = rec.get(b"ONAM")
@@ -564,6 +588,7 @@ mod tests {
                 vec![
                     snct(0x800, None, 1, 0xE665, None),
                     snct(0x801, Some(0x800), 2, 0xE665, Some(0x7FFF)),
+                    snct(0x802, Some(0x800), 2, 65535, Some(0)),
                 ],
             ),
             Node::top(
@@ -582,9 +607,23 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let near = |a: f32, b: f32| (a - b).abs() < 1e-3;
         // The menu category: its multiplier and its default, then the master's.
-        let want = 0.9 * 0.5 * 0.9;
+        let want = 0.9 * 0.9;
         let d = descriptor(&lo, &vfs, FormId(0x810)).unwrap();
         assert!(near(d.volume, want), "{}", d.volume);
+        let settings = crate::audio::settings::Settings {
+            categories: [(0x801, 0.2), (0x802, 0.4)].into(),
+            ..Default::default()
+        };
+        assert_eq!(category_volume(&lo, FormId(0x802)), 0.0);
+        assert!(near(
+            category_volume_with_settings(&lo, FormId(0x802), &settings),
+            0.36
+        ));
+        assert!(near(
+            category_volume_with_settings(&lo, FormId(0x801), &settings),
+            0.9 * 0.2 * 0.9
+        ));
+        assert!(near(category_volume(&lo, FormId(0x801)), 0.9 * 0.5 * 0.9));
         assert!(category(&lo, FormId(0x800)).unwrap().mute_submerged);
         assert!(category(&lo, FormId(0x801)).unwrap().in_menu);
         assert_eq!(
