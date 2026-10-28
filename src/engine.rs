@@ -328,7 +328,8 @@ pub(crate) struct MusicState {
     pub(crate) queue: crate::music::Queue,
     /// The current type came from the queue.
     pub(crate) from_queue: bool,
-    pub(crate) voice: Option<crate::audio::VoiceId>,
+    pub(crate) playback: crate::music::Playback,
+    pub(crate) transition: Option<(Option<FormId>, f64)>,
     /// Real time at which to start the next track.
     pub(crate) next_at: f64,
 }
@@ -744,84 +745,192 @@ impl Engine {
         None
     }
 
-    /// Choose a track file from a music type, honouring track conditions.
-    fn pick_track(&mut self, music: FormId) -> Option<String> {
-        let rec = self.lo.get(music)?;
-        let tracks: Vec<FormId> = rec
-            .get(b"TNAM")?
-            .chunks_exact(4)
-            .map(|c| rec.fid(FormId(u32::from_le_bytes(c.try_into().unwrap()))))
-            .collect();
-        drop(rec);
+    fn eligible_music_tracks(&self, tracks: Vec<FormId>) -> Vec<FormId> {
         let ctx = crate::condition::Context {
             subject: Some(PLAYER_REF),
             ..Default::default()
         };
-        let mut candidates: Vec<FormId> = tracks
+        tracks
             .into_iter()
-            .filter(|t| {
-                self.lo.get(*t).is_some_and(|r| {
+            .filter(|&id| {
+                self.lo.get(id).is_some_and(|r| {
                     crate::condition::evaluate(self, &crate::condition::parse_all(&r), ctx)
                 })
             })
+            .collect()
+    }
+    fn pick_track(&mut self, music: FormId) -> Option<crate::music::Playback> {
+        let r = self.lo.get(music)?;
+        let tracks = r
+            .get(b"TNAM")?
+            .chunks_exact(4)
+            .map(|d| r.fid(FormId(u32::from_le_bytes(d.try_into().unwrap()))))
             .collect();
-        log::debug!("music candidates: {}", candidates.len());
-        for depth in 0..4 {
-            if candidates.is_empty() {
-                return None;
-            }
-            let roll = self.rand();
-            let flags = self.music_flags(music);
-            let id = if depth == 0 {
-                self.music.order.pick(music, &candidates, flags, roll)?
-            } else {
-                candidates[roll as usize % candidates.len()]
-            };
-            let t = self.lo.get(id)?;
-            let kind = t
-                .get(b"CNAM")
-                .map(|d| u32::from_le_bytes(d[0..4].try_into().unwrap()))
-                .unwrap_or(crate::world::sound::MUST_SINGLE);
-            if kind == crate::world::sound::MUST_PALETTE {
-                candidates = t
-                    .get(b"SNAM")
-                    .map(|d| {
-                        d.chunks_exact(4)
-                            .map(|c| t.fid(FormId(u32::from_le_bytes(c.try_into().unwrap()))))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                continue;
-            }
-            if let Some(f) = t.get(b"ANAM") {
-                return Some(crate::world::sound::sound_path(
-                    &esp::decode_zstring(f),
-                    &self.vfs,
-                ));
-            }
-            log::debug!("music: silent track {}", t.editor_id().unwrap_or_default());
+        drop(r);
+        let candidates = self.eligible_music_tracks(tracks);
+        let roll = self.rand();
+        let flags = self.music_flags(music);
+        let id = self.music.order.pick(music, &candidates, flags, roll)?;
+        self.start_music_track(id, 0)
+    }
+    pub(crate) fn start_music_track(
+        &mut self,
+        id: FormId,
+        depth: usize,
+    ) -> Option<crate::music::Playback> {
+        if depth > 8 {
             return None;
         }
-        None
-    }
-
-    fn update_music(&mut self) {
-        let now = self.scripts.real_time;
-        let playing = self
-            .music
-            .voice
-            .is_some_and(|v| self.audio.as_ref().is_some_and(|a| a.is_playing(v)));
-        if !playing && self.music.voice.take_if(|_| true).is_some() {
-            self.music.next_at = now + 20.0 + (self.rand() % 40) as f64;
+        let r = self.lo.get(id)?;
+        if r.tag().0 != *b"MUST" {
+            return None;
         }
+        let number = |tag| {
+            r.get(tag)
+                .filter(|d| d.len() >= 4)
+                .map(|d| f32::from_le_bytes(d[..4].try_into().unwrap()))
+                .filter(|f| f.is_finite() && *f >= 0.0)
+        };
+        let kind = r
+            .get(b"CNAM")
+            .filter(|d| d.len() >= 4)
+            .map_or(crate::world::sound::MUST_SINGLE, |d| {
+                u32::from_le_bytes(d[..4].try_into().unwrap())
+            });
+        let duration = number(b"FLTV");
+        let now = self.scripts.wall_time;
+        let mut run = crate::music::Playback {
+            started: now,
+            fade_out: number(b"DNAM").unwrap_or(0.0),
+            ..Default::default()
+        };
+        if kind == crate::world::sound::MUST_SILENT {
+            run.until = Some(now + duration.unwrap_or(0.0) as f64);
+            return Some(run);
+        }
+        if kind == crate::world::sound::MUST_PALETTE {
+            run.until = Some(now + duration.unwrap_or(0.0) as f64);
+            let ids: Vec<_> = r
+                .get(b"SNAM")
+                .unwrap_or_default()
+                .chunks_exact(4)
+                .map(|d| r.fid(FormId(u32::from_le_bytes(d.try_into().unwrap()))))
+                .collect();
+            drop(r);
+            for layer in ids.split(|id| id.is_null()) {
+                let candidates = self.eligible_music_tracks(layer.to_vec());
+                if candidates.is_empty() {
+                    continue;
+                }
+                let pick = candidates[self.rand() as usize % candidates.len()];
+                if let Some(playing) = self.start_music_track(pick, depth + 1) {
+                    run.layers.push(crate::music::Layer {
+                        candidates,
+                        playing: Box::new(playing),
+                    });
+                }
+            }
+            return Some(run);
+        }
+        let path =
+            crate::world::sound::sound_path(&esp::decode_zstring(r.get(b"ANAM")?), &self.vfs);
+        run.outro = r
+            .get(b"BNAM")
+            .map(|d| crate::world::sound::sound_path(&esp::decode_zstring(d), &self.vfs));
+        run.cues = r
+            .get(b"FNAM")
+            .unwrap_or_default()
+            .chunks_exact(4)
+            .map(|d| f32::from_le_bytes(d.try_into().unwrap()))
+            .filter(|f| f.is_finite() && *f >= 0.0)
+            .collect();
+        let loop_region =
+            r.get(b"LNAM")
+                .filter(|d| d.len() >= 12)
+                .map(|d| crate::audio::LoopRegion {
+                    begin: f32::from_le_bytes(d[..4].try_into().unwrap()),
+                    end: f32::from_le_bytes(d[4..8].try_into().unwrap()),
+                    count: u32::from_le_bytes(d[8..12].try_into().unwrap()),
+                });
+        let mut params = crate::world::sound::default_params(
+            &self.lo,
+            &self.audio_defaults,
+            b"MDSC",
+            b"----",
+            None,
+        );
+        params.loop_region = loop_region;
+        if let Some(a) = &mut self.audio
+            && let Some(v) = a.play(&self.vfs, &path, params)
+        {
+            run.voices.push(v);
+        }
+        Some(run)
+    }
+    fn music_track_active(&self, run: &crate::music::Playback) -> bool {
+        run.active(self.scripts.wall_time, &|v| {
+            self.audio.as_ref().is_some_and(|a| a.is_playing(v))
+        })
+    }
+    fn stop_music_track(&self, run: &crate::music::Playback, seconds: f32) {
+        let mut ids = Vec::new();
+        run.voice_ids(&mut ids);
+        if let Some(a) = &self.audio {
+            for v in ids {
+                a.stop_with_fade(v, seconds);
+            }
+        }
+    }
+    pub(crate) fn tick_music_track(&mut self, run: &mut crate::music::Playback, depth: usize) {
+        if depth > 8 {
+            return;
+        }
+        let now = self.scripts.wall_time;
+        if run
+            .until
+            .is_some_and(|end| now >= end - run.fade_out as f64)
+        {
+            if !run.fading {
+                self.stop_music_track(
+                    run,
+                    run.until.map_or(0.0, |end| (end - now).max(0.0) as f32),
+                );
+                run.fading = true;
+            }
+            return;
+        }
+        for layer in &mut run.layers {
+            self.tick_music_track(&mut layer.playing, depth + 1);
+            if !self.music_track_active(&layer.playing) {
+                let candidates = self.eligible_music_tracks(layer.candidates.clone());
+                if !candidates.is_empty() {
+                    let id = candidates[self.rand() as usize % candidates.len()];
+                    if let Some(next) = self.start_music_track(id, depth + 1) {
+                        layer.playing = Box::new(next);
+                    }
+                }
+            }
+        }
+    }
+    fn update_music(&mut self) {
+        let now = self.scripts.wall_time;
+        let mut background = std::mem::take(&mut self.music.background);
+        for b in &mut background {
+            self.tick_music_track(&mut b.playback, 0);
+        }
+        self.music.background = background;
+        self.apply_music_ducking(crate::audio::director::MUSIC_DUCK);
+        let mut run = std::mem::take(&mut self.music.playback);
+        self.tick_music_track(&mut run, 0);
+        let playing = self.music_track_active(&run);
+        let had_track = !run.voices.is_empty() || run.until.is_some() || !run.layers.is_empty();
+        self.music.playback = run;
         let location = self.location_music();
         let (mut want, mut queued) = self.choose_music(location);
-        // A queued type that plays one selection is done once its track ends:
-        // back to what is below it, without a pause.
         if queued
             && let Some(m) = want
-            && !playing
             && Some(m) == self.music.music_type
+            && !playing
             && self.music_flags(m) & crate::music::PLAYS_ONE_SELECTION != 0
             && self
                 .music
@@ -831,119 +940,120 @@ impl Engine {
                 .any(|e| e.music == m && e.started)
         {
             self.music.queue.remove(m);
-            self.music.next_at = now;
             (want, queued) = self.choose_music(location);
         }
         if want != self.music.music_type {
-            let fade = want.map_or(0.0, |m| {
-                let seconds = self
-                    .lo
-                    .get(m)
-                    .and_then(|r| {
-                        r.get(b"WNAM")
-                            .filter(|d| d.len() >= 4)
-                            .map(|d| f32::from_le_bytes(d[..4].try_into().unwrap()))
-                    })
-                    .unwrap_or(0.0);
-                crate::audio::director::music_fade(self.music_flags(m), seconds)
-            });
+            let flags = want.map_or(0, |m| self.music_flags(m));
+            let fade = want
+                .and_then(|m| self.lo.get(m))
+                .and_then(|r| {
+                    r.get(b"WNAM")
+                        .filter(|d| d.len() >= 4)
+                        .map(|d| f32::from_le_bytes(d[..4].try_into().unwrap()))
+                })
+                .unwrap_or(0.0);
+            let fade = crate::audio::director::music_fade(flags, fade);
+            if playing
+                && flags & (crate::music::ABRUPT_TRANSITION | crate::music::DUCKS_CURRENT) == 0
+            {
+                let position = self
+                    .music
+                    .playback
+                    .voices
+                    .first()
+                    .and_then(|v| self.audio.as_ref()?.voice_position(*v))
+                    .unwrap_or((now - self.music.playback.started) as f32);
+                if self.music.transition.is_none_or(|(m, _)| m != want) {
+                    self.music.transition = self
+                        .music
+                        .playback
+                        .next_cue(position)
+                        .map(|cue| (want, now + (cue - position) as f64));
+                }
+                if self.music.transition.is_some_and(|(_, at)| now < at) {
+                    return;
+                }
+            }
+            self.music.transition = None;
+            let outgoing = std::mem::take(&mut self.music.playback);
             if let Some(i) = self
                 .music
                 .background
                 .iter()
                 .position(|b| Some(b.music) == want)
             {
-                if let Some(v) = self.music.voice.take()
-                    && let Some(a) = &self.audio
-                {
-                    a.stop_with_fade(v, fade);
-                }
+                self.stop_music_track(&outgoing, fade);
                 while self.music.background.len() > i + 1 {
-                    if let Some(b) = self.music.background.pop()
-                        && let Some(v) = b.voice
-                        && let Some(a) = &self.audio
-                    {
-                        a.stop_with_fade(v, fade);
-                    }
+                    let b = self.music.background.pop().unwrap();
+                    self.stop_music_track(&b.playback, fade);
                 }
                 let b = self.music.background.pop().unwrap();
-                self.music.voice = b.voice;
+                self.music.playback = b.playback;
                 self.music.from_queue = b.from_queue;
                 self.music.music_type = want;
-                if let Some(v) = self.music.voice
-                    && let Some(a) = &mut self.audio
-                {
-                    let gain = self
-                        .audio_defaults
-                        .get(b"MDSC")
-                        .map_or(1.0, |c| crate::world::sound::category_volume(&self.lo, c));
-                    a.set_volume_with_fade(v, gain, crate::audio::director::MUSIC_UNDUCK);
+                let mut ids = Vec::new();
+                self.music.playback.voice_ids(&mut ids);
+                let gain = self
+                    .audio_defaults
+                    .get(b"MDSC")
+                    .map_or(1.0, |c| crate::world::sound::category_volume(&self.lo, c));
+                if let Some(a) = &mut self.audio {
+                    for v in ids {
+                        a.set_volume_with_fade(v, gain, crate::audio::director::MUSIC_UNDUCK);
+                    }
                 }
                 self.apply_music_ducking(crate::audio::director::MUSIC_UNDUCK);
                 return;
             }
-            let duck = want.is_some_and(|m| self.music_flags(m) & crate::music::DUCKS_CURRENT != 0);
-            if duck && let Some(music) = self.music.music_type {
+            if flags & crate::music::DUCKS_CURRENT != 0
+                && let Some(music) = self.music.music_type
+            {
                 self.music.background.push(crate::music::Background {
                     music,
                     from_queue: self.music.from_queue,
-                    voice: self.music.voice.take(),
+                    playback: outgoing,
                 });
             } else {
-                if let Some(v) = self.music.voice.take()
-                    && let Some(a) = &self.audio
-                {
-                    a.stop_with_fade(v, fade);
+                self.stop_music_track(&outgoing, fade);
+                let background = std::mem::take(&mut self.music.background);
+                for b in background {
+                    self.stop_music_track(&b.playback, fade);
                 }
-                for b in self.music.background.drain(..) {
-                    if let Some(v) = b.voice
-                        && let Some(a) = &self.audio
-                    {
-                        a.stop_with_fade(v, fade);
+                if flags & crate::music::ABRUPT_TRANSITION == 0
+                    && let Some(path) = outgoing.outro
+                {
+                    let mut p = crate::world::sound::default_params(
+                        &self.lo,
+                        &self.audio_defaults,
+                        b"MDSC",
+                        b"----",
+                        None,
+                    );
+                    p.fade_in = 0.005;
+                    if let Some(a) = &mut self.audio {
+                        a.play(&self.vfs, &path, p);
                     }
                 }
             }
             self.music.music_type = want;
             self.music.from_queue = queued;
-            self.apply_music_ducking(crate::audio::director::MUSIC_DUCK);
-            log::debug!(
-                "music type -> {:?}",
-                want.and_then(|w| self.lo.get(w))
-                    .and_then(|r| r.editor_id())
-            );
             self.music.next_at = now;
-            return;
+            self.apply_music_ducking(crate::audio::director::MUSIC_DUCK);
+        } else if !playing && had_track {
+            self.music.playback = Default::default();
+            self.music.next_at = now + 20.0 + (self.rand() % 40) as f64;
         }
-        if !playing && now >= self.music.next_at {
-            self.music.voice = None;
-            if queued
-                && let Some(e) = self
-                    .music
-                    .queue
-                    .entries
-                    .iter_mut()
-                    .find(|e| Some(e.music) == want)
-            {
-                e.started = true;
-            }
+        if !self.music_track_active(&self.music.playback) && now >= self.music.next_at {
             if let Some(m) = want
-                && let Some(track) = self.pick_track(m)
+                && let Some(run) = self.pick_track(m)
             {
-                log::info!("music: {track}");
-                let vfs = &self.vfs;
-                let params = crate::world::sound::default_params(
-                    &self.lo,
-                    &self.audio_defaults,
-                    b"MDSC",
-                    b"----",
-                    None,
-                );
-                self.music.voice = self
-                    .audio
-                    .as_mut()
-                    .and_then(|a| a.play(vfs, &track, params));
+                self.music.playback = run;
+                if queued
+                    && let Some(e) = self.music.queue.entries.iter_mut().find(|e| e.music == m)
+                {
+                    e.started = true;
+                }
             }
-            // A failed selection retries after a bounded delay.
             self.music.next_at = now + 20.0 + (self.rand() % 40) as f64;
         }
     }
@@ -1000,7 +1110,9 @@ impl Engine {
         if let Some(a) = self.audio.as_mut() {
             a.stop_all();
         }
-        self.music.voice = None;
+        self.music.playback = Default::default();
+        self.music.background.clear();
+        self.music.transition = None;
         let keys: Vec<CellKey> = self.cells.keys().copied().collect();
         // The cells left behind keep their actors going for a while.
         self.away_steps.buffered = keys.iter().filter_map(|&k| self.place_of_key(k)).collect();

@@ -403,6 +403,7 @@ fn main() -> Result<()> {
                 );
             }
         }
+        Some("music-survey") => audio_survey::music(&args[1])?,
         Some("audio-defaults") => audio_survey::defaults(&args[1])?,
         Some("sndr-stats") => {
             // sndr-stats <data dir>: the sound descriptors' BNAM fields (frequency

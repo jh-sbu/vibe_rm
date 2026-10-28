@@ -32,3 +32,16 @@ its place), and whether script-added entries survive a save (we save them as
 for the last two: `Add` a type, save, load and see whether it still plays; and
 `Add` two types of equal priority and see which plays.
 
+
+## Track interpretation (4d)
+
+The asset survey found 283 singles, 21 palettes and 5 silent tracks, including
+combat cue points/outro BNAM paths and a finite Sovngarde loop. We implement
+all these features. LNAM count means additional repeats of the begin/end
+segment, then the tail. Palette zero IDs split simultaneous layers; within
+each layer one condition-eligible entry is chosen at random, then another
+when it ends, until FLTV expires. Duplicate entries remain weights (many are
+silent spacers). DNAM fades the palette before its deadline. These semantics
+fit the records but need listening confirmation. A graceful type change may
+cut at the next cue; its BNAM outro plays once over the transition. Cue and
+outro timing beyond this is not publicly specified.

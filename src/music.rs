@@ -14,10 +14,45 @@ pub const CYCLE_TRACKS: u32 = 4;
 pub const MAINTAIN_ORDER: u32 = 8;
 pub const DUCKS_CURRENT: u32 = 0x20;
 
+#[derive(Default)]
+pub struct Playback {
+    pub voices: Vec<crate::audio::VoiceId>,
+    pub layers: Vec<Layer>,
+    pub until: Option<f64>,
+    pub started: f64,
+    pub fade_out: f32,
+    pub fading: bool,
+    pub cues: Vec<f32>,
+    pub outro: Option<String>,
+}
+pub struct Layer {
+    pub candidates: Vec<FormId>,
+    pub playing: Box<Playback>,
+}
+impl Playback {
+    pub fn active(&self, now: f64, playing: &impl Fn(crate::audio::VoiceId) -> bool) -> bool {
+        self.until.is_some_and(|end| now < end)
+            || self.voices.iter().any(|&v| playing(v))
+            || self.layers.iter().any(|l| l.playing.active(now, playing))
+    }
+    pub fn voice_ids(&self, ids: &mut Vec<crate::audio::VoiceId>) {
+        ids.extend(&self.voices);
+        for l in &self.layers {
+            l.playing.voice_ids(ids);
+        }
+    }
+    pub fn next_cue(&self, position: f32) -> Option<f32> {
+        self.cues
+            .iter()
+            .copied()
+            .filter(|c| *c > position + 0.001)
+            .min_by(f32::total_cmp)
+    }
+}
 pub struct Background {
     pub music: FormId,
     pub from_queue: bool,
-    pub voice: Option<crate::audio::VoiceId>,
+    pub playback: Playback,
 }
 
 pub fn duck_gain(db: f32) -> f32 {
@@ -191,9 +226,9 @@ impl Engine {
             .map_or(1.0, |c| crate::world::sound::category_volume(&self.lo, c));
         let mut changes = Vec::new();
         for b in self.music.background.iter().rev() {
-            if let Some(v) = b.voice {
-                changes.push((v, base * gain));
-            }
+            let mut voices = Vec::new();
+            b.playback.voice_ids(&mut voices);
+            changes.extend(voices.into_iter().map(|v| (v, base * gain)));
             gain *= self.music_duck_gain(b.music);
         }
         if let Some(a) = self.audio.as_mut() {
@@ -243,6 +278,58 @@ mod tests {
         }
     }
 
+    #[test]
+    fn silent_playback_uses_its_duration_and_cues_choose_the_next_boundary() {
+        let p = Playback {
+            until: Some(15.0),
+            cues: vec![3.0, 6.0, 12.0],
+            ..Default::default()
+        };
+        assert!(p.active(14.9, &|_| false));
+        assert!(!p.active(15.0, &|_| false));
+        assert_eq!(p.next_cue(3.0), Some(6.0));
+        assert_eq!(p.next_cue(13.0), None);
+    }
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn palette_layers_and_silent_tracks_advance_without_a_device() {
+        use esp::writer::{Node, RecordBuilder, write_plugin};
+        let dir = std::env::temp_dir().join(format!("vrm-music-palette-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let ids: Vec<u8> = [0x800u32, 0, 0x800]
+            .into_iter()
+            .flat_map(u32::to_le_bytes)
+            .collect();
+        let records = [Node::top(
+            b"MUST",
+            vec![
+                RecordBuilder::new(b"MUST", FormId(0x800))
+                    .u32(b"CNAM", crate::world::sound::MUST_SILENT)
+                    .field(b"FLTV", &2f32.to_le_bytes()),
+                RecordBuilder::new(b"MUST", FormId(0x801))
+                    .u32(b"CNAM", crate::world::sound::MUST_PALETTE)
+                    .field(b"FLTV", &10f32.to_le_bytes())
+                    .field(b"DNAM", &1f32.to_le_bytes())
+                    .field(b"SNAM", &ids),
+            ],
+        )];
+        std::fs::write(
+            dir.join("Music.esp"),
+            write_plugin(0, &[], "test", "palette", 0x900, &records),
+        )
+        .unwrap();
+        let mut e = crate::stats::action_tests::headless_engine(&dir, "Music.esp");
+        let mut run = e.start_music_track(FormId(0x801), 0).unwrap();
+        assert_eq!(run.layers.len(), 2);
+        assert_eq!(run.until, Some(10.0));
+        e.scripts.wall_time = 3.0;
+        e.tick_music_track(&mut run, 0);
+        assert_eq!(run.layers[0].playing.until, Some(5.0));
+        e.scripts.wall_time = 9.0;
+        e.tick_music_track(&mut run, 0);
+        assert!(run.fading);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
     #[test]
     fn track_cycles_keep_order_or_shuffle_once_without_repeating() {
         let mut o = TrackOrder::default();

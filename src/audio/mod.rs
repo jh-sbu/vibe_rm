@@ -150,12 +150,19 @@ pub enum OutputMode {
     Defined([[f32; 8]; 3]),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LoopRegion {
+    pub begin: f32,
+    pub end: f32,
+    pub count: u32,
+}
 #[derive(Clone, Debug)]
 pub struct VoiceParams {
     pub volume: f32,
     pub fade_in: f32,
     pub rate: f32,
     pub looping: bool,
+    pub loop_region: Option<LoopRegion>,
     pub position: Option<Vec3>,
     pub falloff: Falloff,
     pub categories: Vec<u32>,
@@ -171,6 +178,7 @@ impl Default for VoiceParams {
             fade_in: 0.0,
             rate: 1.0,
             looping: false,
+            loop_region: None,
             position: None,
             falloff: Falloff::new(200.0, 2000.0),
             categories: Vec::new(),
@@ -188,6 +196,7 @@ struct Voice {
     params: VoiceParams,
     gain: Ramp,
     stopping: bool,
+    repeats: u32,
 }
 
 struct Mixer {
@@ -229,6 +238,16 @@ impl Mixer {
                 if n == 0 {
                     v.pos = f64::MAX;
                     continue;
+                }
+                if let Some(region) = v.params.loop_region {
+                    let begin = region.begin.max(0.0) as f64 * v.clip.rate as f64;
+                    let end = (region.end as f64 * v.clip.rate as f64).min(n as f64);
+                    if end > begin && v.pos >= end && v.repeats < region.count {
+                        let wraps = ((v.pos - begin) / (end - begin)).floor().max(1.0) as u32;
+                        let wraps = wraps.min(region.count - v.repeats);
+                        v.pos -= (end - begin) * wraps as f64;
+                        v.repeats += wraps;
+                    }
                 }
                 if v.params.looping {
                     v.pos %= n as f64;
@@ -456,6 +475,7 @@ impl Audio {
                 params,
                 gain,
                 stopping: false,
+                repeats: 0,
             });
         }
     }
@@ -532,6 +552,16 @@ impl Audio {
                 .unwrap_or(false)
     }
 
+    pub fn voice_position(&self, id: VoiceId) -> Option<f32> {
+        self.mixer
+            .lock()
+            .ok()?
+            .voices
+            .iter()
+            .find(|v| v.id == id)
+            .map(|v| v.pos as f32 / v.clip.rate.max(1) as f32)
+    }
+
     /// Duration of a decoded clip, if known.
     pub fn clip_duration(&self, path: &str) -> Option<f32> {
         self.cache
@@ -570,6 +600,20 @@ mod tests {
         (m, out)
     }
 
+    #[test]
+    fn finite_loop_regions_repeat_then_play_the_tail() {
+        let mut m = mixer(1.0);
+        m.voices[0].params.loop_region = Some(LoopRegion {
+            begin: 0.01,
+            end: 0.02,
+            count: 2,
+        });
+        let mut out = [0.0; 45];
+        m.mix(&mut out, 1);
+        assert!((out[20] - 0.01).abs() < 1e-6);
+        assert!((out[30] - 0.01).abs() < 1e-6);
+        assert!((out[40] - 0.02).abs() < 1e-6);
+    }
     #[test]
     fn half_rate_interpolates_and_loops_without_a_missing_frame() {
         let mut m = mixer(0.5);
@@ -674,6 +718,7 @@ mod tests {
                 pos: 0.0,
                 gain: Ramp::new(1.0),
                 stopping: false,
+                repeats: 0,
                 params: VoiceParams {
                     rate: pitch as f32,
                     ..Default::default()
