@@ -46,21 +46,74 @@ pub fn save_path_in(dir: &Path, name: &str) -> Option<PathBuf> {
     ok.then(|| dir.join(format!("{name}.{EXTENSION}")))
 }
 
-/// The saves in `dir`, newest first.
-pub fn list_saves_in(dir: &Path) -> Vec<String> {
-    let mut found: Vec<(std::time::SystemTime, String)> = std::fs::read_dir(dir)
+/// One journal row, discovered without reading the simulation snapshot.
+#[derive(Clone, Debug)]
+pub struct SaveListing {
+    pub name: String,
+    pub metadata: Option<metadata::Metadata>,
+    pub corrupt: bool,
+    pub obsolete: bool,
+    pub written: u64,
+}
+impl SaveListing {
+    pub fn file_num(&self) -> u32 {
+        self.metadata.as_ref().map_or(0, |m| m.file_num)
+    }
+}
+/// Newest first, deterministic by name on timestamp ties. Bad files remain
+/// visible so the player can delete them instead of losing the entire list.
+pub fn save_list_in(dir: &Path, plugins: &[String]) -> Vec<SaveListing> {
+    let mut found: Vec<_> = std::fs::read_dir(dir)
         .into_iter()
         .flatten()
         .flatten()
         .filter_map(|entry| {
             let path = entry.path();
-            (path.extension()? == EXTENSION).then_some(())?;
+            if path.extension()? != EXTENSION || !entry.file_type().ok()?.is_file() {
+                return None;
+            }
             let name = path.file_stem()?.to_str()?.to_string();
-            Some((entry.metadata().ok()?.modified().ok()?, name))
+            save_path_in(dir, &name)?;
+            let modified = entry
+                .metadata()
+                .ok()?
+                .modified()
+                .ok()?
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let header = (|| -> Result<(Option<metadata::Metadata>, bool)> {
+                let prefix = SaveFile::read_prefix(std::fs::File::open(&path)?)?;
+                if let Some(bytes) = prefix.section(b"META") {
+                    let meta = metadata::Metadata::decode(bytes)?;
+                    let obsolete = meta.plugins_hash != metadata::plugin_hash(plugins);
+                    Ok((Some(meta), obsolete))
+                } else {
+                    let mut r =
+                        codec::Reader::new(prefix.section(b"HEAD").context("missing HEAD")?);
+                    let mut saved = Vec::new();
+                    for _ in 0..r.count(4)? {
+                        saved.push(r.str()?);
+                    }
+                    Ok((None, saved != plugins))
+                }
+            })();
+            let (metadata, obsolete, corrupt) = match header {
+                Ok((m, o)) => (m, o, false),
+                Err(_) => (None, false, true),
+            };
+            let written = metadata.as_ref().map_or(modified, |m| m.written);
+            Some(SaveListing {
+                name,
+                metadata,
+                corrupt,
+                obsolete,
+                written,
+            })
         })
         .collect();
-    found.sort_by(|a, b| b.cmp(a));
-    found.into_iter().map(|(_, n)| n).collect()
+    found.sort_by(|a, b| b.written.cmp(&a.written).then_with(|| b.name.cmp(&a.name)));
+    found
 }
 
 /// The next append-only quicksave name in `dir`. Existing numbered quicksaves
@@ -115,6 +168,16 @@ fn write_save_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 impl Engine {
+    pub fn save_list(&self) -> Vec<SaveListing> {
+        let plugins: Vec<_> = self
+            .lo
+            .plugins()
+            .iter()
+            .map(|p| p.plugin.name().to_string())
+            .collect();
+        save_list_in(&save_dir(), &plugins)
+    }
+
     /// Write the game to `path` (to a temporary file first, so a crash
     /// leaves the old save whole).
     pub fn save_game_to(&self, path: &Path) -> Result<()> {

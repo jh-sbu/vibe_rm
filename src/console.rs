@@ -864,7 +864,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             }
         }
         "saves" => {
-            let found = crate::save::list_saves_in(&crate::save::save_dir());
+            let found = engine.save_list().into_iter().map(|s| s.name).collect::<Vec<_>>();
             if found.is_empty() {
                 vec!["no saves".into()]
             } else {

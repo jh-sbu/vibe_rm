@@ -110,3 +110,46 @@ mod tests {
         assert!(Metadata::decode(&b).is_err());
     }
 }
+#[cfg(test)]
+mod listing_tests {
+    use super::*;
+    use crate::save::{file::SaveFile, save_list_in};
+    #[test]
+    fn header_listing_supports_legacy_damage_and_plugin_changes() {
+        let dir = std::env::temp_dir().join(format!("vrm-meta-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let plugins = vec!["Skyrim.esm".to_string()];
+        let mut old = SaveFile::default();
+        let mut w = Writer::default();
+        w.len(1);
+        w.str(&plugins[0]);
+        w.bool(false);
+        old.add(b"HEAD", w.0);
+        std::fs::write(dir.join("legacy.vrs"), old.to_bytes()).unwrap();
+        let meta = Metadata {
+            plugins_hash: plugin_hash(&plugins),
+            ..Default::default()
+        };
+        let mut f = SaveFile::default();
+        f.add(b"META", meta.encode());
+        f.add(b"BODY", vec![0; 200]);
+        let bytes = f.to_bytes();
+        // The prefix reader does not even require the later snapshot bytes.
+        assert!(SaveFile::read_prefix(&bytes[..28 + meta.encode().len()]).is_ok());
+        std::fs::write(dir.join("new.vrs"), &bytes).unwrap();
+        let mut bad = bytes;
+        bad[30] ^= 1;
+        std::fs::write(dir.join("bad.vrs"), bad).unwrap();
+        let rows = save_list_in(&dir, &plugins);
+        assert_eq!(rows.len(), 3);
+        assert!(rows.iter().find(|s| s.name == "bad").unwrap().corrupt);
+        assert!(!rows.iter().find(|s| s.name == "legacy").unwrap().obsolete);
+        assert!(
+            save_list_in(&dir, &[])
+                .iter()
+                .filter(|s| !s.corrupt)
+                .all(|s| s.obsolete)
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}

@@ -34,6 +34,37 @@ pub fn crc32(data: &[u8]) -> u32 {
 }
 
 impl SaveFile {
+    /// Read only the first META (or legacy HEAD), with bounded allocation and
+    /// CRC validation. Later snapshot sections are deliberately not decoded.
+    pub fn read_prefix(mut input: impl std::io::Read) -> anyhow::Result<Self> {
+        let mut header = [0u8; 16];
+        input.read_exact(&mut header)?;
+        anyhow::ensure!(&header[..8] == MAGIC, "not a save file");
+        anyhow::ensure!(
+            u32::from_le_bytes(header[8..12].try_into()?) == VERSION,
+            "unsupported save version"
+        );
+        anyhow::ensure!(
+            u32::from_le_bytes(header[12..16].try_into()?) > 0,
+            "empty save"
+        );
+        let mut section = [0u8; 12];
+        input.read_exact(&mut section)?;
+        let tag: Tag = section[..4].try_into()?;
+        anyhow::ensure!(&tag == b"META" || &tag == b"HEAD", "missing save header");
+        let len = u32::from_le_bytes(section[4..8].try_into()?) as usize;
+        anyhow::ensure!(len <= 16 * 1024 * 1024, "save header too large");
+        let mut payload = vec![0; len];
+        input.read_exact(&mut payload)?;
+        anyhow::ensure!(
+            crc32(&payload) == u32::from_le_bytes(section[8..12].try_into()?),
+            "damaged save header"
+        );
+        Ok(Self {
+            sections: vec![(tag, payload)],
+        })
+    }
+
     pub fn add(&mut self, tag: &Tag, payload: Vec<u8>) {
         self.sections.push((*tag, payload));
     }
