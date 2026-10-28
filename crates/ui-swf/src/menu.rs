@@ -354,3 +354,141 @@ impl Menu {
         matches!(self.get(&format!("{path}.type")), Value::String(t) if t == "input")
     }
 }
+
+#[cfg(test)]
+mod host_image_tests {
+    use super::*;
+    use swf::avm1::types::{Action, DefineFunction, Push, Value as AValue};
+    fn string(s: &'static str) -> AValue<'static> {
+        AValue::Str(swf::SwfStr::from_utf8_str(s))
+    }
+    fn push(values: Vec<AValue<'static>>) -> Action<'static> {
+        Action::Push(Push { values })
+    }
+    fn bytecode(actions: &[Action<'_>]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        {
+            let mut w = swf::avm1::write::Writer::new(&mut bytes, 8);
+            for a in actions {
+                w.write_action(a).unwrap();
+            }
+        }
+        bytes.push(0);
+        bytes
+    }
+    #[test]
+    fn host_image_loads_initializes_and_resizes_without_network() {
+        // Authored synthetic AS2: onLoadInit remembers intrinsic dimensions
+        // and sizes the target, as the journal's listener does.
+        let body = bytecode(&[
+            push(vec![string("_root.receivedWidth"), string("target")]),
+            Action::GetVariable,
+            push(vec![string("_width")]),
+            Action::GetMember,
+            Action::SetVariable,
+            push(vec![string("_root.receivedHeight"), string("target")]),
+            Action::GetVariable,
+            push(vec![string("_height")]),
+            Action::GetMember,
+            Action::SetVariable,
+            push(vec![string("target")]),
+            Action::GetVariable,
+            push(vec![string("_width"), AValue::Int(96)]),
+            Action::SetMember,
+            push(vec![string("target")]),
+            Action::GetVariable,
+            push(vec![string("_height"), AValue::Int(54)]),
+            Action::SetMember,
+        ]);
+        let script = bytecode(&[
+            Action::DefineFunction(DefineFunction {
+                name: swf::SwfStr::from_utf8_str("onLoadInit"),
+                params: vec![swf::SwfStr::from_utf8_str("target")],
+                actions: &body,
+            }),
+            push(vec![
+                string("loader"),
+                AValue::Int(0),
+                string("MovieClipLoader"),
+            ]),
+            Action::NewObject,
+            Action::SetVariable,
+            push(vec![string("_root")]),
+            Action::GetVariable,
+            push(vec![AValue::Int(1), string("loader")]),
+            Action::GetVariable,
+            push(vec![string("addListener")]),
+            Action::CallMethod,
+            Action::Pop,
+            Action::Stop,
+        ]);
+        let mut data = Vec::new();
+        swf::write_swf(
+            &swf::Header {
+                version: 8,
+                ..swf::Header::default_with_swf_version(8)
+            },
+            &[swf::Tag::DoAction(&script), swf::Tag::ShowFrame],
+            &mut data,
+        )
+        .unwrap();
+        let movie = SwfMovie::from_data(&data, "file:///synthetic.swf".into(), None, None).unwrap();
+        let executor = NullExecutor::new();
+        let files = Arc::new(crate::InterfaceFiles::load(&vfs::Vfs::new(
+            std::path::Path::new("/tmp/vrm-host-image-no-assets"),
+            &[],
+        )));
+        let mut png = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut png, 2, 3);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder
+                .write_header()
+                .unwrap()
+                .write_image_data(&[255; 24])
+                .unwrap();
+        }
+        let images: crate::HostImages = Default::default();
+        images.lock().unwrap().insert("Probe".into(), png);
+        let player = PlayerBuilder::new()
+            .with_navigator(Navigator::new(files, executor.spawner(), images))
+            .with_movie(movie)
+            .with_autoplay(true)
+            .build();
+        let mut p = player.lock().unwrap();
+        p.run_frame();
+        p.invoke_avm1(
+            "_root.createEmptyMovieClip",
+            [Value::String("target".into()), Value::Number(1.)],
+        );
+        assert_eq!(
+            p.invoke_avm1(
+                "_root.loader.loadClip",
+                [
+                    Value::String("img://Probe".into()),
+                    Value::String("_root.target".into())
+                ]
+            ),
+            Value::Bool(true)
+        );
+        for _ in 0..8 {
+            p.run_frame();
+        }
+        assert_eq!(
+            p.get_avm1_variable("_root.receivedWidth"),
+            Value::Number(2.)
+        );
+        assert_eq!(
+            p.get_avm1_variable("_root.receivedHeight"),
+            Value::Number(3.)
+        );
+        assert_eq!(
+            p.get_avm1_variable("_root.target._width"),
+            Value::Number(96.)
+        );
+        assert_eq!(
+            p.get_avm1_variable("_root.target._height"),
+            Value::Number(54.)
+        );
+    }
+}
