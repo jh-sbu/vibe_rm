@@ -157,6 +157,21 @@ fn next_quicksave_name_in(dir: &Path) -> Result<String> {
     Ok(name)
 }
 
+/// Global display numbering survives overwrites and skips used numbers.
+fn next_file_num_in(dir: &Path) -> Result<u32> {
+    let mut highest = 0u32;
+    for row in save_list_in(dir, &[]) {
+        let from_name = row
+            .name
+            .strip_prefix("Save ")
+            .and_then(|s| s.split(' ').next())
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(0);
+        highest = highest.max(row.file_num()).max(from_name);
+    }
+    highest.checked_add(1).context("save numbering exhausted")
+}
+
 fn write_save_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
@@ -168,6 +183,22 @@ fn write_save_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 impl Engine {
+    pub fn new_save_name(&self) -> Result<String> {
+        let number = next_file_num_in(&save_dir())?;
+        let meta = metadata::Metadata::capture(self);
+        let suffix: String = format!("{} {}", meta.name, meta.location)
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || matches!(c, ' ' | '-' | '_') {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .take(40)
+            .collect();
+        Ok(format!("Save {number} - {suffix}"))
+    }
     pub fn save_list(&self) -> Vec<SaveListing> {
         let plugins: Vec<_> = self
             .lo
@@ -181,7 +212,21 @@ impl Engine {
     /// Write the game to `path` (to a temporary file first, so a crash
     /// leaves the old save whole).
     pub fn save_game_to(&self, path: &Path) -> Result<()> {
-        let bytes = Snapshot::capture(self).write().to_bytes();
+        let mut snapshot = Snapshot::capture(self);
+        if let Some(meta) = &mut snapshot.metadata {
+            meta.file_num = std::fs::File::open(path)
+                .ok()
+                .and_then(|f| SaveFile::read_prefix(f).ok())
+                .and_then(|f| {
+                    f.section(b"META")
+                        .and_then(|b| metadata::Metadata::decode(b).ok())
+                })
+                .map(|m| m.file_num)
+                .filter(|n| *n > 0)
+                .map(Ok)
+                .unwrap_or_else(|| next_file_num_in(path.parent().unwrap_or(Path::new("."))))?;
+        }
+        let bytes = snapshot.write().to_bytes();
         write_save_bytes(path, &bytes)?;
         log::info!("saved {} ({} bytes)", path.display(), bytes.len());
         Ok(())

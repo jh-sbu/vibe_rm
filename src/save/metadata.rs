@@ -24,6 +24,16 @@ pub fn plugin_hash(plugins: &[String]) -> u64 {
         })
 }
 impl Metadata {
+    pub fn display_text(&self, name: &str) -> String {
+        if name.starts_with("quicksave") {
+            "[Quicksave]".into()
+        } else if name.starts_with("autosave") {
+            "[Autosave]".into()
+        } else {
+            format!("{} - {} - {}", self.name, self.location, self.game_date)
+        }
+    }
+
     pub fn capture(e: &Engine) -> Self {
         let plugins: Vec<_> =
             e.lo.plugins()
@@ -36,7 +46,7 @@ impl Metadata {
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| "Prisoner".into()),
             race: e
-                .npc_race(PLAYER_REF)
+                .npc_race(esp::FormId(7))
                 .map(|r| e.form_name(r))
                 .unwrap_or_else(|| "?".into()),
             level: e.skills.level + e.skills.pending as u16,
@@ -140,8 +150,10 @@ mod listing_tests {
         let mut bad = bytes;
         bad[30] ^= 1;
         std::fs::write(dir.join("bad.vrs"), bad).unwrap();
+        std::fs::write(dir.join("Save 7 - old.vrs"), b"damaged").unwrap();
+        assert_eq!(crate::save::next_file_num_in(&dir).unwrap(), 8);
         let rows = save_list_in(&dir, &plugins);
-        assert_eq!(rows.len(), 3);
+        assert_eq!(rows.len(), 4);
         assert!(rows.iter().find(|s| s.name == "bad").unwrap().corrupt);
         assert!(!rows.iter().find(|s| s.name == "legacy").unwrap().obsolete);
         assert!(
