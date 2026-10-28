@@ -398,7 +398,7 @@ sounds, and lip sync if 9a stalls. Answer open questions in the
 - 0a: sample-clocked linear amplitude ramps; fade-then-pause; 5 ms volume/stop smoothing.
 - 0b: linear frame interpolation, including the loop seam without a dropped frame.
 - 0c: shared `VoiceParams` through pending decodes, descriptors and all playback callers.
-- 0d: separate dry/send buses, fixed per-frame scratch (allocation-free for every callback size). Send remains silent until 5c.
+- 0d: separate dry/send buses, fixed-size scratch (allocation-free for every callback size). Send remains silent until 5c.
 - 1a: `audio-defaults` and priority in `sndr-stats`; public/data evidence in `research/audio/defaults.md`.
 - 1b: cached `AudioDefaults`, with sparse override/null handling and synthetic DOBJ tests.
 - 1c: DOBJ categories and dialogue/player/interface model fallbacks replace editor-ID guesses; INFO barks use DDSC.
@@ -440,7 +440,7 @@ Device-free single tracks request cached duration from an audio worker; asset
 reads and codec work run off the simulation thread. Pending selections remain
 active until timing arrives; silent/palette timing stays independent of a mixer.
 
-Validation (host Vulkan adapter for engine construction):
+Initial implementation validation (host Vulkan adapter for engine construction):
 
 - `WGPU_BACKEND=vulkan cargo test --workspace`: passed (733 tests; 348
   intentionally ignored across the workspace).
@@ -453,3 +453,33 @@ Validation (host Vulkan adapter for engine construction):
 - `audio-defaults`, `sndr-stats`, `music-survey`, `aspc-survey`, `lip-dump`
   and `tri-dump --survey` exercised against installed game assets without
   exporting or committing assets. No Skyrim executable was inspected or run.
+
+## Audio review fixes
+
+- Weather beds now use descriptor parameters, preserving category chains,
+  priority, speaker output and reverb sends while weather weight controls gain.
+- Volume/duck updates do not retarget a stopping voice's fade. LNAM loops wrap
+  immediately after cursor advances, including the last frame of a callback.
+- Environment volumes remain separate from saved preferences; later API/console
+  changes never persist unrelated overrides. Menu-category metadata is cached
+  at initialization; gains refresh only on settings changes or device attachment.
+- Headless single-track timing uses an asynchronous worker and a cache (including
+  failures). Both asset reads and decoding run off the simulation thread; a
+  pending selection remains active while its duration is resolved.
+- Mixer category lookup, panning, routing, playback-rate and filter coefficient
+  preparation happen per voice/block. Only active gain envelopes are sampled
+  per frame. Cached voice ranks use one partition for admission; scratch and rank
+  storage is reserved outside the callback.
+- Acoustic markers load with cells and world-persistent references, rather than
+  scanning every placed reference at startup. Cached inverses, volumes, XCAS and
+  reverb parameters avoid repeated record work. Exterior spatial bins include
+  crossing volumes; oversized bounds use a separate fallback list.
+
+Review validation: the full workspace suite passed on host Vulkan, along with
+all 37 audio tests and 11 music tests (`--include-ignored`). Regression coverage
+includes weather routing, fade preservation, exact/overshot loop boundaries,
+transient overrides, delayed/cached duration results, callback/block envelope
+consistency, lazy cell discovery and spatial lookup across cell boundaries.
+The synthetic 64-positioned-voice timing test averaged 1.68 ms per 1024-frame
+callback on this machine (21.3 ms buffer duration); this is a local measurement,
+not a device listening/crackle test. Formatting and diff checks are clean.

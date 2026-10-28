@@ -315,8 +315,8 @@ impl crate::engine::Engine {
             let params = self
                 .audio_director
                 .reverb
-                .and_then(|id| self.lo.get(id))
-                .and_then(|r| r.get(b"DATA").and_then(super::reverb::Params::parse));
+                .and_then(|id| self.audio_spaces.reverbs.get(&id))
+                .copied();
             audio.set_reverb(params, 1.5);
             for (&id, target) in &self.audio_director.targets {
                 audio.set_category(id, target.state, target.seconds);

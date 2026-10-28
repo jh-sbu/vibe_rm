@@ -2252,6 +2252,7 @@ impl Engine {
         self.unload_all();
         self.apply_cell_reset(cell_id);
         let contents = cell::load_cell(&self.lo, cell_id).context("cell not found")?;
+        self.audio_spaces.load_cell(&self.lo, cell_id);
         log::info!(
             "entering {} '{}' ({}): {} objects, {} lights",
             contents.info.editor_id,
@@ -2360,6 +2361,9 @@ impl Engine {
         // full LOD sky statics load now, wherever they are.
         let mut far = Vec::new();
         let sky_statics = self.sky_static_bases().clone();
+        if let Some(pc) = wi.persistent_cell {
+            self.audio_spaces.load_cell(&self.lo, pc);
+        }
         if let Some(pc) = wi.persistent_cell
             && let Some(idx) = self.lo.cell(pc)
         {
@@ -2504,6 +2508,7 @@ impl Engine {
         };
         let cell_id = wi.cells.get(&(x, y)).copied();
         if let Some(cid) = cell_id {
+            self.audio_spaces.load_cell(&self.lo, cid);
             self.apply_cell_reset(cid);
         }
         let mut objects = Vec::new();
