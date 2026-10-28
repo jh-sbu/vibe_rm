@@ -141,20 +141,50 @@ impl CategoryMix {
     }
 }
 
+/// Output routing is carried through decoding, even before speaker mixing.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum OutputMode {
+    #[default]
+    Spatial,
+    Defined([[f32; 8]; 3]),
+}
+
+#[derive(Clone, Debug)]
+pub struct VoiceParams {
+    pub volume: f32,
+    pub rate: f32,
+    pub looping: bool,
+    pub position: Option<Vec3>,
+    pub falloff: Falloff,
+    pub categories: Vec<u32>,
+    pub priority: u8,
+    pub reverb_send: f32,
+    pub output: OutputMode,
+    pub exempt: bool,
+}
+impl Default for VoiceParams {
+    fn default() -> Self {
+        Self {
+            volume: 1.0,
+            rate: 1.0,
+            looping: false,
+            position: None,
+            falloff: Falloff::new(200.0, 2000.0),
+            categories: Vec::new(),
+            priority: 128,
+            reverb_send: 0.0,
+            output: OutputMode::Spatial,
+            exempt: false,
+        }
+    }
+}
 struct Voice {
     id: VoiceId,
-    /// The categories it is in: its own and each parent up to the master.
-    categories: Vec<u32>,
     clip: Arc<Clip>,
     pos: f64,
-    volume: Ramp,
+    params: VoiceParams,
+    gain: Ramp,
     stopping: bool,
-    looping: bool,
-    /// Playback rate against the clip's own (1: as recorded).
-    pitch: f64,
-    /// World position for 3D sounds.
-    at: Option<Vec3>,
-    falloff: Falloff,
 }
 
 struct Mixer {
@@ -183,7 +213,7 @@ impl Mixer {
         for frame in out.chunks_exact_mut(channels) {
             for v in &mut self.voices {
                 let (paused, gain, frequency) =
-                    Self::category_effect(&self.categories, &v.categories);
+                    Self::category_effect(&self.categories, &v.params.categories);
                 if paused {
                     continue;
                 }
@@ -192,17 +222,17 @@ impl Mixer {
                     v.pos = f64::MAX;
                     continue;
                 }
-                if v.looping {
+                if v.params.looping {
                     v.pos %= n as f64;
                 }
                 let i = v.pos as usize;
                 if i >= n {
                     continue;
                 }
-                let volume = v.volume.current * gain;
+                let volume = v.gain.current * gain;
                 let (mut gl, mut gr) = (volume, volume);
-                if let Some(p) = v.at {
-                    let att = v.falloff.gain(p.distance(self.listener));
+                if let Some(p) = v.params.position {
+                    let att = v.params.falloff.gain(p.distance(self.listener));
                     let pan = (p - self.listener)
                         .normalize_or_zero()
                         .dot(self.listener_right)
@@ -212,7 +242,7 @@ impl Mixer {
                 }
                 let j = if i + 1 < n {
                     i + 1
-                } else if v.looping {
+                } else if v.params.looping {
                     0
                 } else {
                     i
@@ -224,17 +254,19 @@ impl Mixer {
                 if channels > 1 {
                     frame[1] += sample(1) * gr;
                 }
-                v.pos += v.clip.rate as f64 / self.rate as f64 * v.pitch * frequency;
-                v.volume.advance();
+                v.pos += v.clip.rate as f64 / self.rate as f64
+                    * v.params.rate.max(0.01) as f64
+                    * frequency;
+                v.gain.advance();
             }
             for c in self.categories.values_mut() {
                 c.gain.advance();
             }
         }
         self.voices.retain(|v| {
-            !(v.stopping && v.volume.left == 0)
+            !(v.stopping && v.gain.left == 0)
                 && v.clip.frames() > 0
-                && (v.looping || v.pos < v.clip.frames() as f64)
+                && (v.params.looping || v.pos < v.clip.frames() as f64)
         });
         for s in out {
             *s = (*s * self.master).clamp(-1.0, 1.0);
@@ -243,15 +275,7 @@ impl Mixer {
 }
 
 enum Pending {
-    Play {
-        id: VoiceId,
-        volume: f32,
-        looping: bool,
-        pitch: f32,
-        at: Option<Vec3>,
-        falloff: Falloff,
-        categories: Vec<u32>,
-    },
+    Play { id: VoiceId, params: VoiceParams },
 }
 
 pub struct Audio {
@@ -374,54 +398,12 @@ impl Audio {
         }
     }
 
-    /// Start playing a file from the VFS. Decoding happens off-thread; playback starts once ready.
-    #[allow(clippy::too_many_arguments)]
-    pub fn play(
-        &mut self,
-        vfs: &vfs::Vfs,
-        path: &str,
-        volume: f32,
-        looping: bool,
-        at: Option<Vec3>,
-        min_dist: f32,
-        max_dist: f32,
-    ) -> Option<VoiceId> {
-        self.play_pitched(
-            vfs,
-            path,
-            volume,
-            looping,
-            1.0,
-            at,
-            Falloff::new(min_dist, max_dist),
-        )
-    }
-
-    /// [`Audio::play`] at `pitch` times the recorded rate (higher is faster and
-    /// shorter), fading with distance by `falloff`.
-    #[allow(clippy::too_many_arguments)]
-    pub fn play_pitched(
-        &mut self,
-        vfs: &vfs::Vfs,
-        path: &str,
-        volume: f32,
-        looping: bool,
-        pitch: f32,
-        at: Option<Vec3>,
-        falloff: Falloff,
-    ) -> Option<VoiceId> {
+    /// Start a file from the VFS; decoding happens off the callback thread.
+    pub fn play(&mut self, vfs: &vfs::Vfs, path: &str, params: VoiceParams) -> Option<VoiceId> {
         let key = vfs::normalize_path(path);
         let id = VoiceId(self.next_id);
         self.next_id += 1;
-        let p = Pending::Play {
-            id,
-            volume,
-            looping,
-            pitch,
-            at,
-            falloff,
-            categories: Vec::new(),
-        };
+        let p = Pending::Play { id, params };
         match self.cache.get(&key) {
             Some(Some(clip)) => {
                 let clip = clip.clone();
@@ -440,52 +422,21 @@ impl Audio {
     }
 
     fn start(&self, clip: Arc<Clip>, p: Pending) {
-        let Pending::Play {
-            id,
-            volume,
-            looping,
-            pitch,
-            at,
-            falloff,
-            categories,
-        } = p;
+        let Pending::Play { id, params } = p;
         if let Ok(mut m) = self.mixer.lock() {
             if let Some(i) = m.cancelled.iter().position(|&c| c == id) {
                 m.cancelled.swap_remove(i);
                 return;
             }
+            let gain = Ramp::new(params.volume);
             m.voices.push(Voice {
                 id,
-                categories,
                 clip,
                 pos: 0.0,
-                volume: Ramp::new(volume),
+                params,
+                gain,
                 stopping: false,
-                looping,
-                pitch: pitch.max(0.01) as f64,
-                at,
-                falloff,
             });
-        }
-    }
-
-    /// Put a voice in sound categories (its own and its parents'), so what is
-    /// done to them reaches it (a waiting one's too).
-    pub fn set_voice_categories(&mut self, id: VoiceId, categories: &[u32]) {
-        for p in self.waiting.values_mut().flatten() {
-            let Pending::Play {
-                id: i,
-                categories: c,
-                ..
-            } = p;
-            if *i == id {
-                *c = categories.to_vec();
-            }
-        }
-        if let Ok(mut m) = self.mixer.lock() {
-            for v in m.voices.iter_mut().filter(|v| v.id == id) {
-                v.categories = categories.to_vec();
-            }
         }
     }
 
@@ -514,7 +465,7 @@ impl Audio {
             let rate = m.rate;
             for v in m.voices.iter_mut().filter(|v| v.id == id) {
                 v.stopping = true;
-                v.volume.set(0.0, seconds, rate);
+                v.gain.set(0.0, seconds, rate);
             }
             if waiting && !m.cancelled.contains(&id) {
                 m.cancelled.push(id);
@@ -525,17 +476,15 @@ impl Audio {
     /// Change a voice's volume (a waiting one's too).
     pub fn set_volume(&mut self, id: VoiceId, volume: f32) {
         for p in self.waiting.values_mut().flatten() {
-            let Pending::Play {
-                id: i, volume: v, ..
-            } = p;
+            let Pending::Play { id: i, params } = p;
             if *i == id {
-                *v = volume;
+                params.volume = volume;
             }
         }
         if let Ok(mut m) = self.mixer.lock() {
             let rate = m.rate;
             for v in m.voices.iter_mut().filter(|v| v.id == id) {
-                v.volume.set(volume, 0.005, rate);
+                v.gain.set(volume, 0.005, rate);
             }
         }
     }
@@ -590,7 +539,7 @@ mod tests {
     /// A voice in category 7 of the ramp mixer, whose category was changed.
     fn mixed_in_category(state: CategoryState) -> (Mixer, Vec<f32>) {
         let mut m = mixer(1.0);
-        m.voices[0].categories = vec![3, 7];
+        m.voices[0].params.categories = vec![3, 7];
         m.categories.insert(7, CategoryMix::new(state, 0.0, m.rate));
         let mut out = vec![0.0; 20];
         m.mix(&mut out, 1);
@@ -605,7 +554,7 @@ mod tests {
         for (i, s) in out.into_iter().enumerate() {
             assert!((s - i as f32 * 0.0005).abs() < 1e-6);
         }
-        m.voices[0].looping = true;
+        m.voices[0].params.looping = true;
         m.voices[0].pos = 99.5;
         m.mix(&mut out[..2], 1);
         assert!((out[0] - 0.0495).abs() < 1e-6);
@@ -626,7 +575,7 @@ mod tests {
         }
         assert_eq!(ramp.current, 1.0);
         let mut m = mixer(1.0);
-        m.voices[0].categories = vec![7];
+        m.voices[0].params.categories = vec![7];
         m.categories.insert(
             7,
             CategoryMix::new(
@@ -671,7 +620,7 @@ mod tests {
         assert!((slow[10] - normal[5]).abs() < 1e-6, "half the rate");
         // Another category leaves it alone.
         let mut m = mixer(1.0);
-        m.voices[0].categories = vec![3];
+        m.voices[0].params.categories = vec![3];
         m.categories.insert(
             7,
             CategoryMix::new(
@@ -697,15 +646,14 @@ mod tests {
         Mixer {
             voices: vec![Voice {
                 id: VoiceId(1),
-                categories: Vec::new(),
                 clip,
                 pos: 0.0,
-                volume: Ramp::new(1.0),
+                gain: Ramp::new(1.0),
                 stopping: false,
-                looping: false,
-                pitch,
-                at: None,
-                falloff: Falloff::new(0.0, 0.0),
+                params: VoiceParams {
+                    rate: pitch as f32,
+                    ..Default::default()
+                },
             }],
             listener: Vec3::ZERO,
             listener_right: Vec3::X,
@@ -754,8 +702,8 @@ mod tests {
     #[test]
     fn positioned_voices_fade_by_their_falloff() {
         let mut m = mixer(1.0);
-        m.voices[0].at = Some(Vec3::new(0.0, 300.0, 0.0));
-        m.voices[0].falloff = Falloff {
+        m.voices[0].params.position = Some(Vec3::new(0.0, 300.0, 0.0));
+        m.voices[0].params.falloff = Falloff {
             min: 100.0,
             max: 500.0,
             curve: [1.0, 0.5, 0.2, 0.05, 0.0],

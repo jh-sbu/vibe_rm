@@ -397,3 +397,4 @@ sounds, and lip sync if 9a stalls. Answer open questions in the
 
 - 0a: sample-clocked linear amplitude ramps; fade-then-pause; 5 ms volume/stop smoothing.
 - 0b: linear frame interpolation, including the loop seam without a dropped frame.
+- 0c: shared `VoiceParams` through pending decodes, descriptors and all playback callers.

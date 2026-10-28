@@ -84,6 +84,23 @@ pub struct Variation {
 }
 
 impl SoundDesc {
+    pub fn params(
+        &self,
+        variation: Variation,
+        position: Option<glam::Vec3>,
+        looping: bool,
+    ) -> crate::audio::VoiceParams {
+        crate::audio::VoiceParams {
+            volume: self.volume * variation.gain,
+            rate: variation.pitch,
+            looping,
+            position: if self.positional { position } else { None },
+            falloff: self.falloff,
+            categories: self.categories.clone(),
+            ..Default::default()
+        }
+    }
+
     /// The variation for two random numbers in [0, 1): the playback rate is
     /// 1 plus the frequency shift plus up to the variance either way
     /// (percent), the gain up to the dB variance either way. Whether the

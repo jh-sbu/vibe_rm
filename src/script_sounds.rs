@@ -58,21 +58,16 @@ impl Engine {
         let gain = desc.volume * v.gain;
         let (voice, duration) = match self.audio.as_mut() {
             Some(a) => (
-                a.play_pitched(
+                a.play(
                     &self.vfs,
                     &desc.files[i],
-                    gain,
-                    desc.looping,
-                    v.pitch,
-                    desc.positional.then_some(at),
-                    desc.falloff,
+                    desc.params(v, Some(at), desc.looping),
                 ),
                 a.clip_duration(&desc.files[i])
                     .map(|d| d / v.pitch.max(0.01)),
             ),
             None => (None, None),
         };
-        self.tag_voice(voice, &desc.categories);
         let id = self.script_sounds.next;
         self.script_sounds.next += 1;
         self.script_sounds.instances.insert(
@@ -143,13 +138,6 @@ impl Engine {
             .get(&category.0)
             .copied()
             .unwrap_or_default()
-    }
-
-    /// Put sounds that play in the categories their descriptor names.
-    pub(crate) fn tag_voice(&mut self, voice: Option<VoiceId>, categories: &[u32]) {
-        if let (Some(v), Some(a)) = (voice, self.audio.as_mut()) {
-            a.set_voice_categories(v, categories);
-        }
     }
 
     pub(crate) fn update_script_sounds(&mut self) {

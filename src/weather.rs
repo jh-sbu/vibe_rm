@@ -320,14 +320,18 @@ impl Engine {
                         gain: 1.0,
                         pitch: 1.0,
                     });
-                    if let Some(v) = audio.play_pitched(
+                    if let Some(v) = audio.play(
                         &self.vfs,
                         &desc.files[0],
-                        volume,
-                        true,
-                        var.pitch,
-                        None,
-                        crate::audio::Falloff::new(0.0, 0.0),
+                        crate::audio::VoiceParams {
+                            volume: volume,
+                            rate: var.pitch,
+                            looping: true,
+                            position: None,
+                            falloff: crate::audio::Falloff::new(0.0, 0.0),
+                            exempt: true,
+                            ..Default::default()
+                        },
                     ) {
                         log::debug!("weather sound {snd} looping: {}", desc.files[0]);
                         self.weather.loops.push((w, snd, v));
@@ -379,14 +383,13 @@ impl Engine {
         log::debug!("thunder: {file}");
         let var = self.roll_variation(&desc);
         if let Some(a) = self.audio.as_mut() {
-            a.play_pitched(
+            a.play(
                 &self.vfs,
                 file,
-                desc.volume * weight * var.gain,
-                false,
-                var.pitch,
-                None,
-                crate::audio::Falloff::new(0.0, 0.0),
+                crate::audio::VoiceParams {
+                    volume: desc.volume * weight * var.gain,
+                    ..desc.params(var, None, false)
+                },
             );
         }
     }

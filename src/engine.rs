@@ -606,18 +606,13 @@ impl Engine {
         };
         let i = (self.rand() % desc.files.len() as u64) as usize;
         let v = self.roll_variation(&desc);
-        let voice = self.audio.as_mut().and_then(|a| {
-            a.play_pitched(
+        self.audio.as_mut().and_then(|a| {
+            a.play(
                 &self.vfs,
                 &desc.files[i],
-                desc.volume * v.gain,
-                false,
-                v.pitch,
-                desc.positional.then_some(at),
-                desc.falloff,
+                desc.params(v, desc.positional.then_some(at), false),
             )
         });
-        self.tag_voice(voice, &desc.categories);
     }
 
     /// How this playing of `desc` differs from its recording (frequency and
@@ -672,16 +667,11 @@ impl Engine {
                 crate::world::sound::unit(h),
                 crate::world::sound::unit(h.rotate_left(29).wrapping_mul(0xBF58_476D_1CE4_E5B9)),
             ]);
-            if let Some(v) = audio.play_pitched(
+            if let Some(v) = audio.play(
                 &self.vfs,
                 file,
-                desc.volume * v.gain,
-                true,
-                v.pitch,
-                desc.positional.then_some(rf.position),
-                desc.falloff,
+                desc.params(v, desc.positional.then_some(rf.position), true),
             ) {
-                audio.set_voice_categories(v, &desc.categories);
                 voices.push((r, v));
             }
         }
@@ -849,11 +839,15 @@ impl Engine {
                 log::info!("music: {track}");
                 let vfs = &self.vfs;
                 let volume = crate::world::sound::music_volume(&self.lo);
-                self.music.voice = self
-                    .audio
-                    .as_mut()
-                    .unwrap()
-                    .play(vfs, &track, volume, false, None, 0.0, 0.0);
+                self.music.voice = self.audio.as_mut().unwrap().play(
+                    vfs,
+                    &track,
+                    crate::audio::VoiceParams {
+                        volume,
+                        exempt: true,
+                        ..Default::default()
+                    },
+                );
             }
             // Silence between tracks, like the original.
             self.music.next_at = now + 20.0 + (self.rand() % 40) as f64;

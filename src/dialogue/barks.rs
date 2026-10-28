@@ -182,14 +182,18 @@ impl Engine {
             if let (Some(p), Some(audio)) = (&path, self.audio.as_mut())
                 && self.vfs.exists(p)
             {
-                voice = audio.play_pitched(
+                voice = audio.play(
                     &self.vfs,
                     p,
-                    crate::world::sound::voice_volume(&self.lo),
-                    false,
-                    1.0,
-                    at,
-                    crate::world::sound::voice_falloff(&self.lo),
+                    crate::audio::VoiceParams {
+                        volume: crate::world::sound::voice_volume(&self.lo),
+                        rate: 1.0,
+                        looping: false,
+                        position: at,
+                        falloff: crate::world::sound::voice_falloff(&self.lo),
+                        exempt: true,
+                        ..Default::default()
+                    },
                 );
             }
             // Silent lines (and without audio) last a reading time.
