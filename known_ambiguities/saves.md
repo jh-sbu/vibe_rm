@@ -465,3 +465,10 @@ The native format is this engine’s choice; it does not claim ESS compatibility
 
 The System page supersedes the single-slot autosave policy above: native
 autosaves now rotate autosave1–autosave3, preserving a legacy autosave.vrs.
+
+META also keeps the file number, character identity and optional downscaled
+RGBA screenshot. Prefix reads check META CRC without decoding the snapshot.
+HEAD-only saves have no stored player name; their journal metadata is unknown
+and they share one legacy “?” character group rather than inventing a name.
+Write timestamps format as UTC; screenshots are host img:// images, not SWFs
+or other game assets stored in the repository.

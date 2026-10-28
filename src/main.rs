@@ -101,6 +101,7 @@ pub struct Options {
     /// Extra plugins to load after those, in the order given.
     pub plugins: Vec<String>,
     pub cell: Option<String>,
+    pub load: Option<String>,
     pub world: Option<String>,
     pub grid: Option<(i32, i32)>,
     pub position: Option<glam::Vec3>,
@@ -175,6 +176,7 @@ fn parse_args() -> Result<Options> {
             }
             "--yaw" => o.yaw = Some(val()?.parse::<f32>()?.to_radians()),
             "--pitch" => o.pitch = Some(val()?.parse::<f32>()?.to_radians()),
+            "--load" => o.load = Some(val()?.to_string()),
             "--screenshot" => o.screenshot = Some(val()?.into()),
             "--size" => {
                 let v = val()?;
@@ -211,7 +213,7 @@ fn parse_args() -> Result<Options> {
             "-h" | "--help" => {
                 println!(
                     "VibeRM - a Creation Engine (Skyrim SE) compatible engine\n\n\
-                     Options:\n  --data <dir>        Skyrim Data directory (default: $SKYRIM_DATA or Steam)\n  \
+                     Options:\n  --load <name>       Resume a native save\n  --data <dir>        Skyrim Data directory (default: $SKYRIM_DATA or Steam)\n  \
                      --plugins <txt>     Load the enabled (*) plugins of a plugins.txt\n  \
                      --plugin <file>     Load a plugin from Data (repeatable)\n  \
                      --cell <edid|formid> Interior cell to load\n  --world <edid>      Worldspace (default Tamriel)\n  \

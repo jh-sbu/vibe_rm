@@ -310,6 +310,7 @@ impl ItemMenu {
             .gmst_string("sNotEnoughVendorGold")
             .unwrap_or_else(|| "Transaction value: %d gold.\nVendor only has %d gold.".into())
             .replace("\r\n", "\n");
+        super::set_button_mapping(&menu, &buttons);
         menu.set_responder(move |call, movie| match call.name.as_str() {
             // The selected item's card.
             "RequestItemCardInfo" => {

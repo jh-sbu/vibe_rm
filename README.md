@@ -187,3 +187,7 @@ Journal preferences are stored in `$XDG_CONFIG_HOME/vibe_rm/settings.ini`
 settings as the System page. `VRM_SUBTITLES=0/1` overrides both subtitle kinds;
 offscreen developer runs default this transient override on. Interactive runs
 follow the stored subtitle preferences, whose launcher defaults are off.
+
+`--load "<save name>"` resumes a native .vrs slot, retaining its character
+identity. Launching without it assigns a new character identity. The journal
+Load list can also resume or delete saves and filter them by character.

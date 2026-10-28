@@ -55,6 +55,8 @@ pub(super) struct JournalMenu {
     toggles: Arc<Mutex<Vec<(FormId, bool)>>>,
     system: Arc<Mutex<super::journal_system::System>>,
     captured: Option<crate::input_map::Button>,
+    controls_generation: u64,
+    buttons: Arc<Buttons>,
 }
 
 fn object(fields: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
@@ -205,6 +207,8 @@ impl JournalMenu {
         let system = super::journal_system::System::new(engine);
         let system_data = system.clone();
         let toggled = toggles.clone();
+        let live_buttons = buttons.clone();
+        super::set_button_mapping(&menu, &buttons);
         menu.set_responder(move |call, movie| {
             if let Some(answer) = system_data.lock().unwrap().respond(call, movie) {
                 return Some(answer);
@@ -280,11 +284,19 @@ impl JournalMenu {
             toggles,
             system,
             captured: None,
+            controls_generation: engine.input_map.read().unwrap().generation,
+            buttons: live_buttons,
         })
     }
 
     /// The tracking toggled in the menu, to the engine.
     pub fn update(&mut self, engine: &mut Engine) {
+        let generation = engine.input_map.read().unwrap().generation;
+        if generation != self.controls_generation {
+            super::set_button_mapping(&self.menu, &self.buttons);
+            self.controls_generation = generation;
+        }
+
         self.system.lock().unwrap().save_disabled =
             engine.saving_disabled() || engine.player_dead();
         let callbacks = std::mem::take(&mut self.system.lock().unwrap().callbacks);
@@ -443,6 +455,11 @@ impl JournalMenu {
                 if let Err(error) = engine.save_settings() {
                     log::warn!("settings: {error}");
                 }
+                if engine.input_map.read().unwrap().generation > 0 {
+                    if let Err(error) = engine.input_map.read().unwrap().save() {
+                        log::warn!("controls: {error}");
+                    }
+                }
                 if engine.menu == Some(crate::items::Menu::Journal) {
                     engine.menu = None;
                 }
@@ -499,6 +516,18 @@ impl JournalMenu {
             }
             _ => return false,
         };
+        self.capture_button(
+            button,
+            pressed,
+            matches!(event, WindowEvent::MouseWheel { .. }),
+        )
+    }
+    pub fn capture_button(
+        &mut self,
+        button: crate::input_map::Button,
+        pressed: bool,
+        wheel: bool,
+    ) -> bool {
         if self.captured == Some(button) {
             if !pressed {
                 self.captured = None;
@@ -515,11 +544,7 @@ impl JournalMenu {
         let input = self.system.lock().unwrap().input.clone();
         let success = input.write().unwrap().remap(&name, button);
         self.system.lock().unwrap().remapping = None;
-        self.captured = if matches!(event, WindowEvent::MouseWheel { .. }) {
-            None
-        } else {
-            Some(button)
-        };
+        self.captured = if wheel { None } else { Some(button) };
         self.menu.set(
             super::journal_system::MAPPINGS,
             Value::List(super::journal_system::mapping_rows(&input.read().unwrap())),

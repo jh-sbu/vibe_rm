@@ -101,33 +101,37 @@ fn setup_engine(
     );
     engine.audio = audio;
     engine.refresh_audio_settings();
-    if !opts.no_scripts {
-        let t = Instant::now();
-        engine.start_game_enabled_quests();
-        log::info!("quests started in {:?}", t.elapsed());
-    }
-    if let Some(c) = &opts.cell {
-        let id = engine
-            .resolve_form(c)
-            .with_context(|| format!("unknown cell {c}"))?;
-        let exterior = engine.lo.cell(id).and_then(|c| c.world);
-        match (exterior, opts.position) {
-            (Some(w), Some(p)) => engine.enter_exterior(w, p, opts.yaw.unwrap_or(0.0))?,
-            (None, Some(p)) => engine.enter_interior(id, Some((p, opts.yaw.unwrap_or(0.0))))?,
-            _ => engine.center_on_cell(id)?,
-        }
+    if let Some(name) = &opts.load {
+        engine.load_game(name)?;
     } else {
-        let wname = opts.world.clone().unwrap_or_else(|| "Tamriel".into());
-        let w = engine
-            .resolve_form(&wname)
-            .with_context(|| format!("unknown worldspace {wname}"))?;
-        let (x, y) = opts.grid.unwrap_or((4, -12));
-        let p = opts.position.unwrap_or(Vec3::new(
-            (x as f32 + 0.5) * 4096.0,
-            (y as f32 + 0.5) * 4096.0,
-            -100_000.0,
-        ));
-        engine.enter_exterior(w, p, opts.yaw.unwrap_or(0.0))?;
+        if !opts.no_scripts {
+            let t = Instant::now();
+            engine.start_game_enabled_quests();
+            log::info!("quests started in {:?}", t.elapsed());
+        }
+        if let Some(c) = &opts.cell {
+            let id = engine
+                .resolve_form(c)
+                .with_context(|| format!("unknown cell {c}"))?;
+            let exterior = engine.lo.cell(id).and_then(|c| c.world);
+            match (exterior, opts.position) {
+                (Some(w), Some(p)) => engine.enter_exterior(w, p, opts.yaw.unwrap_or(0.0))?,
+                (None, Some(p)) => engine.enter_interior(id, Some((p, opts.yaw.unwrap_or(0.0))))?,
+                _ => engine.center_on_cell(id)?,
+            }
+        } else {
+            let wname = opts.world.clone().unwrap_or_else(|| "Tamriel".into());
+            let w = engine
+                .resolve_form(&wname)
+                .with_context(|| format!("unknown worldspace {wname}"))?;
+            let (x, y) = opts.grid.unwrap_or((4, -12));
+            let p = opts.position.unwrap_or(Vec3::new(
+                (x as f32 + 0.5) * 4096.0,
+                (y as f32 + 0.5) * 4096.0,
+                -100_000.0,
+            ));
+            engine.enter_exterior(w, p, opts.yaw.unwrap_or(0.0))?;
+        }
     }
     if let Some(y) = opts.yaw {
         engine.camera.yaw = y;
@@ -352,7 +356,31 @@ pub fn run(opts: Options) -> Result<()> {
                 match (click, crate::swf_ui::key_code(name)) {
                     _ if let Some(slot) = equip => swf.attack_button(slot),
                     (Some((x, y)), _) => swf.click(x, y),
-                    (None, Some(code)) => swf.press(code),
+                    (None, Some(code)) => {
+                        if !swf.wants_input() {
+                            let map = engine.input_map.read().unwrap();
+                            let button = crate::input_map::Button::Key(code);
+                            let pause = map.triggered(
+                                "Pause",
+                                button,
+                                &Default::default(),
+                                &Default::default(),
+                            );
+                            let journal = map.triggered(
+                                "Journal",
+                                button,
+                                &Default::default(),
+                                &Default::default(),
+                            );
+                            drop(map);
+                            if pause || journal {
+                                engine.journal_last_tab = pause;
+                                engine.menu = Some(crate::items::Menu::Journal);
+                            }
+                        } else {
+                            swf.press(code);
+                        }
+                    }
                     (None, None) if name == "pause" => {}
                     (None, None) => log::error!("--menu-key {name}: no such key"),
                 }

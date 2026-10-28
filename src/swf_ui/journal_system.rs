@@ -30,6 +30,7 @@ pub struct System {
     pub input: crate::input_map::Shared,
     pub remapping: Option<String>,
     pub help: Vec<crate::system_help::Topic>,
+    labels: (String, String),
     filter: Filter,
     pub callbacks: Vec<(String, Vec<Value>)>,
 }
@@ -46,6 +47,14 @@ impl System {
             input: engine.input_map.clone(),
             remapping: None,
             help,
+            labels: (
+                engine
+                    .gmst_string("sMenuDisplayQuicksaveName")
+                    .unwrap_or_else(|| "[Quicksave]".into()),
+                engine
+                    .gmst_string("sMenuDisplayAutosaveName")
+                    .unwrap_or_else(|| "[Autosave]".into()),
+            ),
             filter: Filter::All,
             callbacks: Vec::new(),
         }))
@@ -54,7 +63,7 @@ impl System {
         match &self.filter {
             Filter::All => true,
             Filter::Character(id) => row.metadata.as_ref().is_some_and(|m| m.character == *id),
-            Filter::Legacy(name) => row.metadata.is_none() && &row.name == name,
+            Filter::Legacy(_) => row.metadata.is_none(),
         }
     }
     pub fn respond(&mut self, call: &GameCall, movie: &mut Movie<'_, '_>) -> Option<Vec<Value>> {
@@ -188,7 +197,7 @@ impl System {
                     .filter(|s| self.selected(s))
                     .cloned()
                     .collect();
-                let rows = self.visible.iter().map(row).collect();
+                let rows = self.visible.iter().map(|s| row(s, &self.labels)).collect();
                 movie.set(LIST, Value::List(rows));
                 let n = num(self.visible.len() as f32);
                 self.callbacks.push((
@@ -225,7 +234,7 @@ impl System {
         for row in &self.all {
             let pair = match &row.metadata {
                 Some(m) => (Filter::Character(m.character), m.name.clone()),
-                None => (Filter::Legacy(row.name.clone()), "?".into()),
+                None => (Filter::Legacy("?".into()), "?".into()),
             };
             if !characters.iter().any(|(f, _)| f == &pair.0) {
                 characters.push(pair);
@@ -234,13 +243,24 @@ impl System {
         characters
     }
 }
-fn row(save: &SaveListing) -> Value {
+fn row(save: &SaveListing, labels: &(String, String)) -> Value {
     let m = save.metadata.as_ref();
     let seconds = m.map_or(0, |m| m.play_seconds);
     object([
         (
             "text",
-            text(&m.map_or_else(|| save.name.clone(), |m| m.display_text(&save.name))),
+            text(&m.map_or_else(
+                || save.name.clone(),
+                |m| {
+                    if save.name.starts_with("quicksave") {
+                        labels.0.clone()
+                    } else if save.name.starts_with("autosave") {
+                        labels.1.clone()
+                    } else {
+                        m.display_text(&save.name)
+                    }
+                },
+            )),
         ),
         ("fileNum", num(save.file_num() as f32)),
         ("name", text(m.map_or("?", |m| m.name.as_str()))),
@@ -257,7 +277,10 @@ fn row(save: &SaveListing) -> Value {
         ),
         (
             "dateString",
-            text(&m.map_or_else(|| "?".into(), |m| format!("{} UTC", m.written))),
+            text(&m.map_or_else(
+                || "?".into(),
+                |m| crate::save::metadata::date_string(m.written),
+            )),
         ),
         ("corrupt", Value::Bool(save.corrupt)),
         ("obsolete", Value::Bool(save.obsolete)),

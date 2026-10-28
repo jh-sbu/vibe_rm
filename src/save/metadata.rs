@@ -258,3 +258,54 @@ impl Engine {
             Thumbnail::downscale(&pixels, self.renderer.width, self.renderer.height);
     }
 }
+
+/// UTC, bounded to Gregorian years the journal can display.
+pub fn date_string(seconds: u64) -> String {
+    if seconds > 253402300799 {
+        return "?".into();
+    }
+    let mut days = seconds / 86400;
+    let mut year = 1970u32;
+    let leap = |y: u32| y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+    while days >= if leap(year) { 366 } else { 365 } {
+        days -= if leap(year) { 366 } else { 365 };
+        year += 1;
+    }
+    let months = [
+        31,
+        if leap(year) { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
+    let mut month = 0;
+    while days >= months[month] {
+        days -= months[month];
+        month += 1;
+    }
+    format!(
+        "{year:04}-{:02}-{:02} {:02}:{:02} UTC",
+        month + 1,
+        days + 1,
+        seconds / 3600 % 24,
+        seconds / 60 % 60
+    )
+}
+
+#[cfg(test)]
+mod date_tests {
+    use super::*;
+    #[test]
+    fn utc_dates_are_readable_and_bounded() {
+        assert_eq!(date_string(0), "1970-01-01 00:00 UTC");
+        assert_eq!(date_string(68169600), "1972-02-29 00:00 UTC");
+        assert_eq!(date_string(u64::MAX), "?");
+    }
+}

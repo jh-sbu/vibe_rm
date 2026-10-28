@@ -123,6 +123,7 @@ impl MagicMenu {
         let menu = ui.open("magicmenu.swf", size)?;
         let cards: Arc<Mutex<Vec<Value>>> = Default::default();
         let row_cards = cards.clone();
+        super::set_button_mapping(&menu, &buttons);
         menu.set_responder(move |call, movie| match call.name.as_str() {
             "RequestItemCardInfo" => {
                 let row = movie.get(&format!("{LISTS}.ItemsList.selectedEntry.vrmRow"));

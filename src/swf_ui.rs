@@ -1059,6 +1059,13 @@ impl SwfUi {
     /// (`--menu-key`, for testing).
     pub fn press(&mut self, code: winit::keyboard::KeyCode) {
         use ui_swf::PlayerEvent;
+        if self.message_box.shown.is_none()
+            && let Some(journal) = &mut self.journal
+            && journal.capture_button(crate::input_map::Button::Key(code), true, false)
+        {
+            journal.capture_button(crate::input_map::Button::Key(code), false, false);
+            return;
+        }
         if !self.wants_input() || self.item_key(code) || self.journal_key(code) {
             return;
         }
@@ -2098,5 +2105,32 @@ mod input_tests {
     fn offscreen_input_names_include_numpad() {
         assert_eq!(key_code("Numpad1"), Some(K::Numpad1));
         assert_eq!(key_code("Numpad8"), Some(K::Numpad8));
+    }
+}
+
+/// The journal/item movies also use a mapping callback for bottom-bar labels.
+fn set_button_mapping(menu: &Menu, buttons: &Buttons) {
+    if let Some(map) = &buttons.map {
+        let map = map.read().unwrap();
+        let rows = map
+            .events()
+            .iter()
+            .map(|event| {
+                let art = map
+                    .first(&event.name, 0)
+                    .and_then(keyboard_art)
+                    .or_else(|| map.first(&event.name, 1).and_then(mouse_art))
+                    .unwrap_or_else(|| "UnknownKey".into());
+                Value::Object(
+                    [
+                        ("mapName".into(), text(&event.name)),
+                        ("buttonName".into(), text(&art)),
+                    ]
+                    .into(),
+                )
+            })
+            .collect();
+        drop(map);
+        menu.callback("SetButtonMapping", &[Value::List(rows)]);
     }
 }

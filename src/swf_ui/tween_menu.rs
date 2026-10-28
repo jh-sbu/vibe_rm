@@ -32,6 +32,7 @@ impl TweenMenu {
         buttons: std::sync::Arc<Buttons>,
     ) -> anyhow::Result<Self> {
         let menu = ui.open("tweenmenu.swf", size)?;
+        super::set_button_mapping(&menu, &buttons);
         menu.set_responder(move |call, _| super::respond(&buttons, call));
         menu.invoke(&format!("{M}.InitExtensions"), &[]);
         let level = engine.skills.level + engine.skills.pending as u16;

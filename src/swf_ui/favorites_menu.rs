@@ -69,6 +69,7 @@ impl FavoritesMenu {
         buttons: std::sync::Arc<Buttons>,
     ) -> anyhow::Result<Self> {
         let menu = ui.open("favoritesmenu.swf", size)?;
+        super::set_button_mapping(&menu, &buttons);
         menu.set_responder(move |call, _| super::respond(&buttons, call));
         menu.invoke(&format!("{M}.InitExtensions"), &[]);
         menu.invoke(&format!("{M}.SetPlatform"), &[num(0.0), Value::Bool(false)]);

@@ -58,7 +58,7 @@ Use fDiffMultHPToPC{VE,E,N,H,VH,L} for player-taken damage and
 fDiffMultHPByPC{VE,E,N,H,VH,L} for NPC-taken damage. Missing values use UESP's
 0.5/0.75/1/1.5/2/3 and 2/1.5/1/0.75/0.5/0.25 respectively. These setting
 names are inferred from the data's fDiffMultHPToPCL; only that value (3) was
-found in Skyrim.esm. XP difficulty multipliers remain an open research question.
+found in Skyrim.esm.
 
 ## Brightness mapping
 
