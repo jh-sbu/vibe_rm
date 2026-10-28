@@ -2054,8 +2054,9 @@ game each piece unlocks.
      input; `known_ambiguities/messages.md`); controller rumble for camera shakes;
      quest banners expiring while the HUD is hidden
    - The journal's rest: the System page (saves, settings, controls, help,
-     quitting), Show on Map; the statistics whose systems aren't there yet
-     (crafting, dragon souls collected, horses stolen)
+     quitting; plan: `plans/system-page.md`), Show on Map; the statistics
+     whose systems aren't there yet (crafting, dragon souls collected, horses
+     stolen)
    - The HUD's compass: the player's own marker (with the map), location
      aliases as quest targets (research-gated: no direct examples found in
      the inspected Bethesda plugins; `known_ambiguities/quest-targets.md`); the charge and
