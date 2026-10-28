@@ -78,6 +78,13 @@ impl Breath {
 }
 
 impl Engine {
+    /// Surface swimming is for races that both walk and swim. Swim-only
+    /// creatures (e.g. slaughterfish) must keep their authored underwater Z.
+    fn surface_swimmer(&self, actor: FormId) -> bool {
+        self.race_of(actor)
+            .is_some_and(|race| self.race_flag(race, 0x40) && self.race_flag(race, 0x100))
+    }
+
     /// The water surface height at a point in the currently loaded space.
     pub(crate) fn water_level(&self, at: Vec3) -> Option<f32> {
         surface_at(self.cells.values().flat_map(|c| &c.water), at).map(|w| w.height)
@@ -98,6 +105,9 @@ impl Engine {
             .flat_map(|rt| &rt.actors)
             .filter(|a| !a.dead)
             .map(|a| {
+                if !self.surface_swimmer(a.ref_id) {
+                    return (a.ref_id, false);
+                }
                 let feet = a.feet();
                 let surface = self.water_level(feet);
                 let bed = surface.and_then(|h| {
@@ -136,7 +146,9 @@ impl Engine {
             .cells
             .values()
             .flat_map(|rt| &rt.actors)
-            .filter(|a| !a.dead)
+            // The measured float/head heights only support humanoids. Applying
+            // them to low-bodied creatures makes normal swimming lethal.
+            .filter(|a| !a.dead && a.graph.as_ref().is_some_and(|g| g.project().humanoid()))
             .map(|a| (a.ref_id, a.feet() + Vec3::Z * a.height() * 0.9))
             .collect();
         if !self.player_dead() && !self.player.noclip {
@@ -305,6 +317,113 @@ mod tests {
             );
         }
     }
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records and graphs only"]
+    fn water_preserves_swim_only_depth_and_limits_breath_to_humanoids() {
+        use crate::ai::ActorRuntime;
+        use crate::world::{
+            behavior::{GraphAnim, ProjectRuntime},
+            skeleton::Skeleton,
+        };
+        use esp::writer::{Node, RecordBuilder, write_plugin};
+        use glam::Mat4;
+        use havok::behavior::{Project, runtime::Shared};
+        use std::sync::Arc;
+
+        let dir = std::env::temp_dir().join(format!("vrm-water-races-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut races = Vec::new();
+        let mut npcs = Vec::new();
+        let mut refs = Vec::new();
+        // Fish, dog, humanoid, and a race that cannot swim.
+        for (i, flags) in [0x40u32, 0x140, 0x140, 0x100].into_iter().enumerate() {
+            let race = FormId(0x800 + i as u32);
+            let mut data = [0u8; 36];
+            data[32..36].copy_from_slice(&flags.to_le_bytes());
+            races.push(RecordBuilder::new(b"RACE", race).field(b"DATA", &data));
+            npcs.push(RecordBuilder::new(b"NPC_", FormId(0x810 + i as u32)).form(b"RNAM", race));
+            refs.push(
+                RecordBuilder::new(b"ACHR", FormId(0x820 + i as u32))
+                    .form(b"NAME", FormId(0x810 + i as u32)),
+            );
+        }
+        std::fs::write(
+            dir.join("Water.esp"),
+            write_plugin(
+                0,
+                &[],
+                "test",
+                "water races",
+                0x900,
+                &[
+                    Node::top(b"RACE", races),
+                    Node::top(b"NPC_", npcs),
+                    Node::top(b"ACHR", refs),
+                ],
+            ),
+        )
+        .unwrap();
+        let mut e = crate::stats::action_tests::headless_engine(&dir, "Water.esp");
+        let key = crate::render::CellKey::Interior(FormId(0x830));
+        e.cells
+            .entry(key)
+            .or_default()
+            .water
+            .push(surface(0.0, 0.0, 0));
+        for (i, dir) in ["slaughterfish", "canine", "character", "other"]
+            .into_iter()
+            .enumerate()
+        {
+            let id = FormId(0x820 + i as u32);
+            let skeleton = Arc::new(Skeleton {
+                height: if i == 2 { 128.0 } else { 40.0 },
+                ..Default::default()
+            });
+            let mut actor = ActorRuntime::new(
+                id,
+                FormId(0x810 + i as u32),
+                skeleton.clone(),
+                Mat4::from_translation(Vec3::new(10.0, 10.0, -300.0)),
+                vec![],
+                0.0,
+            );
+            let project = Arc::new(ProjectRuntime {
+                shared: Shared::new(Arc::new(Project {
+                    graphs: vec![],
+                    character: None,
+                })),
+                dir: format!("meshes/actors/{dir}"),
+                name: "synthetic".into(),
+                files: vec![],
+            });
+            actor.graph = Some(GraphAnim::new(project, "rig", false, &skeleton, 1));
+            Arc::make_mut(&mut actor.stats).max_health = 50.0;
+            // Clear stale surface-swimming state for races that do not use it.
+            actor.swimming = true;
+            e.actor_cells.insert(id, key);
+            e.cells.get_mut(&key).unwrap().actors.push(actor);
+        }
+        e.update_swimming_states();
+        for (i, swimming) in [false, true, true, false].into_iter().enumerate() {
+            assert_eq!(
+                e.actor_ref(FormId(0x820 + i as u32)).unwrap().swimming,
+                swimming
+            );
+        }
+        for _ in 0..60 {
+            e.update_breath(1.0);
+        }
+        for id in [0x820, 0x821, 0x823] {
+            assert!(!e.breath.contains_key(&FormId(id)));
+            assert!(!e.actor_ref(FormId(id)).unwrap().dead);
+            assert_eq!(e.actor_health(FormId(id)), Some((50.0, 50.0)));
+        }
+        // Humanoid drowning damage remains active while actually submerged.
+        // This fixture has no rendered instance to turn into a corpse.
+        assert_eq!(e.actor_health(FormId(0x822)), Some((0.0, 50.0)));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     #[test]
     fn swim_depth_has_hysteresis_and_uses_the_bed_while_floating() {
         assert!(!swim_state(Some(200.0), 120.0, Some(120.0), false));

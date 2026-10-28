@@ -1580,7 +1580,7 @@ impl Engine {
     }
 
     /// A race's `DATA` flag bits (xEdit's `wbRACE`: 0x1 playable, 0x4 child).
-    fn race_flag(&self, race: FormId, mask: u32) -> bool {
+    pub(crate) fn race_flag(&self, race: FormId, mask: u32) -> bool {
         self.lo
             .get(race)
             .and_then(|r| {

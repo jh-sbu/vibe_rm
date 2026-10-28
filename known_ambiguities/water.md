@@ -82,7 +82,14 @@ of exit hysteresis measured against the bed, so floating at the observed
 92 does not toggle the state. A swimmer lifted clear of that float band
 also leaves the state. The bed comes from static-world ground rays.
 Scale/race-dependent depth and Waterbreathing's influence on state remain
-unmeasured; use the same threshold for now. Autotest20 is deferred by the user.
+unmeasured; use the same threshold for land-capable swimmers for now.
+Autotest20 is deferred by the user.
+
+The local UESP [RACE revision 3650080](https://en.uesp.net/w/index.php?oldid=3650080)
+documents Swims (0x40) and Walks (0x100). Surface swimming now requires both.
+Swim-only races such as SlaughterfishRace retain their underwater position
+instead of being raised to the humanoid float height. This is a scope guard,
+not evidence for the original game's aquatic movement controller.
 
 NPC swim locomotion selects graph-named swim MOVT states and uses water
 navmesh paths. Swimmers float at the observed surface-minus-92 feet height;
@@ -117,7 +124,7 @@ describes thirty. These are author observations, not verified here.
 
 Installed WaterbreathingFFSelf is archetype 34 (Peak Value Modifier) of
 WaterBreathing (AV 57), already handled by the effect runtime. No new native
-or special race exemption is needed. The vanilla GMSTs are
+is needed to apply that effect. The vanilla GMSTs are
 fActorSwimBreathMult=0.2 and fActorSwimBreathDamage=0.08; their names and values
 do not establish a formula. Chosen policy: capacity = 100 * breath multiplier
 seconds (20 by default), then damage = maximum health * damage multiplier
@@ -127,8 +134,13 @@ introduced. The hundred-unit capacity scale, recovery/reset policy and max
 health basis need an original-game probe; keep these as follow-up questions
 in the animation plan, without generating autotest20 now.
 
-NPC head immersion uses 90% of scaled skeleton height; player immersion uses
-the eye. Per-race breathing points and actors without loaded 3D are unresolved.
+Humanoid NPC head immersion uses 90% of scaled skeleton height; player immersion
+uses the eye. Chosen interim scope: breath damage only runs for loaded humanoid
+graphs and the player. The human float depth submerges dogs' and mudcrabs' heads;
+using it with the generic skeleton-height estimate falsely kills ordinary
+swimmers. The available float-height probe measured a humanoid and does not
+settle creature float heights or breathing points. Creature breath stays disabled
+until those are resolved (animation plan question 8).
 Transient breath state clears on unloading. Diving controls remain future work.
 The inspected vanilla HUDMenu ActionScript (existing ignored
 spike/swf/out/hudmenu.dis) exports health, magicka, stamina, shout and charge
