@@ -303,6 +303,23 @@ impl JournalMenu {
     /// menus' shared ones.
     pub fn answer(&mut self, engine: &mut Engine, call: &GameCall, saved: &mut Saved) -> bool {
         match call.name.as_str() {
+            "DeleteSave" => {
+                if let Some(i) = super::journal_system::index(call) {
+                    let listing = self.system.lock().unwrap().visible.get(i).cloned();
+                    if let Some(save) = listing {
+                        match engine.delete_save(&save.name) {
+                            Ok(()) => {
+                                let mut system = self.system.lock().unwrap();
+                                system.visible.remove(i);
+                                system.all.retain(|s| s.name != save.name);
+                            }
+                            Err(e) => {
+                                engine.debug_message_box(format!("Could not delete save: {e:#}"))
+                            }
+                        }
+                    }
+                }
+            }
             "IsOKtoLoad" => {
                 let listing = super::journal_system::index(call)
                     .and_then(|i| self.system.lock().unwrap().visible.get(i).cloned());
