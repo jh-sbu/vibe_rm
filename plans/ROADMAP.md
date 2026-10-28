@@ -2044,7 +2044,7 @@ game each piece unlocks.
    Audio menu's sliders; output models' reverb send and speaker output (acoustic spaces),
    sounds' priorities when voices run out. Plan for the unblocked parts (with
    default music types, acoustic-space ambience and region sounds):
-   `plans/audio-unblocked.md`
+   `plans/audio-unblocked.md` (implementation progress and completed sub-steps logged there)
 8. **Rendering**: point light and interior shadows, static shadow caching (per-cell
    caster batches), water-surface ripples and underwater rendering (for diving),
    HDR: eye adaptation, bloom, tone mapping and the image

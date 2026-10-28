@@ -157,7 +157,7 @@ impl Engine {
             && let Some(a) = self.audio.as_ref()
         {
             for (&c, &state) in &self.script_sounds.categories {
-                a.set_category(c, state);
+                a.set_category(c, state, 0.005);
             }
             self.script_sounds.categories_dirty = false;
         }

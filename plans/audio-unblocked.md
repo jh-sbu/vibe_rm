@@ -1,6 +1,6 @@
 # Audio: the unblocked items
 
-**Status: planned** (2026-10-27). Covers what can be built today from ROADMAP
+**Status: in progress** (2026-10-27). Covers what can be built today from ROADMAP
 Next item 7 (Audio), as sorted on 2026-10-27. It also covers three audio gaps
 the research turned up that ROADMAP doesn't list: the default music types
 (combat, death, level-up), acoustic spaces' ambient loops, and regions'
@@ -392,3 +392,7 @@ sounds, and lip sync if 9a stalls. Answer open questions in the
   field mappings and 2D sends (5c); `RDSA` chance semantics (5d).
 - `ONAM` level scale (6b); voice cap and priority direction (7).
 - `.lip` and `.tri` decoding (9a).
+
+## Implementation log
+
+- 0a: sample-clocked linear amplitude ramps; fade-then-pause; 5 ms volume/stop smoothing.

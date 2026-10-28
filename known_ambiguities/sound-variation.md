@@ -30,3 +30,10 @@ dB variance (1 to 16, mostly 2 to 6: footsteps, impacts, voices' effects).
   well off 1 is rougher than the game's.
 - **Not used.** The priority (`BNAM` byte 2: which voices to drop when the
   game runs out of them) and the rumble send (`LNAM`).
+
+## Mixer smoothing (audio plan 0a)
+
+The data and public SNDR/SNCT documentation specify gains, not their sample-level
+interpolation. Gain changes use linear amplitude ramps; ordinary volume and stop
+changes take 5 ms. Category pause holds the playback cursor only after fading
+to zero. This is a click suppression choice, not measured Skyrim behavior.
