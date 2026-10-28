@@ -2042,7 +2042,9 @@ game each piece unlocks.
      NPCs only use pre-baked heads
 7. **Audio**: lip sync; music fades; categories' mute when submerged and menu / dialogue ducking, the
    Audio menu's sliders; output models' reverb send and speaker output (acoustic spaces),
-   sounds' priorities when voices run out
+   sounds' priorities when voices run out. Plan for the unblocked parts (with
+   default music types, acoustic-space ambience and region sounds):
+   `plans/audio-unblocked.md`
 8. **Rendering**: point light and interior shadows, static shadow caching (per-cell
    caster batches), water-surface ripples and underwater rendering (for diving),
    HDR: eye adaptation, bloom, tone mapping and the image
