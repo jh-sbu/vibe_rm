@@ -1592,6 +1592,11 @@ impl Hud {
         }
         self.meters(engine);
         self.compass(engine);
+        let enabled = engine.settings.enabled("bCrosshairEnabled");
+        if self.sent.crosshair_enabled != Some(enabled) {
+            self.call("SetCrosshairEnabled", &[Value::Bool(enabled)]);
+            self.sent.crosshair_enabled = Some(enabled);
+        }
         self.crosshair(engine);
         self.subtitle(engine);
         self.notifications(engine);
