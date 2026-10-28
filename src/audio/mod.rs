@@ -212,6 +212,29 @@ struct Voice {
     virtualized: bool,
 }
 
+impl Voice {
+    /// Normalize immediately after advancing too: a buffer may end on a loop boundary.
+    fn wrap_loops(&mut self) {
+        let n = self.clip.frames();
+        if n == 0 {
+            return;
+        }
+        if let Some(region) = self.params.loop_region {
+            let begin = region.begin.max(0.0) as f64 * self.clip.rate as f64;
+            let end = (region.end as f64 * self.clip.rate as f64).min(n as f64);
+            if end > begin && self.pos >= end && self.repeats < region.count {
+                let wraps = ((self.pos - begin) / (end - begin)).floor().max(1.0) as u32;
+                let wraps = wraps.min(region.count - self.repeats);
+                self.pos -= (end - begin) * wraps as f64;
+                self.repeats += wraps;
+            }
+        }
+        if self.params.looping {
+            self.pos %= n as f64;
+        }
+    }
+}
+
 struct Mixer {
     voices: Vec<Voice>,
     listener: Vec3,
@@ -298,19 +321,7 @@ impl Mixer {
                     v.pos = f64::MAX;
                     continue;
                 }
-                if let Some(region) = v.params.loop_region {
-                    let begin = region.begin.max(0.0) as f64 * v.clip.rate as f64;
-                    let end = (region.end as f64 * v.clip.rate as f64).min(n as f64);
-                    if end > begin && v.pos >= end && v.repeats < region.count {
-                        let wraps = ((v.pos - begin) / (end - begin)).floor().max(1.0) as u32;
-                        let wraps = wraps.min(region.count - v.repeats);
-                        v.pos -= (end - begin) * wraps as f64;
-                        v.repeats += wraps;
-                    }
-                }
-                if v.params.looping {
-                    v.pos %= n as f64;
-                }
+                v.wrap_loops();
                 let i = v.pos as usize;
                 if i >= n {
                     continue;
@@ -319,6 +330,7 @@ impl Mixer {
                     v.pos += v.clip.rate as f64 / self.rate as f64
                         * v.params.rate.max(0.01) as f64
                         * frequency;
+                    v.wrap_loops();
                     v.gain.advance();
                     continue;
                 }
@@ -384,6 +396,7 @@ impl Mixer {
                 v.pos += v.clip.rate as f64 / self.rate as f64
                     * v.params.rate.max(0.01) as f64
                     * frequency;
+                v.wrap_loops();
                 v.gain.advance();
             }
             let wet = self.reverb.process(self.send);
@@ -646,7 +659,7 @@ impl Audio {
         }
         if let Ok(mut m) = self.mixer.lock() {
             let rate = m.rate;
-            for v in m.voices.iter_mut().filter(|v| v.id == id) {
+            for v in m.voices.iter_mut().filter(|v| v.id == id && !v.stopping) {
                 v.gain.set(volume, seconds, rate);
             }
         }
@@ -718,6 +731,61 @@ mod tests {
         let mut out = vec![0.0; 20];
         m.mix(&mut out, 1);
         (m, out)
+    }
+
+    fn audio_with_mixer(m: Mixer) -> Audio {
+        let (req_tx, _) = channel();
+        let (_, res_rx) = channel();
+        Audio {
+            _stream: None,
+            rate: m.rate,
+            mixer: Arc::new(Mutex::new(m)),
+            cache: HashMap::new(),
+            waiting: HashMap::new(),
+            req_tx,
+            res_rx,
+            next_id: 2,
+        }
+    }
+    #[test]
+    fn duck_volume_updates_cannot_retarget_a_stopping_voice() {
+        let mut a = audio_with_mixer(mixer(1.0));
+        let id = VoiceId(1);
+        a.stop_with_fade(id, 0.01);
+        a.mixer.lock().unwrap().mix(&mut [0.0; 5], 1);
+        a.set_volume_with_fade(id, 1.0, 6.0);
+        let mut m = a.mixer.lock().unwrap();
+        assert_eq!(m.voices[0].gain.target, 0.0);
+        assert_eq!(m.voices[0].gain.left, 5);
+        m.mix(&mut [0.0; 5], 1);
+        assert!(m.voices.is_empty());
+    }
+    #[test]
+    fn lnam_repeats_survive_a_boundary_on_the_last_buffer_frame() {
+        let mut m = mixer(1.0);
+        m.voices[0].params.loop_region = Some(LoopRegion {
+            begin: 0.0,
+            end: 0.1,
+            count: 2,
+        });
+        for repeat in [1, 2] {
+            m.mix(&mut [0.0; 100], 1);
+            assert_eq!(m.voices.len(), 1);
+            assert_eq!(m.voices[0].repeats, repeat);
+            assert_eq!(m.voices[0].pos, 0.0);
+        }
+        m.mix(&mut [0.0; 100], 1);
+        assert!(m.voices.is_empty());
+        let mut m = mixer(1.5);
+        m.voices[0].params.loop_region = Some(LoopRegion {
+            begin: 0.0,
+            end: 0.1,
+            count: 2,
+        });
+        m.mix(&mut [0.0; 67], 1);
+        assert_eq!(m.voices.len(), 1);
+        assert_eq!(m.voices[0].repeats, 1);
+        assert_eq!(m.voices[0].pos, 0.5);
     }
 
     #[test]

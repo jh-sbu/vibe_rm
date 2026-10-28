@@ -136,6 +136,22 @@ fn region_weathers(rec: &esp::LoadedRecord<'_>) -> Option<(u8, Vec<(FormId, u32,
     found.filter(|(_, l)| !l.is_empty())
 }
 
+/// Weather share replaces random gain variance, preserving descriptor routing.
+fn loop_params(
+    desc: &crate::world::sound::SoundDesc,
+    variation: crate::world::sound::Variation,
+    weight: f32,
+) -> crate::audio::VoiceParams {
+    desc.params(
+        crate::world::sound::Variation {
+            gain: weight,
+            pitch: variation.pitch,
+        },
+        None,
+        true,
+    )
+}
+
 impl Engine {
     pub(crate) fn weather_record(&mut self, f: FormId) -> Option<Arc<Weather>> {
         if let Some(w) = self.weather.records.get(&f) {
@@ -320,19 +336,9 @@ impl Engine {
                         gain: 1.0,
                         pitch: 1.0,
                     });
-                    if let Some(v) = audio.play(
-                        &self.vfs,
-                        &desc.files[0],
-                        crate::audio::VoiceParams {
-                            volume: volume,
-                            rate: var.pitch,
-                            looping: true,
-                            position: None,
-                            falloff: crate::audio::Falloff::new(0.0, 0.0),
-                            exempt: true,
-                            ..Default::default()
-                        },
-                    ) {
+                    if let Some(v) =
+                        audio.play(&self.vfs, &desc.files[0], loop_params(&desc, var, weight))
+                    {
                         log::debug!("weather sound {snd} looping: {}", desc.files[0]);
                         self.weather.loops.push((w, snd, v));
                     }
@@ -1026,6 +1032,46 @@ fn precipitation_amounts(cur: Option<&Weather>, out: Option<&Weather>, pct: f32)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn weather_loops_keep_descriptor_categories_priority_and_output_model() {
+        use crate::world::sound::{OutputModel, SoundDesc, Variation};
+        let desc = SoundDesc {
+            files: vec![],
+            looping: true,
+            priority: 192,
+            falloff: crate::audio::Falloff::new(0.0, 10.0),
+            positional: false,
+            output_model: Some(OutputModel {
+                positional: false,
+                falloff: crate::audio::Falloff::new(0.0, 10.0),
+                reverb_send: 0.3,
+                output: crate::audio::OutputMode::Defined([[0.5; 8]; 3]),
+            }),
+            volume: 0.81,
+            frequency_shift: 0.0,
+            frequency_variance: 0.0,
+            db_variance: 8.0,
+            categories: vec![4, 3, 2, 1],
+        };
+        let p = loop_params(
+            &desc,
+            Variation {
+                gain: 2.0,
+                pitch: 0.97,
+            },
+            0.25,
+        );
+        assert_eq!(p.categories, desc.categories);
+        assert_eq!(p.priority, 192);
+        assert!(!p.exempt);
+        assert!(p.looping);
+        assert_eq!(p.position, None);
+        assert_eq!(p.volume, 0.81 * 0.25);
+        assert_eq!(p.rate, 0.97);
+        assert_eq!(p.reverb_send, 0.3);
+        assert_eq!(p.output, desc.output_model.unwrap().output);
+    }
 
     #[test]
     fn classification_takes_the_first_flag() {
