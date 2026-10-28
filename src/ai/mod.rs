@@ -2502,8 +2502,13 @@ impl Engine {
         }
     }
 
-    /// Pick an action's event for this actor's graph. `None` means refused.
+    /// Pick one of `LocomotionActions::NAMES` for this actor's graph. Other
+    /// action trees need a separate lookup; `None` here means refused or absent.
     pub(crate) fn action(&mut self, actor: FormId, name: &str) -> Option<Arc<str>> {
+        debug_assert!(
+            idles::LocomotionActions::NAMES.contains(&name),
+            "Engine::action only resolves locomotion actions; unsupported action: {name}"
+        );
         self.idles
             .get_or_insert_with(|| idles::IdleIndex::build(&self.lo));
         self.resolve_action(actor, name, self.action_project(actor)?)
