@@ -77,13 +77,6 @@ over the final 20 percent using stable screen-door coverage, then cull. This
 transition width and endpoint policy are host choices, not established SE
 shader behavior. Defaults retain the documented INI values.
 
-## Tree distance during billboard work
-
-Public Tree LOD documentation cited in the research note establishes the
-separate LST/BTT billboard path, absent from the current BTR/BTO host. Apply
-fTreesMidLODSwitchDist as the full tree's fade/cull distance in the interim;
-there is currently no billboard replacement. This is a functional distance
-control, not a verified SE full-to-billboard transition.
 
 ## Remapping conflicts
 
@@ -94,3 +87,14 @@ button art; do not change gamepad or fixed events. Esc, console, F3 and the
 developer noclip key N are reserved. Both capture press and release are
 consumed before the movie and gameplay. SE swap/refusal behavior awaits the
 observation requested in the plan.
+
+## Tree billboard presentation
+
+Public xEdit LST/BTT schemas and installed assets establish atlas UVs, sizes,
+world-space reference positions, rotation and scale. Draw two crossed vertical
+alpha-tested cards, as the xLODGen documentation describes. Choose alpha test
+0.5 and a complementary screen-door transition over the last 20 percent before
+fTreesMidLODSwitchDist. Full trees without a matching billboard stay visible.
+Four nearby BTT blocks stream per frame, within eight cells beyond the loaded
+cell radius. Exact native transition, alpha threshold, lighting and streaming
+radius remain unverified; these choices avoid gaps and unbounded work.

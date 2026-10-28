@@ -195,3 +195,22 @@ inline image markup using the returned art. Help therefore expands alias/global
 tags while preserving bracket controls for the movie; FULL titles are literal
 localized text without a prefixed $. HMPC supplies the list and the movie sorts
 it alphabetically.
+
+## Vanilla tree billboard format and validation
+
+The local UESP index has no BTT article. Public primary source
+[xEdit wbDataFormatMisc.pas](https://raw.githubusercontent.com/TES5Edit/TES5Edit/dev-4.1.6/Core/wbDataFormatMisc.pas)
+describes LST/BTT fields. Its MPL-2.0 license and this project's MIT license
+were checked first: MPL permits a larger work under other terms while covered
+files keep MPL obligations. No implementation or source expressions were copied;
+the Rust parser independently reads the format facts and remains project code.
+The source's license notice was retained in the ignored reference description.
+
+LST is a u32 count and 32-byte rows: type, width/height, four atlas UV floats
+and one unknown u32. BTT is a counted list of type/count groups, each reference
+32 bytes: position xyz, rotation, scale, FormID and two unknown words. All
+words/floats are little-endian. Installed Tamriel.lst is 1092 bytes for 34 types;
+Tamriel.4.4.-12.btt parses to completion with positions inside that block's
+world coordinates. Asset files were extracted only under /tmp, never refs or
+tracked paths. Atlas path is textures/terrain/<world>/trees/<world>treelod.dds.
+The host uses the documented crossed-card approach, not an SKSE extension.

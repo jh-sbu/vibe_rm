@@ -854,6 +854,7 @@ pub struct Scene {
     /// The worldspace's far references, loaded with it rather than with
     /// their cells (sky statics).
     pub far: Vec<Instance>,
+    pub tree_lod: Vec<Instance>,
     /// Particles to draw this frame.
     pub particles: Vec<particles::ParticleBatch>,
     /// Decals on actors' bodies, placed by this frame's poses.
@@ -914,6 +915,7 @@ impl Scene {
             .chain(self.dynamic.iter())
             .chain(self.sky.iter())
             .chain(self.far.iter())
+            .chain(self.tree_lod.iter())
     }
     pub fn instance_count(&self) -> usize {
         self.cells.values().map(|c| c.instances.len()).sum()
@@ -2314,6 +2316,19 @@ impl Renderer {
             self.queue
                 .write_buffer(&self.particle_vbuf, 0, bytemuck::cast_slice(&quads));
         }
+        let tree_replacements: std::collections::HashSet<_> = scene
+            .tree_lod
+            .iter()
+            .filter(|i| !i.hidden)
+            .map(|i| i.ref_id)
+            .collect();
+        let full_trees: std::collections::HashSet<_> = scene
+            .cells
+            .values()
+            .flat_map(|c| &c.instances)
+            .filter(|i| !i.hidden && i.fade_class == distance::Class::Tree)
+            .map(|i| i.ref_id)
+            .collect();
         for inst in scene.instances() {
             if inst.hidden || inst.tint.w <= 0.0 {
                 continue;
@@ -2323,6 +2338,20 @@ impl Renderer {
                 continue;
             }
             let fade = if inst.sky {
+                1.
+            } else if inst.fade_class == distance::Class::TreeLod {
+                if full_trees.contains(&inst.ref_id) {
+                    1. - self.distances.instance(
+                        distance::Class::Tree,
+                        inst.world_center.distance(camera.position),
+                        inst.world_radius,
+                    )
+                } else {
+                    1.
+                }
+            } else if inst.fade_class == distance::Class::Tree
+                && !tree_replacements.contains(&inst.ref_id)
+            {
                 1.
             } else {
                 self.distances.instance(
@@ -2346,7 +2375,16 @@ impl Renderer {
                 model: xf.to_cols_array_2d(),
                 lights: pack_lights(l),
                 tint: inst.tint.to_array(),
-                params: [if inst.sky { 0.0 } else { 1.0 }, 1.0 - fade, 0.0, 0.0],
+                params: [
+                    if inst.sky { 0.0 } else { 1.0 },
+                    1.0 - fade,
+                    if inst.fade_class == distance::Class::TreeLod {
+                        1.
+                    } else {
+                        0.
+                    },
+                    0.0,
+                ],
             };
             for (pi, part) in inst.model.parts.iter().enumerate() {
                 if part.material.key.blend == BlendMode::Opaque {

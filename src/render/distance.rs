@@ -61,6 +61,7 @@ pub enum Class {
     Object,
     Item,
     Tree,
+    TreeLod,
 }
 impl Distances {
     pub fn instance(&self, class: Class, distance: f32, radius: f32) -> f32 {
@@ -68,6 +69,7 @@ impl Distances {
             Class::Item => alpha(distance, self.items * radius.max(1.)),
             Class::Object => alpha(distance, self.objects * radius.max(1.)),
             Class::Tree => alpha(distance, self.trees),
+            Class::TreeLod => 1.,
         }
     }
 }
@@ -89,4 +91,24 @@ pub fn item_tag(tag: &[u8; 4]) -> bool {
 
 pub fn fade_from(distance: f32, start: f32) -> f32 {
     alpha(distance, start * 1.25)
+}
+#[cfg(test)]
+mod class_tests {
+    use super::*;
+    #[test]
+    fn classes_and_fade_starts_are_independent() {
+        let p = Distances {
+            actors: 10.,
+            items: 2.,
+            objects: 4.,
+            trees: 100.,
+            ..Default::default()
+        };
+        assert_eq!(p.instance(Class::Item, 30., 10.), 0.);
+        assert_eq!(p.instance(Class::Object, 30., 10.), 1.);
+        assert_eq!(p.instance(Class::Tree, 100., 999.), 0.);
+        assert_eq!(fade_from(3500., 3500.), 1.);
+        assert_eq!(fade_from(4375., 3500.), 0.);
+        assert_eq!(fade_from(1., 0.), 0.);
+    }
 }

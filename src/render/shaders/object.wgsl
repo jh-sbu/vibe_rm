@@ -195,7 +195,7 @@ fn vs_main(v: VIn) -> VOut {
     o.uv = v.uv * mat.uv.zw + mat.uv.xy;
     o.color = v.color;
     o.light_idx = v.light_idx;
-    o.distance_fade=1.0-v.params.y;
+    o.distance_fade=select(1.0-v.params.y,-(1.0-v.params.y),v.params.z>0.5);
     o.tint = v.tint;
     o.fog = v.params.x;
     o.fade = 1.0;
@@ -378,9 +378,10 @@ fn soft_fade(px: vec4<f32>, world_pos: vec3<f32>, range: f32) -> f32 {
 @fragment
 fn fs_main(in: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
     // Stable screen-door coverage also works with opaque depth-writing parts.
-    if (in.distance_fade < 1.0) {
+    if (abs(in.distance_fade) < 1.0) {
         let coverage=fract(dot(floor(in.clip.xy),vec2<f32>(0.754877666,0.569840296)));
-        if (coverage >= in.distance_fade) {discard;}
+        if (in.distance_fade>=0.0) {if (coverage>=in.distance_fade) {discard;}}
+        else {if (coverage<1.0+in.distance_fade) {discard;}}
     }
     if (mat.flags.z == 2u) {
         let c = frame.lod_clip;

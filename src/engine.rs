@@ -313,6 +313,7 @@ pub struct Engine {
     pub(crate) alias_spec_cache:
         std::cell::RefCell<HashMap<FormId, std::sync::Arc<Vec<crate::aliases::AliasSpec>>>>,
     lod: Option<crate::world::lod::Lod>,
+    tree_lod: Option<crate::world::tree_lod::Trees>,
     pub nav: crate::ai::nav::NavWorld,
     pub furniture: crate::ai::furniture::FurnitureWorld,
     /// Patrol routes by start reference.
@@ -604,6 +605,7 @@ impl Engine {
             created_refs: Default::default(),
             world_state: Default::default(),
             lod: None,
+            tree_lod: None,
             nav: Default::default(),
             furniture: Default::default(),
             patrol_paths: Default::default(),
@@ -1172,6 +1174,28 @@ impl Engine {
             (center.0 as f32 + r + 1.0) * CELL_SIZE,
             (center.1 as f32 + r + 1.0) * CELL_SIZE,
         ];
+        if let Some(trees) = &mut self.tree_lod {
+            if trees.stream(&self.vfs, self.camera.position, self.radius) {
+                self.scene.tree_lod = trees
+                    .instances()
+                    .map(|i| {
+                        let mut clone = Instance::new(i.model.clone(), i.transform);
+                        clone.ref_id = i.ref_id;
+                        clone.fade_class = i.fade_class;
+                        clone
+                    })
+                    .collect();
+            }
+        }
+        let visibility: Vec<_> = self
+            .scene
+            .tree_lod
+            .iter()
+            .map(|i| self.is_disabled(FormId(i.ref_id)))
+            .collect();
+        for (tree, hidden) in self.scene.tree_lod.iter_mut().zip(visibility) {
+            tree.hidden = hidden;
+        }
         let Some(lod) = self.lod.as_mut() else { return };
         let mut want = lod.desired(self.camera.position.truncate());
         if let Ok(only) = std::env::var("VRM_LOD_ONLY") {
@@ -1191,6 +1215,8 @@ impl Engine {
     }
 
     pub(crate) fn unload_all(&mut self) {
+        self.tree_lod = None;
+        self.scene.tree_lod.clear();
         if let Some(a) = self.audio.as_mut() {
             a.stop_all();
         }
@@ -2427,6 +2453,8 @@ impl Engine {
             .world_field(world, b"EDID", 0x2)
             .map(|(d, _)| esp::decode_zstring(&d))
             .unwrap_or_default();
+        self.tree_lod =
+            crate::world::tree_lod::Trees::new(&self.vfs, &mut self.renderer, &lod_world);
         // Distant LOD around the loaded cells is opt-in (VRM_LOD=1); the map has its own.
         self.lod = if std::env::var_os("VRM_LOD").is_some() {
             Some(crate::world::lod::Lod::new(&self.vfs, &lod_world)).filter(|l| !l.is_empty())

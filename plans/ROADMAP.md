@@ -2129,6 +2129,3 @@ The Gameplay preference bShowFloatingQuestMarkers is stored. Populate the HUD
 FloatingQuestMarker_mc clips with in-world tracked objectives and gate them
 with this preference; the host currently supplies compass targets only.
 
-Tree LOD follow-up: parse vanilla LST/BTT and its texture atlas, replacing
-full TREE instances at fTreesMidLODSwitchDist. The System preference currently
-controls full-tree fade/culling, without a billboard replacement.
