@@ -23,11 +23,20 @@ pub const BASE_URL: &str = "file:///interface/";
 pub struct Navigator {
     files: Arc<InterfaceFiles>,
     spawner: NullSpawner,
+    images: crate::HostImages,
 }
 
 impl Navigator {
-    pub fn new(files: Arc<InterfaceFiles>, spawner: NullSpawner) -> Self {
-        Navigator { files, spawner }
+    pub fn new(
+        files: Arc<InterfaceFiles>,
+        spawner: NullSpawner,
+        images: crate::HostImages,
+    ) -> Self {
+        Navigator {
+            files,
+            spawner,
+            images,
+        }
     }
 }
 
@@ -73,6 +82,9 @@ impl SuccessResponse for Response {
 }
 
 impl NavigatorBackend for Navigator {
+    fn host_image(&self, name: &str) -> Option<Vec<u8>> {
+        self.images.lock().unwrap().get(name).cloned()
+    }
     fn navigate_to_url(
         &self,
         url: &str,

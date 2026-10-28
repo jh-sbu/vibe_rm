@@ -115,6 +115,7 @@ impl LogBackend for Log {
 /// A menu movie (`hudmenu.swf`...) playing in Ruffle, drawn into a texture of
 /// its own on the engine's device, for `Compositor` to draw over the frame.
 pub struct Menu {
+    images: crate::HostImages,
     name: String,
     player: Arc<Mutex<Player>>,
     executor: NullExecutor,
@@ -147,7 +148,11 @@ impl Menu {
         let responder = Arc::new(Mutex::new(None));
         let player = PlayerBuilder::new()
             .with_renderer(renderer)
-            .with_navigator(Navigator::new(ui.files.clone(), executor.spawner()))
+            .with_navigator(Navigator::new(
+                ui.files.clone(),
+                executor.spawner(),
+                ui.images.clone(),
+            ))
             .with_log(Log(name.to_string()))
             .with_external_interface(Box::new(Game {
                 calls: calls.clone(),
@@ -166,6 +171,7 @@ impl Menu {
             p.set_window_mode("transparent");
         }
         let mut menu = Menu {
+            images: ui.images.clone(),
             name: name.to_string(),
             player,
             executor,
@@ -227,6 +233,23 @@ impl Menu {
         )
         .expect("a menu draws into a texture");
         renderer.target().get_texture()
+    }
+
+    pub fn set_host_image(&self, name: &str, width: u32, height: u32, rgba: &[u8]) {
+        if width == 0 || height == 0 || rgba.len() != width as usize * height as usize * 4 {
+            return;
+        }
+        let mut bytes = Vec::new();
+        let encoded = (|| -> Result<(), png::EncodingError> {
+            let mut encoder = png::Encoder::new(&mut bytes, width, height);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            encoder.write_header()?.write_image_data(rgba)?;
+            Ok(())
+        })();
+        if encoded.is_ok() {
+            self.images.lock().unwrap().insert(name.into(), bytes);
+        }
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {

@@ -4498,6 +4498,7 @@ dependencies = [
  "anyhow",
  "async-channel",
  "log",
+ "png 0.17.16",
  "ruffle_core",
  "ruffle_render",
  "ruffle_render_wgpu",

@@ -27,8 +27,11 @@ pub use menu::{GameCall, Menu, Movie, Responder};
 pub use ruffle_core::events::{MouseButton, MouseWheelDelta, PlayerEvent, TextControlCode};
 pub use ruffle_core::external::Value;
 
+pub(crate) type HostImages = Arc<std::sync::Mutex<std::collections::HashMap<String, Vec<u8>>>>;
+
 pub struct UiSwf {
     descriptors: Arc<Descriptors>,
+    images: HostImages,
     files: Arc<InterfaceFiles>,
     fonts: fonts::Fonts,
     translations: Vec<(String, String)>,
@@ -55,11 +58,35 @@ impl UiSwf {
         let translations = fonts::translations(&files, language);
         Ok(UiSwf {
             descriptors,
+            images: Default::default(),
             files: Arc::new(files),
             fonts,
             translations,
             compositor,
         })
+    }
+
+    /// Register a host image, shared by all menus on this UI.
+    pub fn set_image(
+        &self,
+        name: &str,
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            width > 0 && height > 0 && width as usize * height as usize * 4 == rgba.len(),
+            "invalid host image"
+        );
+        let mut bytes = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut bytes, width, height);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            encoder.write_header()?.write_image_data(rgba)?;
+        }
+        self.images.lock().unwrap().insert(name.into(), bytes);
+        Ok(())
     }
 
     /// Starts a menu movie (`hudmenu.swf`) the size of the frame.

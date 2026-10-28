@@ -53,6 +53,7 @@ pub(super) struct JournalMenu {
     /// Toggle Active in the menu: (quest, now tracked), for the engine with
     /// the next update. `FormId::NULL` is the miscellaneous objectives'.
     toggles: Arc<Mutex<Vec<(FormId, bool)>>>,
+    screenshots: Vec<crate::save::SaveListing>,
 }
 
 fn object(fields: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
@@ -266,7 +267,12 @@ impl JournalMenu {
             num(0.0)
         };
         menu.callback("RestoreSavedSettings", &[tab, Value::Bool(false)]);
-        Ok(JournalMenu { menu, toggles })
+        let screenshots = engine.save_list();
+        Ok(JournalMenu {
+            menu,
+            toggles,
+            screenshots,
+        })
     }
 
     /// The tracking toggled in the menu, to the engine.
@@ -284,6 +290,34 @@ impl JournalMenu {
     /// menus' shared ones.
     pub fn answer(&mut self, engine: &mut Engine, call: &GameCall, saved: &mut Saved) -> bool {
         match call.name.as_str() {
+            "PrepSaveGameScreenshot" => {
+                let index = match call.args.first() {
+                    Some(Value::Number(n)) => *n as i32,
+                    _ => -1,
+                };
+                let thumbnail = if index < 0 {
+                    engine.save_thumbnail.as_ref()
+                } else {
+                    self.screenshots
+                        .get(index as usize)
+                        .and_then(|s| s.metadata.as_ref())
+                        .and_then(|m| m.thumbnail.as_ref())
+                };
+                // A blank fallback clears an image from the previous highlighted save.
+                let fallback = crate::save::metadata::Thumbnail {
+                    width: 1,
+                    height: 1,
+                    rgba: vec![0, 0, 0, 255],
+                };
+                let image = thumbnail.unwrap_or(&fallback);
+                self.menu.set_host_image(
+                    "BGSSaveLoadHeader_Screenshot",
+                    image.width,
+                    image.height,
+                    &image.rgba,
+                );
+                self.menu.callback("ScreenshotReady", &[]);
+            }
             "CloseMenu" => {
                 let arg = |i: usize| call.args.get(i).cloned().unwrap_or(Value::Undefined);
                 *saved = Saved {

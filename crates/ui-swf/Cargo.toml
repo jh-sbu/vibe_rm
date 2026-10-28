@@ -13,6 +13,7 @@ wgpu.workspace = true
 winit.workspace = true
 async-channel = "2.5"
 url = "2.5"
+png = "0.17"
 ruffle_core = { path = "../../vendor/ruffle/core" }
 ruffle_render = { path = "../../vendor/ruffle/render" }
 ruffle_render_wgpu = { path = "../../vendor/ruffle/render/wgpu" }
