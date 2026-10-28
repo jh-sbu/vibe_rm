@@ -1876,6 +1876,10 @@ game each piece unlocks.
    torches in dark interiors, burning out), crime
    (escape routes, yielding, skill loss in jail; witnesses running to the
    guards; fences; see Done)
+   - Crafting: the forge, grindstone, workbench, arcane enchanter, alchemy lab
+     and the other stations, their menus (`craftingmenu.swf`) and formulas,
+     forms made while playing and per-copy item state (plan:
+     `plans/crafting.md`)
    - Death conditions: `GetCauseofDeath` (the cause's values are unknown,
      `known_ambiguities/death.md`) and `GetKillingBlowLimb` (the killing blow's
      hit limb isn't kept)
