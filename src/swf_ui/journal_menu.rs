@@ -53,7 +53,7 @@ pub(super) struct JournalMenu {
     /// Toggle Active in the menu: (quest, now tracked), for the engine with
     /// the next update. `FormId::NULL` is the miscellaneous objectives'.
     toggles: Arc<Mutex<Vec<(FormId, bool)>>>,
-    screenshots: Vec<crate::save::SaveListing>,
+    system: Arc<Mutex<super::journal_system::System>>,
 }
 
 fn object(fields: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
@@ -201,62 +201,69 @@ impl JournalMenu {
                 .unwrap_or(num(0.0));
             saved_quest.instance = num(0.0);
         }
+        let system = super::journal_system::System::new(engine);
+        let system_data = system.clone();
         let toggled = toggles.clone();
-        menu.set_responder(move |call, movie| match call.name.as_str() {
-            // The list is the menu's: the quests go into it, then the answer.
-            "RequestQuestsData" => {
-                if !data.quests.is_empty() {
-                    movie.invoke(&format!("{TITLES}.entryList.push"), &data.quests);
-                }
-                Some(vec![
-                    saved_quest.quest.clone(),
-                    saved_quest.instance.clone(),
-                    Value::Bool(!data.misc.is_empty()),
-                    Value::Bool(!data.misc_hidden),
-                    // No map to show it on yet.
-                    Value::Bool(false),
-                ])
+        menu.set_responder(move |call, movie| {
+            if let Some(answer) = system_data.lock().unwrap().respond(call, movie) {
+                return Some(answer);
             }
-            // The selected entry is the miscellaneous one: its objectives.
-            "RequestObjectivesData" => {
-                movie.set(
-                    &format!("{TITLES}.selectedEntry.objectives"),
-                    Value::List(data.misc.clone()),
-                );
-                Some(vec![])
-            }
-            "ToggleQuestActiveStatus" => {
-                let Some(Value::Number(id)) = call.args.first() else {
-                    return Some(vec![Value::Bool(false)]);
-                };
-                let id = *id as u32;
-                let now = !data.active.get(&id).copied().unwrap_or(false);
-                data.active.insert(id, now);
-                // The misc objectives' copies of it too, for the next time
-                // the entry is shown.
-                for o in &mut data.misc {
-                    if let Value::Object(f) = o
-                        && f.get("formID") == Some(&Value::Number(id as f64))
-                    {
-                        f.insert("active".into(), Value::Bool(now));
+            match call.name.as_str() {
+                // The list is the menu's: the quests go into it, then the answer.
+                "RequestQuestsData" => {
+                    if !data.quests.is_empty() {
+                        movie.invoke(&format!("{TITLES}.entryList.push"), &data.quests);
                     }
+                    Some(vec![
+                        saved_quest.quest.clone(),
+                        saved_quest.instance.clone(),
+                        Value::Bool(!data.misc.is_empty()),
+                        Value::Bool(!data.misc_hidden),
+                        // No map to show it on yet.
+                        Value::Bool(false),
+                    ])
                 }
-                toggled.lock().unwrap().push((FormId(id), now));
-                Some(vec![Value::Bool(now)])
+                // The selected entry is the miscellaneous one: its objectives.
+                "RequestObjectivesData" => {
+                    movie.set(
+                        &format!("{TITLES}.selectedEntry.objectives"),
+                        Value::List(data.misc.clone()),
+                    );
+                    Some(vec![])
+                }
+                "ToggleQuestActiveStatus" => {
+                    let Some(Value::Number(id)) = call.args.first() else {
+                        return Some(vec![Value::Bool(false)]);
+                    };
+                    let id = *id as u32;
+                    let now = !data.active.get(&id).copied().unwrap_or(false);
+                    data.active.insert(id, now);
+                    // The misc objectives' copies of it too, for the next time
+                    // the entry is shown.
+                    for o in &mut data.misc {
+                        if let Value::Object(f) = o
+                            && f.get("formID") == Some(&Value::Number(id as f64))
+                        {
+                            f.insert("active".into(), Value::Bool(now));
+                        }
+                    }
+                    toggled.lock().unwrap().push((FormId(id), now));
+                    Some(vec![Value::Bool(now)])
+                }
+                "ToggleShowMiscObjectives" => {
+                    let shown = matches!(call.args.first(), Some(Value::Bool(true)));
+                    data.misc_hidden = !shown;
+                    toggled.lock().unwrap().push((FormId::NULL, shown));
+                    Some(vec![])
+                }
+                "updateStats" => Some(data.stats.clone()),
+                "RequestPlayerInfo" => Some(data.player.clone()),
+                // No Creations entry on the System page.
+                "ShouldShowMod" => Some(vec![Value::Bool(false)]),
+                // Quit lists Quit to Main Menu and Quit to Desktop.
+                "RequestIsOnPC" => Some(vec![Value::Bool(true)]),
+                _ => super::respond(&buttons, call),
             }
-            "ToggleShowMiscObjectives" => {
-                let shown = matches!(call.args.first(), Some(Value::Bool(true)));
-                data.misc_hidden = !shown;
-                toggled.lock().unwrap().push((FormId::NULL, shown));
-                Some(vec![])
-            }
-            "updateStats" => Some(data.stats.clone()),
-            "RequestPlayerInfo" => Some(data.player.clone()),
-            // No Creations entry on the System page.
-            "ShouldShowMod" => Some(vec![Value::Bool(false)]),
-            // Quit lists Quit to Main Menu and Quit to Desktop.
-            "RequestIsOnPC" => Some(vec![Value::Bool(true)]),
-            _ => super::respond(&buttons, call),
         });
         menu.invoke(&format!("{M}.InitExtensions"), &[]);
         menu.invoke(&format!("{M}.SetPlatform"), &[num(0.0), Value::Bool(false)]);
@@ -267,16 +274,20 @@ impl JournalMenu {
             num(0.0)
         };
         menu.callback("RestoreSavedSettings", &[tab, Value::Bool(false)]);
-        let screenshots = engine.save_list();
         Ok(JournalMenu {
             menu,
             toggles,
-            screenshots,
+            system,
         })
     }
 
     /// The tracking toggled in the menu, to the engine.
     pub fn update(&mut self, engine: &mut Engine) {
+        let callbacks = std::mem::take(&mut self.system.lock().unwrap().callbacks);
+        for (name, args) in callbacks {
+            self.menu.callback(&name, &args);
+        }
+
         for (q, active) in std::mem::take(&mut *self.toggles.lock().unwrap()) {
             if q == FormId::NULL {
                 engine.scripts.misc_objectives_hidden = !active;
@@ -296,12 +307,15 @@ impl JournalMenu {
                     _ => -1,
                 };
                 let thumbnail = if index < 0 {
-                    engine.save_thumbnail.as_ref()
+                    engine.save_thumbnail.clone()
                 } else {
-                    self.screenshots
+                    self.system
+                        .lock()
+                        .unwrap()
+                        .visible
                         .get(index as usize)
                         .and_then(|s| s.metadata.as_ref())
-                        .and_then(|m| m.thumbnail.as_ref())
+                        .and_then(|m| m.thumbnail.clone())
                 };
                 // A blank fallback clears an image from the previous highlighted save.
                 let fallback = crate::save::metadata::Thumbnail {
@@ -309,7 +323,7 @@ impl JournalMenu {
                     height: 1,
                     rgba: vec![0, 0, 0, 255],
                 };
-                let image = thumbnail.unwrap_or(&fallback);
+                let image = thumbnail.as_ref().unwrap_or(&fallback);
                 self.menu.set_host_image(
                     "BGSSaveLoadHeader_Screenshot",
                     image.width,

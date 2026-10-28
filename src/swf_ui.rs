@@ -19,6 +19,7 @@ mod dialogue_menu;
 mod favorites_menu;
 mod item_menu;
 mod journal_menu;
+mod journal_system;
 mod magic_menu;
 mod map_menu;
 mod sleep_wait_menu;

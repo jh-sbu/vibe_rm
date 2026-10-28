@@ -77,10 +77,13 @@ impl ExternalInterfaceProvider for Game {
         };
         // The responder's lock is let go before answering: the answer runs
         // the movie, which may call again.
-        let answer = id.and_then(|_| {
+        let answer = (|| {
             let mut responder = self.responder.lock().unwrap();
             responder.as_mut()?(&call, &mut Movie { context })
-        });
+        })();
+        if call.id.is_none() && answer.is_some() {
+            return Value::Undefined;
+        }
         if let (Some(id), Some(answer)) = (id, answer)
             && let Some(respond) = context.external_interface.get_callback("respond")
         {
