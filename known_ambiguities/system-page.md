@@ -25,3 +25,10 @@ The plan reports SE players seeing Autosave1–Autosave3; the asset/INI contract
 does not specify retention. Choose three native slots, autosave1–autosave3,
 using an empty slot first then replacing the least recently modified. Preserve
 legacy autosave.vrs and manual/quicksave slots. Exact SE count awaits observation.
+
+## Missing preference default
+
+Neither installed preference file supplies fSpecularLODStartFade. Use 2000,
+the Skyrim_Default.ini fSpecularLODMaxStartFade value, pending SE observation.
+The other defaults and their sections come directly from the installed files
+as recorded in research/ui/system-page.md and settings.rs SPECS.

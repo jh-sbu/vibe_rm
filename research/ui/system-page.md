@@ -158,3 +158,13 @@ lines 106–128, supports the table and fall/follower exceptions. MESG revision
 not observations made in Skyrim SE during implementation. Slider ranges,
 save labels/order, pause timing, remap conflicts and Help completeness still
 need the observations listed in plans/system-page.md.
+
+## Preference defaults used by the host
+
+settings.rs SPECS records every key/section/default. All defaults except the
+following were read from the installed launcher's Skyrim/SkyrimPrefs.ini:
+Display/fLightLODStartFade=3500 and fTreesMidLODSwitchDist=9999999 come from
+Skyrim_Default.ini (also present in preferences). fSpecularLODStartFade was
+absent: use the default INI's fSpecularLODMaxStartFade=2000 as the implementation
+choice recorded in known_ambiguities/system-page.md. Preferences are never
+imported automatically. Audio retains its separate AudioMenu file.

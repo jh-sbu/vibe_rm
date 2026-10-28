@@ -135,6 +135,7 @@ fn setup_engine(
     if let Some(p) = opts.pitch {
         engine.camera.pitch = p;
     }
+    engine.sync_settings();
     Ok(engine)
 }
 

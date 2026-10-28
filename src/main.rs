@@ -66,6 +66,7 @@ mod save;
 mod scene;
 mod script;
 mod script_sounds;
+mod settings;
 mod shouts;
 mod skills;
 mod sleep;
