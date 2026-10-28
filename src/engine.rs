@@ -55,7 +55,7 @@ pub enum Location {
 
 pub struct Engine {
     pub lo: LoadOrder,
-    pub vfs: vfs::Vfs,
+    pub vfs: std::sync::Arc<vfs::Vfs>,
     pub renderer: Renderer,
     pub models: ModelCache,
     /// The landscape textures' grasses, loaded as cells need them.
@@ -127,6 +127,7 @@ pub struct Engine {
     pub(crate) audio_director: crate::audio::director::Director,
     pub(crate) audio_defaults: crate::world::sound::AudioDefaults,
     pub(crate) music: MusicState,
+    pub(crate) audio_durations: crate::audio::durations::Cache,
     pub conversation: Option<crate::dialogue::Conversation>,
     /// The console is open (it pauses the game: `Engine::in_menu_mode`).
     pub console_open: bool,
@@ -423,7 +424,7 @@ impl Engine {
             .collect();
         Engine {
             lo,
-            vfs,
+            vfs: std::sync::Arc::new(vfs),
             renderer,
             models,
             grass: Default::default(),
@@ -490,6 +491,7 @@ impl Engine {
             ambient_voices: HashMap::new(),
             audio_defaults,
             music: MusicState::default(),
+            audio_durations: Default::default(),
             conversation: None,
             console_open: false,
             console_ref: None,
@@ -885,14 +887,9 @@ impl Engine {
             None,
         );
         params.loop_region = loop_region;
-        if self.audio.is_none()
-            && let Some(bytes) = self.vfs.read(&path)
-            && let Some(clip) = crate::audio::decode::decode(&path, &bytes, 44100)
-        {
-            let extra = loop_region.map_or(0.0, |l| {
-                (l.end.min(clip.duration()) - l.begin.max(0.0)).max(0.0) * l.count as f32
-            });
-            run.until = Some(now + clip.duration() as f64 + extra as f64);
+        if self.audio.is_none() {
+            let path = self.audio_durations.request(&self.vfs, &path);
+            run.pending_duration = Some(crate::music::PendingDuration { path, loop_region });
         }
         if let Some(a) = &mut self.audio
             && let Some(v) = a.play(&self.vfs, &path, params)
@@ -918,6 +915,18 @@ impl Engine {
     pub(crate) fn tick_music_track(&mut self, run: &mut crate::music::Playback, depth: usize) {
         if depth > 8 {
             return;
+        }
+        self.audio_durations.poll();
+        if let Some(pending) = &run.pending_duration
+            && let Some(duration) = self.audio_durations.get(&pending.path)
+        {
+            if let Some(duration) = duration {
+                let extra = pending.loop_region.map_or(0.0, |l| {
+                    (l.end.min(duration) - l.begin.max(0.0)).max(0.0) * l.count as f32
+                });
+                run.until = Some(run.started + duration as f64 + extra as f64);
+            }
+            run.pending_duration = None;
         }
         let now = self.scripts.wall_time;
         if run

@@ -14,9 +14,14 @@ pub const CYCLE_TRACKS: u32 = 4;
 pub const MAINTAIN_ORDER: u32 = 8;
 pub const DUCKS_CURRENT: u32 = 0x20;
 
+pub struct PendingDuration {
+    pub path: String,
+    pub loop_region: Option<crate::audio::LoopRegion>,
+}
 #[derive(Default)]
 pub struct Playback {
     pub voices: Vec<crate::audio::VoiceId>,
+    pub pending_duration: Option<PendingDuration>,
     pub layers: Vec<Layer>,
     pub until: Option<f64>,
     pub started: f64,
@@ -34,7 +39,8 @@ impl Playback {
         if let Some(end) = self.until {
             return now < end;
         }
-        self.voices.iter().any(|&v| playing(v))
+        self.pending_duration.is_some()
+            || self.voices.iter().any(|&v| playing(v))
             || self.layers.iter().any(|l| l.playing.active(now, playing))
     }
     pub fn voice_ids(&self, ids: &mut Vec<crate::audio::VoiceId>) {
@@ -444,7 +450,18 @@ mod tests {
         e.scripts.wall_time = 9.0;
         e.tick_music_track(&mut run, 0);
         assert!(run.fading);
-        let single = e.start_music_track(FormId(0x802), 0).unwrap();
+        let mut single = e.start_music_track(FormId(0x802), 0).unwrap();
+        assert!(single.pending_duration.is_some());
+        assert!(single.active(9.0, &|_| false));
+        let timeout = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while single.pending_duration.is_some() {
+            assert!(
+                std::time::Instant::now() < timeout,
+                "duration worker did not finish"
+            );
+            e.tick_music_track(&mut single, 0);
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
         assert_eq!(single.until, Some(11.0));
         std::fs::remove_dir_all(dir).unwrap();
     }

@@ -436,8 +436,9 @@ sounds, and lip sync if 9a stalls. Answer open questions in the
 Final review additionally covers immediate retargets during a ramp, background
 music removal/resume, restarting playback and director trigger edges on load,
 and preserving a script's ownership when it adds an engine-queued music type.
-Device-free single tracks obtain their duration through the existing asset
-decoder; silent/palette timing stays entirely independent of a mixer.
+Device-free single tracks request cached duration from an audio worker; asset
+reads and codec work run off the simulation thread. Pending selections remain
+active until timing arrives; silent/palette timing stays independent of a mixer.
 
 Validation (host Vulkan adapter for engine construction):
 
