@@ -455,3 +455,10 @@ their NPC's `DOFT`. Native policy, not an SE claim.
 Optional `AIOF` lists the actors `EnableAI(false)` turned off, sorted.
 Loading replaces this session's; legacy saves have none, so every actor's AI
 runs. Native policy, not an SE claim.
+
+## Journal metadata
+
+New saves lead with optional versioned META, independent of the snapshot layout.
+It records player/race, level, location, date, simulation play time, Unix write
+time and an order-sensitive plugin hash. Old containers still load without it.
+The native format is this engine’s choice; it does not claim ESS compatibility.

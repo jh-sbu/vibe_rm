@@ -71,6 +71,7 @@ pub struct Spot {
 
 #[derive(Default)]
 pub struct Snapshot {
+    pub metadata: Option<super::metadata::Metadata>,
     pub(crate) continuity: super::continuity::Continuity,
     pub plugins: Vec<String>,
     pub spot: Option<Spot>,
@@ -483,6 +484,7 @@ impl Snapshot {
         let mut continuity = super::continuity::Continuity::capture(e);
         continuity.executions = executions;
         Snapshot {
+            metadata: Some(super::metadata::Metadata::capture(e)),
             continuity,
             plugins: e
                 .lo
@@ -593,6 +595,9 @@ impl Snapshot {
 
     pub fn write(&self) -> SaveFile {
         let mut file = SaveFile::default();
+        if let Some(meta) = &self.metadata {
+            file.add(b"META", meta.encode());
+        }
 
         let mut w = Writer::default();
         w.len(self.plugins.len());
@@ -1223,6 +1228,10 @@ impl Snapshot {
             }
             r.finish()?;
         }
+        s.metadata = file
+            .section(b"META")
+            .map(super::metadata::Metadata::decode)
+            .transpose()?;
         let mut r = section(file, b"HEAD")?;
         for _ in 0..r.count(4)? {
             s.plugins.push(r.str()?);

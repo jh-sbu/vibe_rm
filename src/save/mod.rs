@@ -6,6 +6,7 @@
 pub mod codec;
 mod continuity;
 pub mod file;
+pub mod metadata;
 pub mod state;
 #[cfg(test)]
 mod tests;
