@@ -7,6 +7,7 @@ pub struct Space {
     pub ambient: Option<FormId>,
     pub region: Option<FormId>,
     pub reverb: Option<FormId>,
+    pub bounds: Option<(Vec3, Vec3)>,
 }
 #[derive(Clone, Debug)]
 struct Marker {
@@ -79,7 +80,8 @@ pub struct Spaces {
     pub reverbs: HashMap<FormId, super::reverb::Params>,
     markers: Vec<Marker>,
     loaded_cells: HashSet<FormId>,
-    defaults: HashMap<FormId, Option<FormId>>,
+    defaults: HashMap<FormId, FormId>,
+    focus: Option<(FormId, Option<FormId>, (i32, i32))>,
     interiors: HashMap<FormId, Vec<usize>>,
     exteriors: HashMap<(FormId, i32, i32), Vec<usize>>,
     /// Avoid creating millions of bins for an unusually large acoustic volume.
@@ -105,6 +107,12 @@ impl Spaces {
                     ambient: fid(b"SNAM"),
                     region: fid(b"RDAT"),
                     reverb: fid(b"BNAM"),
+                    bounds: r.get(b"OBND").filter(|d| d.len() >= 12).map(|d| {
+                        let v: [f32; 6] = std::array::from_fn(|i| {
+                            i16::from_le_bytes(d[i * 2..i * 2 + 2].try_into().unwrap()) as f32
+                        });
+                        (Vec3::new(v[0], v[1], v[2]), Vec3::new(v[3], v[4], v[5]))
+                    }),
                 },
             );
         }
@@ -118,61 +126,81 @@ impl Spaces {
         }
         result
     }
-    /// Called once per encountered cell, alongside the existing reference loader.
-    /// Cached cells survive unloads; their immutable volumes remain spatially indexed.
-    pub fn load_cell(&mut self, lo: &LoadOrder, cell: FormId) {
+    /// Consumes the same parsed references as the scene loader; no reference rereads.
+    pub fn ingest_cell(&mut self, cell: FormId, references: &crate::world::cell::CellReferences) {
         if !self.loaded_cells.insert(cell) {
             return;
         }
-        let fallback = lo
-            .get(cell)
-            .and_then(|r| {
-                r.get(b"XCAS")
-                    .and_then(|d| d.get(..4))
-                    .map(|d| r.fid(FormId(u32::from_le_bytes(d.try_into().unwrap()))))
-            })
-            .filter(|id| !id.is_null());
-        self.defaults.insert(cell, fallback);
-        let Some(index) = lo.cell(cell) else { return };
-        for &id in index.persistent.iter().chain(&index.temporary) {
-            if lo.tag_of(id).is_none_or(|t| t.0 != *b"REFR") {
+        if references.interior
+            && let Some(space) = references.acoustic_space
+        {
+            self.defaults.insert(cell, space);
+        }
+        for placed in &references.entries {
+            let rf = &placed.reference;
+            if placed.tag.0 != *b"REFR" || rf.deleted() || !rf.scale.is_finite() || rf.scale <= 0.0
+            {
                 continue;
             }
-            let Some(r) = lo.get(id) else { continue };
-            let Some(d) = r.get(b"NAME").filter(|d| d.len() >= 4) else {
+            let Some(space) = self.records.get(&rf.base) else {
                 continue;
             };
-            let base = r.fid(FormId(u32::from_le_bytes(d[..4].try_into().unwrap())));
-            if !self.records.contains_key(&base) {
-                continue;
-            }
-            let rf = crate::world::records::reference(&r);
-            if rf.deleted() || !rf.scale.is_finite() || rf.scale <= 0.0 {
-                continue;
-            }
-            let bounds = if let Some(d) = r.get(b"XPRM").filter(|d| d.len() >= 32) {
-                let extents = Vec3::from_array(std::array::from_fn(|i| {
-                    f32::from_le_bytes(d[i * 4..i * 4 + 4].try_into().unwrap())
-                }))
-                .abs();
-                Some((-extents, extents))
-            } else {
-                lo.get(base).and_then(|b| {
-                    b.get(b"OBND").filter(|d| d.len() >= 12).map(|d| {
-                        let v: [f32; 6] = std::array::from_fn(|i| {
-                            i16::from_le_bytes(d[i * 2..i * 2 + 2].try_into().unwrap()) as f32
-                        });
-                        (Vec3::new(v[0], v[1], v[2]), Vec3::new(v[3], v[4], v[5]))
-                    })
-                })
-            };
-            if let Some((min, max)) = bounds
-                && let Some(marker) =
-                    Marker::new(id, base, cell, index.world, rf.transform(), min, max)
+            if let Some((min, max)) = placed.primitive_bounds.or(space.bounds)
+                && let Some(marker) = Marker::new(
+                    rf.id,
+                    rf.base,
+                    cell,
+                    references.world,
+                    rf.transform(),
+                    min,
+                    max,
+                )
             {
                 self.insert(marker);
             }
         }
+    }
+    /// Discover adjacent cells even when their visuals/scripts have never streamed.
+    /// Revisit only when the listener changes cell; the scene loader shares this cache.
+    fn discover(
+        &mut self,
+        lo: &LoadOrder,
+        cache: &mut crate::world::cell::ReferenceCache,
+        cell: FormId,
+        world: Option<FormId>,
+        position: Vec3,
+    ) -> Option<HashSet<FormId>> {
+        let grid = if world.is_some() {
+            crate::engine::grid_of(position.truncate())
+        } else {
+            (0, 0)
+        };
+        let focus = (cell, world, grid);
+        if self.focus == Some(focus) {
+            return None;
+        }
+        self.focus = Some(focus);
+        let mut keep = HashSet::new();
+        keep.insert(cell);
+        if let Some(world) = world
+            && let Some(index) = lo.world(world)
+        {
+            keep.extend(index.persistent_cell);
+            for dx in -1..=1 {
+                for dy in -1..=1 {
+                    if let (Some(x), Some(y)) = (grid.0.checked_add(dx), grid.1.checked_add(dy))
+                        && let Some(&id) = index.cells.get(&(x, y))
+                    {
+                        keep.insert(id);
+                    }
+                }
+            }
+        }
+        for &id in &keep {
+            let refs = cache.get(lo, id);
+            self.ingest_cell(id, &refs);
+        }
+        Some(keep)
     }
     fn insert(&mut self, marker: Marker) {
         let index = self.markers.len();
@@ -231,7 +259,7 @@ impl Spaces {
             .map(|m| m.space)
             .or_else(|| {
                 if world.is_none() {
-                    self.defaults.get(&cell).copied().flatten()
+                    self.defaults.get(&cell).copied()
                 } else {
                     None
                 }
@@ -251,12 +279,31 @@ impl crate::engine::Engine {
             crate::engine::Location::Nowhere => None,
         }
     }
-    pub(crate) fn acoustic_space(&self) -> Option<FormId> {
+    pub(crate) fn acoustic_space(&mut self) -> Option<FormId> {
         let cell = self.audio_cell()?;
         let world = match self.location {
             crate::engine::Location::Exterior { world, .. } => Some(world),
             _ => None,
         };
+        if let Some(mut keep) = self.audio_spaces.discover(
+            &self.lo,
+            &mut self.cell_references,
+            cell,
+            world,
+            self.camera.position,
+        ) {
+            for key in self.cells.keys() {
+                let id = match *key {
+                    crate::render::CellKey::Interior(id) => Some(id),
+                    crate::render::CellKey::Exterior(x, y) => world
+                        .and_then(|w| self.lo.world(w))
+                        .and_then(|w| w.cells.get(&(x, y)))
+                        .copied(),
+                };
+                keep.extend(id);
+            }
+            self.cell_references.retain(&keep);
+        }
         self.audio_spaces
             .choose(cell, world, self.camera.position, |id| {
                 !self.is_disabled(id)
@@ -266,6 +313,137 @@ impl crate::engine::Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn unloaded_neighbours_are_discovered_without_exterior_xcas_or_duplicate_reference_reads() {
+        use esp::writer::{Node, RecordBuilder, write_plugin};
+        let dir = std::env::temp_dir().join(format!("vrm-audio-neighbours-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut children = Vec::new();
+        for (cell, grid, position, reference) in [
+            (0x800u32, (0i32, 0i32), Vec3::ZERO, None),
+            (
+                0x801,
+                (1, 0),
+                Vec3::new(4100.0, 2048.0, 0.0),
+                Some(0x820u32),
+            ),
+            (0x802, (-1, 0), Vec3::new(-10.0, 2048.0, 0.0), Some(0x821)),
+            (0x803, (1, 1), Vec3::new(4100.0, 4100.0, 0.0), Some(0x822)),
+        ] {
+            let grid_bytes: Vec<u8> = [grid.0, grid.1]
+                .into_iter()
+                .flat_map(i32::to_le_bytes)
+                .collect();
+            children.push(Node::Record(
+                RecordBuilder::new(b"CELL", FormId(cell))
+                    .u32(b"DATA", 0)
+                    .u32(b"XCAS", 0x810)
+                    .field(b"XCLC", &grid_bytes),
+            ));
+            if let Some(reference) = reference {
+                let mut placement: Vec<u8> = position
+                    .to_array()
+                    .into_iter()
+                    .flat_map(f32::to_le_bytes)
+                    .collect();
+                placement.extend([0; 12]);
+                let mut primitive: Vec<u8> =
+                    [100f32; 3].into_iter().flat_map(f32::to_le_bytes).collect();
+                primitive.extend([0; 20]);
+                children.push(Node::Group {
+                    label: cell.to_le_bytes(),
+                    group_type: esp::group_type::CELL_CHILDREN,
+                    children: vec![Node::Group {
+                        label: cell.to_le_bytes(),
+                        group_type: esp::group_type::CELL_TEMPORARY,
+                        children: vec![Node::Record(
+                            RecordBuilder::new(b"REFR", FormId(reference))
+                                .u32(b"NAME", 0x810)
+                                .field(b"DATA", &placement)
+                                .field(b"XPRM", &primitive),
+                        )],
+                    }],
+                });
+            }
+        }
+        let records = [
+            Node::top(
+                b"ASPC",
+                vec![RecordBuilder::new(b"ASPC", FormId(0x810)).u32(b"BNAM", 0x840)],
+            ),
+            Node::Group {
+                label: *b"WRLD",
+                group_type: 0,
+                children: vec![
+                    Node::Record(RecordBuilder::new(b"WRLD", FormId(0x900))),
+                    Node::Group {
+                        label: 0x900u32.to_le_bytes(),
+                        group_type: esp::group_type::WORLD_CHILDREN,
+                        children,
+                    },
+                ],
+            },
+        ];
+        std::fs::write(
+            dir.join("Neighbours.esp"),
+            write_plugin(0, &[], "test", "acoustic neighbours", 0xA00, &records),
+        )
+        .unwrap();
+        let lo = LoadOrder::load(&dir, &["Neighbours.esp".into()]).unwrap();
+        let mut cache = crate::world::cell::ReferenceCache::default();
+        let mut c = Spaces::load(&lo);
+        c.ingest_cell(FormId(0x800), &cache.get(&lo, FormId(0x800)));
+        assert!(c.markers.is_empty());
+        let listener = Vec3::new(4080.0, 2048.0, 0.0);
+        assert_eq!(
+            c.choose(FormId(0x800), Some(FormId(0x900)), listener, |_| true),
+            None
+        );
+        c.discover(
+            &lo,
+            &mut cache,
+            FormId(0x800),
+            Some(FormId(0x900)),
+            listener,
+        )
+        .unwrap();
+        for (point, reference) in [
+            (listener, 0x820),
+            (Vec3::new(10.0, 2048.0, 0.0), 0x821),
+            (Vec3::new(4080.0, 4080.0, 0.0), 0x822),
+        ] {
+            assert_eq!(
+                c.choose(FormId(0x800), Some(FormId(0x900)), point, |id| id
+                    == FormId(reference)),
+                Some(FormId(0x810))
+            );
+        }
+        assert!(
+            c.defaults.is_empty(),
+            "exterior XCAS is neither parsed as a fallback nor retained"
+        );
+        assert_eq!(c.records[&FormId(0x810)].reverb, Some(FormId(0x840)));
+        let before = cache.get(&lo, FormId(0x801));
+        let after = cache.get(&lo, FormId(0x801));
+        assert!(std::sync::Arc::ptr_eq(&before, &after));
+        let contents = crate::world::cell::load_cell(&lo, FormId(0x801), &after).unwrap();
+        assert!(contents.objects.is_empty());
+        assert_eq!(c.markers.len(), 3);
+        c.ingest_cell(FormId(0x801), &after);
+        assert_eq!(c.markers.len(), 3);
+        assert!(
+            c.discover(
+                &lo,
+                &mut cache,
+                FormId(0x800),
+                Some(FormId(0x900)),
+                listener
+            )
+            .is_none()
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     #[test]
     fn rotated_scaled_volumes_choose_smallest_containing_marker() {
         let transform = Mat4::from_scale_rotation_translation(
@@ -403,9 +581,15 @@ mod tests {
         let mut c = Spaces::load(&lo);
         assert!(c.markers.is_empty());
         assert!(c.loaded_cells.is_empty());
-        c.load_cell(&lo, FormId(0x800));
+        let mut references = crate::world::cell::ReferenceCache::default();
+        let parsed = references.get(&lo, FormId(0x800));
+        c.ingest_cell(FormId(0x800), &parsed);
         assert_eq!(c.markers.len(), 1);
-        c.load_cell(&lo, FormId(0x800));
+        let reused = references.get(&lo, FormId(0x800));
+        assert!(std::sync::Arc::ptr_eq(&parsed, &reused));
+        let contents = crate::world::cell::load_cell(&lo, FormId(0x800), &reused).unwrap();
+        assert!(contents.objects.is_empty());
+        c.ingest_cell(FormId(0x800), &reused);
         assert_eq!(c.markers.len(), 1);
         assert_eq!(
             c.choose(FormId(0x800), None, Vec3::splat(100.0), |_| false),
@@ -413,7 +597,7 @@ mod tests {
             "cached XCAS fallback"
         );
         assert_eq!(c.choose(FormId(0x801), None, Vec3::ZERO, |_| true), None);
-        c.load_cell(&lo, FormId(0x801));
+        c.ingest_cell(FormId(0x801), &references.get(&lo, FormId(0x801)));
         assert_eq!(c.markers.len(), 2);
         assert_eq!(
             c.choose(FormId(0x801), None, Vec3::ZERO, |id| id == FormId(0x821)),

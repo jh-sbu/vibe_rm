@@ -437,7 +437,7 @@ Final review additionally covers immediate retargets during a ramp, background
 music removal/resume, restarting playback and director trigger edges on load,
 and preserving a script's ownership when it adds an engine-queued music type.
 Device-free single tracks request cached duration from an audio worker; asset
-reads and codec work run off the simulation thread. Pending selections remain
+reads and header/packet-table parsing run off the simulation thread. Pending selections remain
 active until timing arrives; silent/palette timing stays independent of a mixer.
 
 Initial implementation validation (host Vulkan adapter for engine construction):
@@ -464,16 +464,17 @@ Initial implementation validation (host Vulkan adapter for engine construction):
   changes never persist unrelated overrides. Menu-category metadata is cached
   at initialization; gains refresh only on settings changes or device attachment.
 - Headless single-track timing uses an asynchronous worker and a cache (including
-  failures). Both asset reads and decoding run off the simulation thread; a
+  failures). Asset reads and metadata parsing run off the simulation thread; a
   pending selection remains active while its duration is resolved.
 - Mixer category lookup, panning, routing, playback-rate and filter coefficient
   preparation happen per voice/block. Only active gain envelopes are sampled
   per frame. Cached voice ranks use one partition for admission; scratch and rank
   storage is reserved outside the callback.
-- Acoustic markers load with cells and world-persistent references, rather than
-  scanning every placed reference at startup. Cached inverses, volumes, XCAS and
-  reverb parameters avoid repeated record work. Exterior spatial bins include
-  crossing volumes; oversized bounds use a separate fallback list.
+- Acoustic discovery shares parsed reference lists with scene construction and
+  also examines adjacent cells before their visuals/scripts stream. Cached
+  inverses, volumes, interior XCAS and reverb parameters avoid repeated record
+  work. Exterior spatial bins include crossing volumes; oversized bounds use
+  a separate fallback list.
 
 Review validation: the full workspace suite passed on host Vulkan, along with
 all 37 audio tests and 11 music tests (`--include-ignored`). Regression coverage
@@ -502,3 +503,35 @@ reference. Exterior listener-grid bins include every bin a discovered volume
 overlaps; oversized bounds use a separate fallback list. Neighbour discovery
 and shared cell-reference data are tracked in the follow-up below. These are
 engineering details, not decisions about undocumented Skyrim behavior.
+
+## Further review fixes
+
+- A disconnected duration worker now resolves all pending paths as failures,
+  preserves completed cache entries and is dropped. A later request can create
+  a new worker. Regression coverage includes an intentionally panicking loader
+  with another request queued behind it.
+- Duration lookup parses PCM WAV frame counts or XWMA dpds decoded-byte counts,
+  skipping FUZE lip data when present. It never runs FFmpeg or allocates PCM
+  just to obtain length. Unsupported/malformed metadata resolves as unavailable;
+  field sources and asset observations are in `research/audio/duration-metadata.md`.
+- Weather remains subject to the descriptor voice budget; that provisional
+  behavior choice is now explicit in `known_ambiguities/voices.md`.
+- Skipped inaudible/virtual frames invalidate the rear-filter state. The first
+  audible sample seeds it from current input, rather than reusing an old value.
+- `world::cell::ReferenceCache` shares parsed reference and primitive data between
+  rendering and acoustic discovery. It preserves interior/exterior iteration
+  order, transforms, persistent-reference bucketing and far-object behavior.
+  Parsed lists are retained for rendered cells and the discovery neighbourhood.
+- On listener-cell changes, acoustic discovery examines the cell, its eight
+  adjacent cells and the world's persistent cell. This discovers neighbouring
+  volumes before visual/script streaming, including negative-coordinate and
+  diagonal border cases. No full load-order reference scan is added at startup.
+- XCAS is read only for interior cells, and only interior fallback IDs are kept.
+  Exterior exploration no longer adds unused XCAS fallback entries.
+- Cache/refresh implementation notes were moved out of known_ambiguities into
+  this plan; ambiguity notes retain undocumented behavior choices and evidence.
+
+Validation: full workspace suite passed on host Vulkan; all 43 audio tests and
+11 music tests passed with `--include-ignored`. Shared-reference rendering/order
+and cold neighbour discovery have synthetic-record regressions. `cargo fmt
+--check` and `git diff --check` are clean. No original game executable was run.

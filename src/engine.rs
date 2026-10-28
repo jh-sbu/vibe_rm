@@ -81,7 +81,8 @@ pub struct Engine {
     pub radius: i32,
     pub(crate) cells: HashMap<CellKey, CellRuntime>,
     /// Persistent references of the current worldspace bucketed by grid cell.
-    world_persistent: HashMap<(i32, i32), Vec<FormId>>,
+    world_persistent: HashMap<(i32, i32), Vec<cell::CellReference>>,
+    pub(crate) cell_references: cell::ReferenceCache,
     pending_loads: Vec<(i32, i32)>,
     /// Name of what the crosshair points at, if activatable.
     pub look_target: Option<(FormId, String)>,
@@ -449,6 +450,7 @@ impl Engine {
             radius,
             cells: HashMap::new(),
             world_persistent: HashMap::new(),
+            cell_references: Default::default(),
             pending_loads: Vec::new(),
             look_target: None,
             skeletons: HashMap::new(),
@@ -2251,8 +2253,9 @@ impl Engine {
         let party = self.player_party();
         self.unload_all();
         self.apply_cell_reset(cell_id);
-        let contents = cell::load_cell(&self.lo, cell_id).context("cell not found")?;
-        self.audio_spaces.load_cell(&self.lo, cell_id);
+        let parsed = self.cell_references.get(&self.lo, cell_id);
+        let contents = cell::load_cell(&self.lo, cell_id, &parsed).context("cell not found")?;
+        self.audio_spaces.ingest_cell(cell_id, &parsed);
         log::info!(
             "entering {} '{}' ({}): {} objects, {} lights",
             contents.info.editor_id,
@@ -2362,23 +2365,18 @@ impl Engine {
         let mut far = Vec::new();
         let sky_statics = self.sky_static_bases().clone();
         if let Some(pc) = wi.persistent_cell {
-            self.audio_spaces.load_cell(&self.lo, pc);
-        }
-        if let Some(pc) = wi.persistent_cell
-            && let Some(idx) = self.lo.cell(pc)
-        {
-            for &r in idx.persistent.iter().chain(idx.temporary.iter()) {
-                if let Some(rec) = self.lo.get(r) {
-                    let rf = records::reference(&rec);
-                    if rec.flags() & FULL_LOD != 0 && sky_statics.contains(&rf.base.0) {
-                        far.push(r);
-                        continue;
-                    }
-                    self.world_persistent
-                        .entry(grid_of(rf.position.truncate()))
-                        .or_default()
-                        .push(r);
+            let references = self.cell_references.get(&self.lo, pc);
+            self.audio_spaces.ingest_cell(pc, &references);
+            for placed in &references.entries {
+                let rf = &placed.reference;
+                if rf.flags & FULL_LOD != 0 && sky_statics.contains(&rf.base.0) {
+                    far.push(placed.clone());
+                    continue;
                 }
+                self.world_persistent
+                    .entry(grid_of(rf.position.truncate()))
+                    .or_default()
+                    .push(placed.clone());
             }
         }
         self.load_far(&far);
@@ -2477,10 +2475,10 @@ impl Engine {
     }
 
     /// Draw the worldspace's far references (no collision, scripts or AI).
-    fn load_far(&mut self, refs: &[FormId]) {
+    fn load_far(&mut self, refs: &[cell::CellReference]) {
         let (mut objects, mut lights, mut doors) = (Vec::new(), Vec::new(), Vec::new());
-        for &r in refs {
-            cell::add_reference(&self.lo, r, &mut objects, &mut lights, &mut doors);
+        for placed in refs {
+            cell::add_cached_reference(&self.lo, placed, &mut objects, &mut lights, &mut doors);
         }
         let paths: Vec<String> = objects.iter().map(|o| o.model.clone()).collect();
         self.models.load_all(&mut self.renderer, &self.vfs, &paths);
@@ -2508,22 +2506,21 @@ impl Engine {
         };
         let cell_id = wi.cells.get(&(x, y)).copied();
         if let Some(cid) = cell_id {
-            self.audio_spaces.load_cell(&self.lo, cid);
             self.apply_cell_reset(cid);
         }
         let mut objects = Vec::new();
         let mut lights = Vec::new();
         let mut doors = Vec::new();
-        if let Some(cid) = cell_id
-            && let Some(idx) = self.lo.cell(cid)
-        {
-            for &r in idx.temporary.iter().chain(idx.persistent.iter()) {
-                cell::add_reference(&self.lo, r, &mut objects, &mut lights, &mut doors);
+        if let Some(cid) = cell_id {
+            let references = self.cell_references.get(&self.lo, cid);
+            self.audio_spaces.ingest_cell(cid, &references);
+            for placed in references.exterior_entries() {
+                cell::add_cached_reference(&self.lo, placed, &mut objects, &mut lights, &mut doors);
             }
         }
-        if let Some(refs) = self.world_persistent.get(&(x, y)) {
-            for &r in refs {
-                cell::add_reference(&self.lo, r, &mut objects, &mut lights, &mut doors);
+        if let Some(references) = self.world_persistent.get(&(x, y)) {
+            for placed in references {
+                cell::add_cached_reference(&self.lo, placed, &mut objects, &mut lights, &mut doors);
             }
         }
         self.apply_moves(
@@ -2550,8 +2547,9 @@ impl Engine {
         refs.extend(
             self.world_persistent
                 .get(&(x, y))
-                .cloned()
-                .unwrap_or_default(),
+                .into_iter()
+                .flatten()
+                .map(|placed| placed.reference.id),
         );
         if let Some(cid) = cell_id {
             self.load_navmeshes(key, cid);
