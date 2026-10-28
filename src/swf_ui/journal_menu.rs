@@ -283,6 +283,8 @@ impl JournalMenu {
 
     /// The tracking toggled in the menu, to the engine.
     pub fn update(&mut self, engine: &mut Engine) {
+        self.system.lock().unwrap().save_disabled =
+            engine.saving_disabled() || engine.player_dead();
         let callbacks = std::mem::take(&mut self.system.lock().unwrap().callbacks);
         for (name, args) in callbacks {
             self.menu.callback(&name, &args);

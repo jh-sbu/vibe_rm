@@ -24,6 +24,7 @@ pub struct System {
     pub all: Vec<SaveListing>,
     pub visible: Vec<SaveListing>,
     current: u64,
+    pub save_disabled: bool,
     filter: Filter,
     pub callbacks: Vec<(String, Vec<Value>)>,
 }
@@ -33,6 +34,7 @@ impl System {
             all: engine.save_list(),
             visible: Vec::new(),
             current: engine.scripts.character_id,
+            save_disabled: engine.saving_disabled() || engine.player_dead(),
             filter: Filter::All,
             callbacks: Vec::new(),
         }))
@@ -46,6 +48,22 @@ impl System {
     }
     pub fn respond(&mut self, call: &GameCall, movie: &mut Movie<'_, '_>) -> Option<Vec<Value>> {
         match call.name.as_str() {
+            "SetSaveDisabled" => {
+                for (i, disabled) in [
+                    (0, self.save_disabled),
+                    (1, self.save_disabled),
+                    (2, false),
+                    (3, true),
+                    (5, false),
+                    (7, false),
+                ] {
+                    movie.set(
+                        &format!("{S}.CategoryList.entryList.{i}.disabled"),
+                        Value::Bool(disabled),
+                    );
+                }
+            }
+            "ShouldShowKinectTunerOption" => return Some(vec![Value::Bool(false)]),
             "UseCurrentCharacterFilter" => self.filter = Filter::Character(self.current),
             "SAVE" | "LOAD" | "CharacterSelected" => {
                 if call.name == "CharacterSelected" {
