@@ -5,9 +5,15 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Journal System page (`plans/system-page.md`): native save/load/delete and
+  character filtering, META headers and screenshots, F5/F9, rotating autosaves
+  for rest/wait/travel/pause, persistent Gameplay/Display/Audio settings,
+  difficulty damage tables, control remapping, the PC Help manual and Desktop
+  quitting. Distance fades include vanilla LST/BTT tree billboard transitions.
+  Research/choices: `research/ui/system-page.md`, `known_ambiguities/system-page.md`.
 - Audio settings (`plans/audio-unblocked.md`, 8): persistent AudioMenu-compatible
   master/category values, console/shared API and offscreen environment overrides;
-  dynamic gains update existing voices. Slider UI awaits the System page.
+  dynamic gains update existing voices. The System page supplies its sliders.
 - Voice budget (`plans/audio-unblocked.md`, 7): descriptor priority and
   audibility selection, virtual looping playback, exempt music/dialogue. Cap
   and ordering evidence: `known_ambiguities/voices.md`.
@@ -286,7 +292,7 @@ game each piece unlocks.
   swing being made), `IsShieldOut` (shield held with weapons drawn), `IsTorchOut`
   (torch in the left hand). Open questions: `known_ambiguities/combat-conditions.md`
 - Script-requested native quicksaves are append-only numbered `.vrs` files;
-  manual names and the replaceable autosave slot keep their existing policies.
+  manual names replace their slot; autosaves rotate three native slots.
   This is a native history choice, not claimed Skyrim SE parity:
   `known_ambiguities/saves.md`
 - Quest-alias factions (`ALFC`) contribute temporary actor memberships while
@@ -2057,8 +2063,10 @@ game each piece unlocks.
      research-gated: the movie's queue and fade timeline expose no duration
      input; `known_ambiguities/messages.md`); controller rumble for camera shakes;
      quest banners expiring while the HUD is hidden
-   - The journal's rest: the System page (saves, settings, controls, help,
-     quitting; plan: `plans/system-page.md`), Show on Map; the statistics
+   - The journal's rest: Show on Map; gamepad input and its Controller/Vibration
+     options; DDOF's option once depth of field renders; Main Menu quitting once
+     `plans/main-menu.md` is implemented. Creations/Installed Content remain
+     excluded from the vanilla runtime. The statistics
      whose systems aren't there yet (crafting, dragon souls collected, horses
      stolen)
    - The HUD's compass: the player's own marker (with the map), location
@@ -2071,7 +2079,7 @@ game each piece unlocks.
 7. **Audio**: lip sync is gated after 9a asset research: LIP packing/track mapping
    is unproven, TRI-to-FaceGen vertex mapping and nine TRI variants remain open
    (`research/audio/lip-format.md`; diagnostic `lip-dump`/`tri-dump` tools). Audio
-   menu sliders' UI on the System page; loading-menu pause reporting; kill-move
+   loading-menu pause reporting and kill-move
    sound category activation (waits on killmoves). Completed work and remaining
    listening questions: `plans/audio-unblocked.md`.
 8. **Rendering**: point light and interior shadows, static shadow caching (per-cell
@@ -2081,7 +2089,7 @@ game each piece unlocks.
    radial blur and motion blur (cinematic values and tint: see Done), particles'
    remaining modifiers (animated colliders, skinned/deformed and animated mesh emission,
    strips, LOD; see
-   `known_ambiguities/particles.md`), distant LOD (BTR/BTO/trees),
+   `known_ambiguities/particles.md`), distant LOD fidelity (BTR/BTO and LST/BTT trees implemented),
    grass shadows and the grass cache; eye environment maps' per-eye centres, effect shaders' env maps; weather: auroras' brightness and order against the
    clouds (see `known_ambiguities/weather.md`); weather's volumetric lighting, sun
    glare and damage, procedural lightning bolts, skinned effect art, EFSH DEBR
@@ -2106,11 +2114,13 @@ game each piece unlocks.
    conversations, the player's spells held ready, script signal waits other
    than animation events (now timed waits on load) and registrations not
    built yet (key, LOS gain, tracked hits); reading the
-   original's `.ess` saves later; a save / load menu (the System page),
+   original's `.ess` saves later;
    load orders that changed since the save, and the original's refusals to
    save (combat, menus, scripted)
 10. **Performance**: async loading, GPU-driven culling
 11. **New game and the opening** (an eventual goal; it needs most of the items above)
+   - Main menu and Continue/Load/Credits (`plans/main-menu.md`); loading screens
+     for saves and doors, including audio PDLC reporting (`plans/loading-screen.md`)
    - A new game separate from the developer launch, which drops the player at
      Tamriel (4, -12) outside Riverwood with only start-game-enabled quests running
    - How the game starts `MQ101` (not start-game-enabled) and where it places

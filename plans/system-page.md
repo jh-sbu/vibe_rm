@@ -1,6 +1,6 @@
 # Plan: the journal's System page
 
-**Status: planned** (2026-10-28). Covers everything on the journal's System
+**Status: implemented and verified** (2026-10-28). Covers everything on the journal's System
 page (`quest_journal.swf`, ROADMAP Next item 6, "The journal's rest") that can
 be built today: Quicksave, Save, Load (with the character filter, screenshots
 and deleting), Settings (Gameplay, Display, Audio), Controls (key remapping),
@@ -468,3 +468,49 @@ them in one batch, once the steps that use them are near:
 fDiffMultXPH=1.25 and fDiffMultXPVH=1.5 exist in Skyrim.esm, but the public
 Damage table does not establish which experience paths they multiply. They
 remain unwired pending a permitted source or SE probe.
+
+## Implementation record (2026-10-28)
+
+Steps 0–10 were committed in the numbered schedule, including separate commits
+for each Display fade class and the Ruffle image bridge. Subsequent integration
+commits fix image event versions, supply bottom-bar remapping callbacks, preserve
+legacy save compatibility and implement the complete vanilla tree billboard
+transition. Step 11 is sketched in `plans/loading-screen.md` and
+`plans/main-menu.md`; their implementation remains outside this plan.
+
+Corrections established during implementation:
+
+- Installed INI sections/defaults supersede the illustrative section names
+  above; bSaveOnPause defaults off. Slider endpoints remain documented choices.
+- HEAD-only saves have no stored name; they share an unknown legacy character
+  group. `--load` resumes the saved identity; other developer launches create one.
+- The quit movie hard-codes Desktop's dispatch/confirmation to index 1. An
+  inert blank at index 0 removes visible Main Menu access while preserving
+  Desktop behavior; QuitToMainMenu remains logged and unimplemented.
+- Tree fading required vanilla LST/BTT and atlas support, now implemented.
+  Full trees stay visible when their matching billboard is unavailable.
+- The host screenshot wrapper inherits the movie version so AVM1 load events
+  can run. A synthetic SWF test verifies intrinsic dimensions and onLoadInit
+  resizing without external assets or network access.
+
+Run `python3 scripts/check-system-page.py --out /tmp/system-page-checks` after
+`cargo build` for repeatable offscreen menu captures and persistence checks.
+It uses isolated saves/settings, never writes the game's Data directory, and
+never runs Skyrim. All generated artifacts stay uncommitted.
+
+Verification completed:
+
+- `cargo test --workspace -- --include-ignored --test-threads=1`: 1,113 tests
+  passed, including 904 engine tests and the GPU tests.
+- The offscreen script's 18 captures/checks cover every System panel, live
+  screenshot loading, persisted remapping, native menu save/load/delete and
+  `--load` resume. Escape in Controls uses the movie's Tab/Cancel route so
+  its delayed `SaveControls` handshake completes.
+- `cargo check --workspace`, the SWF spike's `cargo check`, `cargo fmt --check`
+  and `git diff --check` passed.
+- Installed vanilla tree assets validated 34 atlas kinds and 329 Tamriel
+  billboard blocks; an exterior capture exercised the shortened switch distance.
+
+These checks exercise this runtime. The SE observations above remain pending;
+the corresponding implemented choices are recorded in
+`known_ambiguities/system-page.md` rather than claimed as verified SE parity.

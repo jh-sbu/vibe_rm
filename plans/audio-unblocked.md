@@ -6,9 +6,9 @@ the research turned up that ROADMAP doesn't list: the default music types
 (combat, death, level-up), acoustic spaces' ambient loops, and regions'
 ambient sounds (`RDSA`). The items this plan leaves out, and why:
 
-- **The Audio menu's sliders, the UI.** They live on the journal's System page
-  (ROADMAP item 6). Step 8 builds everything below them: stored settings,
-  applying them and a console command. The page then only needs to call it.
+- **The Audio menu's sliders, the UI: completed** by `plans/system-page.md`,
+  step 7. They use step 8's shared gain/persistence API. No slider UI work
+  remains in this plan.
 - **Pausing in the loading menu** (`PDLC`). The engine has no loading menu
   yet. Step 2 wires the category so that menu only has to report itself.
 - **Kill-move sounds** (`TSSC`, "Time Sensitive Sound Category" ->
@@ -378,7 +378,7 @@ and work in the renderer:
 ## Roadmap and docs (with each step)
 
 Move what's done into ROADMAP's Done with links here. ROADMAP's Audio item
-then keeps what's blocked: the sliders' UI, loading-menu pausing, kill-move
+then keeps what's blocked: loading-menu pausing and kill-move
 sounds, and lip sync if 9a stalls. Answer open questions in the
 `known_ambiguities/` files named above. Write the research notes under
 `research/audio/`.
@@ -426,7 +426,7 @@ sounds, and lip sync if 9a stalls. Answer open questions in the
 
 - Resolve LIP packing/key semantics and phoneme mapping; map TRI vertices onto
   FaceGen heads and handle nine remaining TRI variants before 9b/9c.
-- Audio slider UI on the System page, loading menu reporting, kill-move
+- Loading menu reporting and kill-move
   category state remain dependent on their respective systems.
 - Listening comparisons can refine choices recorded in known_ambiguities;
   none is claimed as verified by running Skyrim SE.
