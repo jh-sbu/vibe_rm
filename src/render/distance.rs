@@ -4,12 +4,14 @@
 pub struct Distances {
     pub actors: f32,
     pub items: f32,
+    pub objects: f32,
 }
 impl Default for Distances {
     fn default() -> Self {
         Self {
             actors: f32::INFINITY,
             items: f32::INFINITY,
+            objects: f32::INFINITY,
         }
     }
 }
@@ -54,6 +56,7 @@ impl Distances {
     pub fn instance(&self, class: Class, distance: f32, radius: f32) -> f32 {
         match class {
             Class::Item => alpha(distance, self.items * radius.max(1.)),
+            Class::Object => alpha(distance, self.objects * radius.max(1.)),
             _ => 1.,
         }
     }
