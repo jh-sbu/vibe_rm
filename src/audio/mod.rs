@@ -210,9 +210,19 @@ impl Mixer {
                     gl *= att * (1.0 - pan.max(0.0) * 0.6);
                     gr *= att * (1.0 + pan.min(0.0) * 0.6);
                 }
-                frame[0] += v.clip.samples[i * 2] * gl;
+                let j = if i + 1 < n {
+                    i + 1
+                } else if v.looping {
+                    0
+                } else {
+                    i
+                };
+                let t = (v.pos - i as f64) as f32;
+                let sample =
+                    |c| v.clip.samples[i * 2 + c] * (1.0 - t) + v.clip.samples[j * 2 + c] * t;
+                frame[0] += sample(0) * gl;
                 if channels > 1 {
-                    frame[1] += v.clip.samples[i * 2 + 1] * gr;
+                    frame[1] += sample(1) * gr;
                 }
                 v.pos += v.clip.rate as f64 / self.rate as f64 * v.pitch * frequency;
                 v.volume.advance();
@@ -585,6 +595,21 @@ mod tests {
         let mut out = vec![0.0; 20];
         m.mix(&mut out, 1);
         (m, out)
+    }
+
+    #[test]
+    fn half_rate_interpolates_and_loops_without_a_missing_frame() {
+        let mut m = mixer(0.5);
+        let mut out = [0.0; 5];
+        m.mix(&mut out, 1);
+        for (i, s) in out.into_iter().enumerate() {
+            assert!((s - i as f32 * 0.0005).abs() < 1e-6);
+        }
+        m.voices[0].looping = true;
+        m.voices[0].pos = 99.5;
+        m.mix(&mut out[..2], 1);
+        assert!((out[0] - 0.0495).abs() < 1e-6);
+        assert_eq!(out[1], 0.0);
     }
 
     #[test]
