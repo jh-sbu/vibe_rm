@@ -412,3 +412,4 @@ sounds, and lip sync if 9a stalls. Answer open questions in the
 - 4d: vanilla music survey; finite loops, timed silence, concurrent palette layers with duration/fade, cue transitions and combat outros.
 - 4e: DFMS fallback; director-owned combat/death edges; level-up, visible quest completion and dungeon-cleared DOBJ stingers. Trigger choices researched/documented.
 - 5a: acoustic survey and cached oriented marker selection, XCAS interiors/RVBT fallback; corrected placed bounds to XPRM from asset evidence.
+- 5b: SNAM acoustic beds crossfade over 1.5 s; interior RDAT region reaches the director.

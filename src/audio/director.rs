@@ -30,6 +30,8 @@ pub struct Inputs {
     pub dead: bool,
     pub space: Option<esp::FormId>,
     pub reverb: Option<esp::FormId>,
+    pub ambient: Option<esp::FormId>,
+    pub region: Option<esp::FormId>,
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Target {
@@ -86,6 +88,9 @@ impl Director {
         self.reverb = inputs.reverb.or_else(|| self.defaults.get(b"RVBT"));
         self.inputs = inputs;
         self.loops.clear();
+        if let Some(ambient) = inputs.ambient {
+            self.loops.push(ambient);
+        }
         if inputs.submerged
             && let Some(sound) = self.defaults.get(b"UWLS")
         {
@@ -165,7 +170,19 @@ impl crate::engine::Engine {
         let reverb = space
             .and_then(|id| self.audio_spaces.records.get(&id))
             .and_then(|s| s.reverb);
+        let ambient = space
+            .and_then(|id| self.audio_spaces.records.get(&id))
+            .and_then(|s| s.ambient);
+        let region = matches!(self.location, crate::engine::Location::Interior(_))
+            .then(|| {
+                space
+                    .and_then(|id| self.audio_spaces.records.get(&id))
+                    .and_then(|s| s.region)
+            })
+            .flatten();
         let input = Inputs {
+            ambient,
+            region,
             space,
             reverb,
             menu: self.in_menu_mode(),
@@ -201,7 +218,12 @@ impl crate::engine::Engine {
                 return self.audio.as_ref().is_some_and(|a| a.is_playing(*voice));
             }
             if let Some(a) = &self.audio {
-                a.stop_with_fade(*voice, 0.15);
+                let seconds = if Some(*sound) == self.audio_defaults.get(b"UWLS") {
+                    0.15
+                } else {
+                    1.5
+                };
+                a.stop_with_fade(*voice, seconds);
             }
             false
         });
@@ -215,7 +237,11 @@ impl crate::engine::Engine {
             let variation = self.roll_variation(&desc);
             let mut params = desc.params(variation, None, true);
             params.position = None;
-            params.fade_in = 0.15;
+            params.fade_in = if Some(sound) == self.audio_defaults.get(b"UWLS") {
+                0.15
+            } else {
+                1.5
+            };
             if let Some(a) = &mut self.audio
                 && let Some(id) = a.play(&self.vfs, &desc.files[0], params)
             {
@@ -240,6 +266,21 @@ mod tests {
             (*b"PDMC", FormId(2)),
             (*b"PDLC", FormId(3)),
         ]))
+    }
+    #[test]
+    fn acoustic_beds_follow_the_selected_space_alongside_underwater_audio() {
+        let mut d = Director::new(AudioDefaults::from_entries([(*b"UWLS", FormId(9))]));
+        d.update(
+            Inputs {
+                ambient: Some(FormId(12)),
+                submerged: true,
+                ..Default::default()
+            },
+            &HashMap::new(),
+        );
+        assert_eq!(d.loops, [FormId(12), FormId(9)]);
+        d.update(Inputs::default(), &HashMap::new());
+        assert!(d.loops.is_empty());
     }
     #[test]
     fn combat_and_death_default_music_commands_are_edges() {
