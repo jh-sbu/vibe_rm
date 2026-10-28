@@ -82,6 +82,8 @@ impl Notification {
 /// Script-visible world state and queues.
 #[derive(Default)]
 pub struct ScriptState {
+    /// Stable identity for the current character, persisted in META.
+    pub character_id: u64,
     pub notifications: Vec<Notification>,
     notification_seq: u64,
     pub timers: Vec<Timer>,

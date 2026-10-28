@@ -23,6 +23,16 @@ pub fn plugin_hash(plugins: &[String]) -> u64 {
             (h ^ b as u64).wrapping_mul(0x100000001b3)
         })
 }
+pub fn new_character_id() -> u64 {
+    static SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64;
+    now.rotate_left(13)
+        ^ ((std::process::id() as u64) << 32)
+        ^ SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
 impl Metadata {
     pub fn display_text(&self, name: &str) -> String {
         if name.starts_with("quicksave") {
@@ -41,6 +51,7 @@ impl Metadata {
                 .map(|p| p.plugin.name().to_string())
                 .collect();
         Self {
+            character: e.scripts.character_id,
             name: e
                 .actor_name(PLAYER_REF)
                 .filter(|s| !s.is_empty())

@@ -468,7 +468,10 @@ impl Engine {
             sound_descs: Default::default(),
             footsteps: Default::default(),
             idles: None,
-            scripts: Default::default(),
+            scripts: crate::script::ScriptState {
+                character_id: crate::save::metadata::new_character_id(),
+                ..Default::default()
+            },
             vm: papyrus::Vm::new(),
             day: 0,
             // VRM_SEED makes runs reproducible (for testing).

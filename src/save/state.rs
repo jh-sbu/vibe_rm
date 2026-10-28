@@ -2165,6 +2165,12 @@ impl Snapshot {
         e.day = self.day;
         e.hour = self.hour;
         let s = &mut e.scripts;
+        s.character_id = self
+            .metadata
+            .as_ref()
+            .map(|m| m.character)
+            .filter(|id| *id != 0)
+            .unwrap_or(s.character_id);
         s.real_time = self.real_time;
         s.wall_time = self.wall_time;
         s.globals.set_values(self.globals);
