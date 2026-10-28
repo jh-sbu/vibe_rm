@@ -35,3 +35,11 @@ SNCT`, `esp-dump`).
   (including INFO barks and scene responses), MDSC music. Barks play INFO voice
   files, so they remain dialogue, not NDSC grunts. No descriptor-free non-dialogue
   vocal path exists yet; NDSC is available when one does. See research/audio/defaults.md.
+
+## Dialogue fade
+
+DOBJ SFDC identifies the affected subtree, leaving UI sounds outside it.
+Neither public SNCT/DOBJ documentation nor the records specify fade gain or
+timing. We choose -6 dB, 3 seconds out and 1 second in (the menu fade times).
+Only a player conversation counts, not scenes or INFO barks. Listening in SE
+could refine this choice. Script state multiplies with this policy.

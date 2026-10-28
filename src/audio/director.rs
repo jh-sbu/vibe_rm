@@ -13,6 +13,7 @@ pub const MUSIC_UNDUCK: f32 = 8.0;
 pub struct Inputs {
     pub menu: bool,
     pub loading: bool,
+    pub dialogue: bool,
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Target {
@@ -55,6 +56,29 @@ impl Director {
             },
         );
         self.pause(b"PDLC", inputs.loading, 0.0);
+        self.gain(
+            b"SFDC",
+            if inputs.dialogue {
+                10f32.powf(-6.0 / 20.0)
+            } else {
+                1.0
+            },
+            if inputs.dialogue {
+                MENU_FADE_OUT
+            } else {
+                MENU_FADE_IN
+            },
+        );
+    }
+    fn gain(&mut self, key: &[u8; 4], gain: f32, seconds: f32) {
+        if let Some(id) = self.defaults.get(key) {
+            let t = self.targets.entry(id.0).or_insert(Target {
+                state: CategoryState::default(),
+                seconds,
+            });
+            t.state.volume *= gain;
+            t.seconds = seconds;
+        }
     }
     fn pause(&mut self, key: &[u8; 4], paused: bool, seconds: f32) {
         if let Some(id) = self.defaults.get(key) {
@@ -72,6 +96,7 @@ impl crate::engine::Engine {
         let input = Inputs {
             menu: self.in_menu_mode(),
             loading: false,
+            dialogue: self.conversation.is_some(),
         };
         self.audio_director
             .update(input, &self.script_sounds.categories);
@@ -92,6 +117,22 @@ mod tests {
             (*b"PDMC", FormId(2)),
             (*b"PDLC", FormId(3)),
         ]))
+    }
+    #[test]
+    fn only_player_conversation_ducks_the_dialogue_fade_category() {
+        let mut d = Director::new(AudioDefaults::from_entries([(*b"SFDC", FormId(4))]));
+        d.update(
+            Inputs {
+                dialogue: true,
+                ..Default::default()
+            },
+            &HashMap::new(),
+        );
+        assert!((d.targets[&4].state.volume - 0.501187).abs() < 1e-5);
+        assert_eq!(d.targets[&4].seconds, 3.0);
+        d.update(Inputs::default(), &HashMap::new());
+        assert_eq!(d.targets[&4].state.volume, 1.0);
+        assert_eq!(d.targets[&4].seconds, 1.0);
     }
     #[test]
     fn menu_targets_pause_immediately_or_after_the_ini_fade() {
