@@ -495,6 +495,10 @@ impl Audio {
 
     /// Change a voice's volume (a waiting one's too).
     pub fn set_volume(&mut self, id: VoiceId, volume: f32) {
+        self.set_volume_with_fade(id, volume, 0.005);
+    }
+
+    pub fn set_volume_with_fade(&mut self, id: VoiceId, volume: f32, seconds: f32) {
         for p in self.waiting.values_mut().flatten() {
             let Pending::Play { id: i, params } = p;
             if *i == id {
@@ -504,7 +508,7 @@ impl Audio {
         if let Ok(mut m) = self.mixer.lock() {
             let rate = m.rate;
             for v in m.voices.iter_mut().filter(|v| v.id == id) {
-                v.gain.set(volume, 0.005, rate);
+                v.gain.set(volume, seconds, rate);
             }
         }
     }

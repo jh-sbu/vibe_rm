@@ -10,6 +10,17 @@ use crate::engine::Engine;
 /// MUSC `FNAM` flags.
 pub const PLAYS_ONE_SELECTION: u32 = 0x01;
 pub const ABRUPT_TRANSITION: u32 = 0x02;
+pub const DUCKS_CURRENT: u32 = 0x20;
+
+pub struct Background {
+    pub music: FormId,
+    pub from_queue: bool,
+    pub voice: Option<crate::audio::VoiceId>,
+}
+
+pub fn duck_gain(db: f32) -> f32 {
+    10f32.powf(-db.clamp(0.0, 100.0) / 20.0)
+}
 
 /// A priority for a music type with no `PNAM`: the lowest.
 const LOWEST_PRIORITY: u16 = 100;
@@ -121,6 +132,42 @@ impl Engine {
             .map_or(0, u32::from_le_bytes)
     }
 
+    fn music_duck_gain(&self, music: FormId) -> f32 {
+        if self.music_flags(music) & DUCKS_CURRENT == 0 {
+            return 1.0;
+        }
+        self.lo
+            .get(music)
+            .and_then(|r| {
+                r.get(b"PNAM")
+                    .filter(|d| d.len() >= 4)
+                    .map(|d| u16::from_le_bytes(d[2..4].try_into().unwrap()) as f32 / 100.0)
+            })
+            .map_or(1.0, duck_gain)
+    }
+    pub(crate) fn apply_music_ducking(&mut self, seconds: f32) {
+        let mut gain = self
+            .music
+            .music_type
+            .map_or(1.0, |m| self.music_duck_gain(m));
+        let base = self
+            .audio_defaults
+            .get(b"MDSC")
+            .map_or(1.0, |c| crate::world::sound::category_volume(&self.lo, c));
+        let mut changes = Vec::new();
+        for b in self.music.background.iter().rev() {
+            if let Some(v) = b.voice {
+                changes.push((v, base * gain));
+            }
+            gain *= self.music_duck_gain(b.music);
+        }
+        if let Some(a) = self.audio.as_mut() {
+            for (voice, volume) in changes {
+                a.set_volume_with_fade(voice, volume, seconds);
+            }
+        }
+    }
+
     /// Papyrus `MusicType.Add`.
     pub(crate) fn add_music(&mut self, music: FormId) {
         if self.lo.get(music).is_some_and(|r| r.tag().0 == *b"MUSC") {
@@ -161,6 +208,12 @@ mod tests {
         }
     }
 
+    #[test]
+    fn ducking_is_db_attenuation() {
+        assert_eq!(duck_gain(0.0), 1.0);
+        assert!((duck_gain(6.0) - 0.501187).abs() < 1e-5);
+        assert!((duck_gain(100.0) - 0.00001).abs() < 1e-8);
+    }
     #[test]
     fn empty_queue_plays_the_locations() {
         let q = Queue::default();

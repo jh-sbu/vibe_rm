@@ -322,6 +322,7 @@ pub struct Engine {
 #[derive(Default)]
 pub(crate) struct MusicState {
     pub(crate) music_type: Option<FormId>,
+    pub(crate) background: Vec<crate::music::Background>,
     /// Music types queued over the location's.
     pub(crate) queue: crate::music::Queue,
     /// The current type came from the queue.
@@ -810,6 +811,7 @@ impl Engine {
         if queued
             && let Some(m) = want
             && !playing
+            && Some(m) == self.music.music_type
             && self.music_flags(m) & crate::music::PLAYS_ONE_SELECTION != 0
             && self
                 .music
@@ -835,13 +837,65 @@ impl Engine {
                     .unwrap_or(0.0);
                 crate::audio::director::music_fade(self.music_flags(m), seconds)
             });
-            if let Some(v) = self.music.voice.take()
-                && let Some(a) = &self.audio
+            if let Some(i) = self
+                .music
+                .background
+                .iter()
+                .position(|b| Some(b.music) == want)
             {
-                a.stop_with_fade(v, fade);
+                if let Some(v) = self.music.voice.take()
+                    && let Some(a) = &self.audio
+                {
+                    a.stop_with_fade(v, fade);
+                }
+                while self.music.background.len() > i + 1 {
+                    if let Some(b) = self.music.background.pop()
+                        && let Some(v) = b.voice
+                        && let Some(a) = &self.audio
+                    {
+                        a.stop_with_fade(v, fade);
+                    }
+                }
+                let b = self.music.background.pop().unwrap();
+                self.music.voice = b.voice;
+                self.music.from_queue = b.from_queue;
+                self.music.music_type = want;
+                if let Some(v) = self.music.voice
+                    && let Some(a) = &mut self.audio
+                {
+                    let gain = self
+                        .audio_defaults
+                        .get(b"MDSC")
+                        .map_or(1.0, |c| crate::world::sound::category_volume(&self.lo, c));
+                    a.set_volume_with_fade(v, gain, crate::audio::director::MUSIC_UNDUCK);
+                }
+                self.apply_music_ducking(crate::audio::director::MUSIC_UNDUCK);
+                return;
+            }
+            let duck = want.is_some_and(|m| self.music_flags(m) & crate::music::DUCKS_CURRENT != 0);
+            if duck && let Some(music) = self.music.music_type {
+                self.music.background.push(crate::music::Background {
+                    music,
+                    from_queue: self.music.from_queue,
+                    voice: self.music.voice.take(),
+                });
+            } else {
+                if let Some(v) = self.music.voice.take()
+                    && let Some(a) = &self.audio
+                {
+                    a.stop_with_fade(v, fade);
+                }
+                for b in self.music.background.drain(..) {
+                    if let Some(v) = b.voice
+                        && let Some(a) = &self.audio
+                    {
+                        a.stop_with_fade(v, fade);
+                    }
+                }
             }
             self.music.music_type = want;
             self.music.from_queue = queued;
+            self.apply_music_ducking(crate::audio::director::MUSIC_DUCK);
             log::debug!(
                 "music type -> {:?}",
                 want.and_then(|w| self.lo.get(w))
