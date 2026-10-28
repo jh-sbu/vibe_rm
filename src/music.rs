@@ -10,6 +10,8 @@ use crate::engine::Engine;
 /// MUSC `FNAM` flags.
 pub const PLAYS_ONE_SELECTION: u32 = 0x01;
 pub const ABRUPT_TRANSITION: u32 = 0x02;
+pub const CYCLE_TRACKS: u32 = 4;
+pub const MAINTAIN_ORDER: u32 = 8;
 pub const DUCKS_CURRENT: u32 = 0x20;
 
 pub struct Background {
@@ -20,6 +22,39 @@ pub struct Background {
 
 pub fn duck_gain(db: f32) -> f32 {
     10f32.powf(-db.clamp(0.0, 100.0) / 20.0)
+}
+
+/// Per-type cycle state, independent of playback and the audio device.
+#[derive(Default)]
+pub struct TrackOrder(std::collections::HashMap<FormId, std::collections::VecDeque<FormId>>);
+impl TrackOrder {
+    pub fn pick(
+        &mut self,
+        music: FormId,
+        candidates: &[FormId],
+        flags: u32,
+        mut random: u64,
+    ) -> Option<FormId> {
+        if candidates.is_empty() {
+            return None;
+        }
+        if flags & CYCLE_TRACKS == 0 {
+            return Some(candidates[random as usize % candidates.len()]);
+        }
+        let cycle = self.0.entry(music).or_default();
+        cycle.retain(|id| candidates.contains(id));
+        if cycle.is_empty() {
+            let mut tracks = candidates.to_vec();
+            if flags & MAINTAIN_ORDER == 0 {
+                for i in (1..tracks.len()).rev() {
+                    random = random.wrapping_mul(6364136223846793005).wrapping_add(1);
+                    tracks.swap(i, (random % (i + 1) as u64) as usize);
+                }
+            }
+            cycle.extend(tracks);
+        }
+        cycle.pop_front()
+    }
 }
 
 /// A priority for a music type with no `PNAM`: the lowest.
@@ -208,6 +243,23 @@ mod tests {
         }
     }
 
+    #[test]
+    fn track_cycles_keep_order_or_shuffle_once_without_repeating() {
+        let mut o = TrackOrder::default();
+        for want in [A, B, LOC, A] {
+            assert_eq!(
+                o.pick(A, &[A, B, LOC], CYCLE_TRACKS | MAINTAIN_ORDER, 7),
+                Some(want)
+            );
+        }
+        let mut o = TrackOrder::default();
+        let mut got: Vec<_> = (0..3)
+            .map(|_| o.pick(A, &[A, B, LOC], CYCLE_TRACKS, 19).unwrap())
+            .collect();
+        got.sort_by_key(|id| id.0);
+        assert_eq!(got, [A, B, LOC]);
+        assert_eq!(o.pick(A, &[B], CYCLE_TRACKS, 1), Some(B));
+    }
     #[test]
     fn ducking_is_db_attenuation() {
         assert_eq!(duck_gain(0.0), 1.0);

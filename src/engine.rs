@@ -323,6 +323,7 @@ pub struct Engine {
 pub(crate) struct MusicState {
     pub(crate) music_type: Option<FormId>,
     pub(crate) background: Vec<crate::music::Background>,
+    pub(crate) order: crate::music::TrackOrder,
     /// Music types queued over the location's.
     pub(crate) queue: crate::music::Queue,
     /// The current type came from the queue.
@@ -765,12 +766,18 @@ impl Engine {
             })
             .collect();
         log::debug!("music candidates: {}", candidates.len());
-        for _ in 0..4 {
+        for depth in 0..4 {
             if candidates.is_empty() {
                 return None;
             }
-            let i = (self.rand() % candidates.len() as u64) as usize;
-            let t = self.lo.get(candidates[i])?;
+            let roll = self.rand();
+            let flags = self.music_flags(music);
+            let id = if depth == 0 {
+                self.music.order.pick(music, &candidates, flags, roll)?
+            } else {
+                candidates[roll as usize % candidates.len()]
+            };
+            let t = self.lo.get(id)?;
             let kind = t
                 .get(b"CNAM")
                 .map(|d| u32::from_le_bytes(d[0..4].try_into().unwrap()))
@@ -804,6 +811,9 @@ impl Engine {
             .music
             .voice
             .is_some_and(|v| self.audio.as_ref().is_some_and(|a| a.is_playing(v)));
+        if !playing && self.music.voice.take_if(|_| true).is_some() {
+            self.music.next_at = now + 20.0 + (self.rand() % 40) as f64;
+        }
         let location = self.location_music();
         let (mut want, mut queued) = self.choose_music(location);
         // A queued type that plays one selection is done once its track ends:
@@ -933,7 +943,7 @@ impl Engine {
                     .as_mut()
                     .and_then(|a| a.play(vfs, &track, params));
             }
-            // Silence between tracks, like the original.
+            // A failed selection retries after a bounded delay.
             self.music.next_at = now + 20.0 + (self.rand() % 40) as f64;
         }
     }

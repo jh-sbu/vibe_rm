@@ -408,3 +408,4 @@ sounds, and lip sync if 9a stalls. Answer open questions in the
 - 3: camera submersion uses swimming water surfaces, SNCT bit-0 mutes, and UWLS loops with 150 ms transitions; pure tests cover enter/leave.
 - 4a: incoming WNAM fades outgoing music; abrupt types cut; policy no longer requires a device.
 - 4b: concurrent background music stack, PNAM ducking and INI 6/8 s envelopes; no saved playback cursors.
+- 4c: per-type ordered/shuffled cycles and condition filtering; queue/gap choices consolidated in `known_ambiguities/music.md`.
