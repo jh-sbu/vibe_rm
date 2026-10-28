@@ -100,6 +100,7 @@ fn setup_engine(
         opts.radius,
     );
     engine.audio = audio;
+    engine.refresh_audio_settings();
     if !opts.no_scripts {
         let t = Instant::now();
         engine.start_game_enabled_quests();

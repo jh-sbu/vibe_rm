@@ -52,4 +52,7 @@ current menu gain to all existing/new descendants. Master preferences remain
 separate from 0.8 mixer headroom. Layout follows SkyrimPrefs AudioMenu, while
 storage belongs to this engine (not Skyrim's INI or save). Invalid/nonfinite
 values are rejected. Config is read at startup; explicit API/console changes
-write it atomically. Environment overrides are effective startup values.
+write it atomically. Environment overrides are session-only effective values, kept separate from
+stored preferences even when another setting is saved. Record metadata and
+menu gains are initialized once and refreshed only by the settings API or
+when an audio device is attached.

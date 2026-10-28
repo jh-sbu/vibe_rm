@@ -186,7 +186,6 @@ impl Director {
 }
 impl crate::engine::Engine {
     pub(crate) fn update_audio_director(&mut self) {
-        self.refresh_audio_settings();
         let space = self.acoustic_space();
         let reverb = space
             .and_then(|id| self.audio_spaces.records.get(&id))

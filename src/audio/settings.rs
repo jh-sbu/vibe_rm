@@ -104,31 +104,81 @@ impl Settings {
         std::fs::write(&temp, self.encode())?;
         std::fs::rename(temp, path)
     }
-    pub fn apply_environment(&mut self, lo: &LoadOrder) {
-        if let Some(value) = env_volume("VRM_AUDIO_MASTER") {
-            self.master = value;
-        }
-        for &id in lo.ids_of_type(b"SNCT") {
-            if !crate::world::sound::category(lo, id).is_some_and(|c| c.in_menu) {
-                continue;
-            }
-            let alias = lo
-                .get(id)
-                .and_then(|r| r.editor_id().as_deref().map(alias_for))
-                .unwrap_or("");
-            let value = if alias.is_empty() {
-                None
-            } else {
-                env_volume(&format!("VRM_AUDIO_{alias}"))
-            };
-            if let Some(value) = env_volume(&format!("VRM_AUDIO_{:08X}", id.0)).or(value) {
-                self.categories.insert(id.0, value);
-            }
-        }
-    }
 }
-fn env_volume(name: &str) -> Option<f32> {
-    std::env::var(name).ok()?.parse().ok().filter(|v| valid(*v))
+
+/// Record metadata is read once, not rebuilt while the engine is ticking.
+#[derive(Clone, Debug)]
+pub struct MenuCategory {
+    pub id: FormId,
+    pub name: String,
+    pub default: f32,
+}
+#[derive(Default)]
+pub struct Overrides {
+    pub master: Option<f32>,
+    pub categories: BTreeMap<u32, f32>,
+}
+pub struct Runtime {
+    pub menus: Vec<MenuCategory>,
+    pub overrides: Overrides,
+}
+impl Runtime {
+    pub fn load(lo: &LoadOrder) -> Self {
+        let menus = lo
+            .ids_of_type(b"SNCT")
+            .iter()
+            .filter_map(|&id| {
+                let category = crate::world::sound::category(lo, id).filter(|c| c.in_menu)?;
+                Some(MenuCategory {
+                    id,
+                    name: lo.get(id)?.editor_id().unwrap_or_default(),
+                    default: category.menu,
+                })
+            })
+            .collect();
+        Self::with_environment(menus, |name| std::env::var(name).ok())
+    }
+    fn with_environment(menus: Vec<MenuCategory>, get: impl Fn(&str) -> Option<String>) -> Self {
+        let volume = |name: &str| get(name)?.parse::<f32>().ok().filter(|v| valid(*v));
+        let mut overrides = Overrides {
+            master: volume("VRM_AUDIO_MASTER"),
+            ..Default::default()
+        };
+        for category in &menus {
+            let alias = alias_for(&category.name);
+            let value = volume(&format!("VRM_AUDIO_{:08X}", category.id.0)).or_else(|| {
+                if alias.is_empty() {
+                    None
+                } else {
+                    volume(&format!("VRM_AUDIO_{alias}"))
+                }
+            });
+            if let Some(value) = value {
+                overrides.categories.insert(category.id.0, value);
+            }
+        }
+        Self { menus, overrides }
+    }
+    pub fn master(&self, saved: &Settings) -> f32 {
+        self.overrides.master.unwrap_or(saved.master)
+    }
+    pub fn category(&self, saved: &Settings, id: FormId) -> Option<f32> {
+        let category = self.menus.iter().find(|c| c.id == id)?;
+        Some(
+            self.overrides
+                .categories
+                .get(&id.0)
+                .or_else(|| saved.categories.get(&id.0))
+                .copied()
+                .unwrap_or(category.default),
+        )
+    }
+    pub fn gains(&self, saved: &Settings) -> std::collections::HashMap<u32, f32> {
+        self.menus
+            .iter()
+            .map(|c| (c.id.0, self.category(saved, c.id).unwrap()))
+            .collect()
+    }
 }
 fn alias_for(edid: &str) -> &'static str {
     match edid.to_ascii_lowercase().as_str() {
@@ -150,29 +200,15 @@ pub fn path() -> Option<PathBuf> {
 }
 impl crate::engine::Engine {
     pub(crate) fn refresh_audio_settings(&mut self) {
-        self.audio_director.menu_gains.clear();
-        for &id in self.lo.ids_of_type(b"SNCT") {
-            if let Some(c) = crate::world::sound::category(&self.lo, id).filter(|c| c.in_menu) {
-                self.audio_director.menu_gains.insert(
-                    id.0,
-                    self.audio_settings
-                        .categories
-                        .get(&id.0)
-                        .copied()
-                        .unwrap_or(c.menu),
-                );
-            }
-        }
+        self.audio_director.menu_gains = self.audio_preferences.gains(&self.audio_settings);
         if let Some(a) = &self.audio {
-            a.set_master(self.audio_settings.master);
+            a.set_master(self.audio_preferences.master(&self.audio_settings));
         }
     }
     /// Shared console/System-page API. Settings are separate from save games.
     pub fn set_audio_volume(&mut self, category: Option<FormId>, value: f32) -> io::Result<()> {
         if !valid(value)
-            || category.is_some_and(|id| {
-                !crate::world::sound::category(&self.lo, id).is_some_and(|c| c.in_menu)
-            })
+            || category.is_some_and(|id| !self.audio_preferences.menus.iter().any(|c| c.id == id))
         {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -192,58 +228,52 @@ impl crate::engine::Engine {
     }
     pub(crate) fn audio_command(&mut self, args: &[&str]) -> Vec<String> {
         let id = |name: &str| {
-            self.lo
-                .ids_of_type(b"SNCT")
+            self.audio_preferences
+                .menus
                 .iter()
-                .copied()
-                .find(|&id| {
-                    self.lo.get(id).is_some_and(|r| {
-                        r.editor_id().is_some_and(|edid| {
-                            edid.eq_ignore_ascii_case(name)
-                                || alias_for(&edid).eq_ignore_ascii_case(name)
-                        })
-                    })
+                .find(|c| {
+                    c.name.eq_ignore_ascii_case(name)
+                        || (!alias_for(&c.name).is_empty()
+                            && alias_for(&c.name).eq_ignore_ascii_case(name))
                 })
+                .map(|c| c.id)
                 .or_else(|| self.resolve_form(name))
         };
         if args.is_empty() {
-            let mut lines = vec![format!("master = {}", self.audio_settings.master)];
-            for &id in self.lo.ids_of_type(b"SNCT") {
-                if let Some(c) = crate::world::sound::category(&self.lo, id).filter(|c| c.in_menu) {
-                    lines.push(format!(
-                        "{id} {} = {}",
-                        self.lo
-                            .get(id)
-                            .and_then(|r| r.editor_id())
-                            .unwrap_or_default(),
-                        self.audio_settings
-                            .categories
-                            .get(&id.0)
-                            .copied()
-                            .unwrap_or(c.menu)
-                    ));
-                }
+            let mut lines = vec![format!(
+                "master = {}",
+                self.audio_preferences.master(&self.audio_settings)
+            )];
+            for category in &self.audio_preferences.menus {
+                lines.push(format!(
+                    "{} {} = {}",
+                    category.id,
+                    category.name,
+                    self.audio_preferences
+                        .category(&self.audio_settings, category.id)
+                        .unwrap()
+                ));
             }
             return lines;
         }
         let category = if args[0].eq_ignore_ascii_case("master") {
             None
         } else {
-            match id(args[0]).filter(|&id| {
-                crate::world::sound::category(&self.lo, id).is_some_and(|c| c.in_menu)
-            }) {
+            match id(args[0]).filter(|id| self.audio_preferences.menus.iter().any(|c| c.id == *id))
+            {
                 Some(id) => Some(id),
                 None => return vec!["unknown Audio menu category".into()],
             }
         };
         if args.len() == 1 {
-            let value = category.map_or(self.audio_settings.master, |id| {
-                self.audio_settings
-                    .categories
-                    .get(&id.0)
-                    .copied()
-                    .unwrap_or_else(|| crate::world::sound::category(&self.lo, id).unwrap().menu)
-            });
+            let value = category.map_or_else(
+                || self.audio_preferences.master(&self.audio_settings),
+                |id| {
+                    self.audio_preferences
+                        .category(&self.audio_settings, id)
+                        .unwrap()
+                },
+            );
             return vec![format!("{} = {value}", args[0])];
         }
         if args.len() != 2 {
@@ -253,7 +283,24 @@ impl crate::engine::Engine {
             return vec!["volume must be a finite number from 0 to 1".into()];
         };
         match self.set_audio_volume(category, value) {
-            Ok(()) => vec![format!("{} = {value}", args[0])],
+            Ok(()) => {
+                let effective = category.map_or_else(
+                    || self.audio_preferences.master(&self.audio_settings),
+                    |id| {
+                        self.audio_preferences
+                            .category(&self.audio_settings, id)
+                            .unwrap()
+                    },
+                );
+                vec![if effective == value {
+                    format!("{} = {value}", args[0])
+                } else {
+                    format!(
+                        "{} = {value} (effective {effective}: environment override)",
+                        args[0]
+                    )
+                }]
+            }
             Err(e) => vec![format!("audio settings: {e}")],
         }
     }
@@ -261,6 +308,38 @@ impl crate::engine::Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn environment_overrides_stay_separate_when_preferences_are_saved() {
+        let prefs = Runtime::with_environment(
+            vec![MenuCategory {
+                id: FormId(123),
+                name: "AudioCategoryMUS".into(),
+                default: 0.5,
+            }],
+            |name| match name {
+                "VRM_AUDIO_MASTER" => Some("0".into()),
+                "VRM_AUDIO_MUSIC" => Some(".2".into()),
+                "VRM_AUDIO_0000007B" => Some(".1".into()),
+                _ => None,
+            },
+        );
+        let mut saved = Settings {
+            master: 0.8,
+            categories: [(123, 0.4)].into(),
+        };
+        assert_eq!(prefs.master(&saved), 0.0);
+        assert_eq!(prefs.category(&saved, FormId(123)), Some(0.1));
+        // A subsequent console/API change must save only the user's requested preference.
+        saved.categories.insert(123, 0.6);
+        let roundtrip = Settings::parse(&saved.encode()).unwrap();
+        assert_eq!(roundtrip.master, 0.8);
+        assert_eq!(roundtrip.categories[&123], 0.6);
+        assert_eq!(prefs.master(&roundtrip), 0.0);
+        assert_eq!(prefs.gains(&roundtrip)[&123], 0.1);
+        let next = Runtime::with_environment(prefs.menus.clone(), |_| None);
+        assert_eq!(next.master(&roundtrip), 0.8);
+        assert_eq!(next.gains(&roundtrip)[&123], 0.6);
+    }
     #[test]
     #[ignore = "needs a headless GPU adapter; synthetic records only"]
     fn shared_slider_api_updates_director_and_persists_without_a_device() {
@@ -283,7 +362,10 @@ mod tests {
         let mut e = crate::stats::action_tests::headless_engine(&dir, "Audio.esp");
         e.audio_settings = Settings::default();
         e.audio_settings_path = Some(dir.join("audio.ini"));
+        e.audio_preferences.overrides.master = Some(0.0);
         e.set_audio_volume(Some(FormId(0x800)), 0.2).unwrap();
+        assert_eq!(Settings::read(&dir.join("audio.ini")).unwrap().master, 1.0);
+        assert_eq!(e.audio_preferences.master(&e.audio_settings), 0.0);
         e.update_audio_director();
         assert_eq!(e.audio_director.targets[&0x800].state.volume, 0.2);
         assert_eq!(

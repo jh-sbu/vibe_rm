@@ -176,5 +176,7 @@ Audio preferences are stored in `$XDG_CONFIG_HOME/vibe_rm/audio.ini` (or
 `VRM_AUDIO_SETTINGS` overrides the path; `VRM_AUDIO_MASTER`,
 `VRM_AUDIO_MUSIC`, `VRM_AUDIO_VOICE`, `VRM_AUDIO_EFFECTS`,
 `VRM_AUDIO_FOOTSTEPS`, or `VRM_AUDIO_<8-digit-form-ID>` override startup
-values for offscreen runs. SkyrimPrefs.ini is never imported automatically;
+values for offscreen runs. These overrides apply only to that process and are
+never written into audio.ini; explicit console/API changes still update the saved
+preference underneath an active override. SkyrimPrefs.ini is never imported automatically;
 its AudioMenu section can be copied to this engine's file explicitly.
