@@ -193,6 +193,9 @@ struct Mixer {
     listener_right: Vec3,
     rate: u32,
     master: f32,
+    /// Fixed frame buses: no allocation, even for an unexpected callback size.
+    dry: [f32; 2],
+    send: [f32; 2],
     /// Voices stopped while their clips were still decoding.
     cancelled: Vec<VoiceId>,
     categories: HashMap<u32, CategoryMix>,
@@ -211,6 +214,8 @@ impl Mixer {
     fn mix(&mut self, out: &mut [f32], channels: usize) {
         out.fill(0.0);
         for frame in out.chunks_exact_mut(channels) {
+            self.dry.fill(0.0);
+            self.send.fill(0.0);
             for v in &mut self.voices {
                 let (paused, gain, frequency) =
                     Self::category_effect(&self.categories, &v.params.categories);
@@ -250,14 +255,19 @@ impl Mixer {
                 let t = (v.pos - i as f64) as f32;
                 let sample =
                     |c| v.clip.samples[i * 2 + c] * (1.0 - t) + v.clip.samples[j * 2 + c] * t;
-                frame[0] += sample(0) * gl;
-                if channels > 1 {
-                    frame[1] += sample(1) * gr;
+                let stereo = [sample(0) * gl, sample(1) * gr];
+                for (c, value) in stereo.into_iter().enumerate() {
+                    self.dry[c] += value;
+                    self.send[c] += value * v.params.reverb_send;
                 }
                 v.pos += v.clip.rate as f64 / self.rate as f64
                     * v.params.rate.max(0.01) as f64
                     * frequency;
                 v.gain.advance();
+            }
+            frame[0] = self.dry[0];
+            if channels > 1 {
+                frame[1] = self.dry[1];
             }
             for c in self.categories.values_mut() {
                 c.gain.advance();
@@ -298,6 +308,8 @@ impl Audio {
             listener_right: Vec3::X,
             rate: 44100,
             master: 0.8,
+            dry: [0.0; 2],
+            send: [0.0; 2],
             cancelled: Vec::new(),
             categories: HashMap::new(),
         }));
@@ -659,6 +671,8 @@ mod tests {
             listener_right: Vec3::X,
             rate: 1000,
             master: 1.0,
+            dry: [0.0; 2],
+            send: [0.0; 2],
             cancelled: Vec::new(),
             categories: HashMap::new(),
         }
