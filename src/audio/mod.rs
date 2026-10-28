@@ -5,6 +5,7 @@ pub mod director;
 pub mod regions;
 pub mod reverb;
 pub mod spaces;
+pub mod speakers;
 
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -209,7 +210,7 @@ struct Mixer {
     rate: u32,
     master: f32,
     /// Fixed frame buses: no allocation, even for an unexpected callback size.
-    dry: [f32; 2],
+    dry: [f32; 8],
     send: [f32; 2],
     reverb: reverb::Bus,
     /// Voices stopped while their clips were still decoding.
@@ -292,10 +293,9 @@ impl Mixer {
                 v.gain.advance();
             }
             let wet = self.reverb.process(self.send);
-            frame[0] = self.dry[0] + wet[0];
-            if channels > 1 {
-                frame[1] = self.dry[1] + wet[1];
-            }
+            self.dry[0] += wet[0];
+            self.dry[1] += wet[1];
+            speakers::write(&self.dry, frame);
             for c in self.categories.values_mut() {
                 c.gain.advance();
             }
@@ -335,7 +335,7 @@ impl Audio {
             listener_right: Vec3::X,
             rate: 44100,
             master: 0.8,
-            dry: [0.0; 2],
+            dry: [0.0; 8],
             send: [0.0; 2],
             reverb: reverb::Bus::default(),
             cancelled: Vec::new(),
@@ -747,7 +747,7 @@ mod tests {
             listener_right: Vec3::X,
             rate: 1000,
             master: 1.0,
-            dry: [0.0; 2],
+            dry: [0.0; 8],
             send: [0.0; 2],
             reverb: reverb::Bus::default(),
             cancelled: Vec::new(),
