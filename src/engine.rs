@@ -1334,6 +1334,9 @@ impl Engine {
                 let mut inst = Instance::new(m, o.transform);
                 inst.ref_id = o.ref_id.0;
                 inst.base = o.base.0;
+                if self.lo.tag_of(o.base).is_some_and(|t| t.0 == *b"TREE") {
+                    inst.fade_class = crate::render::distance::Class::Tree;
+                }
                 if self
                     .lo
                     .tag_of(o.base)

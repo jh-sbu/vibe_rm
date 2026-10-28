@@ -183,6 +183,7 @@ impl crate::engine::Engine {
         })
     }
     pub fn sync_settings(&mut self) {
+        self.renderer.distances.trees = self.settings.get("fTreesMidLODSwitchDist");
         self.renderer.distances.specular = self.settings.get("fSpecularLODStartFade");
         self.renderer.distances.lights = self.settings.get("fLightLODStartFade");
         self.renderer.distances.shadows = self.settings.get("fShadowDistance");
@@ -205,6 +206,7 @@ impl crate::engine::Engine {
         Ok(())
     }
     pub fn save_settings(&mut self) -> io::Result<()> {
+        if let Some(path)=&self.audio_settings_path {self.audio_settings.write(path)?;}
         if let Some(path) = path() {
             self.settings.write(&path)?;
         }

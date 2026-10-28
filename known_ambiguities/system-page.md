@@ -76,3 +76,11 @@ actor/item/object multipliers 1–15; grass 0–7000; shadow 0–16000; light
 over the final 20 percent using stable screen-door coverage, then cull. This
 transition width and endpoint policy are host choices, not established SE
 shader behavior. Defaults retain the documented INI values.
+
+## Tree distance during billboard work
+
+Public Tree LOD documentation cited in the research note establishes the
+separate LST/BTT billboard path, absent from the current BTR/BTO host. Apply
+fTreesMidLODSwitchDist as the full tree's fade/cull distance in the interim;
+there is currently no billboard replacement. This is a functional distance
+control, not a verified SE full-to-billboard transition.

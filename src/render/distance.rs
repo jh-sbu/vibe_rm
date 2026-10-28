@@ -9,6 +9,7 @@ pub struct Distances {
     pub shadows: f32,
     pub lights: f32,
     pub specular: f32,
+    pub trees: f32,
 }
 impl Default for Distances {
     fn default() -> Self {
@@ -20,6 +21,7 @@ impl Default for Distances {
             shadows: 12000.,
             lights: f32::INFINITY,
             specular: 1e30,
+            trees: f32::INFINITY,
         }
     }
 }
@@ -65,7 +67,7 @@ impl Distances {
         match class {
             Class::Item => alpha(distance, self.items * radius.max(1.)),
             Class::Object => alpha(distance, self.objects * radius.max(1.)),
-            _ => 1.,
+            Class::Tree => alpha(distance, self.trees),
         }
     }
 }

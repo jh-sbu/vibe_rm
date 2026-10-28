@@ -168,3 +168,15 @@ Skyrim_Default.ini (also present in preferences). fSpecularLODStartFade was
 absent: use the default INI's fSpecularLODMaxStartFade=2000 as the implementation
 choice recorded in known_ambiguities/system-page.md. Preferences are never
 imported automatically. Audio retains its separate AudioMenu file.
+
+## Tree LOD discovery
+
+The local UESP index returned no BTT format matches. DynDOLOD's public
+[Tree LOD documentation](https://dyndolod.info/Help/Tree-LOD) establishes that
+vanilla tree billboards require separate LST/BTT data and a texture atlas;
+the existing host reads BTR/BTO only. No SKSE implementation was consulted.
+
+Audio order: installed SkyrimPrefs.ini AudioMenu uID0–3 identify SFX, FST,
+VOCGeneral, MUS. Use Effects, Footsteps, Voice, Music in that order after
+Master, followed by additional in-menu categories in FormID order. The movie
+itself supplies Master only.
