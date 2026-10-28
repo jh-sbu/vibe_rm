@@ -143,6 +143,19 @@ impl InputMap {
             .iter()
             .any(|chord| chord.iter().all(|c| mouse.contains(c)))
     }
+    /// Releasing the final key ends its action even when a chord's modifier
+    /// was released first. This avoids a stuck Activate/attack/voice hold.
+    pub fn released(&self, event: &str, button: Button) -> bool {
+        let (device, code) = match button {
+            Button::Key(key) => (0, scan_code(key)),
+            Button::Mouse(code) => (1, Some(code)),
+        };
+        code.is_some_and(|code| {
+            self.bindings(event, device)
+                .iter()
+                .any(|chord| chord.last() == Some(&code))
+        })
+    }
     pub fn triggered(
         &self,
         event: &str,
@@ -433,5 +446,22 @@ mod remap_tests {
         assert_eq!(b.events()[0].columns[2], "0x1000");
         m.reset();
         assert_eq!(m.first("Activate", 0), Some(0x12));
+    }
+}
+
+#[cfg(test)]
+mod release_tests {
+    use super::*;
+    #[test]
+    fn chord_release_does_not_require_a_still_held_modifier() {
+        let map = InputMap::parse("Activate\t0x1d+0x22\t0xff\t0xff\t1\t1\t0\n");
+        assert!(!map.triggered(
+            "Activate",
+            Button::Key(K::KeyG),
+            &HashSet::new(),
+            &HashSet::new()
+        ));
+        assert!(map.released("Activate", Button::Key(K::KeyG)));
+        assert!(!map.released("Activate", Button::Key(K::ControlLeft)));
     }
 }

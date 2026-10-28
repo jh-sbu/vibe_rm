@@ -981,7 +981,13 @@ impl WindowState {
             let map = self.engine.input_map.read().unwrap();
             map.events()
                 .iter()
-                .filter(|e| map.triggered(&e.name, button, &self.keys, &self.mouse_buttons))
+                .filter(|e| {
+                    if pressed {
+                        map.triggered(&e.name, button, &self.keys, &self.mouse_buttons)
+                    } else {
+                        map.released(&e.name, button)
+                    }
+                })
                 .map(|e| e.name.clone())
                 .collect()
         };

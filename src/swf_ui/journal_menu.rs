@@ -562,6 +562,12 @@ impl JournalMenu {
         true
     }
 
+    /// System subpanels own Cancel, including their save-settings delay.
+    pub fn system_panel_open(&self) -> bool {
+        self.menu.get(&format!("{M}.iCurrentTab")) == num(2.)
+            && matches!(self.menu.get("_root.QuestJournalFader.Menu_mc.SystemFader.Page_mc.iCurrentState"),Value::Number(n) if n!=0.)
+    }
+
     /// Esc or the journal key: the menu closes as on Tab (`CloseMenu`).
     pub fn close(&self) {
         self.menu.callback("StartCloseMenu", &[]);

@@ -930,6 +930,9 @@ impl SwfUi {
         let (None, Some(journal)) = (&self.message_box.shown, &self.journal) else {
             return false;
         };
+        if code == KeyCode::Escape && journal.system_panel_open() {
+            return false;
+        }
         if code == KeyCode::Escape
             || crate::input_map::scan_code(code)
                 .is_some_and(|c| self.buttons.key("Journal") == Some(c))
