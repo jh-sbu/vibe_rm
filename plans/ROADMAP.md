@@ -5,6 +5,9 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Voice budget (`plans/audio-unblocked.md`, 7): descriptor priority and
+  audibility selection, virtual looping playback, exempt music/dialogue. Cap
+  and ordering evidence: `known_ambiguities/voices.md`.
 - Speaker output (`plans/audio-unblocked.md`, 6): device layouts/downmix,
   ONAM mono/stereo percentage rows, equal-power panning and rear filtering.
   HRTF/layout approximations: `known_ambiguities/sound-output-models.md`.

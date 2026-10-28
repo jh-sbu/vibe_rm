@@ -193,6 +193,7 @@ impl Default for VoiceParams {
         }
     }
 }
+#[derive(Clone)]
 struct Voice {
     id: VoiceId,
     clip: Arc<Clip>,
@@ -202,6 +203,7 @@ struct Voice {
     stopping: bool,
     repeats: u32,
     filter: [f32; 2],
+    virtualized: bool,
 }
 
 struct Mixer {
@@ -210,6 +212,7 @@ struct Mixer {
     listener_right: Vec3,
     rate: u32,
     master: f32,
+    voice_limit: usize,
     /// Fixed frame buses: no allocation, even for an unexpected callback size.
     dry: [f32; 8],
     send: [f32; 2],
@@ -229,7 +232,47 @@ impl Mixer {
         }
         (paused, volume, frequency)
     }
+    fn audibility(&self, v: &Voice) -> f32 {
+        let (_, gain, _) = Self::category_effect(&self.categories, &v.params.categories);
+        v.gain.current
+            * gain
+            * v.params
+                .position
+                .map_or(1.0, |p| v.params.falloff.gain(p.distance(self.listener)))
+    }
+    fn select_voices(&mut self) {
+        for v in &mut self.voices {
+            v.virtualized = !v.params.exempt;
+        }
+        for _ in 0..self.voice_limit {
+            let best = self
+                .voices
+                .iter()
+                .enumerate()
+                .filter(|(_, v)| {
+                    v.virtualized
+                        && !Self::category_effect(&self.categories, &v.params.categories).0
+                })
+                .min_by(|(_, a), (_, b)| {
+                    a.params
+                        .priority
+                        .cmp(&b.params.priority)
+                        .then_with(|| self.audibility(b).total_cmp(&self.audibility(a)))
+                        .then(a.id.0.cmp(&b.id.0))
+                })
+                .map(|(i, _)| i);
+            let Some(i) = best else { break };
+            self.voices[i].virtualized = false;
+        }
+        let categories = &self.categories;
+        self.voices.retain(|v| {
+            !v.virtualized
+                || v.params.looping
+                || Self::category_effect(categories, &v.params.categories).0
+        });
+    }
     fn mix(&mut self, out: &mut [f32], channels: usize) {
+        self.select_voices();
         out.fill(0.0);
         for frame in out.chunks_exact_mut(channels) {
             self.dry.fill(0.0);
@@ -238,6 +281,9 @@ impl Mixer {
                 let (paused, gain, frequency) =
                     Self::category_effect(&self.categories, &v.params.categories);
                 if paused {
+                    if v.stopping {
+                        v.gain.advance();
+                    }
                     continue;
                 }
                 let n = v.clip.frames();
@@ -260,6 +306,13 @@ impl Mixer {
                 }
                 let i = v.pos as usize;
                 if i >= n {
+                    continue;
+                }
+                if v.virtualized {
+                    v.pos += v.clip.rate as f64 / self.rate as f64
+                        * v.params.rate.max(0.01) as f64
+                        * frequency;
+                    v.gain.advance();
                     continue;
                 }
                 let volume = v.gain.current * gain;
@@ -369,6 +422,7 @@ impl Audio {
             listener_right: Vec3::X,
             rate: 44100,
             master: 0.8,
+            voice_limit: 64,
             dry: [0.0; 8],
             send: [0.0; 2],
             reverb: reverb::Bus::default(),
@@ -530,6 +584,7 @@ impl Audio {
                 stopping: false,
                 repeats: 0,
                 filter: [0.0; 2],
+                virtualized: false,
             });
         }
     }
@@ -591,6 +646,7 @@ impl Audio {
         self.waiting.clear();
         if let Ok(mut m) = self.mixer.lock() {
             m.voices.clear();
+            m.cancelled.clear();
         }
     }
 
@@ -654,6 +710,45 @@ mod tests {
         (m, out)
     }
 
+    #[test]
+    fn voice_cap_prefers_priority_then_audibility_and_virtualizes_loops() {
+        let mut m = mixer(1.0);
+        m.voice_limit = 2;
+        for id in [2, 3] {
+            let mut v = m.voices[0].clone();
+            v.id = VoiceId(id);
+            m.voices.push(v);
+        }
+        m.voices[0].params.looping = true;
+        m.voices[0].params.priority = 192;
+        m.voices[1].params.priority = 64;
+        m.voices[2].params.priority = 128;
+        m.mix(&mut [0.0; 10], 1);
+        assert!(m.voices[0].virtualized);
+        assert_eq!(m.voices[0].pos, 10.0);
+        m.voices.retain(|v| v.id != VoiceId(3));
+        m.mix(&mut [0.0; 10], 1);
+        assert!(!m.voices[0].virtualized);
+        assert_eq!(m.voices[0].pos, 20.0);
+        let mut m = mixer(1.0);
+        m.voice_limit = 2;
+        m.voices[0].gain = Ramp::new(0.1);
+        for (id, gain) in [(2, 0.5), (3, 0.9)] {
+            let mut v = m.voices[0].clone();
+            v.id = VoiceId(id);
+            v.gain = Ramp::new(gain);
+            m.voices.push(v);
+        }
+        let mut exempt = m.voices[0].clone();
+        exempt.id = VoiceId(4);
+        exempt.params.exempt = true;
+        m.voices.push(exempt);
+        m.mix(&mut [0.0; 1], 1);
+        assert_eq!(
+            m.voices.iter().map(|v| v.id.0).collect::<Vec<_>>(),
+            [2, 3, 4]
+        );
+    }
     #[test]
     fn defined_output_uses_mono_and_independent_stereo_rows() {
         let mut m = mixer(1.0);
@@ -794,6 +889,7 @@ mod tests {
                 stopping: false,
                 repeats: 0,
                 filter: [0.0; 2],
+                virtualized: false,
                 params: VoiceParams {
                     rate: pitch as f32,
                     ..Default::default()
@@ -803,6 +899,7 @@ mod tests {
             listener_right: Vec3::X,
             rate: 1000,
             master: 1.0,
+            voice_limit: 64,
             dry: [0.0; 8],
             send: [0.0; 2],
             reverb: reverb::Bus::default(),

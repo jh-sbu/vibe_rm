@@ -418,3 +418,4 @@ sounds, and lip sync if 9a stalls. Answer open questions in the
 - 6a: eight-speaker internal dry bus and device-channel mapping/downmix, including mono/quad/5.1/stereo.
 - 6b: percentage ONAM mono/stereo rows, retained source channel metadata and per-speaker mixing tests.
 - 6c: equal-power spatial pan and mild rear attenuation/filtering, with documented HRTF/radius limits.
+- 7: BNAM priority, cap of 64 non-exempt audible voices, audibility tie-breaks and virtual loops; cap-2 mixer tests.

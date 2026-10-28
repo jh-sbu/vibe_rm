@@ -30,6 +30,7 @@ impl AudioDefaults {
 pub struct SoundDesc {
     pub files: Vec<String>,
     pub looping: bool,
+    pub priority: u8,
     /// How it fades with the distance (its output model's attenuation).
     pub falloff: Falloff,
     /// Heard from where it plays: its output model attenuates with distance
@@ -163,6 +164,7 @@ impl SoundDesc {
             volume: self.volume * variation.gain,
             rate: variation.pitch,
             looping,
+            priority: self.priority,
             position: if self.positional { position } else { None },
             falloff: self.falloff,
             categories: self.categories.clone(),
@@ -322,6 +324,7 @@ pub fn descriptor(lo: &LoadOrder, vfs: &vfs::Vfs, id: FormId) -> Option<SoundDes
     let mut desc = SoundDesc {
         files,
         looping,
+        priority: 128,
         falloff: Falloff::new(200.0, 2000.0),
         positional: true,
         output_model: None,
@@ -336,6 +339,7 @@ pub fn descriptor(lo: &LoadOrder, vfs: &vfs::Vfs, id: FormId) -> Option<SoundDes
     {
         let db = u16::from_le_bytes([b[4], b[5]]) as f32 / 100.0;
         desc.volume = 10f32.powf(-db / 20.0);
+        desc.priority = b[2];
         desc.frequency_shift = b[0] as i8 as f32;
         desc.frequency_variance = b[1] as f32;
         desc.db_variance = b[3] as f32;
@@ -483,6 +487,7 @@ mod tests {
         SoundDesc {
             files: vec![],
             looping: false,
+            priority: 128,
             falloff: Falloff::new(0.0, 0.0),
             positional: true,
             output_model: None,
