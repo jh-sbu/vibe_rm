@@ -403,6 +403,7 @@ fn main() -> Result<()> {
                 );
             }
         }
+        Some("aspc-survey") => audio_survey::spaces(&args[1])?,
         Some("music-survey") => audio_survey::music(&args[1])?,
         Some("audio-defaults") => audio_survey::defaults(&args[1])?,
         Some("sndr-stats") => {

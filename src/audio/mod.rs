@@ -2,6 +2,7 @@
 
 pub mod decode;
 pub mod director;
+pub mod spaces;
 
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender, channel};

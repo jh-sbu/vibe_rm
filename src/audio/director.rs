@@ -28,6 +28,8 @@ pub struct Inputs {
     pub submerged: bool,
     pub combat: bool,
     pub dead: bool,
+    pub space: Option<esp::FormId>,
+    pub reverb: Option<esp::FormId>,
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Target {
@@ -46,6 +48,7 @@ pub struct Director {
     pub submerged_categories: Vec<u32>,
     pub loops: Vec<esp::FormId>,
     pub music_commands: Vec<MusicCommand>,
+    pub reverb: Option<esp::FormId>,
 }
 impl Director {
     pub fn new(defaults: AudioDefaults) -> Self {
@@ -56,6 +59,7 @@ impl Director {
             submerged_categories: Vec::new(),
             loops: Vec::new(),
             music_commands: Vec::new(),
+            reverb: None,
         }
     }
     pub fn update(&mut self, inputs: Inputs, scripts: &HashMap<u32, CategoryState>) {
@@ -79,6 +83,7 @@ impl Director {
                 });
             }
         }
+        self.reverb = inputs.reverb.or_else(|| self.defaults.get(b"RVBT"));
         self.inputs = inputs;
         self.loops.clear();
         if inputs.submerged
@@ -156,7 +161,13 @@ impl Director {
 }
 impl crate::engine::Engine {
     pub(crate) fn update_audio_director(&mut self) {
+        let space = self.acoustic_space();
+        let reverb = space
+            .and_then(|id| self.audio_spaces.records.get(&id))
+            .and_then(|s| s.reverb);
         let input = Inputs {
+            space,
+            reverb,
             menu: self.in_menu_mode(),
             loading: false,
             dialogue: self.conversation.is_some(),

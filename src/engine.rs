@@ -119,6 +119,7 @@ pub struct Engine {
     pub(crate) cond_rng: std::cell::Cell<u64>,
     pending_moveto: Option<FormId>,
     pub audio: Option<crate::audio::Audio>,
+    pub(crate) audio_spaces: crate::audio::spaces::Spaces,
     pub(crate) ambient_voices: HashMap<FormId, crate::audio::VoiceId>,
     pub(crate) audio_director: crate::audio::director::Director,
     pub(crate) audio_defaults: crate::world::sound::AudioDefaults,
@@ -392,6 +393,7 @@ impl Engine {
         if std::env::var_os("VRM_NO_ADDONS").is_none() {
             models.set_addons(loader::addon_models(&lo));
         }
+        let audio_spaces = crate::audio::spaces::Spaces::load(&lo);
         let audio_defaults = crate::world::sound::AudioDefaults::load(&lo);
         let mut audio_director = crate::audio::director::Director::new(audio_defaults.clone());
         audio_director.submerged_categories = lo
@@ -462,6 +464,7 @@ impl Engine {
             pending_moveto: None,
             audio: None,
             audio_director,
+            audio_spaces,
             ambient_voices: HashMap::new(),
             audio_defaults,
             music: MusicState::default(),
