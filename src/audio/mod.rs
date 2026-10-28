@@ -1,6 +1,7 @@
 //! Audio output: a small mixer with 3D positioned voices on top of cpal.
 
 pub mod decode;
+pub mod director;
 
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender, channel};

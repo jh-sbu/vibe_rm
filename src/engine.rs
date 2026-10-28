@@ -119,6 +119,7 @@ pub struct Engine {
     pub(crate) cond_rng: std::cell::Cell<u64>,
     pending_moveto: Option<FormId>,
     pub audio: Option<crate::audio::Audio>,
+    pub(crate) audio_director: crate::audio::director::Director,
     pub(crate) audio_defaults: crate::world::sound::AudioDefaults,
     pub(crate) music: MusicState,
     pub conversation: Option<crate::dialogue::Conversation>,
@@ -449,6 +450,7 @@ impl Engine {
             cond_rng: std::cell::Cell::new(0x9E37_79B9_7F4A_7C15),
             pending_moveto: None,
             audio: None,
+            audio_director: crate::audio::director::Director::new(audio_defaults.clone()),
             audio_defaults,
             music: MusicState::default(),
             conversation: None,
@@ -2782,6 +2784,7 @@ impl Engine {
         }
         self.update_music();
         self.update_script_sounds();
+        self.update_audio_director();
         self.update_conversation();
         self.update_barks();
         self.update_imagespace(dt);
@@ -2821,6 +2824,7 @@ impl Engine {
         }
         self.update_music();
         self.update_script_sounds();
+        self.update_audio_director();
     }
 
     fn update_look_target(&mut self) {

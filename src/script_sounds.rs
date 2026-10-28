@@ -26,7 +26,7 @@ pub(crate) struct ScriptSounds {
     /// What scripts did to sound categories, by form id; kept for the session
     /// (inference: the audio mixer's settings aren't saved) and sent to the
     /// mixer when they change.
-    categories: HashMap<u32, crate::audio::CategoryState>,
+    pub(crate) categories: HashMap<u32, crate::audio::CategoryState>,
     categories_dirty: bool,
 }
 
@@ -141,14 +141,7 @@ impl Engine {
     }
 
     pub(crate) fn update_script_sounds(&mut self) {
-        if self.script_sounds.categories_dirty
-            && let Some(a) = self.audio.as_ref()
-        {
-            for (&c, &state) in &self.script_sounds.categories {
-                a.set_category(c, state, 0.005);
-            }
-            self.script_sounds.categories_dirty = false;
-        }
+        self.script_sounds.categories_dirty = false;
         let ended: Vec<i32> = self
             .script_sounds
             .instances

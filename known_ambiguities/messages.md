@@ -128,3 +128,11 @@ examined and no asset or disassembly is committed.
 - **Controls in text.** `[Activate]` and the rest show this engine's keys
   (`messages::control_key`); gamepad-only names (`[XButton]`...) stay as
   written.
+
+## Already playing audio in menu mode
+
+DOBJ PIMC/PDMC/PDLC identify immediate, faded and loading-menu pause categories
+(see research/audio/defaults.md). They now hold their descendant voices; PDMC
+uses the default INI 3 s out / 1 s in. We choose immediate resume without a
+fade for PIMC and count the console as menu mode. Neither detail has been
+verified by listening in SE. Loading remains false until that menu exists.
