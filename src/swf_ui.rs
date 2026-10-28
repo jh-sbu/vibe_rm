@@ -1755,7 +1755,7 @@ impl Hud {
         );
         let line = lines
             .into_iter()
-            .find(|(_, t)| !t.trim().is_empty())
+            .find(|(_, t)| engine.subtitles(false) && !t.trim().is_empty())
             .map(|(name, line)| {
                 if name.is_empty() {
                     line.to_string()

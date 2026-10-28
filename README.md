@@ -181,3 +181,9 @@ saved; an explicit console/API change saves the underlying preference even if
 an environment override still determines the effective value. SkyrimPrefs.ini
 is never imported automatically; its AudioMenu section can be copied to this
 engine's file explicitly.
+
+Journal preferences are stored in `$XDG_CONFIG_HOME/vibe_rm/settings.ini`
+(`VRM_SETTINGS` overrides the path). `setting <key> [value]` uses the same
+settings as the System page. `VRM_SUBTITLES=0/1` overrides both subtitle kinds;
+offscreen developer runs default this transient override on. Interactive runs
+follow the stored subtitle preferences, whose launcher defaults are off.

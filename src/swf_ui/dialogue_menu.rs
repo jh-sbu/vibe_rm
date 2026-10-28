@@ -29,6 +29,7 @@ pub(super) struct DialogueMenu {
     pub closing: bool,
     /// The line shown (by when it ends), if one is.
     line: Option<f64>,
+    subtitles: bool,
     /// The topics last listed, and whether they're up now (until one is
     /// clicked or a line starts).
     topics: Vec<OptionId>,
@@ -63,6 +64,7 @@ impl DialogueMenu {
             speaker,
             closing: false,
             line: None,
+            subtitles: engine.subtitles(true),
             topics: Vec::new(),
             listed: false,
             clicked: None,
@@ -88,10 +90,15 @@ impl DialogueMenu {
             return;
         };
         let line = c.current.as_ref().map(|l| l.ends_at);
-        if line != self.line {
+        if line != self.line || self.subtitles != engine.subtitles(true) {
+            self.subtitles = engine.subtitles(true);
             match &c.current {
                 Some(l) => {
-                    self.menu.callback("ShowDialogueText", &[text(&l.text)]);
+                    if self.subtitles {
+                        self.menu.callback("ShowDialogueText", &[text(&l.text)]);
+                    } else {
+                        self.menu.callback("HideDialogueText", &[]);
+                    }
                     self.menu.callback("NotifyVoiceReady", &[]);
                     self.ready = true;
                     self.listed = false;

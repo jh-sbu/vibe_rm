@@ -173,6 +173,15 @@ pub fn path() -> Option<PathBuf> {
         .or_else(|| config_dir().map(|p| p.join("settings.ini")))
 }
 impl crate::engine::Engine {
+    pub fn subtitles(&self, dialogue: bool) -> bool {
+        self.subtitle_override.unwrap_or_else(|| {
+            self.settings.enabled(if dialogue {
+                "bDialogueSubtitles"
+            } else {
+                "bGeneralSubtitles"
+            })
+        })
+    }
     pub fn sync_settings(&mut self) {
         self.autosave.rest = self.settings.enabled("bSaveOnRest");
         self.autosave.wait = self.settings.enabled("bSaveOnWait");

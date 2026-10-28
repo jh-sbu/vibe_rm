@@ -135,6 +135,9 @@ fn setup_engine(
     if let Some(p) = opts.pitch {
         engine.camera.pitch = p;
     }
+    if opts.screenshot.is_some() && engine.subtitle_override.is_none() {
+        engine.subtitle_override = Some(true);
+    }
     engine.sync_settings();
     Ok(engine)
 }
