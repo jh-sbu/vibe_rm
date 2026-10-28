@@ -46,3 +46,12 @@ models (80 have an `ANAM`).
   dropped on stereo/mono. This layout assumption is not established by assets.
 - Rumble remains unused. Reverb send now reaches the network described in
   `reverb.md`.
+
+## Spatial approximation
+
+MNAM HRTF models use equal-power horizontal panning. Rear sounds lose up to
+25% amplitude and blend a one-pole low-pass toward 4 kHz (from 20 kHz), rather
+than a measured head-related transfer function. The data names HRTF but gives
+no impulse response; this is an inexpensive provisional approximation.
+"Stereo Rad" radius appears only in editor IDs, with no matching record
+field, so it remains unused. Listening could refine rear cues and stereo width.

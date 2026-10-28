@@ -5,6 +5,9 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Speaker output (`plans/audio-unblocked.md`, 6): device layouts/downmix,
+  ONAM mono/stereo percentage rows, equal-power panning and rear filtering.
+  HRTF/layout approximations: `known_ambiguities/sound-output-models.md`.
 - Acoustic spaces (`plans/audio-unblocked.md`, 5): oriented XPRM volumes, cell
   XCAS, SNAM/RDAT ambience, weather-filtered region beds/one-shots, SOPM sends
   and an original I3DL2 reverb approximation with bounded crossfades. Evidence

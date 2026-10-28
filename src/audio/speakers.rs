@@ -1,5 +1,13 @@
 //! Internal order: L R C LFE RL RR BL BR. Devices supply channel count only.
 const HALF_POWER: f32 = std::f32::consts::FRAC_1_SQRT_2;
+pub fn pan(position: f32, rear: f32) -> [f32; 2] {
+    let p = position.clamp(-1.0, 1.0);
+    let gain = 1.0 - 0.25 * rear.clamp(0.0, 1.0);
+    [
+        ((1.0 - p) * 0.5).sqrt() * gain,
+        ((1.0 + p) * 0.5).sqrt() * gain,
+    ]
+}
 pub fn stereo(bus: &[f32; 8]) -> [f32; 2] {
     [
         bus[0] + HALF_POWER * (bus[2] + bus[4] + bus[6]),
@@ -39,6 +47,16 @@ pub fn write(bus: &[f32; 8], out: &mut [f32]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn panning_has_constant_power_and_mild_rear_attenuation() {
+        for p in [-1.0, -0.5, 0.0, 0.5, 1.0] {
+            let g = pan(p, 0.0);
+            assert!((g[0] * g[0] + g[1] * g[1] - 1.0).abs() < 1e-6);
+        }
+        assert_eq!(pan(-1.0, 0.0), [1.0, 0.0]);
+        assert_eq!(pan(1.0, 0.0), [0.0, 1.0]);
+        assert_eq!(pan(1.0, 1.0), [0.0, 0.75]);
+    }
     #[test]
     fn speaker_downmix_preserves_fronts_folds_surrounds_and_drops_lfe() {
         let mut out = [0.0; 8];

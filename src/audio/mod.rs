@@ -201,6 +201,7 @@ struct Voice {
     gain: Ramp,
     stopping: bool,
     repeats: u32,
+    filter: [f32; 2],
 }
 
 struct Mixer {
@@ -263,14 +264,20 @@ impl Mixer {
                 }
                 let volume = v.gain.current * gain;
                 let (mut gl, mut gr) = (volume, volume);
+                let mut rear = 0.0;
                 if let Some(p) = v.params.position {
                     let att = v.params.falloff.gain(p.distance(self.listener));
                     let pan = (p - self.listener)
                         .normalize_or_zero()
                         .dot(self.listener_right)
                         .clamp(-1.0, 1.0);
-                    gl *= att * (1.0 - pan.max(0.0) * 0.6);
-                    gr *= att * (1.0 + pan.min(0.0) * 0.6);
+                    rear = (-(p - self.listener)
+                        .normalize_or_zero()
+                        .dot(Vec3::Z.cross(self.listener_right)))
+                    .max(0.0);
+                    let gains = speakers::pan(pan, rear);
+                    gl *= att * gains[0];
+                    gr *= att * gains[1];
                 }
                 let j = if i + 1 < n {
                     i + 1
@@ -280,8 +287,21 @@ impl Mixer {
                     i
                 };
                 let t = (v.pos - i as f64) as f32;
-                let sample =
-                    |c| v.clip.samples[i * 2 + c] * (1.0 - t) + v.clip.samples[j * 2 + c] * t;
+                let mut samples: [f32; 2] = std::array::from_fn(|c| {
+                    v.clip.samples[i * 2 + c] * (1.0 - t) + v.clip.samples[j * 2 + c] * t
+                });
+                for (c, sample) in samples.iter_mut().enumerate() {
+                    if rear > 0.0 {
+                        let cutoff = (20000.0 - 16000.0 * rear).min(self.rate as f32 * 0.45);
+                        let alpha =
+                            1.0 - (-std::f32::consts::TAU * cutoff / self.rate as f32).exp();
+                        v.filter[c] += alpha * (*sample - v.filter[c]);
+                        *sample = *sample * (1.0 - rear) + v.filter[c] * rear;
+                    } else {
+                        v.filter[c] = *sample;
+                    }
+                }
+                let sample = |c: usize| samples[c];
                 let routed = if let (None, OutputMode::Defined(rows)) =
                     (v.params.position, v.params.output)
                 {
@@ -509,6 +529,7 @@ impl Audio {
                 gain,
                 stopping: false,
                 repeats: 0,
+                filter: [0.0; 2],
             });
         }
     }
@@ -772,6 +793,7 @@ mod tests {
                 gain: Ramp::new(1.0),
                 stopping: false,
                 repeats: 0,
+                filter: [0.0; 2],
                 params: VoiceParams {
                     rate: pitch as f32,
                     ..Default::default()
@@ -836,7 +858,11 @@ mod tests {
         let mut out = [0.0; 80];
         m.mix(&mut out, 2);
         // Frame 10 holds 0.010; ahead of the listener (no pan), 20% of it.
-        assert!((out[2 * 10] - 0.002).abs() < 1e-6, "{}", out[20]);
+        assert!(
+            (out[2 * 10] - 0.002 * std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-6,
+            "{}",
+            out[20]
+        );
     }
 
     #[test]
