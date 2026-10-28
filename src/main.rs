@@ -33,6 +33,7 @@ mod harvest;
 mod hazards;
 mod imagespace;
 mod impacts;
+mod input_map;
 mod invisibility;
 mod items;
 mod journal;

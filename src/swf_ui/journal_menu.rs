@@ -438,6 +438,9 @@ impl JournalMenu {
                     instance: arg(2),
                 };
                 self.update(engine);
+                if let Err(error) = engine.save_settings() {
+                    log::warn!("settings: {error}");
+                }
                 if engine.menu == Some(crate::items::Menu::Journal) {
                     engine.menu = None;
                 }

@@ -504,6 +504,9 @@ struct WindowState {
     grabbed: bool,
     /// Restore gameplay capture after the last menu closes.
     resume_capture: bool,
+    mouse_buttons: HashSet<u32>,
+    always_run: bool,
+    auto_move: bool,
     last: Instant,
     fps_timer: Instant,
     frames: u32,
@@ -622,6 +625,7 @@ impl App {
             None,
             None,
         );
+        let always_run = engine.settings.enabled("bAlwaysRunByDefault");
         self.state = Some(WindowState {
             ui,
             swf,
@@ -633,6 +637,9 @@ impl App {
             keys: HashSet::new(),
             grabbed: false,
             resume_capture: false,
+            mouse_buttons: HashSet::new(),
+            always_run,
+            auto_move: false,
             last: Instant::now(),
             fps_timer: Instant::now(),
             frames: 0,
@@ -736,199 +743,25 @@ impl ApplicationHandler for App {
                         s.keys.clear();
                         return;
                     }
-                    if event.state == ElementState::Pressed && !event.repeat {
-                        for ev in crate::messages::key_events(code) {
-                            s.engine.input_event(ev);
-                        }
-                    }
-                    match event.state {
-                        ElementState::Pressed => {
-                            if code == KeyCode::F5 && !event.repeat {
-                                s.engine.request_save(false);
-                            }
-                            if code == KeyCode::F9 && !event.repeat {
-                                if let Some(save) = s
-                                    .engine
-                                    .save_list()
-                                    .into_iter()
-                                    .find(|s| !s.corrupt && !s.obsolete)
-                                {
-                                    s.engine.pending_save_load = Some(save.name);
-                                }
-                            }
-                            if code == KeyCode::F3 && !event.repeat {
+                    if event.state == ElementState::Pressed {
+                        s.keys.insert(code);
+                        if !event.repeat {
+                            if code == KeyCode::F3 {
                                 s.ui.show_debug = !s.ui.show_debug;
                             }
-                            // Esc: the journal on the tab it was left at (the
-                            // game's menus), else the mouse let go or quit.
-                            if code == KeyCode::Escape
-                                && !event.repeat
-                                && s.swf.is_some()
-                                && !s.engine.disabled_controls.journal
-                            {
-                                s.engine.journal_last_tab = true;
-                                s.engine.menu = Some(crate::items::Menu::Journal);
-                            } else if code == KeyCode::Escape {
-                                if s.grabbed {
-                                    s.resume_capture = false;
-                                    s.release_mouse();
-                                } else {
-                                    el.exit();
-                                }
-                            }
-                            if code == KeyCode::KeyE
-                                && !event.repeat
-                                && let Err(e) = s.engine.activate_press()
-                            {
-                                log::error!("activation failed: {e:#}");
-                            }
-                            // Tab: the tween menu (the game's menus; egui's
-                            // goes straight to the inventory), I the
-                            // inventory (the control map's Quick Inventory).
-                            if code == KeyCode::Tab
-                                && !event.repeat
-                                && !s.engine.disabled_controls.menu
-                            {
-                                s.engine.menu = Some(if s.swf.is_some() {
-                                    crate::items::Menu::Tween
-                                } else {
-                                    crate::items::Menu::Inventory
-                                });
-                            }
-                            if code == KeyCode::KeyI
-                                && !event.repeat
-                                && !s.engine.disabled_controls.menu
-                                && s.engine.menu.is_none()
-                            {
-                                s.engine.menu = Some(crate::items::Menu::Inventory);
-                            }
-                            // Quick Map (the control map's).
-                            if code == KeyCode::KeyM
-                                && !event.repeat
-                                && !s.engine.disabled_controls.menu
-                                && s.engine.menu.is_none()
-                                && s.swf.is_some()
-                            {
-                                s.engine.menu = Some(crate::items::Menu::Map);
-                            }
-                            if code == KeyCode::KeyJ
-                                && !event.repeat
-                                && !s.engine.disabled_controls.journal
-                            {
-                                s.engine.journal_last_tab = false;
-                                s.engine.menu = Some(crate::items::Menu::Journal);
-                            }
-                            if code == KeyCode::KeyK
-                                && !event.repeat
-                                && !s.engine.disabled_controls.menu
-                            {
-                                s.engine.menu = Some(crate::items::Menu::Skills);
-                            }
-                            // Quick Magic (the control map's).
-                            if code == KeyCode::KeyP
-                                && !event.repeat
-                                && !s.engine.disabled_controls.menu
-                                && s.swf.is_some()
-                            {
-                                s.engine.menu = Some(crate::items::Menu::Magic);
-                            }
-                            // Wait (the control map's).
-                            if code == KeyCode::KeyT
-                                && !event.repeat
-                                && !s.engine.disabled_controls.menu
-                                && s.swf.is_some()
-                                && s.engine.menu.is_none()
-                            {
-                                s.engine.request_sleep_wait(None);
-                            }
-                            // Favorites (the control map's).
-                            if code == KeyCode::KeyQ
-                                && !event.repeat
-                                && !s.engine.disabled_controls.menu
-                                && s.swf.is_some()
-                                && s.engine.menu.is_none()
-                            {
-                                s.engine.menu = Some(crate::items::Menu::Favorites);
-                            }
-                            // Menus take the mouse.
-                            if s.engine.menu_up() {
-                                s.sync_mouse_capture();
-                                s.keys.clear();
-                                return;
-                            }
-                            // Hotkeys 1 to 8 use their favorites (in
-                            // dialogue they pick topics).
-                            const HOTKEYS: [KeyCode; 16] = [
-                                KeyCode::Digit1,
-                                KeyCode::Digit2,
-                                KeyCode::Digit3,
-                                KeyCode::Digit4,
-                                KeyCode::Digit5,
-                                KeyCode::Digit6,
-                                KeyCode::Digit7,
-                                KeyCode::Digit8,
-                                KeyCode::Numpad1,
-                                KeyCode::Numpad2,
-                                KeyCode::Numpad3,
-                                KeyCode::Numpad4,
-                                KeyCode::Numpad5,
-                                KeyCode::Numpad6,
-                                KeyCode::Numpad7,
-                                KeyCode::Numpad8,
-                            ];
-                            if !event.repeat
-                                && s.engine.conversation.is_none()
-                                && let Some(key) = s.swf.as_ref().map_or_else(
-                                    || HOTKEYS.iter().position(|&k| k == code).map(|i| i % 8),
-                                    |swf| swf.favorite_hotkey(code),
-                                )
-                            {
-                                s.engine.use_hotkey(key);
-                            }
-                            // Ctrl sneaks (noclip flies down with it instead).
-                            if code == KeyCode::ControlLeft
-                                && !event.repeat
-                                && !s.engine.player.noclip
-                                && !s.engine.disabled_controls.sneaking
-                            {
-                                s.engine.player.sneaking = !s.engine.player.sneaking;
-                            }
-                            // Z shouts, or uses the power readied (the control
-                            // map's Shout).
-                            if code == KeyCode::KeyZ && !event.repeat {
-                                s.engine.input_event("Shout");
-                                s.engine.player_voice_press();
-                            }
-                            // R draws or sheathes the weapon.
-                            if code == KeyCode::KeyR && !event.repeat {
-                                let draw = !s.engine.player_weapon_drawn();
-                                s.engine.player_draw_weapon(draw);
-                            }
-                            // F switches between first and third person.
-                            if code == KeyCode::KeyF
-                                && !event.repeat
-                                && !s.engine.disabled_controls.camera_switch_disabled()
-                            {
-                                let third = !s.engine.third_person;
-                                s.engine.set_third_person(third);
-                            }
-                            if code == KeyCode::KeyN && !event.repeat {
+                            if code == KeyCode::KeyN {
                                 s.engine.player.noclip = !s.engine.player.noclip;
-                                log::info!("noclip {}", s.engine.player.noclip);
                             }
-                            s.keys.insert(code);
+                            s.dispatch_button(crate::input_map::Button::Key(code), true);
                         }
-                        ElementState::Released => {
-                            if code == KeyCode::KeyZ {
-                                s.engine.player_voice_release();
-                            }
-                            if code == KeyCode::KeyE
-                                && let Err(e) = s.engine.activate_release()
-                            {
-                                log::error!("activation failed: {e:#}");
-                            }
-                            s.keys.remove(&code);
-                        }
+                    } else {
+                        s.dispatch_button(crate::input_map::Button::Key(code), false);
+                        s.keys.remove(&code);
+                    }
+                    if s.engine.menu_up() {
+                        s.sync_mouse_capture();
+                        s.keys.clear();
+                        s.mouse_buttons.clear();
                     }
                 }
             }
@@ -938,6 +771,11 @@ impl ApplicationHandler for App {
                     MouseScrollDelta::LineDelta(_, y) => y,
                     MouseScrollDelta::PixelDelta(p) => p.y as f32 / 40.0,
                 };
+                if s.grabbed && lines != 0. {
+                    let button = crate::input_map::Button::Mouse(if lines > 0. { 8 } else { 9 });
+                    s.dispatch_button(button, true);
+                    s.dispatch_button(button, false);
+                }
                 if s.grabbed
                     && s.engine.third_person
                     && !s.engine.disabled_controls.camera_switch_disabled()
@@ -945,43 +783,24 @@ impl ApplicationHandler for App {
                     s.engine.zoom_third_person(-lines * 30.0);
                 }
             }
-            WindowEvent::MouseInput {
-                state,
-                button: MouseButton::Right,
-                ..
-            } => {
-                // Captured: the left hand's spell, weapon or fist, else hold to
-                // block.
-                let down = state == ElementState::Pressed && s.grabbed && !s.engine.menu_up();
-                let left = crate::spells::LEFT;
-                if down {
-                    s.engine.input_event("Left Attack/Block");
-                    s.engine.player_attack_press(left);
-                } else if state == ElementState::Released {
-                    s.engine.player_attack_release(left);
+            WindowEvent::MouseInput { state, button, .. } => {
+                if let Some(code) = crate::input_map::mouse_code(button) {
+                    if state == ElementState::Pressed {
+                        s.mouse_buttons.insert(code);
+                        if s.grabbed && !s.engine.menu_up() {
+                            s.dispatch_button(crate::input_map::Button::Mouse(code), true);
+                        }
+                    } else {
+                        s.dispatch_button(crate::input_map::Button::Mouse(code), false);
+                        s.mouse_buttons.remove(&code);
+                    }
                 }
-            }
-            WindowEvent::MouseInput {
-                state: ElementState::Released,
-                button: MouseButton::Left,
-                ..
-            } => {
-                s.engine.player_attack_release(crate::spells::RIGHT);
-            }
-            WindowEvent::MouseInput {
-                state: ElementState::Pressed,
-                button: MouseButton::Left,
-                ..
-            } => {
-                // Captured: swing at what's ahead (held: a power attack).
-                if s.grabbed && !s.engine.menu_up() {
-                    s.engine.input_event("Right Attack/Block");
-                    s.engine.player_attack_press(crate::spells::RIGHT);
-                }
-                if !s.grabbed
+                if state == ElementState::Pressed
+                    && button == MouseButton::Left
+                    && !s.grabbed
                     && !s.ui.console.open
-                    && s.engine.conversation.is_none()
                     && !s.engine.menu_up()
+                    && s.engine.conversation.is_none()
                 {
                     s.capture_mouse();
                 }
@@ -990,7 +809,13 @@ impl ApplicationHandler for App {
                 let now = Instant::now();
                 let dt = (now - s.last).as_secs_f32().min(0.1);
                 s.last = now;
-                let input = move_input(&s.keys);
+                let input = move_input(
+                    &s.engine.input_map.read().unwrap(),
+                    &s.keys,
+                    &s.mouse_buttons,
+                    s.always_run,
+                    s.auto_move,
+                );
                 // Holding T runs time fast without the game's menus (with
                 // them T is the Wait key).
                 let scale = if s.keys.contains(&KeyCode::KeyT) && s.swf.is_none() {
@@ -1098,16 +923,130 @@ impl ApplicationHandler for App {
     }
 }
 
-fn move_input(keys: &HashSet<KeyCode>) -> MoveInput {
-    let k = |c: KeyCode| keys.contains(&c);
-    let axis = |p: KeyCode, n: KeyCode| (k(p) as i32 - k(n) as i32) as f32;
+fn move_input(
+    map: &crate::input_map::InputMap,
+    keys: &HashSet<KeyCode>,
+    mouse: &HashSet<u32>,
+    always_run: bool,
+    auto_move: bool,
+) -> MoveInput {
+    let held = |event| map.held(event, keys, mouse);
+    let axis = |a, b| (held(a) as i32 - held(b) as i32) as f32;
+    let forward = axis("Forward", "Back");
     MoveInput {
-        forward: axis(KeyCode::KeyW, KeyCode::KeyS),
-        right: axis(KeyCode::KeyD, KeyCode::KeyA),
-        up: axis(KeyCode::Space, KeyCode::ControlLeft),
-        // Skyrim runs by default; Caps Lock would toggle walking, Alt walks while held here.
-        run: !k(KeyCode::AltLeft),
-        sprint: k(KeyCode::ShiftLeft),
-        jump: k(KeyCode::Space),
+        forward: if forward == 0. && auto_move {
+            1.
+        } else {
+            forward
+        },
+        right: axis("Strafe Right", "Strafe Left"),
+        up: axis("Jump", "Sneak"),
+        run: always_run ^ held("Run"),
+        sprint: held("Sprint"),
+        jump: held("Jump"),
+    }
+}
+
+impl WindowState {
+    fn dispatch_button(&mut self, button: crate::input_map::Button, pressed: bool) {
+        let events: Vec<_> = {
+            let map = self.engine.input_map.read().unwrap();
+            map.events()
+                .iter()
+                .filter(|e| map.triggered(&e.name, button, &self.keys, &self.mouse_buttons))
+                .map(|e| e.name.clone())
+                .collect()
+        };
+        for event in events {
+            if !pressed {
+                match event.as_str() {
+                    "Activate" => {
+                        if let Err(e) = self.engine.activate_release() {
+                            log::warn!("activate: {e}");
+                        }
+                    }
+                    "Shout" => self.engine.player_voice_release(),
+                    "Right Attack/Block" => self.engine.player_attack_release(crate::spells::RIGHT),
+                    "Left Attack/Block" => self.engine.player_attack_release(crate::spells::LEFT),
+                    _ => {}
+                }
+                continue;
+            }
+            self.engine.input_event(&event);
+            match event.as_str() {
+                "Activate" => {
+                    if let Err(e) = self.engine.activate_press() {
+                        log::warn!("activate: {e}");
+                    }
+                }
+                "Right Attack/Block" => self.engine.player_attack_press(crate::spells::RIGHT),
+                "Left Attack/Block" => self.engine.player_attack_press(crate::spells::LEFT),
+                "Ready Weapon" => {
+                    let draw = !self.engine.player_weapon_drawn();
+                    self.engine.player_draw_weapon(draw);
+                }
+                "Toggle POV" if !self.engine.disabled_controls.camera_switch_disabled() => {
+                    let third = !self.engine.third_person;
+                    self.engine.set_third_person(third);
+                }
+                "Shout" => self.engine.player_voice_press(),
+                "Sneak"
+                    if !self.engine.player.noclip && !self.engine.disabled_controls.sneaking =>
+                {
+                    self.engine.player.sneaking = !self.engine.player.sneaking
+                }
+                "Toggle Always Run" => self.always_run = !self.always_run,
+                "Auto-Move" => self.auto_move = !self.auto_move,
+                "Forward" | "Back" => self.auto_move = false,
+                "Quicksave" => self.engine.request_save(false),
+                "Quickload" => {
+                    if let Some(save) = self
+                        .engine
+                        .save_list()
+                        .into_iter()
+                        .find(|s| !s.corrupt && !s.obsolete)
+                    {
+                        self.engine.pending_save_load = Some(save.name);
+                    }
+                }
+                "Journal" | "Pause" if !self.engine.disabled_controls.journal => {
+                    self.engine.journal_last_tab = event == "Pause";
+                    if self.swf.is_some() {
+                        self.engine.menu = Some(crate::items::Menu::Journal);
+                    } else if self.grabbed {
+                        self.resume_capture = false;
+                        self.release_mouse();
+                    } else {
+                        self.engine.quit_requested = true;
+                    }
+                }
+                "Wait" if !self.engine.disabled_controls.menu => {
+                    self.engine.request_sleep_wait(None)
+                }
+                "Tween Menu" | "Quick Inventory" | "Quick Magic" | "Quick Stats" | "Quick Map"
+                | "Favorites"
+                    if !self.engine.disabled_controls.menu =>
+                {
+                    use crate::items::Menu;
+                    self.engine.menu = Some(match event.as_str() {
+                        "Tween Menu" if self.swf.is_some() => Menu::Tween,
+                        "Quick Magic" => Menu::Magic,
+                        "Quick Stats" => Menu::Skills,
+                        "Quick Map" => Menu::Map,
+                        "Favorites" => Menu::Favorites,
+                        _ => Menu::Inventory,
+                    });
+                }
+                _ => {
+                    if let Some(slot) = event
+                        .strip_prefix("Hotkey")
+                        .and_then(|s| s.parse::<usize>().ok())
+                        .filter(|n| (1..=8).contains(n))
+                    {
+                        self.engine.use_hotkey(slot - 1);
+                    }
+                }
+            }
+        }
     }
 }

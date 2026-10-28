@@ -183,6 +183,7 @@ pub struct Engine {
     pub(crate) last_save: std::cell::Cell<std::time::Instant>,
     pub(crate) last_pause_menu: Option<crate::items::Menu>,
     pub subtitle_override: Option<bool>,
+    pub input_map: crate::input_map::Shared,
     pub settings: crate::settings::Settings,
     pub autosave: crate::save::autosave::Preferences,
     pub save_thumbnail: Option<crate::save::metadata::Thumbnail>,
@@ -416,6 +417,7 @@ impl Engine {
                 }
             })
             .unwrap_or_default();
+        let input_map = crate::input_map::InputMap::load(&vfs);
         let audio_preferences = crate::audio::settings::Runtime::load(&lo);
         let audio_spaces = crate::audio::spaces::Spaces::load(&lo);
         let audio_defaults = crate::world::sound::AudioDefaults::load(&lo);
@@ -561,6 +563,7 @@ impl Engine {
             last_save: std::cell::Cell::new(std::time::Instant::now()),
             last_pause_menu: None,
             subtitle_override: std::env::var("VRM_SUBTITLES").ok().map(|s| s != "0"),
+            input_map,
             settings: crate::settings::Settings::load(),
             autosave: Default::default(),
             save_thumbnail: None,

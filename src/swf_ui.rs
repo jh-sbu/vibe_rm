@@ -109,7 +109,9 @@ impl SwfUi {
             &engine.vfs,
             "english",
         )?;
-        let buttons = Arc::new(Buttons::load(&engine.vfs));
+        let mut loaded = Buttons::load(&engine.vfs);
+        loaded.map = Some(engine.input_map.clone());
+        let buttons = Arc::new(loaded);
         let hud = Hud::open(&ui, size, &buttons)?;
         let message_box = MessageBoxMenu::open(&ui, size)?;
         let cursor_menu = match cursor_menu::CursorMenu::open(&ui, size) {
@@ -838,7 +840,27 @@ impl SwfUi {
                 let keys = if typing {
                     ui_swf::input::text_mode_key(code).into_iter().collect()
                 } else {
-                    ui_swf::input::keys(code)
+                    let scan = crate::input_map::scan_code(code);
+                    let mut keys = Vec::new();
+                    let mut native = false;
+                    for (event, canonical) in [
+                        ("Forward", KeyCode::ArrowUp),
+                        ("Back", KeyCode::ArrowDown),
+                        ("Strafe Left", KeyCode::ArrowLeft),
+                        ("Strafe Right", KeyCode::ArrowRight),
+                        ("Activate", KeyCode::Enter),
+                        ("Tween Menu", KeyCode::Tab),
+                        ("Pause", KeyCode::Escape),
+                    ] {
+                        if scan.is_some() && self.buttons.key(event) == scan {
+                            keys.extend(ui_swf::input::keys(canonical));
+                            native |= canonical == code;
+                        }
+                    }
+                    if !native {
+                        keys.extend(ui_swf::input::text_mode_key(code));
+                    }
+                    keys
                 };
                 for key in keys {
                     menu.handle_event(match event.state {
@@ -900,7 +922,10 @@ impl SwfUi {
         let (None, Some(journal)) = (&self.message_box.shown, &self.journal) else {
             return false;
         };
-        if matches!(code, KeyCode::Escape | KeyCode::KeyJ) {
+        if code == KeyCode::Escape
+            || crate::input_map::scan_code(code)
+                .is_some_and(|c| self.buttons.key("Journal") == Some(c))
+        {
             journal.close();
             return true;
         }
@@ -912,7 +937,6 @@ impl SwfUi {
     /// favorite (as the bottom bar shows them). True when the key was one of
     /// them.
     fn item_key(&mut self, code: winit::keyboard::KeyCode) -> bool {
-        use winit::platform::scancode::PhysicalKeyExtScancode;
         // The dialogue menu, unless a menu is over it: Esc.
         if self.message_box.shown.is_none()
             && !self.menu_up
@@ -959,7 +983,7 @@ impl SwfUi {
         if self.message_box.shown.is_none()
             && let Some(favorites) = &mut self.favorites
         {
-            let scan = code.to_scancode();
+            let scan = crate::input_map::scan_code(code);
             let hotkey = self.buttons.hotkey(code);
             if favorites.closing {
                 return code != winit::keyboard::KeyCode::Backquote;
@@ -978,7 +1002,7 @@ impl SwfUi {
         if self.message_box.shown.is_none()
             && let Some(magic) = &mut self.magic
         {
-            let scan = code.to_scancode();
+            let scan = crate::input_map::scan_code(code);
             if magic.closing {
                 return code != winit::keyboard::KeyCode::Backquote;
             } else if code == winit::keyboard::KeyCode::Escape {
@@ -995,7 +1019,7 @@ impl SwfUi {
         let (None, Some(items)) = (&self.message_box.shown, &mut self.items) else {
             return false;
         };
-        let scan = code.to_scancode();
+        let scan = crate::input_map::scan_code(code);
         if items.closing {
             // Fading out: the keys do nothing more.
             return code != winit::keyboard::KeyCode::Backquote;
@@ -1181,7 +1205,7 @@ impl SwfUi {
 fn respond(buttons: &Buttons, call: &GameCall) -> Option<Vec<Value>> {
     match (call.name.as_str(), call.args.first()) {
         ("GetButtonFromUserEvent", Some(Value::String(event))) => {
-            Some(vec![text(buttons.art(event))])
+            Some(vec![text(&buttons.art(event))])
         }
         _ => None,
     }
@@ -1208,6 +1232,7 @@ fn answer(menu: &Menu, engine: &mut Engine, call: &GameCall) {
 /// as the button art the menus export (`E.png`, `L-Shift.png`, `Mouse1.png`)
 /// and as codes.
 struct Buttons {
+    map: Option<crate::input_map::Shared>,
     /// Event name to art name, keyboard first, else the mouse.
     art: std::collections::HashMap<String, String>,
     /// Event name to its keyboard key (DirectInput scan code) and mouse
@@ -1291,7 +1316,12 @@ impl Buttons {
                 Some((e.clone(), art))
             })
             .collect();
-        let buttons = Buttons { art, codes, keys };
+        let buttons = Buttons {
+            map: None,
+            art,
+            codes,
+            keys,
+        };
         log::debug!(
             "{} user events with key art (Activate {}, Tween Menu {}, Jump {}, Sprint {})",
             buttons.art.len(),
@@ -1304,8 +1334,18 @@ impl Buttons {
     }
 
     fn hotkey(&self, code: winit::keyboard::KeyCode) -> Option<usize> {
-        use winit::platform::scancode::PhysicalKeyExtScancode;
-        let scan = code.to_scancode()?;
+        if let Some(map) = &self.map {
+            let map = map.read().unwrap();
+            return (0..8).find(|i| {
+                map.triggered(
+                    &format!("Hotkey{}", i + 1),
+                    crate::input_map::Button::Key(code),
+                    &Default::default(),
+                    &Default::default(),
+                )
+            });
+        }
+        let scan = crate::input_map::scan_code(code)?;
         (0..8).find(|k| {
             self.keys
                 .get(&format!("Hotkey{}", k + 1))
@@ -1315,17 +1355,33 @@ impl Buttons {
 
     /// A user event's keyboard key, as a DirectInput scan code.
     fn key(&self, event: &str) -> Option<u32> {
+        if let Some(map) = &self.map {
+            return map.read().unwrap().first(event, 0);
+        }
         self.codes.get(event).and_then(|c| c.0)
     }
 
     /// A user event's mouse button (0 the left).
     fn mouse(&self, event: &str) -> Option<u32> {
+        if let Some(map) = &self.map {
+            return map.read().unwrap().first(event, 1);
+        }
         self.codes.get(event).and_then(|c| c.1)
     }
 
     /// The art for a user event, `UnknownKey` when it has none.
-    fn art(&self, event: &str) -> &str {
-        self.art.get(event).map_or("UnknownKey", String::as_str)
+    fn art(&self, event: &str) -> String {
+        if self.map.is_some() {
+            return self
+                .key(event)
+                .and_then(keyboard_art)
+                .or_else(|| self.mouse(event).and_then(mouse_art))
+                .unwrap_or_else(|| "UnknownKey".into());
+        }
+        self.art
+            .get(event)
+            .cloned()
+            .unwrap_or_else(|| "UnknownKey".into())
     }
 }
 
@@ -1572,7 +1628,7 @@ impl Hud {
         // The activate key's art beside the crosshair's verb.
         menu.invoke(
             &format!("{H}.RefreshActivateButtonArt"),
-            &[text(buttons.art("Activate"))],
+            &[text(&buttons.art("Activate"))],
         );
         Ok(Hud {
             menu,
