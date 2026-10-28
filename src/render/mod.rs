@@ -2250,7 +2250,7 @@ impl Renderer {
             wind: [
                 self.wind.x,
                 self.wind.y,
-                crate::world::grass::FADE_START,
+                self.distances.grass,
                 crate::world::grass::FADE_RANGE,
             ],
             inv_view_proj: view_proj.inverse().to_cols_array_2d(),
@@ -2502,7 +2502,7 @@ impl Renderer {
                 .write_buffer(&self.instance_buf, 0, bytemuck::cast_slice(&all));
         }
         // Grass near enough to show, and in view.
-        let grass_reach = crate::world::grass::FADE_START + crate::world::grass::FADE_RANGE;
+        let grass_reach = self.distances.grass + crate::world::grass::FADE_RANGE;
         let grass: Vec<(&GpuPart, &GrassBatch)> = scene
             .cells
             .values()

@@ -183,6 +183,7 @@ impl crate::engine::Engine {
         })
     }
     pub fn sync_settings(&mut self) {
+        self.renderer.distances.grass = self.settings.get("fGrassStartFadeDistance");
         self.renderer.distances.objects = self.settings.get("fLODFadeOutMultObjects");
         self.renderer.distances.items = self.settings.get("fLODFadeOutMultItems");
         self.renderer.distances.actors = self.settings.get("fLODFadeOutMultActors");
