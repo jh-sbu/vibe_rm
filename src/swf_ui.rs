@@ -1497,6 +1497,8 @@ impl MessageBoxMenu {
 /// What the HUD was last told.
 #[derive(Default)]
 struct Sent {
+    opacity: Option<f32>,
+    crosshair_enabled: Option<bool>,
     health: Option<f32>,
     magicka: Option<f32>,
     stamina: Option<f32>,
@@ -1583,6 +1585,11 @@ impl Hud {
     }
 
     fn update(&mut self, engine: &Engine) {
+        let opacity = engine.settings.get("fHUDOpacity");
+        if self.sent.opacity != Some(opacity) {
+            self.menu.set(&format!("{H}._alpha"), num(opacity * 100.));
+            self.sent.opacity = Some(opacity);
+        }
         self.meters(engine);
         self.compass(engine);
         self.crosshair(engine);
