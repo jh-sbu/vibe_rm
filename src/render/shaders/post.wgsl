@@ -82,6 +82,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     c = c * post.cinematic.y;
     c = (c - pivot) * post.cinematic.z + pivot;
     c = clamp(c, vec3<f32>(0.0), vec3<f32>(1.0));
+    c = pow(c, vec3<f32>(1.0 / max(post.levels.y,0.01)));
     c = mix(c, post.fade.rgb, post.fade.a);
     return vec4<f32>(from_display(c), 1.0);
 }

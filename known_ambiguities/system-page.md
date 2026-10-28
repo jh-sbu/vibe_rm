@@ -59,3 +59,10 @@ fDiffMultHPByPC{VE,E,N,H,VH,L} for NPC-taken damage. Missing values use UESP's
 0.5/0.75/1/1.5/2/3 and 2/1.5/1/0.75/0.5/0.25 respectively. These setting
 names are inferred from the data's fDiffMultHPToPCL; only that value (3) was
 found in Skyrim.esm. XP difficulty multipliers remain an open research question.
+
+## Brightness mapping
+
+The SWF supplies a normalized slider and launcher preferences fGamma=1.0,
+without endpoint mappings. Use a linear 0.5–1.5 range centered at 1.0. Apply
+pow(display_color,1/gamma) after image-space tone/contrast mapping, before
+the explicit fade-to-black overlay, preserving a black loading/sleep fade.

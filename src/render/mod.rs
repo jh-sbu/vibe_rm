@@ -1088,6 +1088,7 @@ pub struct Renderer {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     pub color_format: wgpu::TextureFormat,
+    pub gamma: f32,
     pub width: u32,
     pub height: u32,
     depth_tex: wgpu::Texture,
@@ -1396,6 +1397,7 @@ impl Renderer {
             device,
             queue,
             color_format,
+            gamma: 1.0,
             width,
             height,
             depth_tex,
@@ -2532,7 +2534,7 @@ impl Renderer {
             self.shadow_passes(&mut enc, scene, &layers, update, &shadow_skin);
         }
         // With image space effects the frame goes through the post pass.
-        let pre_post = (!scene.post.is_neutral())
+        let pre_post = (!scene.post.is_neutral() || (self.gamma - 1.).abs() > 0.001)
             .then(|| self.post.target(&self.device, self.width, self.height));
         {
             let c = env.clear_color;
@@ -2749,7 +2751,8 @@ impl Renderer {
             }
         }
         if pre_post.is_some() {
-            self.post.draw(&self.queue, &mut enc, target, &scene.post);
+            self.post
+                .draw(&self.queue, &mut enc, target, &scene.post, self.gamma);
         }
         self.queue.submit([enc.finish()]);
         self.stats = stats;

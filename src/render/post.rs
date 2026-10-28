@@ -268,6 +268,7 @@ impl PostPass {
         enc: &mut wgpu::CommandEncoder,
         out: &wgpu::TextureView,
         fx: &PostEffect,
+        gamma: f32,
     ) {
         let Some(target) = &self.target else {
             return;
@@ -295,7 +296,7 @@ impl PostPass {
                 1.0 / size[0] as f32,
                 1.0 / size[1] as f32,
             ],
-            levels: [target.mips.len() as f32, 0.0, 0.0, 0.0],
+            levels: [target.mips.len() as f32, gamma, 0.0, 0.0],
         };
         queue.write_buffer(&self.ubuf, 0, bytemuck::bytes_of(&u));
         for (view, bg) in &target.mips {
