@@ -25,6 +25,7 @@ pub struct System {
     pub visible: Vec<SaveListing>,
     current: u64,
     pub save_disabled: bool,
+    pub settings: crate::settings::Settings,
     filter: Filter,
     pub callbacks: Vec<(String, Vec<Value>)>,
 }
@@ -35,6 +36,7 @@ impl System {
             visible: Vec::new(),
             current: engine.scripts.character_id,
             save_disabled: engine.saving_disabled() || engine.player_dead(),
+            settings: engine.settings.clone(),
             filter: Filter::All,
             callbacks: Vec::new(),
         }))
@@ -48,6 +50,41 @@ impl System {
     }
     pub fn respond(&mut self, call: &GameCall, movie: &mut Movie<'_, '_>) -> Option<Vec<Value>> {
         match call.name.as_str() {
+            "RequestGameplayOptions" | "RequestDisplayOptions" => {
+                let list = format!("{S}.OptionsListsPanel.OptionsLists.List_mc.entryList");
+                let count = match movie.get(&format!("{list}.length")) {
+                    Value::Number(n) => n as usize,
+                    _ => 0,
+                };
+                for i in 0..count {
+                    let Value::String(label) = movie.get(&format!("{list}.{i}.text")) else {
+                        continue;
+                    };
+                    if let Some(key) = crate::settings::option_key(&label) {
+                        let id = crate::settings::SPECS
+                            .iter()
+                            .position(|s| s.key == key)
+                            .unwrap();
+                        for (name, value) in [
+                            ("ID", id as f32),
+                            (
+                                "value",
+                                crate::settings::option_value(&self.settings, key, false),
+                            ),
+                            (
+                                "defaultVal",
+                                crate::settings::option_value(
+                                    &crate::settings::Settings::default(),
+                                    key,
+                                    true,
+                                ),
+                            ),
+                        ] {
+                            movie.set(&format!("{list}.{i}.{name}"), num(value));
+                        }
+                    }
+                }
+            }
             "SetSaveDisabled" => {
                 for (i, disabled) in [
                     (0, self.save_disabled),

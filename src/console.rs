@@ -864,6 +864,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
                 Err(e) => vec![format!("error: {e:#}")],
             }
         }
+        "setting" => engine.setting_command(&args),
         "saves" => {
             let found = engine.save_list().into_iter().map(|s| s.name).collect::<Vec<_>>();
             if found.is_empty() {

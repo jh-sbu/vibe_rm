@@ -303,6 +303,22 @@ impl JournalMenu {
     /// menus' shared ones.
     pub fn answer(&mut self, engine: &mut Engine, call: &GameCall, saved: &mut Saved) -> bool {
         match call.name.as_str() {
+            "OptionChange" => {
+                if let (Some(id), Some(Value::Number(value))) =
+                    (super::journal_system::index(call), call.args.get(1))
+                {
+                    if let Err(e) = engine.change_option(id, *value as f32) {
+                        log::warn!("option: {e}");
+                    }
+                    self.system.lock().unwrap().settings = engine.settings.clone();
+                }
+            }
+            "SaveSettings" => match engine.save_settings() {
+                Ok(()) => {
+                    self.menu.callback("SettingsSaved", &[]);
+                }
+                Err(e) => engine.debug_message_box(format!("Could not save settings: {e}")),
+            },
             "DeleteSave" => {
                 if let Some(i) = super::journal_system::index(call) {
                     let listing = self.system.lock().unwrap().visible.get(i).cloned();

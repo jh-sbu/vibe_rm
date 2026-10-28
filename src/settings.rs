@@ -210,3 +210,110 @@ mod tests {
         assert!(s.set("fGamma", f32::NAN).is_err());
     }
 }
+/// Movie labels are asset keys, independent of translated display strings.
+pub fn option_key(label: &str) -> Option<&'static str> {
+    Some(match label {
+        "$Invert Y" => "bInvertYValues",
+        "$Look Sensitivity" => "fMouseHeadingSensitivity",
+        "$Difficulty" => "iDifficulty",
+        "$Show Floating Markers" => "bShowFloatingQuestMarkers",
+        "$Save on Rest" => "bSaveOnRest",
+        "$Save on Wait" => "bSaveOnWait",
+        "$Save on Travel" => "bSaveOnTravel",
+        "$Save on Pause" => "bSaveOnPause",
+        "$HUD Opacity" => "fHUDOpacity",
+        "$Crosshair" => "bCrosshairEnabled",
+        "$Dialogue Subtitles" => "bDialogueSubtitles",
+        "$General Subtitles" => "bGeneralSubtitles",
+        "$Brightness" => "fGamma",
+        "$Actor Fade" => "fLODFadeOutMultActors",
+        "$Item Fade" => "fLODFadeOutMultItems",
+        "$Object Fade" => "fLODFadeOutMultObjects",
+        "$Grass Fade" => "fGrassStartFadeDistance",
+        "$Shadow Fade" => "fShadowDistance",
+        "$Light Fade" => "fLightLODStartFade",
+        "$Specularity Fade" => "fSpecularLODStartFade",
+        "$Tree LOD Fade" => "fTreesMidLODSwitchDist",
+        _ => return None,
+    })
+}
+pub const PAUSE_MINUTES: [u32; 6] = [5, 10, 15, 30, 45, 60];
+pub fn option_value(settings: &Settings, key: &str, defaults: bool) -> f32 {
+    let s = spec(key).unwrap();
+    let v = if defaults {
+        s.default
+    } else {
+        settings.get(key)
+    };
+    if key == "bSaveOnPause" {
+        if v == 0. {
+            6.
+        } else {
+            PAUSE_MINUTES
+                .iter()
+                .position(|m| *m == settings.get("fAutosaveEveryXMins") as u32)
+                .unwrap_or(2) as f32
+        }
+    } else if key.starts_with('f') {
+        (v - s.min) / (s.max - s.min)
+    } else {
+        v
+    }
+}
+impl crate::engine::Engine {
+    pub fn change_option(&mut self, id: usize, value: f32) -> io::Result<()> {
+        let s = SPECS
+            .get(id)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "unknown option"))?;
+        if !value.is_finite() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid option value",
+            ));
+        }
+        if s.key == "bSaveOnPause" {
+            if value.fract() != 0. || !(0. ..=6.).contains(&value) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "invalid pause interval",
+                ));
+            }
+            self.set_setting("bSaveOnPause", if value == 6. { 0. } else { 1. })?;
+            if value < 6. {
+                self.set_setting("fAutosaveEveryXMins", PAUSE_MINUTES[value as usize] as f32)?;
+            }
+            Ok(())
+        } else {
+            self.set_setting(
+                s.key,
+                if s.key.starts_with('f') {
+                    s.min + value.clamp(0., 1.) * (s.max - s.min)
+                } else {
+                    value
+                },
+            )
+        }
+    }
+    pub fn setting_command(&mut self, args: &[&str]) -> Vec<String> {
+        let Some(key) = args.first() else {
+            return SPECS
+                .iter()
+                .map(|s| format!("{} = {}", s.key, self.settings.get(s.key)))
+                .collect();
+        };
+        let Some(s) = spec(key) else {
+            return vec![format!("unknown setting {key}")];
+        };
+        if let Some(value) = args.get(1) {
+            let result = value
+                .parse::<f32>()
+                .map_err(|e| e.to_string())
+                .and_then(|v| self.set_setting(s.key, v).map_err(|e| e.to_string()))
+                .and_then(|_| self.save_settings().map_err(|e| e.to_string()));
+            if let Err(e) = result {
+                return vec![e];
+            }
+        }
+        vec![format!("{} = {}", s.key, self.settings.get(s.key))]
+    }
+}
