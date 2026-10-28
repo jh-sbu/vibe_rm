@@ -119,6 +119,7 @@ pub struct Engine {
     pub(crate) cond_rng: std::cell::Cell<u64>,
     pending_moveto: Option<FormId>,
     pub audio: Option<crate::audio::Audio>,
+    pub(crate) ambient_voices: HashMap<FormId, crate::audio::VoiceId>,
     pub(crate) audio_director: crate::audio::director::Director,
     pub(crate) audio_defaults: crate::world::sound::AudioDefaults,
     pub(crate) music: MusicState,
@@ -389,6 +390,13 @@ impl Engine {
             models.set_addons(loader::addon_models(&lo));
         }
         let audio_defaults = crate::world::sound::AudioDefaults::load(&lo);
+        let mut audio_director = crate::audio::director::Director::new(audio_defaults.clone());
+        audio_director.submerged_categories = lo
+            .ids_of_type(b"SNCT")
+            .iter()
+            .filter(|&&id| crate::world::sound::category(&lo, id).is_some_and(|c| c.mute_submerged))
+            .map(|id| id.0)
+            .collect();
         Engine {
             lo,
             vfs,
@@ -450,7 +458,8 @@ impl Engine {
             cond_rng: std::cell::Cell::new(0x9E37_79B9_7F4A_7C15),
             pending_moveto: None,
             audio: None,
-            audio_director: crate::audio::director::Director::new(audio_defaults.clone()),
+            audio_director,
+            ambient_voices: HashMap::new(),
             audio_defaults,
             music: MusicState::default(),
             conversation: None,

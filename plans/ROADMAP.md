@@ -5,6 +5,11 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Audio foundation and behavior (`plans/audio-unblocked.md`, 0–3): sample-clocked
+  gain ramps, interpolation, shared voice parameters and dry/send buses; DOBJ
+  routing and survey; device-free menu/dialogue/stats policy, submerged category
+  muting and underwater loop. Listening choices remain documented in
+  `known_ambiguities/` and the plan.
 - Animation action dispatcher (`plans/animation-unblocked.md`, step 1): actor/project
   idle-tree selection with live conditions and cached project branches/events; NPC and
   player movement, turns, sneak and sprint events use authored actions.

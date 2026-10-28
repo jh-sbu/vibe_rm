@@ -170,6 +170,8 @@ impl SoundDesc {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Category {
     pub parent: Option<FormId>,
+    pub mute_submerged: bool,
+    pub in_menu: bool,
     /// The static volume multiplier (`VNAM`).
     pub volume: f32,
     /// The Audio menu's default for a category that has a slider there
@@ -186,7 +188,7 @@ fn category_float(v: u16) -> f32 {
     v as f32 / 65535.0
 }
 
-fn category(lo: &LoadOrder, id: FormId) -> Option<Category> {
+pub fn category(lo: &LoadOrder, id: FormId) -> Option<Category> {
     let rec = lo.get(id).filter(|r| r.tag().0 == *b"SNCT")?;
     let u16_of = |tag: &[u8; 4]| {
         rec.get(tag)
@@ -198,6 +200,8 @@ fn category(lo: &LoadOrder, id: FormId) -> Option<Category> {
         .filter(|d| d.len() >= 4)
         .map_or(0, |d| u32::from_le_bytes(d[0..4].try_into().unwrap()));
     Some(Category {
+        mute_submerged: flags & 1 != 0,
+        in_menu: flags & CATEGORY_IN_MENU != 0,
         parent: rec
             .get(b"PNAM")
             .filter(|d| d.len() >= 4)
@@ -393,6 +397,8 @@ mod tests {
 
     fn cat(parent: Option<u32>, volume: f32, menu: f32) -> Category {
         Category {
+            mute_submerged: false,
+            in_menu: false,
             parent: parent.map(FormId),
             volume,
             menu,
@@ -527,7 +533,7 @@ mod tests {
             Node::top(
                 b"SNCT",
                 vec![
-                    snct(0x800, None, 0, 0xE665, None),
+                    snct(0x800, None, 1, 0xE665, None),
                     snct(0x801, Some(0x800), 2, 0xE665, Some(0x7FFF)),
                 ],
             ),
@@ -550,6 +556,8 @@ mod tests {
         let want = 0.9 * 0.5 * 0.9;
         let d = descriptor(&lo, &vfs, FormId(0x810)).unwrap();
         assert!(near(d.volume, want), "{}", d.volume);
+        assert!(category(&lo, FormId(0x800)).unwrap().mute_submerged);
+        assert!(category(&lo, FormId(0x801)).unwrap().in_menu);
         assert_eq!(
             (d.frequency_shift, d.frequency_variance, d.db_variance),
             (-5.0, 3.0, 6.0)

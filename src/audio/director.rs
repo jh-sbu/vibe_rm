@@ -15,6 +15,7 @@ pub struct Inputs {
     pub loading: bool,
     pub dialogue: bool,
     pub stats: bool,
+    pub submerged: bool,
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Target {
@@ -25,6 +26,8 @@ pub struct Director {
     defaults: AudioDefaults,
     pub inputs: Inputs,
     pub targets: HashMap<u32, Target>,
+    pub submerged_categories: Vec<u32>,
+    pub loops: Vec<esp::FormId>,
 }
 impl Director {
     pub fn new(defaults: AudioDefaults) -> Self {
@@ -32,10 +35,18 @@ impl Director {
             defaults,
             inputs: Inputs::default(),
             targets: HashMap::new(),
+            submerged_categories: Vec::new(),
+            loops: Vec::new(),
         }
     }
     pub fn update(&mut self, inputs: Inputs, scripts: &HashMap<u32, CategoryState>) {
         self.inputs = inputs;
+        self.loops.clear();
+        if inputs.submerged
+            && let Some(sound) = self.defaults.get(b"UWLS")
+        {
+            self.loops.push(sound);
+        }
         self.targets.clear();
         for (&id, &state) in scripts {
             self.targets.insert(
@@ -71,7 +82,18 @@ impl Director {
                 MENU_FADE_IN
             },
         );
+        for &id in &self.submerged_categories {
+            let t = self.targets.entry(id).or_insert(Target {
+                state: CategoryState::default(),
+                seconds: 0.15,
+            });
+            if inputs.submerged {
+                t.state.volume = 0.0;
+            }
+            t.seconds = 0.15;
+        }
     }
+
     fn gain(&mut self, key: &[u8; 4], gain: f32, seconds: f32) {
         if let Some(id) = self.defaults.get(key) {
             let t = self.targets.entry(id.0).or_insert(Target {
@@ -100,6 +122,9 @@ impl crate::engine::Engine {
             loading: false,
             dialogue: self.conversation.is_some(),
             stats: self.menu == Some(crate::items::Menu::Skills),
+            submerged: self
+                .water_level(self.camera.position)
+                .is_some_and(|h| self.camera.position.z < h),
         };
         self.audio_director
             .update(input, &self.script_sounds.categories);
@@ -110,6 +135,34 @@ impl crate::engine::Engine {
                 self.music.queue.remove_engine(music);
             }
         }
+        let wanted = self.audio_director.loops.clone();
+        self.ambient_voices.retain(|sound, voice| {
+            if wanted.contains(sound) {
+                return self.audio.as_ref().is_some_and(|a| a.is_playing(*voice));
+            }
+            if let Some(a) = &self.audio {
+                a.stop_with_fade(*voice, 0.15);
+            }
+            false
+        });
+        for sound in wanted {
+            if self.ambient_voices.contains_key(&sound) {
+                continue;
+            }
+            let Some(desc) = self.sound_desc(sound) else {
+                continue;
+            };
+            let variation = self.roll_variation(&desc);
+            let mut params = desc.params(variation, None, true);
+            params.position = None;
+            params.fade_in = 0.15;
+            if let Some(a) = &mut self.audio
+                && let Some(id) = a.play(&self.vfs, &desc.files[0], params)
+            {
+                self.ambient_voices.insert(sound, id);
+            }
+        }
+
         if let Some(audio) = &self.audio {
             for (&id, target) in &self.audio_director.targets {
                 audio.set_category(id, target.state, target.seconds);
@@ -127,6 +180,24 @@ mod tests {
             (*b"PDMC", FormId(2)),
             (*b"PDLC", FormId(3)),
         ]))
+    }
+    #[test]
+    fn submerged_targets_mute_only_flagged_categories_and_request_the_loop() {
+        let mut d = Director::new(AudioDefaults::from_entries([(*b"UWLS", FormId(9))]));
+        d.submerged_categories = vec![7];
+        d.update(
+            Inputs {
+                submerged: true,
+                ..Default::default()
+            },
+            &HashMap::new(),
+        );
+        assert_eq!(d.targets[&7].state.volume, 0.0);
+        assert_eq!(d.targets[&7].seconds, 0.15);
+        assert_eq!(d.loops, [FormId(9)]);
+        d.update(Inputs::default(), &HashMap::new());
+        assert_eq!(d.targets[&7].state.volume, 1.0);
+        assert!(d.loops.is_empty());
     }
     #[test]
     fn stats_mutes_region_ambience_and_restores_it() {

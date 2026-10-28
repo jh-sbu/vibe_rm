@@ -153,6 +153,7 @@ pub enum OutputMode {
 #[derive(Clone, Debug)]
 pub struct VoiceParams {
     pub volume: f32,
+    pub fade_in: f32,
     pub rate: f32,
     pub looping: bool,
     pub position: Option<Vec3>,
@@ -167,6 +168,7 @@ impl Default for VoiceParams {
     fn default() -> Self {
         Self {
             volume: 1.0,
+            fade_in: 0.0,
             rate: 1.0,
             looping: false,
             position: None,
@@ -441,7 +443,12 @@ impl Audio {
                 m.cancelled.swap_remove(i);
                 return;
             }
-            let gain = Ramp::new(params.volume);
+            let mut gain = Ramp::new(if params.fade_in > 0.0 {
+                0.0
+            } else {
+                params.volume
+            });
+            gain.set(params.volume, params.fade_in, m.rate);
             m.voices.push(Voice {
                 id,
                 clip,

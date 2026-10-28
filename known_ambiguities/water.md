@@ -153,3 +153,12 @@ Transient breath state clears on unloading. Diving controls remain future work.
 The inspected vanilla HUDMenu ActionScript (existing ignored
 spike/swf/out/hudmenu.dis) exports health, magicka, stamina, shout and charge
 meter setters, with no breath/oxygen symbol or setter. No custom meter is added.
+
+## Submerged audio
+
+The camera uses the same water surface query as swimming. SNCT FNAM bit 0
+controls muting and DOBJ UWLS names a 2D underwater loop. Public documentation
+does not give a transition time: we choose 150 ms amplitude ramps. No extra
+hysteresis is used without observed flicker. Underwater REVB is selected by
+editor ID in step 5; no record links it to submersion, so that override is an
+inference from its name and parameters, not verified original-game behavior.
