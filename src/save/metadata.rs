@@ -65,10 +65,7 @@ impl Metadata {
             location: e.location_name(),
             game_date: e.date_text(),
             play_seconds: e.scripts.real_time as u64,
-            written: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs(),
+            written: 0,
             plugins_hash: plugin_hash(&plugins),
             thumbnail: e.save_thumbnail.clone(),
             ..Default::default()
@@ -183,7 +180,7 @@ mod listing_tests {
         std::fs::write(dir.join("legacy.vrs"), old.to_bytes()).unwrap();
         let meta = Metadata {
             plugins_hash: plugin_hash(&plugins),
-            thumbnail: e.save_thumbnail.clone(),
+            thumbnail: None,
             ..Default::default()
         };
         let mut f = SaveFile::default();

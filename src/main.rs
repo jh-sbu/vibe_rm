@@ -15,6 +15,7 @@ mod created;
 mod crime;
 mod detection;
 mod dialogue;
+mod difficulty;
 mod disarm;
 mod encumbrance;
 mod engine;

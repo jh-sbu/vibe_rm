@@ -41,3 +41,21 @@ fMouseHeadingSensitivity=0.0125. No asset specifies its mapping. Use linear
 0.0025 radians per mouse unit at default. Invert Y reverses only mouse pitch.
 The HUD has FloatingQuestMarker_mc but no host floating marker population;
 the floating-marker toggle is stored until that rendering path exists.
+
+## Difficulty damage paths
+
+UESP Damage revision 3485809 documents player/NPC tables, followers/summons,
+fall damage capped above Adept and Equilibrium's health cost. Ravage Health
+revision 3468118, lines 30–34, explicitly excludes its maximum-health loss.
+Implement scaling once at combat damage for weapons/bashes/traps and before
+magic health deltas for spells, damage poisons, hazards and dual modifiers
+(including Equilibrium). Absorb explicitly bypasses scaling; recovered/held
+modifiers such as Ravage, actor-value script edits, healing, drowning and
+scripted Kill bypass it. These path boundaries are implementation inferences
+where the broad documented rule does not enumerate the engine paths.
+
+Use fDiffMultHPToPC{VE,E,N,H,VH,L} for player-taken damage and
+fDiffMultHPByPC{VE,E,N,H,VH,L} for NPC-taken damage. Missing values use UESP's
+0.5/0.75/1/1.5/2/3 and 2/1.5/1/0.75/0.5/0.25 respectively. These setting
+names are inferred from the data's fDiffMultHPToPCL; only that value (3) was
+found in Skyrim.esm. XP difficulty multipliers remain an open research question.

@@ -462,3 +462,9 @@ them in one batch, once the steps that use them are near:
   journal's rest", item 9's "a save / load menu" and item 7's "Audio menu
   sliders' UI"; add what this plan leaves out (gamepad options, DDOF, Creations
   and the main menu) where it belongs.
+
+## Open difficulty experience question
+
+fDiffMultXPH=1.25 and fDiffMultXPVH=1.5 exist in Skyrim.esm, but the public
+Damage table does not establish which experience paths they multiply. They
+remain unwired pending a permitted source or SE probe.

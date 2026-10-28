@@ -241,6 +241,10 @@ impl Engine {
     pub fn save_game_to(&self, path: &Path) -> Result<()> {
         let mut snapshot = Snapshot::capture(self);
         if let Some(meta) = &mut snapshot.metadata {
+            meta.written = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
             meta.file_num = std::fs::File::open(path)
                 .ok()
                 .and_then(|f| SaveFile::read_prefix(f).ok())

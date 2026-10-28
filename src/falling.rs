@@ -58,7 +58,12 @@ impl Engine {
         );
         log::info!("player falls {height:.0} units: {damage:.1} damage");
         if damage > 0.0 {
-            self.damage(PLAYER_REF, damage, None, 0.0);
+            self.damage_unscaled(
+                PLAYER_REF,
+                damage * self.difficulty_multiplier(PLAYER_REF, true),
+                None,
+                0.0,
+            );
         }
     }
 }

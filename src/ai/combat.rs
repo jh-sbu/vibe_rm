@@ -2796,6 +2796,30 @@ impl Engine {
         stagger: f32,
         sneak: bool,
     ) {
+        let amount = if amount > 0. {
+            amount * self.difficulty_multiplier(target, false)
+        } else {
+            amount
+        };
+        self.damage_by_unscaled(target, amount, attacker, stagger, sneak);
+    }
+    pub(crate) fn damage_unscaled(
+        &mut self,
+        target: FormId,
+        amount: f32,
+        attacker: Option<FormId>,
+        stagger: f32,
+    ) {
+        self.damage_by_unscaled(target, amount, attacker, stagger, false);
+    }
+    fn damage_by_unscaled(
+        &mut self,
+        target: FormId,
+        amount: f32,
+        attacker: Option<FormId>,
+        stagger: f32,
+        sneak: bool,
+    ) {
         if amount > 0.0 && (self.is_invulnerable(target) || self.is_ghost(target)) {
             return;
         }

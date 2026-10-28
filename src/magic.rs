@@ -1242,17 +1242,17 @@ impl Engine {
         let by = x.caster.filter(|_| !x.quiet);
         if mgef.archetype == archetype::ABSORB {
             let taken = amount.abs().min(self.actor_value(x.target, a).max(0.0));
-            self.value_change(x.target, a, -taken, by, instant);
+            self.value_change(x.target, a, -taken, by, instant, false);
             if let Some(c) = x.caster {
-                self.value_change(c, a, taken, None, false);
+                self.value_change(c, a, taken, None, false, false);
             }
             return;
         }
-        self.value_change(x.target, a, amount, by, instant);
+        self.value_change(x.target, a, amount, by, instant, true);
         if let Some(b) = mgef.secondary
             && mgef.archetype == archetype::DUAL_VALUE_MODIFIER
         {
-            self.value_change(x.target, b, amount * mgef.second_weight, by, instant);
+            self.value_change(x.target, b, amount * mgef.second_weight, by, instant, true);
         }
     }
 
@@ -1263,7 +1263,13 @@ impl Engine {
         amount: f32,
         by: Option<FormId>,
         instant: bool,
+        scale: bool,
     ) {
+        let amount = if scale && a == av::HEALTH && amount < 0. {
+            amount * self.difficulty_multiplier(target, false)
+        } else {
+            amount
+        };
         if amount == 0.0 {
             return;
         }
@@ -1279,7 +1285,7 @@ impl Engine {
                 || self.actor_value(target, av::HEALTH) + amount <= 0.0
                 || target == PLAYER_REF
             {
-                self.damage(target, -amount, by, 0.0);
+                self.damage_unscaled(target, -amount, by, 0.0);
             } else {
                 self.damage_actor_value(target, a, -amount);
             }
