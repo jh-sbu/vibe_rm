@@ -232,11 +232,13 @@ sneaking, not blocking (conditions 185, 632, 672, 286, 569); `ActionSneak`'s
 actor's project with conditions (`ActionIdle`, `ActionTalking`,
 `ActionActivate`).
 
-- **1a. Dispatcher.** `Engine::action(actor, "ActionX") -> Option<String>`:
-  find the action's root, `select_for` with the actor as subject, cached per
-  (project, action) where the branch has no conditions. Return the event, or
-  `None` when no branch applies (the action is refused). Unit tests on
-  synthetic idle trees: a per-project event, a conditioned branch, refusal.
+- **1a. Dispatcher.** `Engine::action(actor, "ActionX") -> Option<Arc<str>>`:
+  resolve locomotion roots once in the index and cache applicable branches per
+  project/action. Borrow project/cache keys and share event strings; evaluate
+  conditioned branches against live actor state. Return the event, or `None`
+  when no branch applies (the action is refused). Synthetic idle-tree tests
+  cover project isolation, live conditions, shared cached events and refusals.
+  Failed conditions retain their trace explanations.
 - **1b. Movement through it.** Replace the hard-coded sends with
   `ActionMoveStart` / `ActionMoveStop`, `ActionTurnLeft` / `Right` / `Stop`
   and `ActionSneak`. The humanoid branches give the same events as now

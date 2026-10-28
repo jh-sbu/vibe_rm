@@ -319,7 +319,10 @@ fn a_charge_stops_sprinting_in_reach_and_a_flee_never_keeps_a_charge_stance() {
         },
         1.0,
     ));
-    a.actions = idles::LocomotionActions(vec![("ActionSprintStart", Some("SprintStart".into()))]);
+    a.actions = idles::LocomotionActions(
+        idles::LocomotionActions::NAMES
+            .map(|name| (name == "ActionSprintStart").then(|| "SprintStart".into())),
+    );
     with_world(|w| {
         a.combat_step(0.1, w, Vec3::Y * 1500.0);
     });

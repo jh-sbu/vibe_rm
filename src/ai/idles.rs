@@ -3,6 +3,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use esp::{FormId, LoadOrder};
 
@@ -24,7 +25,7 @@ const EXIT_EVENTS: [&str; 3] = ["idlechairexitstart", "idlefurnitureexit", "idle
 /// Resolved before borrowing the actor update loop, so conditions read live
 /// engine state and the graph can consume the events in this update.
 #[derive(Default)]
-pub(crate) struct LocomotionActions(pub Vec<(&'static str, Option<String>)>);
+pub(crate) struct LocomotionActions(pub [Option<Arc<str>>; 10]);
 impl LocomotionActions {
     pub(crate) const NAMES: [&'static str; 10] = [
         "ActionMoveStart",
@@ -39,11 +40,7 @@ impl LocomotionActions {
         "ActionDraw",
     ];
     pub(crate) fn event(&self, action: &str) -> Option<&str> {
-        self.0
-            .iter()
-            .find(|(name, _)| *name == action)?
-            .1
-            .as_deref()
+        self.0[Self::NAMES.iter().position(|name| *name == action)?].as_deref()
     }
     pub(crate) fn send(&self, graph: &mut crate::world::behavior::GraphAnim, action: &str) {
         if let Some(ev) = self.event(action) {
@@ -60,10 +57,26 @@ struct Idle {
     conditions: Vec<Condition>,
 }
 
+/// Graph filtering and unconditional selection are done once per project/action.
+enum ActionTree {
+    Fixed(Option<Arc<str>>),
+    Conditional(Vec<ActionBranch>),
+}
+
+struct ActionBranch {
+    idle: FormId,
+    event: Option<Arc<str>>,
+    children: Vec<ActionBranch>,
+}
+
+type ProjectActions = HashMap<String, HashMap<FormId, ActionTree>>;
+
 #[derive(Default)]
 pub struct IdleIndex {
     idles: HashMap<FormId, Idle>,
-    actions: RefCell<HashMap<(String, FormId), Option<String>>>,
+    /// Directory -> project name -> root. All lookups borrow existing strings.
+    actions: RefCell<HashMap<String, ProjectActions>>,
+    locomotion_roots: [Option<FormId>; 10],
     children: HashMap<FormId, Vec<FormId>>,
     /// Keyword -> root idles conditioned on it.
     by_keyword: HashMap<FormId, Vec<FormId>>,
@@ -126,6 +139,7 @@ impl IdleIndex {
             ordered.extend(rest);
             *kids = ordered;
         }
+        ix.locomotion_roots = LocomotionActions::NAMES.map(|name| ix.find(lo, name));
         ix
     }
 
@@ -159,7 +173,7 @@ impl IdleIndex {
         self.select_in(
             root,
             &is_humanoid_graph,
-            &|c| condition::evaluate(e, c, ctx),
+            &|id, c| Self::evaluate(e, id, c, ctx),
             0,
         )
     }
@@ -175,30 +189,129 @@ impl IdleIndex {
         self.select_in(
             root,
             &|b: &str| b.is_empty() || project.plays(b),
-            &|c| condition::evaluate(e, c, ctx),
+            &|id, c| Self::evaluate(e, id, c, ctx),
             0,
         )
     }
 
-    /// Resolve an action, caching only trees whose applicable branches have no
-    /// conditions. A failed conditioned selection must be retried next time.
+    pub(crate) fn locomotion_root(&self, name: &str) -> Option<FormId> {
+        self.locomotion_roots[LocomotionActions::NAMES.iter().position(|n| *n == name)?]
+    }
+
+    /// Cache each project's applicable branches, but evaluate their conditions
+    /// against live state. Both cached refusals and events avoid string copies.
     pub fn action(
         &self,
         e: &crate::engine::Engine,
         root: FormId,
         ctx: condition::Context,
         project: &ProjectRuntime,
-    ) -> Option<String> {
-        let key = (project.dir.clone(), root);
-        if let Some(event) = self.actions.borrow().get(&key) {
-            return event.clone();
+    ) -> Option<Arc<str>> {
+        self.action_in(root, project, &|id, c| Self::evaluate(e, id, c, ctx))
+    }
+
+    fn action_in(
+        &self,
+        root: FormId,
+        project: &ProjectRuntime,
+        evaluate: &dyn Fn(FormId, &[Condition]) -> bool,
+    ) -> Option<Arc<str>> {
+        let cached = self.actions.borrow();
+        if let Some(tree) = cached
+            .get(project.dir.as_str())
+            .and_then(|names| names.get(project.name.as_str()))
+            .and_then(|roots| roots.get(&root))
+        {
+            return self.select_action(tree, evaluate);
         }
+        drop(cached);
         let graphs = |b: &str| b.is_empty() || project.plays(b);
-        let event = self.select_for(e, root, ctx, project).map(|(_, ev)| ev);
-        if self.unconditional(root, &graphs, 0) {
-            self.actions.borrow_mut().insert(key, event.clone());
-        }
+        let branches = self.action_branches(root, &graphs, 0);
+        let tree = if self.unconditional(root, &graphs, 0) {
+            ActionTree::Fixed(self.select_branches(&branches, &|_, _| true))
+        } else {
+            ActionTree::Conditional(branches)
+        };
+        let event = self.select_action(&tree, evaluate);
+        self.actions
+            .borrow_mut()
+            .entry(project.dir.clone())
+            .or_default()
+            .entry(project.name.clone())
+            .or_default()
+            .insert(root, tree);
         event
+    }
+
+    fn action_branches(
+        &self,
+        root: FormId,
+        graphs: &dyn Fn(&str) -> bool,
+        depth: u32,
+    ) -> Vec<ActionBranch> {
+        if depth > 16 {
+            return Vec::new();
+        }
+        self.children
+            .get(&root)
+            .into_iter()
+            .flatten()
+            .filter_map(|&id| {
+                let idle = self.idles.get(&id)?;
+                graphs(self.behavior_of(id)).then(|| ActionBranch {
+                    idle: id,
+                    event: (!idle.event.is_empty()).then(|| Arc::from(idle.event.as_str())),
+                    children: self.action_branches(id, graphs, depth + 1),
+                })
+            })
+            .collect()
+    }
+
+    fn select_action(
+        &self,
+        tree: &ActionTree,
+        evaluate: &dyn Fn(FormId, &[Condition]) -> bool,
+    ) -> Option<Arc<str>> {
+        match tree {
+            ActionTree::Fixed(event) => event.clone(),
+            ActionTree::Conditional(branches) => self.select_branches(branches, evaluate),
+        }
+    }
+
+    fn select_branches(
+        &self,
+        branches: &[ActionBranch],
+        evaluate: &dyn Fn(FormId, &[Condition]) -> bool,
+    ) -> Option<Arc<str>> {
+        for branch in branches {
+            let idle = self.idles.get(&branch.idle)?;
+            if !idle.conditions.is_empty() && !evaluate(branch.idle, &idle.conditions) {
+                continue;
+            }
+            if let Some(event) = self
+                .select_branches(&branch.children, evaluate)
+                .or_else(|| branch.event.clone())
+            {
+                return Some(event);
+            }
+        }
+        None
+    }
+
+    fn evaluate(
+        e: &crate::engine::Engine,
+        id: FormId,
+        conditions: &[Condition],
+        ctx: condition::Context,
+    ) -> bool {
+        let passed = condition::evaluate(e, conditions, ctx);
+        if !passed && log::log_enabled!(log::Level::Trace) {
+            log::trace!(
+                "idle {id} fails: {}",
+                condition::explain(e, conditions, ctx)
+            );
+        }
+        passed
     }
 
     fn unconditional(&self, root: FormId, graphs: &dyn Fn(&str) -> bool, depth: u32) -> bool {
@@ -222,7 +335,7 @@ impl IdleIndex {
         self.select_list(
             roots,
             &is_humanoid_graph,
-            &|c| condition::evaluate(e, c, ctx),
+            &|id, c| Self::evaluate(e, id, c, ctx),
             0,
         )
     }
@@ -231,7 +344,7 @@ impl IdleIndex {
         &self,
         root: FormId,
         graphs: &dyn Fn(&str) -> bool,
-        evaluate: &dyn Fn(&[Condition]) -> bool,
+        evaluate: &dyn Fn(FormId, &[Condition]) -> bool,
         depth: u32,
     ) -> Option<(FormId, String)> {
         self.select_list(
@@ -246,7 +359,7 @@ impl IdleIndex {
         &self,
         kids: &[FormId],
         graphs: &dyn Fn(&str) -> bool,
-        evaluate: &dyn Fn(&[Condition]) -> bool,
+        evaluate: &dyn Fn(FormId, &[Condition]) -> bool,
         depth: u32,
     ) -> Option<(FormId, String)> {
         if depth > 16 {
@@ -259,7 +372,7 @@ impl IdleIndex {
             if !graphs(self.behavior_of(kid)) {
                 continue;
             }
-            if !evaluate(&idle.conditions) {
+            if !evaluate(kid, &idle.conditions) {
                 continue;
             }
             if let Some(found) = self.select_in(kid, graphs, evaluate, depth + 1) {
@@ -391,16 +504,54 @@ mod tests {
         let fish = |b: &str| b == "fish";
         let human = |b: &str| b == "human";
         assert_eq!(
-            ix.select_in(root, &fish, &|_| true, 0).unwrap().1,
+            ix.select_in(root, &fish, &|_, _| true, 0).unwrap().1,
             "SwimLeft"
         );
         assert!(ix.unconditional(root, &fish, 0));
         assert!(!ix.unconditional(root, &human, 0));
-        assert!(ix.select_in(root, &human, &|c| c.is_empty(), 0).is_none());
+        assert!(
+            ix.select_in(root, &human, &|_, c| c.is_empty(), 0)
+                .is_none()
+        );
         assert_eq!(
-            ix.select_in(root, &human, &|_| true, 0).unwrap().1,
+            ix.select_in(root, &human, &|_, _| true, 0).unwrap().1,
             "turnLeft"
         );
-        assert!(ix.select_in(root, &|_| false, &|_| true, 0).is_none());
+        assert!(ix.select_in(root, &|_| false, &|_, _| true, 0).is_none());
+
+        use havok::behavior::{Project, runtime::Shared};
+        let project = |name: &str, file: &str| ProjectRuntime {
+            shared: Shared::new(Arc::new(Project {
+                graphs: vec![],
+                character: None,
+            })),
+            dir: "same directory".into(),
+            name: name.into(),
+            files: vec![file.into()],
+        };
+        let human = project("human", "human");
+        let fish = project("fish", "fish");
+        let fixed = ix.action_in(root, &fish, &|_, _| panic!("unconditional action"));
+        assert_eq!(fixed.as_deref(), Some("SwimLeft"));
+        let cached = ix.action_in(root, &fish, &|_, _| panic!("cached action"));
+        assert!(Arc::ptr_eq(
+            fixed.as_ref().unwrap(),
+            cached.as_ref().unwrap()
+        ));
+        // A cached project tree must still react to live condition changes,
+        // including a refusal followed by success and another refusal.
+        for allowed in [false, true, false, true] {
+            let event = ix.action_in(root, &human, &|_, _| allowed);
+            assert_eq!(event.as_deref(), allowed.then_some("turnLeft"));
+        }
+        let other = project("other", "unsupported");
+        assert!(
+            ix.action_in(root, &other, &|_, _| panic!("refused project"))
+                .is_none()
+        );
+        assert!(
+            ix.action_in(root, &other, &|_, _| panic!("cached refusal"))
+                .is_none()
+        );
     }
 }

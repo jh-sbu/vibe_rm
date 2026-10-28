@@ -2494,17 +2494,28 @@ impl Engine {
         true
     }
 
-    /// Pick an action's event for this actor's graph. `None` means refused.
-    pub(crate) fn action(&mut self, actor: FormId, name: &str) -> Option<String> {
-        let project = if actor == PLAYER_REF {
-            self.player_body.as_ref()?.project()?.clone()
+    fn action_project(&self, actor: FormId) -> Option<&ProjectRuntime> {
+        if actor == PLAYER_REF {
+            Some(self.player_body.as_ref()?.project()?)
         } else {
-            self.actor_ref(actor)?.graph.as_ref()?.project().clone()
-        };
-        let root = self
-            .idles
-            .get_or_insert_with(|| idles::IdleIndex::build(&self.lo))
-            .find(&self.lo, name)?;
+            Some(self.actor_ref(actor)?.graph.as_ref()?.project())
+        }
+    }
+
+    /// Pick an action's event for this actor's graph. `None` means refused.
+    pub(crate) fn action(&mut self, actor: FormId, name: &str) -> Option<Arc<str>> {
+        self.idles
+            .get_or_insert_with(|| idles::IdleIndex::build(&self.lo));
+        self.resolve_action(actor, name, self.action_project(actor)?)
+    }
+
+    fn resolve_action(
+        &self,
+        actor: FormId,
+        name: &str,
+        project: &ProjectRuntime,
+    ) -> Option<Arc<str>> {
+        let root = self.idles.as_ref()?.locomotion_root(name)?;
         let ctx = crate::condition::Context {
             subject: Some(actor),
             idle: Some(crate::condition::IdleQuery {
@@ -2526,15 +2537,17 @@ impl Engine {
             }),
             ..Default::default()
         };
-        self.idles.as_ref()?.action(self, root, ctx, &project)
+        self.idles.as_ref()?.action(self, root, ctx, project)
     }
 
     pub(crate) fn locomotion_actions(&mut self, actor: FormId) -> idles::LocomotionActions {
+        self.idles
+            .get_or_insert_with(|| idles::IdleIndex::build(&self.lo));
+        let Some(project) = self.action_project(actor) else {
+            return Default::default();
+        };
         idles::LocomotionActions(
-            idles::LocomotionActions::NAMES
-                .into_iter()
-                .map(|name| (name, self.action(actor, name)))
-                .collect(),
+            idles::LocomotionActions::NAMES.map(|name| self.resolve_action(actor, name, project)),
         )
     }
 

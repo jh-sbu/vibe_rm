@@ -6,7 +6,7 @@ game each piece unlocks.
 
 ## Done
 - Animation action dispatcher (`plans/animation-unblocked.md`, step 1): actor/project
-  idle-tree selection with conditions and unconditional-branch caching; NPC and
+  idle-tree selection with live conditions and cached project branches/events; NPC and
   player movement, turns, sneak and sprint events use authored actions.
 - NPC combat movement (step 2): Direction follows velocity, retreating archers
   face their targets; combat-style circling/flanking and lateral movement;
@@ -17,7 +17,9 @@ game each piece unlocks.
   and movement types, observed feet-at-surface-minus-92 floating height, no surface
   swim gravity, graph-authored swim footsteps and suppressed foot IK; breath
   exhaustion and WaterBreathing protection. Swim depth and breath formula remain
-  documented policies in `known_ambiguities/water.md`; diving awaits rendering.
+  documented policies in `known_ambiguities/water.md`; surface swimming requires
+  RACE Swims + Walks, and creature breath awaits per-race float/head heights.
+  Diving awaits rendering.
 - Turning ownership (step 4): while a rotate-character modifier runs, NPC/player
   controllers supply requested TurnDelta and consume its yaw once, clamped against
   overshoot. Otherwise controller turning continues. Choice:
@@ -1901,6 +1903,7 @@ game each piece unlocks.
      `known_ambiguities/destruction.md`
    - Water (surface swimming, IsSwimming and dangerous-water queries: see Done):
      autotest20 depth/Waterbreathing-state validation, race/scale float heights,
+     creature breath (disabled until float/head heights are resolved),
      breath-timing validation, diving controls after underwater rendering;
      unloaded actors' contact, contact spells (`XNAM`);
      `WATR` `DATA` is unused in SSE per xEdit, not damage per second.
