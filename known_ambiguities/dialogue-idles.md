@@ -25,14 +25,13 @@ idle, all of them IDLE records: 37 `Dragon_PerchRoar`, 32 `IdlePointClose`, 25
   until the next response's gesture or the end of the conversation or scene
   line (`IdleStop`), not for the length of the voice file, and no pose is
   held through a pause between lines.
-- **Listeners.** The listener idle isn't played: the one response in the base
-  game that names one (`IdleEatSoup`) is the only evidence, and a
-  conversation's listener is the player, who has no idle to play. Who listens
-  in a scene or a bark isn't tracked either.
+- **Explicit listeners.** Player conversations route an authored listener idle
+  to the player; scene dialogue routes it to the resolved scene listener.
+  Barks have no explicit listener and only play the speaker gesture. Hearing
+  a bark does not assign the player as its listener.
   A renewed local UESP search (2026-10-20) found the INFO field labels above
   and [SCEN's head-tracking alias](https://en.uesp.net/w/index.php?oldid=3089103),
   but no rule establishing that a scene action's head-tracking target is its
   dialogue listener. Head tracking alone is insufficient evidence to route an
-  idle to that actor. Automatic listener choice, player listener support,
-  overlap/cleanup and reaction timing remain research gates; no engine binary
-  data was examined to resolve them.
+  idle to that actor. Automatic listener choice for barks, overlap/cleanup and
+  reaction timing remain unverified; no engine binary data was examined.

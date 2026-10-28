@@ -202,7 +202,6 @@ impl Engine {
                 path.unwrap_or_default()
             );
             let idle = r.speaker_idle;
-            let listener_idle = r.listener_idle;
             self.barks.current = Some(Bark {
                 speaker,
                 name,
@@ -211,7 +210,6 @@ impl Engine {
                 ends_at: now + duration,
             });
             self.line_gesture(speaker, idle);
-            self.listener_gesture(crate::engine::PLAYER_REF, listener_idle);
             return true;
         }
         false
