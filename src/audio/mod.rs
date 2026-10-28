@@ -115,6 +115,15 @@ impl Ramp {
             self.step = (target - self.current) / self.left as f32;
         }
     }
+    fn advance_by(&mut self, frames: u64) {
+        let n = frames.min(self.left);
+        self.current += self.step * n as f32;
+        self.left -= n;
+        if self.left == 0 {
+            self.current = self.target;
+        }
+    }
+
     fn advance(&mut self) {
         if self.left > 0 {
             self.left -= 1;
@@ -211,6 +220,8 @@ struct Voice {
     repeats: u32,
     filter: [f32; 2],
     virtualized: bool,
+    ramps: Vec<Ramp>,
+    mix: VoiceMix,
 }
 
 impl Voice {
@@ -245,171 +256,249 @@ struct Mixer {
     headroom: f32,
     voice_limit: usize,
     /// Fixed frame buses: no allocation, even for an unexpected callback size.
-    dry: [f32; 8],
-    send: [f32; 2],
+    dry: Box<[[f32; 8]; BUFFER_FRAMES as usize]>,
+    send: Box<[[f32; 2]; BUFFER_FRAMES as usize]>,
+    ranks: Vec<Rank>,
     reverb: reverb::Bus,
     /// Voices stopped while their clips were still decoding.
     cancelled: Vec<VoiceId>,
     categories: HashMap<u32, CategoryMix>,
 }
 
-impl Mixer {
-    fn category_effect(categories: &HashMap<u32, CategoryMix>, of: &[u32]) -> (bool, f32, f64) {
-        let (mut paused, mut volume, mut frequency) = (false, 1.0, 1.0);
-        for s in of.iter().filter_map(|c| categories.get(c)) {
-            paused |= s.state.paused && s.gain.left == 0;
-            volume *= s.gain.current;
-            frequency *= s.state.frequency as f64;
-        }
-        (paused, volume, frequency)
+/// Callback-local values. Geometry, category lookup and filter coefficients
+/// are prepared once per bounded block; only envelopes are sampled per frame.
+#[derive(Clone, Copy, Default)]
+struct VoiceMix {
+    gain: f32,
+    step: f64,
+    pause_after: u64,
+    audibility: f32,
+    rear: f32,
+    alpha: f32,
+    route: [[f32; 8]; 2],
+    send: [[f32; 2]; 2],
+    channels: usize,
+}
+#[derive(Clone, Copy)]
+struct Rank {
+    index: usize,
+    priority: u8,
+    audibility: f32,
+    id: u64,
+}
+impl Rank {
+    fn compare(a: &Self, b: &Self) -> std::cmp::Ordering {
+        a.priority
+            .cmp(&b.priority)
+            .then_with(|| b.audibility.total_cmp(&a.audibility))
+            .then(a.id.cmp(&b.id))
     }
-    fn audibility(&self, v: &Voice) -> f32 {
-        let (_, gain, _) = Self::category_effect(&self.categories, &v.params.categories);
-        v.gain.current
-            * gain
-            * v.params
-                .position
-                .map_or(1.0, |p| v.params.falloff.gain(p.distance(self.listener)))
+}
+impl Voice {
+    fn prepare(
+        &mut self,
+        categories: &HashMap<u32, CategoryMix>,
+        listener: Vec3,
+        right: Vec3,
+        rate: u32,
+    ) {
+        self.ramps.clear();
+        let mut gain = 1.0;
+        let mut frequency = 1.0;
+        let mut pause_after = u64::MAX;
+        for category in self
+            .params
+            .categories
+            .iter()
+            .filter_map(|id| categories.get(id))
+        {
+            frequency *= category.state.frequency as f64;
+            if category.state.paused {
+                pause_after = pause_after.min(category.gain.left);
+            }
+            if category.gain.left > 0 {
+                self.ramps.push(category.gain);
+            } else {
+                gain *= category.gain.current;
+            }
+        }
+        let mut pan = [1.0; 2];
+        let mut rear = 0.0;
+        let mut attenuation = 1.0;
+        if let Some(position) = self.params.position {
+            let delta = position - listener;
+            let direction = delta.normalize_or_zero();
+            attenuation = self.params.falloff.gain(delta.length());
+            rear = (-direction.dot(Vec3::Z.cross(right))).clamp(0.0, 1.0);
+            pan = speakers::pan(direction.dot(right), rear).map(|g| g * attenuation);
+        }
+        let route =
+            if let (None, OutputMode::Defined(rows)) = (self.params.position, self.params.output) {
+                if self.clip.channels == 1 {
+                    [rows[0], [0.0; 8]]
+                } else {
+                    [rows[1], rows[2]]
+                }
+            } else {
+                [
+                    [pan[0], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    [0.0, pan[1], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                ]
+            };
+        let channels = (0..8)
+            .rfind(|&c| route[0][c] != 0.0 || route[1][c] != 0.0)
+            .map_or(0, |c| c + 1);
+        let send = route.map(|r| speakers::stereo(&r).map(|g| g * self.params.reverb_send));
+        let alpha = if rear > 0.0 {
+            let cutoff = (20000.0 - 16000.0 * rear).min(rate as f32 * 0.45);
+            1.0 - (-std::f32::consts::TAU * cutoff / rate as f32).exp()
+        } else {
+            1.0
+        };
+        self.mix = VoiceMix {
+            gain,
+            step: self.clip.rate as f64 / rate as f64
+                * self.params.rate.max(0.01) as f64
+                * frequency,
+            pause_after,
+            audibility: self.gain.current
+                * gain
+                * self.ramps.iter().map(|r| r.current).product::<f32>()
+                * attenuation,
+            rear,
+            alpha,
+            route,
+            send,
+            channels,
+        };
+    }
+}
+impl Mixer {
+    fn prepare_voices(&mut self) {
+        for voice in &mut self.voices {
+            voice.prepare(
+                &self.categories,
+                self.listener,
+                self.listener_right,
+                self.rate,
+            );
+        }
     }
     fn select_voices(&mut self) {
-        for v in &mut self.voices {
+        self.ranks.clear();
+        // Capacity is reserved on the submitting thread when a voice starts.
+        debug_assert!(self.ranks.capacity() >= self.voices.len());
+        for (index, v) in self.voices.iter_mut().enumerate() {
             v.virtualized = !v.params.exempt;
+            if v.virtualized && v.mix.pause_after > 0 {
+                self.ranks.push(Rank {
+                    index,
+                    priority: v.params.priority,
+                    audibility: v.mix.audibility,
+                    id: v.id.0,
+                });
+            }
         }
-        for _ in 0..self.voice_limit {
-            let best = self
-                .voices
-                .iter()
-                .enumerate()
-                .filter(|(_, v)| {
-                    v.virtualized
-                        && !Self::category_effect(&self.categories, &v.params.categories).0
-                })
-                .min_by(|(_, a), (_, b)| {
-                    a.params
-                        .priority
-                        .cmp(&b.params.priority)
-                        .then_with(|| self.audibility(b).total_cmp(&self.audibility(a)))
-                        .then(a.id.0.cmp(&b.id.0))
-                })
-                .map(|(i, _)| i);
-            let Some(i) = best else { break };
-            self.voices[i].virtualized = false;
+        let count = self.voice_limit.min(self.ranks.len());
+        if count < self.ranks.len() {
+            self.ranks.select_nth_unstable_by(count, Rank::compare);
         }
-        let categories = &self.categories;
-        self.voices.retain(|v| {
-            !v.virtualized
-                || v.params.looping
-                || Self::category_effect(categories, &v.params.categories).0
-        });
+        for rank in &self.ranks[..count] {
+            self.voices[rank.index].virtualized = false;
+        }
+        self.voices
+            .retain(|v| !v.virtualized || v.params.looping || v.mix.pause_after == 0);
     }
     fn mix(&mut self, out: &mut [f32], channels: usize) {
-        self.select_voices();
         out.fill(0.0);
-        for frame in out.chunks_exact_mut(channels) {
-            self.dry.fill(0.0);
-            self.send.fill(0.0);
+        if channels == 0 {
+            return;
+        }
+        self.prepare_voices();
+        self.select_voices();
+        // Fixed scratch also handles devices that return larger/unexpected buffers.
+        for (block_index, out) in out
+            .chunks_mut(BUFFER_FRAMES as usize * channels)
+            .enumerate()
+        {
+            if block_index > 0 {
+                self.prepare_voices();
+            }
+            let frames = out.len() / channels;
+            self.dry[..frames].fill([0.0; 8]);
+            self.send[..frames].fill([0.0; 2]);
             for v in &mut self.voices {
-                let (paused, gain, frequency) =
-                    Self::category_effect(&self.categories, &v.params.categories);
-                if paused {
-                    if v.stopping {
-                        v.gain.advance();
-                    }
-                    continue;
-                }
+                let active = frames.min(v.mix.pause_after.min(usize::MAX as u64) as usize);
                 let n = v.clip.frames();
                 if n == 0 {
                     v.pos = f64::MAX;
                     continue;
                 }
-                v.wrap_loops();
-                let i = v.pos as usize;
-                if i >= n {
+                if v.virtualized || v.mix.gain == 0.0 || v.mix.channels == 0 {
+                    v.pos += v.mix.step * active as f64;
+                    v.wrap_loops();
+                    v.gain
+                        .advance_by(if v.stopping { frames } else { active } as u64);
                     continue;
                 }
-                if v.virtualized {
-                    v.pos += v.clip.rate as f64 / self.rate as f64
-                        * v.params.rate.max(0.01) as f64
-                        * frequency;
+                for f in 0..active {
+                    v.wrap_loops();
+                    let i = v.pos as usize;
+                    if i >= n {
+                        break;
+                    }
+                    let j = if i + 1 < n {
+                        i + 1
+                    } else if v.params.looping {
+                        0
+                    } else {
+                        i
+                    };
+                    let t = (v.pos - i as f64) as f32;
+                    let mut samples: [f32; 2] = std::array::from_fn(|c| {
+                        v.clip.samples[i * 2 + c] * (1.0 - t) + v.clip.samples[j * 2 + c] * t
+                    });
+                    for (c, sample) in samples.iter_mut().enumerate() {
+                        if v.mix.rear > 0.0 {
+                            v.filter[c] += v.mix.alpha * (*sample - v.filter[c]);
+                            *sample = *sample * (1.0 - v.mix.rear) + v.filter[c] * v.mix.rear;
+                        } else {
+                            v.filter[c] = *sample;
+                        }
+                    }
+                    let mut gain = v.gain.current * v.mix.gain;
+                    for ramp in &mut v.ramps {
+                        gain *= ramp.current;
+                        ramp.advance();
+                    }
+                    let l = samples[0] * gain;
+                    let r = samples[1] * gain;
+                    for c in 0..v.mix.channels {
+                        self.dry[f][c] += l * v.mix.route[0][c] + r * v.mix.route[1][c];
+                    }
+                    for c in 0..2 {
+                        self.send[f][c] += l * v.mix.send[0][c] + r * v.mix.send[1][c];
+                    }
+                    v.pos += v.mix.step;
                     v.wrap_loops();
                     v.gain.advance();
-                    continue;
                 }
-                let volume = v.gain.current * gain;
-                let (mut gl, mut gr) = (volume, volume);
-                let mut rear = 0.0;
-                if let Some(p) = v.params.position {
-                    let att = v.params.falloff.gain(p.distance(self.listener));
-                    let pan = (p - self.listener)
-                        .normalize_or_zero()
-                        .dot(self.listener_right)
-                        .clamp(-1.0, 1.0);
-                    rear = (-(p - self.listener)
-                        .normalize_or_zero()
-                        .dot(Vec3::Z.cross(self.listener_right)))
-                    .max(0.0);
-                    let gains = speakers::pan(pan, rear);
-                    gl *= att * gains[0];
-                    gr *= att * gains[1];
+                if v.stopping {
+                    v.gain.advance_by((frames - active) as u64);
                 }
-                let j = if i + 1 < n {
-                    i + 1
-                } else if v.params.looping {
-                    0
-                } else {
-                    i
-                };
-                let t = (v.pos - i as f64) as f32;
-                let mut samples: [f32; 2] = std::array::from_fn(|c| {
-                    v.clip.samples[i * 2 + c] * (1.0 - t) + v.clip.samples[j * 2 + c] * t
-                });
-                for (c, sample) in samples.iter_mut().enumerate() {
-                    if rear > 0.0 {
-                        let cutoff = (20000.0 - 16000.0 * rear).min(self.rate as f32 * 0.45);
-                        let alpha =
-                            1.0 - (-std::f32::consts::TAU * cutoff / self.rate as f32).exp();
-                        v.filter[c] += alpha * (*sample - v.filter[c]);
-                        *sample = *sample * (1.0 - rear) + v.filter[c] * rear;
-                    } else {
-                        v.filter[c] = *sample;
-                    }
-                }
-                let sample = |c: usize| samples[c];
-                let routed = if let (None, OutputMode::Defined(rows)) =
-                    (v.params.position, v.params.output)
-                {
-                    std::array::from_fn(|c| {
-                        if v.clip.channels == 1 {
-                            sample(0) * volume * rows[0][c]
-                        } else {
-                            (sample(0) * rows[1][c] + sample(1) * rows[2][c]) * volume
-                        }
-                    })
-                } else {
-                    [sample(0) * gl, sample(1) * gr, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-                };
-                for (c, value) in routed.into_iter().enumerate() {
-                    self.dry[c] += value;
-                }
-                for (c, value) in speakers::stereo(&routed).into_iter().enumerate() {
-                    self.send[c] += value * v.params.reverb_send;
-                }
-                v.pos += v.clip.rate as f64 / self.rate as f64
-                    * v.params.rate.max(0.01) as f64
-                    * frequency;
-                v.wrap_loops();
-                v.gain.advance();
             }
-            let wet = self.reverb.process(self.send);
-            self.dry[0] += wet[0];
-            self.dry[1] += wet[1];
-            speakers::write(&self.dry, frame);
-            for sample in frame {
-                *sample = (*sample * self.master.current * self.headroom).clamp(-1.0, 1.0);
+            for (f, frame) in out.chunks_exact_mut(channels).enumerate() {
+                let wet = self.reverb.process(self.send[f]);
+                self.dry[f][0] += wet[0];
+                self.dry[f][1] += wet[1];
+                speakers::write(&self.dry[f], frame);
+                for sample in frame {
+                    *sample = (*sample * self.master.current * self.headroom).clamp(-1.0, 1.0);
+                }
+                self.master.advance();
             }
-            self.master.advance();
             for c in self.categories.values_mut() {
-                c.gain.advance();
+                c.gain.advance_by(frames as u64);
             }
         }
         self.voices.retain(|v| {
@@ -446,8 +535,9 @@ impl Audio {
             master: Ramp::new(1.0),
             headroom: 0.8,
             voice_limit: 64,
-            dry: [0.0; 8],
-            send: [0.0; 2],
+            dry: Box::new([[0.0; 8]; BUFFER_FRAMES as usize]),
+            send: Box::new([[0.0; 2]; BUFFER_FRAMES as usize]),
+            ranks: Vec::with_capacity(64),
             reverb: reverb::Bus::default(),
             cancelled: Vec::new(),
             categories: HashMap::new(),
@@ -599,6 +689,10 @@ impl Audio {
                 params.volume
             });
             gain.set(params.volume, params.fade_in, m.rate);
+            let required = m.voices.len() + 1;
+            let rank_len = m.ranks.len();
+            m.ranks.reserve(required.saturating_sub(rank_len));
+            let ramps = Vec::with_capacity(params.categories.len());
             m.voices.push(Voice {
                 id,
                 clip,
@@ -609,6 +703,8 @@ impl Audio {
                 repeats: 0,
                 filter: [0.0; 2],
                 virtualized: false,
+                ramps,
+                mix: VoiceMix::default(),
             });
         }
     }
@@ -748,6 +844,80 @@ mod tests {
             next_id: 2,
         }
     }
+    #[test]
+    fn cached_mixing_preserves_sample_envelopes_across_scratch_and_callback_boundaries() {
+        fn configured() -> Mixer {
+            let mut m = mixer(0.7);
+            m.voices[0].params.looping = true;
+            m.voices[0].params.categories = vec![7];
+            m.voices[0].params.position = Some(Vec3::new(0.0, -200.0, 0.0));
+            m.voices[0].gain.set(0.4, 0.025, 1000);
+            m.master.set(0.8, 0.03, 1000);
+            m.categories.insert(
+                7,
+                CategoryMix::new(
+                    CategoryState {
+                        volume: 0.3,
+                        ..Default::default()
+                    },
+                    0.015,
+                    1000,
+                ),
+            );
+            m
+        }
+        let mut whole = configured();
+        let mut split = configured();
+        let mut a = vec![0.0; 5000];
+        let mut b = a.clone();
+        whole.mix(&mut a, 2);
+        for chunk in b.chunks_mut(34) {
+            split.mix(chunk, 2);
+        }
+        assert!(a.iter().zip(&b).all(|(a, b)| (a - b).abs() < 1e-5));
+        assert!((whole.voices[0].pos - split.voices[0].pos).abs() < 1e-8);
+        assert_eq!(whole.voices[0].ramps.capacity(), 16);
+        assert_eq!(whole.ranks.capacity(), 64);
+    }
+    #[test]
+    #[ignore = "manual callback timing, no audio device required"]
+    fn callback_timing_with_64_positioned_voices() {
+        let mut m = mixer(1.0);
+        m.rate = 48000;
+        m.voices[0].params.looping = true;
+        m.voices[0].params.position = Some(Vec3::new(0.0, -200.0, 0.0));
+        m.voices[0].params.categories = vec![7];
+        m.categories.insert(
+            7,
+            CategoryMix::new(
+                CategoryState {
+                    volume: 0.5,
+                    ..Default::default()
+                },
+                0.0,
+                m.rate,
+            ),
+        );
+        for id in 2..=64 {
+            let mut v = m.voices[0].clone();
+            v.id = VoiceId(id);
+            m.voices.push(v);
+        }
+        let mut out = [0.0; 2048];
+        let start = std::time::Instant::now();
+        let mut worst = std::time::Duration::ZERO;
+        for _ in 0..500 {
+            let t = std::time::Instant::now();
+            m.mix(&mut out, 2);
+            worst = worst.max(t.elapsed());
+        }
+        eprintln!(
+            "64 voices / 1024 frames: average {:?}, worst {:?} (buffer duration 21.3 ms)",
+            start.elapsed() / 500,
+            worst
+        );
+    }
+
     #[test]
     fn duck_volume_updates_cannot_retarget_a_stopping_voice() {
         let mut a = audio_with_mixer(mixer(1.0));
@@ -978,6 +1148,8 @@ mod tests {
                 repeats: 0,
                 filter: [0.0; 2],
                 virtualized: false,
+                ramps: Vec::with_capacity(16),
+                mix: VoiceMix::default(),
                 params: VoiceParams {
                     rate: pitch as f32,
                     ..Default::default()
@@ -989,8 +1161,9 @@ mod tests {
             master: Ramp::new(1.0),
             headroom: 1.0,
             voice_limit: 64,
-            dry: [0.0; 8],
-            send: [0.0; 2],
+            dry: Box::new([[0.0; 8]; BUFFER_FRAMES as usize]),
+            send: Box::new([[0.0; 2]; BUFFER_FRAMES as usize]),
+            ranks: Vec::with_capacity(64),
             reverb: reverb::Bus::default(),
             cancelled: Vec::new(),
             categories: HashMap::new(),
