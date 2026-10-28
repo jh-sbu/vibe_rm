@@ -55,6 +55,7 @@ pub struct SoundDesc {
 pub struct OutputModel {
     pub positional: bool,
     pub reverb_send: f32,
+    pub output: crate::audio::OutputMode,
     pub falloff: Falloff,
 }
 
@@ -66,12 +67,14 @@ pub fn parse_output_model(nam1: Option<&[u8]>, anam: Option<&[u8]>) -> OutputMod
     let Some(a) = anam.filter(|a| a.len() >= 17) else {
         return OutputModel {
             positional: false,
+            output: crate::audio::OutputMode::Spatial,
             reverb_send: nam1.and_then(|n| n.get(3)).copied().unwrap_or(0) as f32 / 100.0,
             falloff: Falloff::new(0.0, 0.0),
         };
     };
     let f = |o: usize| f32::from_le_bytes(a[o..o + 4].try_into().unwrap());
     OutputModel {
+        output: crate::audio::OutputMode::Spatial,
         reverb_send: nam1.and_then(|n| n.get(3)).copied().unwrap_or(0) as f32 / 100.0,
         positional: nam1.is_none_or(|n| n.first().is_some_and(|f| f & 1 != 0)),
         falloff: Falloff {
@@ -84,7 +87,23 @@ pub fn parse_output_model(nam1: Option<&[u8]>, anam: Option<&[u8]>) -> OutputMod
 
 pub fn output_model(lo: &LoadOrder, id: FormId) -> Option<OutputModel> {
     let rec = lo.get(id).filter(|r| r.tag().0 == *b"SOPM")?;
-    Some(parse_output_model(rec.get(b"NAM1"), rec.get(b"ANAM")))
+    let mut model = parse_output_model(rec.get(b"NAM1"), rec.get(b"ANAM"));
+    model.output = parse_speakers(rec.get(b"MNAM"), rec.get(b"ONAM"));
+    Some(model)
+}
+
+pub fn parse_speakers(kind: Option<&[u8]>, rows: Option<&[u8]>) -> crate::audio::OutputMode {
+    if kind
+        .and_then(|d| d.get(..4))
+        .is_some_and(|d| u32::from_le_bytes(d.try_into().unwrap()) == 1)
+        && let Some(rows) = rows.filter(|d| d.len() >= 24)
+    {
+        crate::audio::OutputMode::Defined(std::array::from_fn(|row| {
+            std::array::from_fn(|col| (rows[row * 8 + col] as f32 / 100.0).clamp(0.0, 1.0))
+        }))
+    } else {
+        crate::audio::OutputMode::Spatial
+    }
 }
 
 /// Descriptor-free voices still carry the categories and model named by DOBJ.
@@ -113,6 +132,7 @@ impl OutputModel {
     pub fn apply(self, p: &mut crate::audio::VoiceParams) {
         p.falloff = self.falloff;
         p.reverb_send = self.reverb_send;
+        p.output = self.output;
         if !self.positional {
             p.position = None;
         }

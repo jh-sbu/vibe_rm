@@ -416,3 +416,4 @@ sounds, and lip sync if 9a stalls. Answer open questions in the
 - 5c: original bounded eight-delay reverb network, I3DL2 field mapping, SOPM sends, underwater override and two-network crossfades; impulse/decay tests.
 - 5d: weather/condition-filtered RDSA beds and independent one-shot checks, interior RDAT and exterior XCLR; chance/placement choices documented and scheduler tested.
 - 6a: eight-speaker internal dry bus and device-channel mapping/downmix, including mono/quad/5.1/stereo.
+- 6b: percentage ONAM mono/stereo rows, retained source channel metadata and per-speaker mixing tests.

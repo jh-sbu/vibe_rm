@@ -36,8 +36,13 @@ models (80 have an `ANAM`).
   Descriptor-free player/menu sounds fall back to POPM/P3OM/IOPM. The generic
   point playback path recognizes the player at the player's position; callers
   with an explicit descriptor model always keep it.
-- **Not used.** The type (HRTF or speaker output: `Stereo Rad` models'
-  stereo radius), the reverb send, rumble and the three channels of speaker
-  output values (`ONAM`): the mixer pans mono by the listener's right vector
-  as before. Descriptors without an output model keep a made-up 200 to 2000
-  with the default curve.
+- **Speaker scale and layouts.** The vanilla ONAM survey contains only
+  0/50/75/100, so levels are interpreted as percent amplitude. Mono sources
+  use the mono row; stereo sources use the two independent channel rows.
+  Original channels are retained from RIFF fmt data, including xWMA; unknown
+  non-RIFF formats default to stereo. cpal supplies a channel count, not
+  speaker labels: we assume L R C LFE RL RR BL BR for eight outputs, standard
+  quad/5.1 subsets otherwise, and use -3 dB center/surround downmix with LFE
+  dropped on stereo/mono. This layout assumption is not established by assets.
+- Rumble remains unused. Reverb send now reaches the network described in
+  `reverb.md`.

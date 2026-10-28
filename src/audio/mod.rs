@@ -282,9 +282,23 @@ impl Mixer {
                 let t = (v.pos - i as f64) as f32;
                 let sample =
                     |c| v.clip.samples[i * 2 + c] * (1.0 - t) + v.clip.samples[j * 2 + c] * t;
-                let stereo = [sample(0) * gl, sample(1) * gr];
-                for (c, value) in stereo.into_iter().enumerate() {
+                let routed = if let (None, OutputMode::Defined(rows)) =
+                    (v.params.position, v.params.output)
+                {
+                    std::array::from_fn(|c| {
+                        if v.clip.channels == 1 {
+                            sample(0) * volume * rows[0][c]
+                        } else {
+                            (sample(0) * rows[1][c] + sample(1) * rows[2][c]) * volume
+                        }
+                    })
+                } else {
+                    [sample(0) * gl, sample(1) * gr, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                };
+                for (c, value) in routed.into_iter().enumerate() {
                     self.dry[c] += value;
+                }
+                for (c, value) in speakers::stereo(&routed).into_iter().enumerate() {
                     self.send[c] += value * v.params.reverb_send;
                 }
                 v.pos += v.clip.rate as f64 / self.rate as f64
@@ -620,6 +634,25 @@ mod tests {
     }
 
     #[test]
+    fn defined_output_uses_mono_and_independent_stereo_rows() {
+        let mut m = mixer(1.0);
+        let mut rows = [[0.0; 8]; 3];
+        rows[0][2] = 1.0;
+        rows[1][0] = 0.5;
+        rows[2][1] = 0.75;
+        m.voices[0].params.output = OutputMode::Defined(rows);
+        let mut out = [0.0; 88];
+        m.mix(&mut out, 8);
+        assert!((out[82] - 0.01).abs() < 1e-6);
+        assert_eq!(out[80], 0.0);
+        let mut m = mixer(1.0);
+        Arc::get_mut(&mut m.voices[0].clip).unwrap().channels = 2;
+        m.voices[0].params.output = OutputMode::Defined(rows);
+        m.mix(&mut out, 8);
+        assert!((out[80] - 0.005).abs() < 1e-6);
+        assert!((out[81] - 0.0075).abs() < 1e-6);
+    }
+    #[test]
     fn finite_loop_regions_repeat_then_play_the_tail() {
         let mut m = mixer(1.0);
         m.voices[0].params.loop_region = Some(LoopRegion {
@@ -729,6 +762,7 @@ mod tests {
             // A ramp the mix can be read against: frame i holds i / 1000.
             samples: (0..100).flat_map(|i| [i as f32 / 1000.0; 2]).collect(),
             rate: 1000,
+            channels: 1,
         });
         Mixer {
             voices: vec![Voice {

@@ -7,6 +7,8 @@ pub struct Clip {
     /// Interleaved stereo samples.
     pub samples: Vec<f32>,
     pub rate: u32,
+    /// Original source channel count; samples remain interleaved stereo.
+    pub channels: u16,
 }
 
 impl Clip {
@@ -80,7 +82,11 @@ pub fn wav(d: &[u8]) -> Option<Clip> {
         }
         _ => return None,
     }
-    Some(Clip { samples, rate })
+    Some(Clip {
+        samples,
+        rate,
+        channels,
+    })
 }
 
 /// Strip the FUZ (lip sync + xWMA) container, returning the audio payload.
@@ -90,6 +96,24 @@ pub fn fuz_audio(d: &[u8]) -> Option<&[u8]> {
     }
     let lip = u32_at(d, 8) as usize;
     d.get(12 + lip..)
+}
+
+fn source_channels(d: &[u8]) -> u16 {
+    if d.len() < 12 || &d[..4] != b"RIFF" {
+        return 2;
+    }
+    let mut p = 12usize;
+    while p + 8 <= d.len() {
+        let size = u32_at(d, p + 4) as usize;
+        let Some(end) = p.checked_add(8).and_then(|p| p.checked_add(size)) else {
+            break;
+        };
+        if &d[p..p + 4] == b"fmt " && size >= 4 && end <= d.len() {
+            return u16_at(d, p + 10);
+        }
+        p = end.saturating_add(size & 1);
+    }
+    2
 }
 
 /// Decode anything FFmpeg understands (xWMA, ADPCM WAV, ...) via the `ffmpeg` executable.
@@ -130,7 +154,11 @@ pub fn ffmpeg(d: &[u8], rate: u32) -> Option<Clip> {
         .chunks_exact(4)
         .map(|c| f32::from_le_bytes(c.try_into().unwrap()))
         .collect();
-    Some(Clip { samples, rate })
+    Some(Clip {
+        samples,
+        rate,
+        channels: source_channels(d),
+    })
 }
 
 /// Decode a sound file by path/extension.
