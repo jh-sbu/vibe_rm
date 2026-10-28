@@ -214,3 +214,8 @@ Tamriel.4.4.-12.btt parses to completion with positions inside that block's
 world coordinates. Asset files were extracted only under /tmp, never refs or
 tracked paths. Atlas path is textures/terrain/<world>/trees/<world>treelod.dds.
 The host uses the documented crossed-card approach, not an SKSE extension.
+
+Installed Tamriel atlas UVs include tiny overshoots (for example approximately
+−0.00054 and 1.00098). The parser validates finite, ordered rectangles while
+preserving these values; restricting them to [0,1] incorrectly rejects vanilla
+assets. The synthetic parser test includes this border case.

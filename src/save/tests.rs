@@ -6206,3 +6206,112 @@ fn execution_payload() {
         .insert(FormId::NULL, full_execution());
     assert!(Snapshot::read(&s.write()).is_err());
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn journal_metadata_characters_autosave_preferences_and_thumbnails() {
+    let (fixture, mut a) = engine("journal");
+    a.settings = crate::settings::Settings::default();
+    a.sync_settings();
+    for (key, trigger) in [
+        ("bSaveOnRest", super::autosave::Trigger::Rest),
+        ("bSaveOnWait", super::autosave::Trigger::Wait),
+        ("bSaveOnTravel", super::autosave::Trigger::Travel),
+    ] {
+        a.set_setting(key, 0.).unwrap();
+        a.request_autosave(trigger);
+        assert!(a.save_requests.is_empty());
+        a.set_setting(key, 1.).unwrap();
+        a.request_autosave(trigger);
+        assert_eq!(a.save_requests.len(), 1);
+        a.save_requests.clear();
+    }
+    a.autosave.pause_minutes = Some(5);
+    a.last_save
+        .set(std::time::Instant::now() - std::time::Duration::from_secs(301));
+    a.menu = Some(crate::items::Menu::Journal);
+    a.check_pause_autosave();
+    assert_eq!(a.save_requests.len(), 1);
+    a.save_requests.clear();
+    a.check_pause_autosave();
+    assert!(a.save_requests.is_empty());
+    a.menu = None;
+    a.capture_save_thumbnail();
+    let path = fixture.0.join("journal.vrs");
+    a.save_game_to(&path).unwrap();
+    let prefix = super::file::SaveFile::read_prefix(std::fs::File::open(&path).unwrap()).unwrap();
+    let metadata = super::metadata::Metadata::decode(prefix.section(b"META").unwrap()).unwrap();
+    assert_eq!(metadata.character, a.scripts.character_id);
+    assert!(metadata.thumbnail.is_some());
+    assert_eq!(metadata.file_num, 1);
+    let old_number = metadata.file_num;
+    a.save_game_to(&path).unwrap();
+    let listing = super::save_list_in(&fixture.0, &["Save.esp".into()]);
+    assert_eq!(listing[0].file_num(), old_number);
+    let (_other, mut b) = engine("journal-restored");
+    assert_ne!(a.scripts.character_id, b.scripts.character_id);
+    b.load_game_from(&path).unwrap();
+    assert_eq!(a.scripts.character_id, b.scripts.character_id);
+    b.change_option(
+        crate::settings::SPECS
+            .iter()
+            .position(|s| s.key == "iDifficulty")
+            .unwrap(),
+        5.,
+    )
+    .unwrap();
+    assert_eq!(b.difficulty_multiplier(PLAYER_REF, false), 3.);
+    assert_eq!(b.difficulty_multiplier(ACTOR, false), 0.25);
+    assert_eq!(b.difficulty_multiplier(PLAYER_REF, true), 1.);
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic manual records only"]
+fn help_manual_uses_default_form_list_titles_and_keeps_button_tags() {
+    let (fixture, mut e) = engine("help");
+    let mut default = Vec::from(*b"HMPC");
+    default.extend_from_slice(&0x900u32.to_le_bytes());
+    let records = vec![
+        Node::top(
+            b"DOBJ",
+            vec![RecordBuilder::new(b"DOBJ", FormId(0x31)).field(b"DNAM", &default)],
+        ),
+        Node::top(
+            b"FLST",
+            vec![
+                RecordBuilder::new(b"FLST", FormId(0x900))
+                    .form(b"LNAM", FormId(0x901))
+                    .form(b"LNAM", FormId(0x902))
+                    .form(b"LNAM", FormId(0x901)),
+            ],
+        ),
+        Node::top(
+            b"MESG",
+            vec![
+                RecordBuilder::new(b"MESG", FormId(0x901))
+                    .zstring(b"FULL", "Jumping")
+                    .zstring(b"DESC", "Press [Jump]. Count <Global=HelpCounter>."),
+                RecordBuilder::new(b"MESG", FormId(0x902)).zstring(b"DESC", "No title"),
+            ],
+        ),
+        Node::top(
+            b"GLOB",
+            vec![
+                RecordBuilder::new(b"GLOB", FormId(0x903))
+                    .zstring(b"EDID", "HelpCounter")
+                    .field(b"FNAM", b"f")
+                    .field(b"FLTV", &42f32.to_le_bytes()),
+            ],
+        ),
+    ];
+    std::fs::write(
+        fixture.0.join("Manual.esp"),
+        write_plugin(0, &[], "test", "manual", 0x904, &records),
+    )
+    .unwrap();
+    e.lo = esp::LoadOrder::load(&fixture.0, &["Manual.esp".into()]).unwrap();
+    let topics = e.help_topics();
+    assert_eq!(topics.len(), 1);
+    assert_eq!(topics[0].title, "Jumping");
+    assert_eq!(topics[0].body, "Press [Jump]. Count 42.");
+}

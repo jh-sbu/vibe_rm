@@ -223,7 +223,10 @@ pub(crate) fn headless_engine(dir: &std::path::Path, plugin: &str) -> Engine {
     .unwrap();
     let renderer =
         crate::render::Renderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm, 16, 16);
-    Engine::new(lo, vfs, renderer, 12.0, None, 0)
+    let mut engine = Engine::new(lo, vfs, renderer, 12.0, None, 0);
+    engine.settings = crate::settings::Settings::default();
+    engine.save_directory = dir.join("saves");
+    engine
 }
 
 fn spell_uses(e: &Engine, spell: FormId) -> u64 {

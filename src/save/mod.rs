@@ -211,7 +211,7 @@ impl Engine {
     }
 
     pub fn new_save_name(&self) -> Result<String> {
-        let number = next_file_num_in(&save_dir())?;
+        let number = next_file_num_in(&self.save_directory)?;
         let meta = metadata::Metadata::capture(self);
         let suffix: String = format!("{} {}", meta.name, meta.location)
             .chars()
@@ -233,7 +233,7 @@ impl Engine {
             .iter()
             .map(|p| p.plugin.name().to_string())
             .collect();
-        save_list_in(&save_dir(), &plugins)
+        save_list_in(&self.save_directory, &plugins)
     }
 
     /// Write the game to `path` (to a temporary file first, so a crash
@@ -279,7 +279,7 @@ impl Engine {
         if self.saving_disabled() || self.player_dead() {
             bail!("saving is disabled");
         }
-        let Some(path) = save_path_in(&save_dir(), name) else {
+        let Some(path) = save_path_in(&self.save_directory, name) else {
             bail!("'{name}' isn't a save name (letters, digits, spaces, - and _)");
         };
         self.save_game_to(&path)?;
@@ -287,11 +287,11 @@ impl Engine {
     }
 
     pub fn delete_save(&self, name: &str) -> Result<()> {
-        delete_save_in(&save_dir(), name)
+        delete_save_in(&self.save_directory, name)
     }
 
     pub fn load_game(&mut self, name: &str) -> Result<()> {
-        let Some(path) = save_path_in(&save_dir(), name) else {
+        let Some(path) = save_path_in(&self.save_directory, name) else {
             bail!("'{name}' isn't a save name");
         };
         self.load_game_from(&path)
@@ -309,7 +309,8 @@ impl Engine {
     }
 
     pub(crate) fn flush_save_requests(&mut self) {
-        self.flush_save_requests_in(&save_dir());
+        let dir = self.save_directory.clone();
+        self.flush_save_requests_in(&dir);
     }
 
     fn flush_save_requests_in(&mut self, dir: &Path) {

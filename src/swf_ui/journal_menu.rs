@@ -337,12 +337,20 @@ impl JournalMenu {
                     self.system.lock().unwrap().audio = super::journal_system::audio_rows(engine);
                 }
             }
-            "SaveSettings" => match engine.save_settings() {
-                Ok(()) => {
-                    self.menu.callback("SettingsSaved", &[]);
+            "SaveControls" => {
+                let result = engine.input_map.read().unwrap().save();
+                self.menu.callback("SettingsSaved", &[]);
+                if let Err(error) = result {
+                    engine.debug_message_box(format!("Could not save controls: {error}"));
                 }
-                Err(e) => engine.debug_message_box(format!("Could not save settings: {e}")),
-            },
+            }
+            "SaveSettings" => {
+                let result = engine.save_settings();
+                self.menu.callback("SettingsSaved", &[]);
+                if let Err(error) = result {
+                    engine.debug_message_box(format!("Could not save settings: {error}"));
+                }
+            }
             "DeleteSave" => {
                 if let Some(i) = super::journal_system::index(call) {
                     let listing = self.system.lock().unwrap().visible.get(i).cloned();

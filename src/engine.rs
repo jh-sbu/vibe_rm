@@ -179,6 +179,7 @@ pub struct Engine {
     pub(crate) striking: Option<(FormId, Option<FormId>)>,
     /// Saves scripts asked for (`Game.RequestSave`), written next update:
     /// name, and whether it is an autosave.
+    pub save_directory: std::path::PathBuf,
     pub pending_save_load: Option<String>,
     pub(crate) last_save: std::cell::Cell<std::time::Instant>,
     pub(crate) last_pause_menu: Option<crate::items::Menu>,
@@ -569,6 +570,7 @@ impl Engine {
             autosave: Default::default(),
             save_thumbnail: None,
             pending_save_load: None,
+            save_directory: crate::save::save_dir(),
             advancing_skill: Default::default(),
             critically_hit: Default::default(),
             third_person: false,

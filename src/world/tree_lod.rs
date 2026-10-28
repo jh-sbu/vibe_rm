@@ -42,7 +42,7 @@ pub fn read_kinds(bytes: &[u8]) -> Result<Vec<Kind>> {
             || !height.is_finite()
             || width <= 0.
             || height <= 0.
-            || uv.iter().any(|v| !v.is_finite() || !(0. ..=1.).contains(v))
+            || uv.iter().any(|v| !v.is_finite())
             || uv[0] >= uv[2]
             || uv[1] >= uv[3]
         {
@@ -267,7 +267,7 @@ mod tests {
         let mut w = Writer::default();
         w.u32(1);
         w.u32(7);
-        for f in [100., 200., 0., 0., 0.5, 0.5] {
+        for f in [100., 200., -0.0005, 0., 0.5, 1.001] {
             w.f32(f);
         }
         w.u32(0);
