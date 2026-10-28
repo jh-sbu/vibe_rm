@@ -227,6 +227,8 @@ impl Engine {
                         && (self.is_alerted(a.ref_id)
                             || a.exec.search.is_some()
                             || a.exec.combat.as_ref().is_some_and(|c| !c.fleeing)
+                            || (!a.exec.run_completed()
+                                && (a.practising() || a.magic_practising()))
                             || package_drawn),
                 )
             })
@@ -652,6 +654,94 @@ fn idle_sheathe_due(elapsed: &mut f32, drawn: bool, wanted: bool, dt: f32) -> bo
 #[cfg(test)]
 mod readiness_tests {
     use super::idle_sheathe_due;
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records and graph only"]
+    fn readiness_keeps_practice_drawn_across_repeated_sheathing_deadlines() {
+        use crate::ai::{ActorRuntime, Goal, magic_practice::MagicGoal, practice::PracticeGoal};
+        use crate::world::{
+            behavior::{GraphAnim, ProjectRuntime},
+            skeleton::Skeleton,
+        };
+        use esp::{FormId, writer::write_plugin};
+        use glam::{Mat4, Vec3};
+        use havok::behavior::{Project, runtime::Shared};
+        use std::sync::Arc;
+
+        let dir = std::env::temp_dir().join(format!("vrm-readiness-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("Empty.esp"),
+            write_plugin(0, &[], "test", "readiness", 0x900, &[]),
+        )
+        .unwrap();
+        let mut e = crate::stats::action_tests::headless_engine(&dir, "Empty.esp");
+        let id = FormId(0x800);
+        let key = crate::render::CellKey::Interior(FormId(0x801));
+        let skeleton = Arc::new(Skeleton::default());
+        let project = Arc::new(ProjectRuntime {
+            shared: Shared::new(Arc::new(Project {
+                graphs: vec![],
+                character: None,
+            })),
+            dir: "meshes/actors/character".into(),
+            name: "synthetic".into(),
+            files: vec![],
+        });
+        let mut actor = ActorRuntime::new(
+            id,
+            FormId(0x802),
+            skeleton.clone(),
+            Mat4::IDENTITY,
+            vec![],
+            0.0,
+        );
+        actor.graph = Some(GraphAnim::new(project, "rig", false, &skeleton, 1));
+        actor.drawn = true;
+        e.actor_cells.insert(id, key);
+        e.cells.entry(key).or_default().actors.push(actor);
+        let mut goal = Goal::travel(Vec3::ZERO);
+        goal.practice = Some(PracticeGoal {
+            weapon: crate::ai::package::WeaponKind::Any,
+            targets: [None; 3],
+            aim_offsets: [Vec3::ZERO; 3],
+            triggers: [None; 3],
+            aim_only: false,
+            always_power_attack: false,
+            pause: (1.0, 1.0),
+            attacks: (1, 1),
+            never_end: true,
+            barrages: 0,
+            max_time: 0.0,
+        });
+        for magic in [false, true] {
+            if magic {
+                goal.practice = None;
+                goal.magic = Some(MagicGoal {
+                    spell: FormId(0x803),
+                    target: None,
+                    aim_offset: Vec3::ZERO,
+                    hold_when_blocked: false,
+                    cast_time: (1.0, 1.0),
+                    cooldown: (1.0, 1.0),
+                    casts: (1, 1),
+                    dual: false,
+                });
+            }
+            e.actor_mut(id).unwrap().exec.goal = Some(goal);
+            for _ in 0..120 {
+                e.update_weapon_readiness(0.1);
+                let actor = e.actor_ref(id).unwrap();
+                assert!(actor.drawn);
+                assert_eq!(actor.idle_weapon_time, 0.0, "magic: {magic}");
+            }
+        }
+        // Leaving the practice location allows normal idle sheathing again.
+        e.actor_mut(id).unwrap().exec.pos = Vec3::X * 5000.0;
+        e.update_weapon_readiness(1.0);
+        assert_eq!(e.actor_ref(id).unwrap().idle_weapon_time, 1.0);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     #[test]
     fn idle_draw_sheathes_after_two_seconds_but_alert_or_combat_resets_delay() {
         let mut elapsed = 0.0;
