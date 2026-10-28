@@ -303,6 +303,29 @@ impl JournalMenu {
     /// menus' shared ones.
     pub fn answer(&mut self, engine: &mut Engine, call: &GameCall, saved: &mut Saved) -> bool {
         match call.name.as_str() {
+            "SaveGame" => {
+                let index = super::journal_system::index(call).unwrap_or(0);
+                let name = if index == 0 {
+                    engine.new_save_name()
+                } else {
+                    self.system
+                        .lock()
+                        .unwrap()
+                        .visible
+                        .get(index - 1)
+                        .map(|s| s.name.clone())
+                        .ok_or_else(|| anyhow::anyhow!("save slot no longer exists"))
+                };
+                match name.and_then(|n| engine.save_game(&n)) {
+                    Ok(_) => self.system.lock().unwrap().all = engine.save_list(),
+                    Err(e) => engine.debug_message_box(format!("Could not save: {e:#}")),
+                }
+            }
+            "QuickSave" => {
+                engine.request_save(false);
+                engine.flush_save_requests();
+                self.system.lock().unwrap().all = engine.save_list();
+            }
             "PrepSaveGameScreenshot" => {
                 let index = match call.args.first() {
                     Some(Value::Number(n)) => *n as i32,

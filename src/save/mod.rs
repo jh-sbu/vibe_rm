@@ -248,7 +248,7 @@ impl Engine {
 
     /// Save as `name` in the saves directory.
     pub fn save_game(&self, name: &str) -> Result<PathBuf> {
-        if self.saving_disabled() {
+        if self.saving_disabled() || self.player_dead() {
             bail!("saving is disabled");
         }
         let Some(path) = save_path_in(&save_dir(), name) else {
@@ -299,6 +299,12 @@ impl Engine {
                 let msg = self.gmst_string("sAutoSaving");
                 self.scripts
                     .notify(msg.unwrap_or_else(|| "Autosaving...".into()));
+            }
+            if !auto {
+                self.scripts.notify(
+                    self.gmst_string("sQuickSaving")
+                        .unwrap_or_else(|| "Quicksaving...".into()),
+                );
             }
             let name = if auto {
                 name

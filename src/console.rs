@@ -848,6 +848,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             }
         }
         "save" | "savegame" => {
+            engine.capture_save_thumbnail();
             let name = if args.is_empty() { "console".to_string() } else { args.join(" ") };
             match engine.save_game(&name) {
                 Ok(path) => vec![format!("saved {}", path.display())],
