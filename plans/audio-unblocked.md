@@ -483,3 +483,22 @@ consistency, lazy cell discovery and spatial lookup across cell boundaries.
 The synthetic 64-positioned-voice timing test averaged 1.68 ms per 1024-frame
 callback on this machine (21.3 ms buffer duration); this is a local measurement,
 not a device listening/crackle test. Formatting and diff checks are clean.
+
+## Engineering notes moved from ambiguity notes
+
+Stored slider values replace UNAM, including a zero default. Descriptor and
+music/voice gains now carry only VNAM multipliers; the director applies the
+current menu gain to all existing/new descendants. Master preferences remain
+separate from 0.8 mixer headroom. Layout follows SkyrimPrefs AudioMenu, while
+storage belongs to this engine (not Skyrim's INI or save). Invalid/nonfinite
+values are rejected. Config is read at startup; explicit API/console changes
+write it atomically. Environment overrides are session-only effective values, kept separate from
+stored preferences even when another setting is saved. Record metadata and
+menu gains are initialized once and refreshed only by the settings API or
+when an audio device is attached.
+
+Acoustic metadata caches inverse transforms, bounds and volumes once per
+reference. Exterior listener-grid bins include every bin a discovered volume
+overlaps; oversized bounds use a separate fallback list. Neighbour discovery
+and shared cell-reference data are tracked in the follow-up below. These are
+engineering details, not decisions about undocumented Skyrim behavior.

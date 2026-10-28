@@ -25,8 +25,3 @@ Positioned one-shots choose an azimuth around the listener at the midpoint of
 their output-model distances; 2D output models ignore that position. Neither
 interval nor placement is publicly specified and needs listening comparison.
 
-Placed volumes are now discovered with cell streaming (plus a world's persistent
-cell), then cached. Inverse transforms, bounds and volumes are computed once.
-Exterior lookup uses listener-grid bins including every bin a discovered volume
-overlaps; oversized volumes use a bounded fallback list. Volumes in cells that
-have never streamed in are not queried, consistent with other placed audio.

@@ -44,15 +44,3 @@ timing. We choose -6 dB, 3 seconds out and 1 second in (the menu fade times).
 Only a player conversation counts, not scenes or INFO barks. Listening in SE
 could refine this choice. Script state multiplies with this policy.
 
-## Settings (8)
-
-Stored slider values replace UNAM, including a zero default. Descriptor and
-music/voice gains now carry only VNAM multipliers; the director applies the
-current menu gain to all existing/new descendants. Master preferences remain
-separate from 0.8 mixer headroom. Layout follows SkyrimPrefs AudioMenu, while
-storage belongs to this engine (not Skyrim's INI or save). Invalid/nonfinite
-values are rejected. Config is read at startup; explicit API/console changes
-write it atomically. Environment overrides are session-only effective values, kept separate from
-stored preferences even when another setting is saved. Record metadata and
-menu gains are initialized once and refreshed only by the settings API or
-when an audio device is attached.

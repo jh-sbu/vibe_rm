@@ -1,5 +1,5 @@
 //! Cached, asynchronous timing for engines that do not own an audio device.
-//! Asset reads and codec work both belong to the worker, never the simulation thread.
+//! The worker reads headers/packet tables; it never invokes codecs or allocates PCM.
 use std::{
     collections::{HashMap, HashSet},
     sync::{
@@ -46,7 +46,7 @@ impl Cache {
             let vfs = Arc::clone(vfs);
             self.worker = Worker::spawn(move |path| {
                 let bytes = vfs.read(path)?;
-                super::decode::decode(path, &bytes, 44100).map(|c| c.duration())
+                super::metadata::duration(path, &bytes)
             })
             .map_err(|e| log::warn!("audio duration worker: {e}"))
             .ok();

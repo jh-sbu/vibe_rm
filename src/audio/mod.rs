@@ -3,6 +3,7 @@
 pub mod decode;
 pub mod director;
 pub mod durations;
+pub mod metadata;
 pub mod regions;
 pub mod reverb;
 pub mod settings;
@@ -219,6 +220,7 @@ struct Voice {
     stopping: bool,
     repeats: u32,
     filter: [f32; 2],
+    filter_valid: bool,
     virtualized: bool,
     ramps: Vec<Ramp>,
     mix: VoiceMix,
@@ -435,6 +437,9 @@ impl Mixer {
                     continue;
                 }
                 if v.virtualized || v.mix.gain == 0.0 || v.mix.channels == 0 {
+                    if active > 0 {
+                        v.filter_valid = false;
+                    }
                     v.pos += v.mix.step * active as f64;
                     v.wrap_loops();
                     v.gain
@@ -454,10 +459,26 @@ impl Mixer {
                     } else {
                         i
                     };
+                    let mut gain = v.gain.current * v.mix.gain;
+                    for ramp in &mut v.ramps {
+                        gain *= ramp.current;
+                        ramp.advance();
+                    }
+                    if gain == 0.0 {
+                        v.filter_valid = false;
+                        v.pos += v.mix.step;
+                        v.wrap_loops();
+                        v.gain.advance();
+                        continue;
+                    }
                     let t = (v.pos - i as f64) as f32;
                     let mut samples: [f32; 2] = std::array::from_fn(|c| {
                         v.clip.samples[i * 2 + c] * (1.0 - t) + v.clip.samples[j * 2 + c] * t
                     });
+                    if !v.filter_valid {
+                        v.filter = samples;
+                        v.filter_valid = true;
+                    }
                     for (c, sample) in samples.iter_mut().enumerate() {
                         if v.mix.rear > 0.0 {
                             v.filter[c] += v.mix.alpha * (*sample - v.filter[c]);
@@ -465,11 +486,6 @@ impl Mixer {
                         } else {
                             v.filter[c] = *sample;
                         }
-                    }
-                    let mut gain = v.gain.current * v.mix.gain;
-                    for ramp in &mut v.ramps {
-                        gain *= ramp.current;
-                        ramp.advance();
                     }
                     let l = samples[0] * gain;
                     let r = samples[1] * gain;
@@ -702,6 +718,7 @@ impl Audio {
                 stopping: false,
                 repeats: 0,
                 filter: [0.0; 2],
+                filter_valid: false,
                 virtualized: false,
                 ramps,
                 mix: VoiceMix::default(),
@@ -844,6 +861,54 @@ mod tests {
             next_id: 2,
         }
     }
+    #[test]
+    fn skipped_voices_seed_the_rear_filter_from_current_audio_on_return() {
+        for cause in 0..3 {
+            let mut m = mixer(1.0);
+            m.voices[0].params.looping = true;
+            m.voices[0].params.position = Some(Vec3::new(0.0, -100.0, 0.0));
+            m.voices[0].params.falloff = Falloff::new(0.0, 1000.0);
+            Arc::get_mut(&mut m.voices[0].clip)
+                .unwrap()
+                .samples
+                .fill(0.5);
+            m.voices[0].filter = [-0.9; 2];
+            m.voices[0].filter_valid = true;
+            match cause {
+                0 => {
+                    m.voices[0].params.categories = vec![7];
+                    m.categories.insert(
+                        7,
+                        CategoryMix::new(
+                            CategoryState {
+                                muted: true,
+                                ..Default::default()
+                            },
+                            0.0,
+                            m.rate,
+                        ),
+                    );
+                }
+                1 => m.voices[0].params.position = Some(Vec3::new(0.0, -2000.0, 0.0)),
+                _ => m.voice_limit = 0,
+            }
+            let mut out = [0.0; 20];
+            m.mix(&mut out, 2);
+            assert!(!m.voices[0].filter_valid);
+            assert!(out.iter().all(|v| *v == 0.0));
+            m.categories.clear();
+            m.voices[0].params.position = Some(Vec3::new(0.0, -100.0, 0.0));
+            m.voice_limit = 64;
+            m.mix(&mut out, 2);
+            assert_eq!(m.voices[0].filter, [0.5; 2]);
+            assert!(
+                (out[0] - 0.5 * m.voices[0].mix.route[0][0]).abs() < 1e-6,
+                "cause {cause}: stale filter contribution"
+            );
+            assert!((out[0] - out[2]).abs() < 1e-6);
+        }
+    }
+
     #[test]
     fn cached_mixing_preserves_sample_envelopes_across_scratch_and_callback_boundaries() {
         fn configured() -> Mixer {
@@ -1147,6 +1212,7 @@ mod tests {
                 stopping: false,
                 repeats: 0,
                 filter: [0.0; 2],
+                filter_valid: false,
                 virtualized: false,
                 ramps: Vec::with_capacity(16),
                 mix: VoiceMix::default(),

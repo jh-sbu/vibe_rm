@@ -13,3 +13,10 @@ sample time (including rate and loop regions), then return when a slot frees.
 Paused voices hold time and do not consume audible slots. Descriptor-free
 music and dialogue are exempt. The original cap, exact priority direction,
 and virtualization/fade policy have not been measured in SE.
+
+Weather beds are **not exempt**: they keep their descriptors' priorities (wind
+commonly 192) and can become virtual when higher-priority sounds fill the
+budget. Their clocks keep advancing and they return when a slot frees. The
+public SNDR priority documentation and asset survey do not establish a weather
+exemption; applying the same budget is our provisional choice, not observed
+SE behavior. The earlier unconditional weather exemption is no longer used.
