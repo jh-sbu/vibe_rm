@@ -66,3 +66,13 @@ The SWF supplies a normalized slider and launcher preferences fGamma=1.0,
 without endpoint mappings. Use a linear 0.5–1.5 range centered at 1.0. Apply
 pow(display_color,1/gamma) after image-space tone/contrast mapping, before
 the explicit fade-to-black overlay, preserving a black loading/sleep fade.
+
+## Distance slider mappings and transition
+
+Installed INIs establish defaults but not each normalized slider's endpoints.
+Until SE values arrive, use linear ranges in settings.rs SPECS: bound-radius
+actor/item/object multipliers 1–15; grass 0–7000; shadow 0–16000; light
+0–7000; specularity 0–4000; tree switch 0–9999999. Fade ordinary geometry
+over the final 20 percent using stable screen-door coverage, then cull. This
+transition width and endpoint policy are host choices, not established SE
+shader behavior. Defaults retain the documented INI values.

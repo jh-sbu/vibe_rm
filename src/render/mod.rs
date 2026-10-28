@@ -2,6 +2,7 @@
 
 pub mod dds;
 pub mod decal;
+pub mod distance;
 pub mod membrane;
 pub mod model;
 pub mod particles;
@@ -126,6 +127,7 @@ struct SkinInstanceData {
     skin_tone: [f32; 4],
     /// How far toward its thin models it's drawn: 1 - [`ActorInstance::weight`].
     thin: f32,
+    fade: f32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -1089,6 +1091,7 @@ pub struct Renderer {
     pub queue: wgpu::Queue,
     pub color_format: wgpu::TextureFormat,
     pub gamma: f32,
+    pub distances: distance::Distances,
     pub width: u32,
     pub height: u32,
     depth_tex: wgpu::Texture,
@@ -1398,6 +1401,7 @@ impl Renderer {
             queue,
             color_format,
             gamma: 1.0,
+            distances: Default::default(),
             width,
             height,
             depth_tex,
@@ -1581,7 +1585,7 @@ impl Renderer {
             11 => Uint32x4, 12 => Float32x4, 6 => Float32x3, 7 => Float32x3
         ];
         let skin_inst_attrs = wgpu::vertex_attr_array![
-            13 => Uint32, 14 => Uint32x4, 15 => Float32x4, 10 => Float32
+            13 => Uint32, 14 => Uint32x4, 15 => Float32x4, 10 => Float32, 16 => Float32
         ];
         let grass_attrs = wgpu::vertex_attr_array![6 => Float32x4, 7 => Float32x4, 8 => Float32x4, 9 => Float32x4];
         let static_buffers = [
@@ -2335,7 +2339,10 @@ impl Renderer {
         // Rigid attachments of actors (weapons, etc.) go through the static path.
         for actor in scene.actors().chain(&scene.membranes) {
             let (center, radius) = actor.bounds();
-            if actor.shadow_only || !frustum.sphere_visible(center, radius) {
+            let fade = self
+                .distances
+                .actor(center.distance(camera.position), radius);
+            if fade <= 0. || actor.shadow_only || !frustum.sphere_visible(center, radius) {
                 continue;
             }
             for (model, bone, local) in actor.attachments.iter().chain(&actor.equipment) {
@@ -2346,7 +2353,7 @@ impl Renderer {
                     model: xf.to_cols_array_2d(),
                     lights: pack_lights(actor.lights),
                     tint: [1.0; 4],
-                    params: [1.0, 0.0, 0.0, 0.0],
+                    params: [1.0, 1.0 - fade, 0.0, 0.0],
                 };
                 for (pi, part) in model.parts.iter().enumerate() {
                     if part.material.key.blend == BlendMode::Opaque {
@@ -2372,7 +2379,10 @@ impl Renderer {
         let mut shadow_skin: Vec<(&GpuSkinnedPart, u32, Vec3, f32)> = Vec::new();
         for actor in scene.actors().chain(&scene.membranes) {
             let (center, radius) = actor.bounds();
-            let visible = !actor.shadow_only && frustum.sphere_visible(center, radius);
+            let fade = self
+                .distances
+                .actor(center.distance(camera.position), radius);
+            let visible = fade > 0. && !actor.shadow_only && frustum.sphere_visible(center, radius);
             if !visible {
                 stats.culled += 1;
                 if !shadowed {
@@ -2403,6 +2413,7 @@ impl Renderer {
                         .skin_tone
                         .map_or([0.0; 4], |c| c.extend(1.0).to_array()),
                     thin: 1.0 - actor.weight.clamp(0.0, 1.0),
+                    fade,
                 });
                 let i = skin_inst.len() as u32 - 1;
                 if visible {

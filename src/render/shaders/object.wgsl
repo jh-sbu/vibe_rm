@@ -131,6 +131,7 @@ struct VOut {
     @location(12) fade: f32,
     // An actor's skin tone for skin-tint shapes (alpha 1), else 0.
     @location(13) @interpolate(flat) skin_tone: vec4<f32>,
+    @location(14) distance_fade:f32,
 };
 
 // A billboard's axes in the world.
@@ -194,6 +195,7 @@ fn vs_main(v: VIn) -> VOut {
     o.uv = v.uv * mat.uv.zw + mat.uv.xy;
     o.color = v.color;
     o.light_idx = v.light_idx;
+    o.distance_fade=1.0-v.params.y;
     o.tint = v.tint;
     o.fog = v.params.x;
     o.fade = 1.0;
@@ -261,6 +263,7 @@ fn vs_grass(v: GrassIn) -> VOut {
     o.uv = v.uv * mat.uv.zw + mat.uv.xy;
     o.color = v.color;
     o.light_idx = vec4<u32>(0xFFFFFFFFu);
+    o.distance_fade=1.0;
     o.tint = vec4<f32>(v.tint_wave.rgb, 1.0);
     o.fog = 1.0;
     let dist = distance(world, frame.cam_pos.xyz);
@@ -284,6 +287,7 @@ struct SkinIn {
     @location(6) thin_pos: vec3<f32>,
     @location(7) thin_normal: vec3<f32>,
     @location(10) thin: f32,
+    @location(16) fade:f32,
 };
 
 @vertex
@@ -307,6 +311,7 @@ fn vs_skinned(v: SkinIn) -> VOut {
     o.mx = m[0].xyz;
     o.my = m[1].xyz;
     o.mz = m[2].xyz;
+    o.distance_fade=v.fade;
     o.tint = vec4<f32>(1.0);
     o.fog = 1.0;
     o.fade = 1.0;
@@ -372,6 +377,11 @@ fn soft_fade(px: vec4<f32>, world_pos: vec3<f32>, range: f32) -> f32 {
 
 @fragment
 fn fs_main(in: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+    // Stable screen-door coverage also works with opaque depth-writing parts.
+    if (in.distance_fade < 1.0) {
+        let coverage=fract(dot(floor(in.clip.xy),vec2<f32>(0.754877666,0.569840296)));
+        if (coverage >= in.distance_fade) {discard;}
+    }
     if (mat.flags.z == 2u) {
         let c = frame.lod_clip;
         if (in.world_pos.x > c.x && in.world_pos.x < c.z && in.world_pos.y > c.y && in.world_pos.y < c.w) {
