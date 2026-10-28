@@ -1561,6 +1561,7 @@ impl MessageBoxMenu {
 /// What the HUD was last told.
 #[derive(Default)]
 struct Sent {
+    input_generation: Option<u64>,
     opacity: Option<f32>,
     crosshair_enabled: Option<bool>,
     health: Option<f32>,
@@ -1649,6 +1650,17 @@ impl Hud {
     }
 
     fn update(&mut self, engine: &Engine) {
+        let map = engine.input_map.read().unwrap();
+        if self.sent.input_generation != Some(map.generation) {
+            let art = map
+                .first("Activate", 0)
+                .and_then(keyboard_art)
+                .or_else(|| map.first("Activate", 1).and_then(mouse_art))
+                .unwrap_or_else(|| "UnknownKey".into());
+            self.call("RefreshActivateButtonArt", &[text(&art)]);
+            self.sent.input_generation = Some(map.generation);
+        }
+        drop(map);
         let opacity = engine.settings.get("fHUDOpacity");
         if self.sent.opacity != Some(opacity) {
             self.menu.set(&format!("{H}._alpha"), num(opacity * 100.));

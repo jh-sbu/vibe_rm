@@ -180,3 +180,11 @@ Audio order: installed SkyrimPrefs.ini AudioMenu uID0–3 identify SFX, FST,
 VOCGeneral, MUS. Use Effects, Footsteps, Voice, Music in that order after
 Master, followed by additional in-menu categories in FormID order. The movie
 itself supplies Master only.
+
+## PC controls device boundary
+
+The host reads all three controlmap columns and remapping flags. PC mappings
+list events with keyboard or mouse remapping enabled; gamepad assignments and
+flags survive custom-file writes and keyboard/mouse changes. Gamepad-only rows,
+360 Controller and Vibration remain hidden until actual gamepad input exists.
+The HUD refreshes activation art when the shared map generation changes.
