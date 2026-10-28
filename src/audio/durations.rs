@@ -4,7 +4,7 @@ use std::{
     collections::{HashMap, HashSet},
     sync::{
         Arc,
-        mpsc::{self, Receiver, Sender},
+        mpsc::{self, Receiver, Sender, TryRecvError},
     },
 };
 
@@ -58,6 +58,7 @@ impl Cache {
         {
             self.pending.insert(path.clone());
         } else {
+            self.worker_failed();
             self.values.insert(path.clone(), None);
         }
         path
@@ -66,11 +67,22 @@ impl Cache {
         self.pending.remove(&path);
         self.values.insert(path, duration);
     }
+    fn worker_failed(&mut self) {
+        self.worker = None;
+        for path in self.pending.drain() {
+            self.values.insert(path, None);
+        }
+    }
     pub fn poll(&mut self) {
-        while let Some((path, duration)) =
-            self.worker.as_ref().and_then(|w| w.results.try_recv().ok())
-        {
-            self.finish(path, duration);
+        while let Some(worker) = self.worker.as_ref() {
+            match worker.results.try_recv() {
+                Ok((path, duration)) => self.finish(path, duration),
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    self.worker_failed();
+                    break;
+                }
+            }
         }
     }
     /// None means pending; Some(None) is a cached missing/undecodable asset.
@@ -82,6 +94,56 @@ impl Cache {
 mod tests {
     use super::*;
     use std::time::Duration;
+    #[test]
+    fn worker_disconnect_resolves_every_pending_path_and_allows_restart() {
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let worker = Worker::spawn(move |_| {
+            started_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+            panic!("synthetic corrupt asset");
+        })
+        .unwrap();
+        let mut cache = Cache {
+            worker: Some(worker),
+            ..Default::default()
+        };
+        cache.values.insert("completed.wav".into(), Some(3.0));
+        let vfs = Arc::new(vfs::Vfs::new(
+            std::env::temp_dir().join("vrm-unused-duration-source"),
+            &[],
+        ));
+        cache.request(&vfs, "bad.xwm");
+        started_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        cache.request(&vfs, "queued.xwm");
+        release_tx.send(()).unwrap();
+        assert!(matches!(
+            cache
+                .worker
+                .as_ref()
+                .unwrap()
+                .results
+                .recv_timeout(Duration::from_secs(2)),
+            Err(mpsc::RecvTimeoutError::Disconnected)
+        ));
+        cache.poll();
+        assert!(cache.worker.is_none());
+        assert!(cache.pending.is_empty());
+        assert_eq!(cache.get("bad.xwm"), Some(None));
+        assert_eq!(cache.get("queued.xwm"), Some(None));
+        assert_eq!(cache.get("completed.wav"), Some(Some(3.0)));
+        cache.request(&vfs, "new.wav");
+        assert!(cache.worker.is_some());
+        let result = cache
+            .worker
+            .as_ref()
+            .unwrap()
+            .results
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap();
+        cache.finish(result.0, result.1);
+        assert_eq!(cache.get("new.wav"), Some(None));
+    }
     #[test]
     fn slow_timing_work_is_nonblocking_deduplicated_and_cached() {
         let (started_tx, started_rx) = mpsc::channel();
