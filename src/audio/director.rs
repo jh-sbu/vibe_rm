@@ -48,6 +48,7 @@ pub struct Director {
     pub inputs: Inputs,
     pub targets: HashMap<u32, Target>,
     pub submerged_categories: Vec<u32>,
+    pub regions: super::regions::Schedule,
     pub underwater_reverb: Option<esp::FormId>,
     pub loops: Vec<esp::FormId>,
     pub music_commands: Vec<MusicCommand>,
@@ -61,6 +62,7 @@ impl Director {
             targets: HashMap::new(),
             submerged_categories: Vec::new(),
             underwater_reverb: None,
+            regions: Default::default(),
             loops: Vec::new(),
             music_commands: Vec::new(),
             reverb: None,
@@ -96,6 +98,7 @@ impl Director {
         .or_else(|| self.defaults.get(b"RVBT"));
         self.inputs = inputs;
         self.loops.clear();
+        self.loops.extend_from_slice(&self.regions.beds);
         if let Some(ambient) = inputs.ambient {
             self.loops.push(ambient);
         }
@@ -209,6 +212,40 @@ impl crate::engine::Engine {
                 .water_level(self.camera.position)
                 .is_some_and(|h| self.camera.position.z < h),
         };
+        let region_ids = if matches!(self.location, crate::engine::Location::Interior(_)) {
+            input.region.into_iter().collect()
+        } else {
+            self.audio_cell()
+                .map_or_else(Vec::new, |cell| self.cell_regions(cell))
+        };
+        let ctx = crate::condition::Context {
+            subject: Some(crate::engine::PLAYER_REF),
+            ..Default::default()
+        };
+        let region_sounds: Vec<_> = region_ids
+            .iter()
+            .filter_map(|id| self.audio_spaces.regions.get(id))
+            .flatten()
+            .copied()
+            .filter(|s| {
+                self.lo.get(s.id).is_some_and(|r| {
+                    crate::condition::evaluate(self, &crate::condition::parse_all(&r), ctx)
+                })
+            })
+            .collect();
+        let class = self
+            .weather
+            .current
+            .as_ref()
+            .map_or(0, |w| w.classification());
+        let seed = self.rand();
+        self.audio_director.regions.update(
+            &region_sounds,
+            class,
+            self.scripts.wall_time,
+            input.menu,
+            seed,
+        );
         self.audio_director
             .update(input, &self.script_sounds.categories);
         for command in &self.audio_director.music_commands {
@@ -220,6 +257,14 @@ impl crate::engine::Engine {
             }
         }
 
+        for sound in self.audio_director.regions.shots.clone() {
+            let angle = crate::world::sound::unit(self.rand()) * std::f32::consts::TAU;
+            let radius = self
+                .sound_desc(sound)
+                .map_or(500.0, |d| (d.falloff.min + d.falloff.max) * 0.5);
+            let at = self.camera.position + glam::Vec3::new(angle.cos(), angle.sin(), 0.0) * radius;
+            self.play_sound(sound, at);
+        }
         let wanted = self.audio_director.loops.clone();
         self.ambient_voices.retain(|sound, voice| {
             if wanted.contains(sound) {

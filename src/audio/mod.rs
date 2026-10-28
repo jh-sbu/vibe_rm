@@ -2,6 +2,7 @@
 
 pub mod decode;
 pub mod director;
+pub mod regions;
 pub mod reverb;
 pub mod spaces;
 

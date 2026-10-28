@@ -5,6 +5,11 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Acoustic spaces (`plans/audio-unblocked.md`, 5): oriented XPRM volumes, cell
+  XCAS, SNAM/RDAT ambience, weather-filtered region beds/one-shots, SOPM sends
+  and an original I3DL2 reverb approximation with bounded crossfades. Evidence
+  and listening choices: `research/audio/acoustic-spaces.md`,
+  `known_ambiguities/acoustic-spaces.md`, `known_ambiguities/reverb.md`.
 - Music (`plans/audio-unblocked.md`, 4): incoming fades, ducking stack, track
   cycles, finite loops, timed silence, palette layers, cue/outro transitions and
   default combat/death/level-up/success types. `music-survey` and listening

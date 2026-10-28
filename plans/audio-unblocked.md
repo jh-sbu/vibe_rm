@@ -414,3 +414,4 @@ sounds, and lip sync if 9a stalls. Answer open questions in the
 - 5a: acoustic survey and cached oriented marker selection, XCAS interiors/RVBT fallback; corrected placed bounds to XPRM from asset evidence.
 - 5b: SNAM acoustic beds crossfade over 1.5 s; interior RDAT region reaches the director.
 - 5c: original bounded eight-delay reverb network, I3DL2 field mapping, SOPM sends, underwater override and two-network crossfades; impulse/decay tests.
+- 5d: weather/condition-filtered RDSA beds and independent one-shot checks, interior RDAT and exterior XCLR; chance/placement choices documented and scheduler tested.

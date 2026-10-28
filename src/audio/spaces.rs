@@ -32,10 +32,14 @@ impl Marker {
 pub struct Spaces {
     pub records: HashMap<FormId, Space>,
     pub markers: Vec<Marker>,
+    pub regions: HashMap<FormId, Vec<super::regions::Sound>>,
 }
 impl Spaces {
     pub fn load(lo: &LoadOrder) -> Self {
-        let mut result = Self::default();
+        let mut result = Self {
+            regions: super::regions::load(lo),
+            ..Default::default()
+        };
         for &id in lo.ids_of_type(b"ASPC") {
             let Some(r) = lo.get(id) else { continue };
             let fid = |tag| {
