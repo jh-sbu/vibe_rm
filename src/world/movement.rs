@@ -12,12 +12,14 @@ pub fn direction(heading: f32, velocity: glam::Vec3) -> Option<f32> {
         .then(|| ((velocity.x.atan2(velocity.y) - heading) / std::f32::consts::TAU).rem_euclid(1.0))
 }
 
-/// Forward speeds (units per second) and turn rates (radians per second) of a
+/// Directional speeds (units per second) and turn rates (radians per second) of a
 /// movement type (`SPED`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MoveSpeeds {
     pub walk: f32,
     pub run: f32,
+    pub back_walk: f32,
+    pub back_run: f32,
     /// Turning in place while walking / running, and turning on the move.
     pub turn_walk: f32,
     pub turn_run: f32,
@@ -43,6 +45,8 @@ pub fn movement_types(lo: &LoadOrder) -> HashMap<String, MoveSpeeds> {
             MoveSpeeds {
                 walk: f(4),
                 run: f(5),
+                back_walk: f(6),
+                back_run: f(7),
                 turn_walk: f(8),
                 turn_run: f(9),
                 turn_moving: f(10),

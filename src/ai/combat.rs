@@ -1117,7 +1117,26 @@ impl ActorRuntime {
         let facing = face.map_or(d, |p| (p - pos).truncate());
         let remaining = self.turn_towards(facing.normalize_or_zero().extend(0.0), dt);
         let speed = if face.is_some() {
-            run
+            // A retreat keeps looking at the target; its velocity can be
+            // backwards even though the requested gait is a run.
+            let forward = Vec3::new(self.exec.heading.sin(), self.exec.heading.cos(), 0.0);
+            let moves = if self.swimming {
+                self.swim_moves
+            } else {
+                self.moves
+            };
+            if d.extend(0.0).dot(forward) < 0.0 {
+                moves.map_or(run, |(m, _)| {
+                    let speed = if run > m.walk * self.armor_speed_mult {
+                        m.back_run
+                    } else {
+                        m.back_walk
+                    };
+                    run.min(speed * self.armor_speed_mult)
+                })
+            } else {
+                run
+            }
         } else {
             run * remaining.cos().max(0.0).powi(2)
         };
@@ -1481,11 +1500,13 @@ impl ActorRuntime {
         let cooldown = c.cooldown;
         let target_guarding = c.target_guarding;
         let bash = c.bash.filter(|b| dist <= b.reach * self.scale);
-        let off = self.turn_towards(to.normalize_or_zero(), dt).abs();
         if cooldown > 0.0 {
-            self.combat_maneuver(dt, w, target, false);
+            if !self.combat_maneuver(dt, w, target, false) {
+                self.turn_towards(to.normalize_or_zero(), dt);
+            }
             return None;
         }
+        let off = self.turn_towards(to.normalize_or_zero(), dt).abs();
         if off > 0.35 || attacks.is_empty() {
             return None;
         }

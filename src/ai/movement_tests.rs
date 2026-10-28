@@ -15,6 +15,8 @@ fn actor() -> ActorRuntime {
     let movement = |walk, run| MoveSpeeds {
         walk,
         run,
+        back_walk: walk * 0.6,
+        back_run: run * 0.6,
         turn_walk: 4.0,
         turn_run: 4.0,
         turn_moving: 4.0,
@@ -282,6 +284,39 @@ fn an_archer_backs_off_facing_its_target() {
         crate::world::movement::direction(a.exec.heading, velocity),
         Some(0.5)
     );
+    assert!((velocity.length() / 0.1 - 180.0).abs() < 0.01);
+    assert_eq!(a.speed, 180.0);
+
+    a.armor_speed_mult = 0.5;
+    let before = a.exec.pos;
+    with_world(|w| {
+        a.chase_facing(
+            0.1,
+            w,
+            -Vec3::Y * 600.0,
+            a.run_speed(),
+            Some(Vec3::Y * 100.0),
+        );
+    });
+    assert!(((a.exec.pos - before).length() / 0.1 - 90.0).abs() < 0.01);
+}
+
+#[test]
+fn melee_circling_turns_only_once_per_combat_step() {
+    for maneuver in [0.0, 3.0] {
+        let mut a = actor();
+        Arc::make_mut(&mut a.stats).unarmed_reach = 200.0;
+        a.exec.heading = -1.0;
+        a.exec.combat = Some(combat::Combat::new(FormId(3)));
+        let c = a.exec.combat.as_mut().unwrap();
+        c.cooldown = 2.0;
+        c.maneuver = maneuver;
+        let rate = a.turn_rate();
+        with_world(|w| {
+            a.combat_step(0.05, w, Vec3::Y * 100.0);
+        });
+        assert!((a.exec.heading + 1.0 - rate * 0.05).abs() < 1e-5);
+    }
 }
 
 #[test]
@@ -313,6 +348,8 @@ fn a_charge_stops_sprinting_in_reach_and_a_flee_never_keeps_a_charge_stance() {
         MoveSpeeds {
             walk: 500.0,
             run: 500.0,
+            back_walk: 300.0,
+            back_run: 300.0,
             turn_walk: 4.0,
             turn_run: 4.0,
             turn_moving: 4.0,
