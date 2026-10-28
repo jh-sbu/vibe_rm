@@ -198,6 +198,10 @@ mod listing_tests {
         std::fs::write(dir.join("bad.vrs"), bad).unwrap();
         std::fs::write(dir.join("Save 7 - old.vrs"), b"damaged").unwrap();
         assert_eq!(crate::save::next_file_num_in(&dir).unwrap(), 8);
+        assert_eq!(crate::save::next_autosave_name_in(&dir), "autosave1");
+        std::fs::write(dir.join("autosave1.vrs"), b"slot").unwrap();
+        assert_eq!(crate::save::next_autosave_name_in(&dir), "autosave2");
+        std::fs::remove_file(dir.join("autosave1.vrs")).unwrap();
         let rows = save_list_in(&dir, &plugins);
         assert_eq!(rows.len(), 4);
         assert!(rows.iter().find(|s| s.name == "bad").unwrap().corrupt);

@@ -462,3 +462,6 @@ New saves lead with optional versioned META, independent of the snapshot layout.
 It records player/race, level, location, date, simulation play time, Unix write
 time and an order-sensitive plugin hash. Old containers still load without it.
 The native format is this engine’s choice; it does not claim ESS compatibility.
+
+The System page supersedes the single-slot autosave policy above: native
+autosaves now rotate autosave1–autosave3, preserving a legacy autosave.vrs.

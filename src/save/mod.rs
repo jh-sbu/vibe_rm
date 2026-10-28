@@ -173,6 +173,17 @@ fn next_file_num_in(dir: &Path) -> Result<u32> {
     highest.checked_add(1).context("save numbering exhausted")
 }
 
+fn next_autosave_name_in(dir: &Path) -> String {
+    (1..=3)
+        .map(|i| format!("autosave{i}"))
+        .min_by_key(|name| {
+            std::fs::metadata(dir.join(format!("{name}.vrs")))
+                .and_then(|m| m.modified())
+                .ok()
+        })
+        .unwrap()
+}
+
 fn delete_save_in(dir: &Path, name: &str) -> Result<()> {
     let path = save_path_in(dir, name).context("invalid save name")?;
     std::fs::remove_file(&path).with_context(|| format!("deleting {}", path.display()))
@@ -301,7 +312,7 @@ impl Engine {
         if !self.save_requests.is_empty() && !self.menu_up() {
             self.capture_save_thumbnail();
         }
-        for (name, auto) in std::mem::take(&mut self.save_requests) {
+        for (_name, auto) in std::mem::take(&mut self.save_requests) {
             if self.player_dead() || self.saving_disabled() {
                 let msg = self.gmst_string("sCantSaveNow");
                 self.scripts
@@ -320,7 +331,7 @@ impl Engine {
                 );
             }
             let name = if auto {
-                name
+                next_autosave_name_in(dir)
             } else {
                 match next_quicksave_name_in(dir) {
                     Ok(name) => name,

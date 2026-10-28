@@ -18,3 +18,10 @@ have bSaveOnPause=0 and fAutosaveEveryXMins=15. Until direct SE observation,
 opening either the journal or tween after the interval requests an autosave.
 Use monotonic elapsed real time since any successful save, including time in
 menus, reset on load. Repeated frames of an open menu do not repeat requests.
+
+## Autosave rotation
+
+The plan reports SE players seeing Autosave1–Autosave3; the asset/INI contract
+does not specify retention. Choose three native slots, autosave1–autosave3,
+using an empty slot first then replacing the least recently modified. Preserve
+legacy autosave.vrs and manual/quicksave slots. Exact SE count awaits observation.

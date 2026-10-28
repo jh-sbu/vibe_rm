@@ -1224,7 +1224,8 @@ fn flushed_quicksaves_keep_snapshots_and_other_save_slots() {
     engine.day = 22;
     engine.request_save(true);
     engine.flush_save_requests_in(&dir);
-    assert_eq!(read_day("autosave"), 22);
+    assert_eq!(read_day("autosave1"), 21);
+    assert_eq!(read_day("autosave2"), 22);
     assert_eq!(read_day("manual"), 20);
     assert_eq!(read_day("quicksave 1"), 11);
     assert_eq!(read_day("quicksave 2"), 12);
