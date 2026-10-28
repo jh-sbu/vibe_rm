@@ -351,7 +351,7 @@ impl Engine {
                 .gmst_string("sCleared")
                 .unwrap_or_else(|| "Cleared".into());
             self.banner(name, status);
-            if let Some(m) = self.lo.find_editor_id("MUSDungeonCleared") {
+            if let Some(m) = self.audio_defaults.get(b"DCMS") {
                 self.play_music_once(m);
             }
         }

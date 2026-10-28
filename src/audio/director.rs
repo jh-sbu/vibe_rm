@@ -26,11 +26,18 @@ pub struct Inputs {
     pub dialogue: bool,
     pub stats: bool,
     pub submerged: bool,
+    pub combat: bool,
+    pub dead: bool,
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Target {
     pub state: CategoryState,
     pub seconds: f32,
+}
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum MusicCommand {
+    Add(esp::FormId),
+    Remove(esp::FormId),
 }
 pub struct Director {
     defaults: AudioDefaults,
@@ -38,6 +45,7 @@ pub struct Director {
     pub targets: HashMap<u32, Target>,
     pub submerged_categories: Vec<u32>,
     pub loops: Vec<esp::FormId>,
+    pub music_commands: Vec<MusicCommand>,
 }
 impl Director {
     pub fn new(defaults: AudioDefaults) -> Self {
@@ -47,9 +55,30 @@ impl Director {
             targets: HashMap::new(),
             submerged_categories: Vec::new(),
             loops: Vec::new(),
+            music_commands: Vec::new(),
         }
     }
     pub fn update(&mut self, inputs: Inputs, scripts: &HashMap<u32, CategoryState>) {
+        self.music_commands.clear();
+        for (key, active, before) in [
+            (b"SSSC", inputs.stats, self.inputs.stats),
+            (
+                b"BTMS",
+                inputs.combat && !inputs.dead,
+                self.inputs.combat && !self.inputs.dead,
+            ),
+            (b"DTMS", inputs.dead, self.inputs.dead),
+        ] {
+            if active != before
+                && let Some(id) = self.defaults.get(key)
+            {
+                self.music_commands.push(if active {
+                    MusicCommand::Add(id)
+                } else {
+                    MusicCommand::Remove(id)
+                });
+            }
+        }
         self.inputs = inputs;
         self.loops.clear();
         if inputs.submerged
@@ -132,19 +161,29 @@ impl crate::engine::Engine {
             loading: false,
             dialogue: self.conversation.is_some(),
             stats: self.menu == Some(crate::items::Menu::Skills),
+            combat: self.cells.values().flat_map(|rt| &rt.actors).any(|a| {
+                !a.dead
+                    && a.exec
+                        .combat
+                        .as_ref()
+                        .is_some_and(|c| c.target == crate::engine::PLAYER_REF)
+            }),
+            dead: self.player_dead(),
             submerged: self
                 .water_level(self.camera.position)
                 .is_some_and(|h| self.camera.position.z < h),
         };
         self.audio_director
             .update(input, &self.script_sounds.categories);
-        if let Some(music) = self.audio_defaults.get(b"SSSC") {
-            if input.stats {
-                self.music.queue.add(music, false);
-            } else {
-                self.music.queue.remove_engine(music);
+        for command in &self.audio_director.music_commands {
+            match *command {
+                MusicCommand::Add(id) => {
+                    self.music.queue.add(id, false);
+                }
+                MusicCommand::Remove(id) => self.music.queue.remove_engine(id),
             }
         }
+
         let wanted = self.audio_director.loops.clone();
         self.ambient_voices.retain(|sound, voice| {
             if wanted.contains(sound) {
@@ -190,6 +229,35 @@ mod tests {
             (*b"PDMC", FormId(2)),
             (*b"PDLC", FormId(3)),
         ]))
+    }
+    #[test]
+    fn combat_and_death_default_music_commands_are_edges() {
+        let mut d = Director::new(AudioDefaults::from_entries([
+            (*b"BTMS", FormId(10)),
+            (*b"DTMS", FormId(11)),
+        ]));
+        let input = Inputs {
+            combat: true,
+            ..Default::default()
+        };
+        d.update(input, &HashMap::new());
+        assert_eq!(d.music_commands, [MusicCommand::Add(FormId(10))]);
+        d.update(input, &HashMap::new());
+        assert!(d.music_commands.is_empty());
+        d.update(
+            Inputs {
+                dead: true,
+                ..input
+            },
+            &HashMap::new(),
+        );
+        assert_eq!(
+            d.music_commands,
+            [
+                MusicCommand::Remove(FormId(10)),
+                MusicCommand::Add(FormId(11))
+            ]
+        );
     }
     #[test]
     fn incoming_music_type_controls_fade_and_abrupt_types_cut() {

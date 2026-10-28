@@ -925,7 +925,9 @@ impl Engine {
         let playing = self.music_track_active(&run);
         let had_track = !run.voices.is_empty() || run.until.is_some() || !run.layers.is_empty();
         self.music.playback = run;
-        let location = self.location_music();
+        let location = self
+            .location_music()
+            .or_else(|| self.audio_defaults.get(b"DFMS"));
         let (mut want, mut queued) = self.choose_music(location);
         if queued
             && let Some(m) = want

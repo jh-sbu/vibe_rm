@@ -287,6 +287,9 @@ impl Engine {
         if self.skills.pending == 0 || !(av::HEALTH..=av::STAMINA).contains(&attribute) {
             return false;
         }
+        if let Some(music) = self.audio_defaults.get(b"LUMS") {
+            self.play_music_once(music);
+        }
         self.skills.pending -= 1;
         self.skills.level += 1;
         self.skills.perk_points += 1;

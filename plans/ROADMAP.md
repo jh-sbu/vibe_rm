@@ -5,6 +5,10 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Music (`plans/audio-unblocked.md`, 4): incoming fades, ducking stack, track
+  cycles, finite loops, timed silence, palette layers, cue/outro transitions and
+  default combat/death/level-up/success types. `music-survey` and listening
+  choices: `research/audio/`, `known_ambiguities/music.md`.
 - Audio foundation and behavior (`plans/audio-unblocked.md`, 0–3): sample-clocked
   gain ramps, interpolation, shared voice parameters and dry/send buses; DOBJ
   routing and survey; device-free menu/dialogue/stats policy, submerged category
@@ -2045,7 +2049,7 @@ game each piece unlocks.
    - Character creation: the race menu (`ShowRaceMenu`, `SetInChargen`) and the
      player's face built live from FaceGen data (sliders, head parts, tints);
      NPCs only use pre-baked heads
-7. **Audio**: lip sync; music fades; categories' mute when submerged and menu / dialogue ducking, the
+7. **Audio**: lip sync; the
    Audio menu's sliders; output models' reverb send and speaker output (acoustic spaces),
    sounds' priorities when voices run out. Plan for the unblocked parts (with
    default music types, acoustic-space ambience and region sounds):

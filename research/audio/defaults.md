@@ -48,3 +48,13 @@ fade out/in 3/1 seconds. These become named constants, not a committed INI.
 SkyrimPrefs.ini's AudioMenu layout is master plus decimal uIDn/fValn pairs;
 SNCT UNAM provides slider defaults. These are data observations; smoothing,
 selection and trigger interpretations are documented separately as choices.
+
+## Completion trigger survey
+
+`pex-calls <Data> CompleteQuest` finds vanilla callers including
+QF_dunBleakFallsBarrowQST_000354CC, QF_dunGauldursonQST_000E4D31,
+CompanionsStoryQuest and dunExploreCompleteSCRIPT. `quest-log` exposes
+completion flags on journal entries in addition to direct native calls.
+These are game-asset observations, not proof of when music plays. Both
+routes already converge in Engine::complete_quest; the provisional success
+trigger is documented in known_ambiguities/music.md.

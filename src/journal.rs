@@ -197,6 +197,11 @@ impl Engine {
                 self.increment_stat(stat, 1);
             }
         }
+        if kind != QUEST_TYPE_NONE as usize
+            && let Some(music) = self.audio_defaults.get(b"SCMS")
+        {
+            self.play_music_once(music);
+        }
         self.quest_ended(q, "sQuestCompletedText", "Quest completed");
     }
 

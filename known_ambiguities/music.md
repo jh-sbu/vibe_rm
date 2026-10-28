@@ -45,3 +45,16 @@ silent spacers). DNAM fades the palette before its deadline. These semantics
 fit the records but need listening confirmation. A graceful type change may
 cut at the next cue; its BNAM outro plays once over the transition. Cue and
 outro timing beyond this is not publicly specified.
+
+## Default music triggers (4e)
+
+DFMS fills an absent location type. BTMS is active while any living loaded
+actor's combat target is the player; this is a provisional interpretation of
+fCombatMusicPlayerTargetedThreatRatio=1, not an implementation of its unknown
+threat formula. Death pushes DTMS once per transition to dead. LUMS plays
+when a pending level is taken. SCMS plays once when a journal-visible quest
+completes, via CompleteQuest or a completing log entry (both converge in the
+existing completion API); hidden type-None quests stay silent. The asset
+survey shows both paths in vanilla use, but cannot establish the exact music
+trigger. DCMS now comes from DOBJ. Identical queued stingers coalesce as
+existing queue policy; listening could refine all of these trigger choices.
