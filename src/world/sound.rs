@@ -54,6 +54,7 @@ pub struct SoundDesc {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OutputModel {
     pub positional: bool,
+    pub reverb_send: f32,
     pub falloff: Falloff,
 }
 
@@ -65,11 +66,13 @@ pub fn parse_output_model(nam1: Option<&[u8]>, anam: Option<&[u8]>) -> OutputMod
     let Some(a) = anam.filter(|a| a.len() >= 17) else {
         return OutputModel {
             positional: false,
+            reverb_send: nam1.and_then(|n| n.get(3)).copied().unwrap_or(0) as f32 / 100.0,
             falloff: Falloff::new(0.0, 0.0),
         };
     };
     let f = |o: usize| f32::from_le_bytes(a[o..o + 4].try_into().unwrap());
     OutputModel {
+        reverb_send: nam1.and_then(|n| n.get(3)).copied().unwrap_or(0) as f32 / 100.0,
         positional: nam1.is_none_or(|n| n.first().is_some_and(|f| f & 1 != 0)),
         falloff: Falloff {
             min: f(4),
@@ -109,6 +112,7 @@ pub fn default_params(
 impl OutputModel {
     pub fn apply(self, p: &mut crate::audio::VoiceParams) {
         p.falloff = self.falloff;
+        p.reverb_send = self.reverb_send;
         if !self.positional {
             p.position = None;
         }

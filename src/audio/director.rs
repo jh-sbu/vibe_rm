@@ -48,6 +48,7 @@ pub struct Director {
     pub inputs: Inputs,
     pub targets: HashMap<u32, Target>,
     pub submerged_categories: Vec<u32>,
+    pub underwater_reverb: Option<esp::FormId>,
     pub loops: Vec<esp::FormId>,
     pub music_commands: Vec<MusicCommand>,
     pub reverb: Option<esp::FormId>,
@@ -59,6 +60,7 @@ impl Director {
             inputs: Inputs::default(),
             targets: HashMap::new(),
             submerged_categories: Vec::new(),
+            underwater_reverb: None,
             loops: Vec::new(),
             music_commands: Vec::new(),
             reverb: None,
@@ -85,7 +87,13 @@ impl Director {
                 });
             }
         }
-        self.reverb = inputs.reverb.or_else(|| self.defaults.get(b"RVBT"));
+        self.reverb = if inputs.submerged {
+            self.underwater_reverb
+        } else {
+            None
+        }
+        .or(inputs.reverb)
+        .or_else(|| self.defaults.get(b"RVBT"));
         self.inputs = inputs;
         self.loops.clear();
         if let Some(ambient) = inputs.ambient {
@@ -250,6 +258,12 @@ impl crate::engine::Engine {
         }
 
         if let Some(audio) = &self.audio {
+            let params = self
+                .audio_director
+                .reverb
+                .and_then(|id| self.lo.get(id))
+                .and_then(|r| r.get(b"DATA").and_then(super::reverb::Params::parse));
+            audio.set_reverb(params, 1.5);
             for (&id, target) in &self.audio_director.targets {
                 audio.set_category(id, target.state, target.seconds);
             }

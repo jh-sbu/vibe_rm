@@ -396,6 +396,9 @@ impl Engine {
         let audio_spaces = crate::audio::spaces::Spaces::load(&lo);
         let audio_defaults = crate::world::sound::AudioDefaults::load(&lo);
         let mut audio_director = crate::audio::director::Director::new(audio_defaults.clone());
+        audio_director.underwater_reverb = lo
+            .find_editor_id("Underwater")
+            .filter(|id| lo.tag_of(*id).is_some_and(|t| t.0 == *b"REVB"));
         audio_director.submerged_categories = lo
             .ids_of_type(b"SNCT")
             .iter()

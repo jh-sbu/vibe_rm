@@ -2,6 +2,7 @@
 
 pub mod decode;
 pub mod director;
+pub mod reverb;
 pub mod spaces;
 
 use std::collections::HashMap;
@@ -209,6 +210,7 @@ struct Mixer {
     /// Fixed frame buses: no allocation, even for an unexpected callback size.
     dry: [f32; 2],
     send: [f32; 2],
+    reverb: reverb::Bus,
     /// Voices stopped while their clips were still decoding.
     cancelled: Vec<VoiceId>,
     categories: HashMap<u32, CategoryMix>,
@@ -288,9 +290,10 @@ impl Mixer {
                     * frequency;
                 v.gain.advance();
             }
-            frame[0] = self.dry[0];
+            let wet = self.reverb.process(self.send);
+            frame[0] = self.dry[0] + wet[0];
             if channels > 1 {
-                frame[1] = self.dry[1];
+                frame[1] = self.dry[1] + wet[1];
             }
             for c in self.categories.values_mut() {
                 c.gain.advance();
@@ -333,6 +336,7 @@ impl Audio {
             master: 0.8,
             dry: [0.0; 2],
             send: [0.0; 2],
+            reverb: reverb::Bus::default(),
             cancelled: Vec::new(),
             categories: HashMap::new(),
         }));
@@ -430,6 +434,19 @@ impl Audio {
     pub fn set_master(&self, v: f32) {
         if let Ok(mut m) = self.mixer.lock() {
             m.master = v;
+        }
+    }
+
+    pub fn set_reverb(&self, params: Option<reverb::Params>, seconds: f32) {
+        if self.mixer.lock().is_ok_and(|m| m.reverb.params == params) {
+            return;
+        }
+        let network = params
+            .filter(|p| p.room > -100.0)
+            .map(|p| reverb::Network::new(p, self.rate));
+        if let Ok(mut m) = self.mixer.lock() {
+            let rate = m.rate;
+            m.reverb.change(params, network, seconds, rate);
         }
     }
 
@@ -731,6 +748,7 @@ mod tests {
             master: 1.0,
             dry: [0.0; 2],
             send: [0.0; 2],
+            reverb: reverb::Bus::default(),
             cancelled: Vec::new(),
             categories: HashMap::new(),
         }
