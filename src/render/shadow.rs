@@ -43,7 +43,7 @@ impl Cascade {
 }
 
 /// Fit the cascades to the camera for a sun shining from `sun_dir` (towards it).
-pub fn cascades(camera: &Camera, aspect: f32, sun_dir: Vec3) -> [Cascade; CASCADES] {
+pub fn cascades(camera: &Camera, aspect: f32, sun_dir: Vec3, distance: f32) -> [Cascade; CASCADES] {
     let fwd = camera.forward();
     let right = fwd.cross(Vec3::Z).normalize_or(Vec3::X);
     let up = right.cross(fwd);
@@ -56,7 +56,7 @@ pub fn cascades(camera: &Camera, aspect: f32, sun_dir: Vec3) -> [Cascade; CASCAD
     let rot = glam::camera::rh::view::look_to_mat4(Vec3::ZERO, -l, light_up);
     let mut near = 5.0;
     std::array::from_fn(|i| {
-        let far = SPLITS[i];
+        let far = distance.max(10.) * SPLITS[i] / SPLITS[CASCADES - 1];
         let corners = [near, far].into_iter().flat_map(|d| {
             let c = camera.position + fwd * d;
             [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)]
@@ -423,6 +423,7 @@ impl ShadowMaps {
 pub fn frame_data(
     c: &[Cascade; CASCADES],
     enabled: bool,
+    distance: f32,
 ) -> ([[[f32; 4]; 4]; CASCADES], [f32; 4], [f32; 4]) {
     let mats = c.map(|c| c.view_proj.to_cols_array_2d());
     let params = Vec4::new(
@@ -431,7 +432,11 @@ pub fn frame_data(
         c[0].radius,
         c[CASCADES - 1].radius,
     );
-    (mats, SPLITS, params.to_array())
+    (
+        mats,
+        SPLITS.map(|s| s / SPLITS[CASCADES - 1] * distance.max(10.)),
+        params.to_array(),
+    )
 }
 
 #[cfg(test)]

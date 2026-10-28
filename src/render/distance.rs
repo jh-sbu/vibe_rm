@@ -6,6 +6,7 @@ pub struct Distances {
     pub items: f32,
     pub objects: f32,
     pub grass: f32,
+    pub shadows: f32,
 }
 impl Default for Distances {
     fn default() -> Self {
@@ -14,6 +15,7 @@ impl Default for Distances {
             items: f32::INFINITY,
             objects: f32::INFINITY,
             grass: crate::world::grass::FADE_START,
+            shadows: 12000.,
         }
     }
 }

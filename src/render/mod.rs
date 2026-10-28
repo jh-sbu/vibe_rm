@@ -2164,8 +2164,8 @@ impl Renderer {
         let frustum = Frustum::from_matrix(view_proj);
         let env = &scene.env;
         // The sun casts shadows outdoors.
-        let shadowed = env.sky && self.shadows_enabled;
-        let fresh = shadow::cascades(camera, aspect, env.sun_dir);
+        let shadowed = env.sky && self.shadows_enabled && self.distances.shadows > 0.;
+        let fresh = shadow::cascades(camera, aspect, env.sun_dir, self.distances.shadows);
         // Near cascades follow every frame, far ones every 2nd / 4th (their shadows
         // barely change); each is sampled with the view it was rendered with.
         let mut update = [true; shadow::CASCADES];
@@ -2185,7 +2185,8 @@ impl Renderer {
         } else {
             self.shadow_cascades = None;
         }
-        let (shadow_vp, shadow_splits, shadow_params) = shadow::frame_data(&cascades, shadowed);
+        let (shadow_vp, shadow_splits, shadow_params) =
+            shadow::frame_data(&cascades, shadowed, self.distances.shadows);
         // Rain and snow stay off what has a roof over it: while any falls under
         // the sky, a top-down depth map about the camera, redrawn as it moves
         // off-centre and now and then.
