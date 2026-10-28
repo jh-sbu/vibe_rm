@@ -119,6 +119,7 @@ pub struct Engine {
     pub(crate) cond_rng: std::cell::Cell<u64>,
     pending_moveto: Option<FormId>,
     pub audio: Option<crate::audio::Audio>,
+    pub(crate) audio_defaults: crate::world::sound::AudioDefaults,
     pub(crate) music: MusicState,
     pub conversation: Option<crate::dialogue::Conversation>,
     /// The console is open (it pauses the game: `Engine::in_menu_mode`).
@@ -386,6 +387,7 @@ impl Engine {
         if std::env::var_os("VRM_NO_ADDONS").is_none() {
             models.set_addons(loader::addon_models(&lo));
         }
+        let audio_defaults = crate::world::sound::AudioDefaults::load(&lo);
         Engine {
             lo,
             vfs,
@@ -447,6 +449,7 @@ impl Engine {
             cond_rng: std::cell::Cell::new(0x9E37_79B9_7F4A_7C15),
             pending_moveto: None,
             audio: None,
+            audio_defaults,
             music: MusicState::default(),
             conversation: None,
             console_open: false,

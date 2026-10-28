@@ -4,6 +4,28 @@ use esp::{FormId, LoadOrder};
 
 use crate::audio::Falloff;
 
+/// Audio's named default objects, resolved once in load order (including sparse DOBJ updates).
+#[derive(Debug, Clone, Default)]
+pub struct AudioDefaults {
+    entries: std::collections::HashMap<[u8; 4], FormId>,
+}
+impl AudioDefaults {
+    pub fn load(lo: &LoadOrder) -> Self {
+        Self {
+            entries: lo.default_objects(),
+        }
+    }
+    pub fn get(&self, key: &[u8; 4]) -> Option<FormId> {
+        self.entries.get(key).copied().filter(|id| !id.is_null())
+    }
+    #[cfg(test)]
+    pub fn from_entries(entries: impl IntoIterator<Item = ([u8; 4], FormId)>) -> Self {
+        Self {
+            entries: entries.into_iter().collect(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SoundDesc {
     pub files: Vec<String>,
@@ -305,6 +327,50 @@ mod tests {
     use super::*;
     use esp::writer::{Node, RecordBuilder, write_plugin};
     use std::collections::HashMap;
+
+    #[test]
+    fn defaults_resolve_sparse_overrides_and_named_nulls() {
+        let dir = std::env::temp_dir().join(format!("vrm-audio-defaults-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let entry = |key: &[u8; 4], id: u32| {
+            let mut b = key.to_vec();
+            b.extend(id.to_le_bytes());
+            b
+        };
+        let mut base = entry(b"DDSC", 0x800);
+        base.extend(entry(b"MDSC", 0x801));
+        base.extend(entry(b"RVBT", 0x802));
+        let mut over = vec![0; 8];
+        over.extend(entry(b"DDSC", 0x1000800));
+        over.extend(entry(b"RVBT", 0));
+        for (name, masters, bytes) in [
+            ("Base.esm", vec![], base),
+            ("Override.esp", vec!["Base.esm"], over),
+        ] {
+            std::fs::write(
+                dir.join(name),
+                write_plugin(
+                    0,
+                    &masters,
+                    "test",
+                    "defaults",
+                    0x900,
+                    &[Node::top(
+                        b"DOBJ",
+                        vec![RecordBuilder::new(b"DOBJ", FormId(0x31)).field(b"DNAM", &bytes)],
+                    )],
+                ),
+            )
+            .unwrap();
+        }
+        let lo = LoadOrder::load(&dir, &["Base.esm".into(), "Override.esp".into()]).unwrap();
+        let d = AudioDefaults::load(&lo);
+        assert_eq!(d.get(b"DDSC"), Some(FormId(0x1000800)));
+        assert_eq!(d.get(b"MDSC"), Some(FormId(0x801)));
+        assert_eq!(d.get(b"RVBT"), None);
+        assert_eq!(d.get(b"UWLS"), None);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     fn cat(parent: Option<u32>, volume: f32, menu: f32) -> Category {
         Category {
