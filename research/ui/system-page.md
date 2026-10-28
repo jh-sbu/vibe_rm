@@ -188,3 +188,10 @@ list events with keyboard or mouse remapping enabled; gamepad assignments and
 flags survive custom-file writes and keyboard/mouse changes. Gamepad-only rows,
 360 Controller and Vibration remain hidden until actual gamepad input exists.
 The HUD refreshes activation art when the shared map generation changes.
+
+HelpSprintLong's installed DESC contains [Sprint]. ButtonArtHolder scans
+square brackets, calls GetButtonFromUserEvent synchronously, then builds
+inline image markup using the returned art. Help therefore expands alias/global
+tags while preserving bracket controls for the movie; FULL titles are literal
+localized text without a prefixed $. HMPC supplies the list and the movie sorts
+it alphabetically.

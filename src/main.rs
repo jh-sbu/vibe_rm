@@ -80,6 +80,7 @@ mod stats;
 mod stats_view;
 mod story;
 mod swf_ui;
+mod system_help;
 mod training;
 mod traps;
 mod triggers;

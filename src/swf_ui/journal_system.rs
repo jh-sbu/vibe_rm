@@ -29,11 +29,13 @@ pub struct System {
     pub audio: Vec<Value>,
     pub input: crate::input_map::Shared,
     pub remapping: Option<String>,
+    pub help: Vec<crate::system_help::Topic>,
     filter: Filter,
     pub callbacks: Vec<(String, Vec<Value>)>,
 }
 impl System {
-    pub fn new(engine: &Engine) -> Arc<Mutex<Self>> {
+    pub fn new(engine: &mut Engine) -> Arc<Mutex<Self>> {
+        let help = engine.help_topics();
         Arc::new(Mutex::new(Self {
             all: engine.save_list(),
             visible: Vec::new(),
@@ -43,6 +45,7 @@ impl System {
             audio: audio_rows(engine),
             input: engine.input_map.clone(),
             remapping: None,
+            help,
             filter: Filter::All,
             callbacks: Vec::new(),
         }))
@@ -56,6 +59,30 @@ impl System {
     }
     pub fn respond(&mut self, call: &GameCall, movie: &mut Movie<'_, '_>) -> Option<Vec<Value>> {
         match call.name.as_str() {
+            "SetVersionText"=>{movie.set(&format!("{S}.VersionText.text"),text(concat!("VibeRM ",env!("CARGO_PKG_VERSION"))));}
+            "RequestIsOnPC"=>{
+                // The movie hard-codes desktop to list index 1 in both its
+                // confirmation and dispatch. Keep index 0 as an inert blank.
+                movie.set(&format!("{S}.PCQuitList.entryList"),Value::List(vec![object([("text",text("")),("disabled",Value::Bool(true))]),object([("text",text("$Desktop")),("disabled",Value::Bool(false))])]));
+                movie.set(&format!("{S}.PCQuitList.selectedIndex"),num(1.));
+                movie.invoke(&format!("{S}.PCQuitList.UpdateList"),&[]);
+                return Some(vec![Value::Bool(true)]);
+            }
+            "PopulateHelpTopics" => {
+                let rows = self
+                    .help
+                    .iter()
+                    .enumerate()
+                    .map(|(i, h)| object([("text", text(&h.title)), ("index", num(i as f32))]))
+                    .collect();
+                movie.set(&format!("{S}.HelpList.entryList"), Value::List(rows));
+            }
+            "RequestHelpText" => {
+                if let Some(h) = index(call).and_then(|i| self.help.get(i)) {
+                    movie.set(&format!("{S}.HelpTitleText.text"), text(&h.title));
+                    movie.set(&format!("{S}.HelpText.text"), text(&h.body));
+                }
+            }
             "RequestInputMappings" => {
                 movie.set(
                     MAPPINGS,

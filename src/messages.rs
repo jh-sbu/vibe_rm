@@ -193,9 +193,23 @@ impl Engine {
     /// `<Global=EditorId>` by the global's value, `[Control]` by the key it is
     /// bound to.
     pub fn replace_text_tags(&mut self, text: &str, quest: Option<FormId>) -> String {
+        self.replace_tags(text, quest, true)
+    }
+    pub fn replace_text_tags_preserving_controls(
+        &mut self,
+        text: &str,
+        quest: Option<FormId>,
+    ) -> String {
+        self.replace_tags(text, quest, false)
+    }
+    fn replace_tags(&mut self, text: &str, quest: Option<FormId>, controls: bool) -> String {
         let mut out = String::with_capacity(text.len());
         let mut rest = text;
-        while let Some(i) = rest.find(['<', '[']) {
+        while let Some(i) = if controls {
+            rest.find(['<', '['])
+        } else {
+            rest.find('<')
+        } {
             out.push_str(&rest[..i]);
             rest = &rest[i..];
             let close = if rest.starts_with('<') { '>' } else { ']' };
