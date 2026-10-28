@@ -2063,7 +2063,9 @@ game each piece unlocks.
    - Character creation: the race menu (`ShowRaceMenu`, `SetInChargen`) and the
      player's face built live from FaceGen data (sliders, head parts, tints);
      NPCs only use pre-baked heads
-7. **Audio**: lip sync (research gate in `plans/audio-unblocked.md`, 9a); Audio
+7. **Audio**: lip sync is gated after 9a asset research: LIP packing/track mapping
+   is unproven, TRI-to-FaceGen vertex mapping and nine TRI variants remain open
+   (`research/audio/lip-format.md`; diagnostic `lip-dump`/`tri-dump` tools). Audio
    menu sliders' UI on the System page; loading-menu pause reporting; kill-move
    sound category activation (waits on killmoves). Completed work and remaining
    listening questions: `plans/audio-unblocked.md`.

@@ -1,6 +1,7 @@
 use anyhow::{Context, Result, bail};
 
 mod animation_survey;
+mod audio_formats;
 mod audio_survey;
 #[path = "../../../src/condition/functions.rs"]
 #[allow(dead_code)]
@@ -403,6 +404,12 @@ fn main() -> Result<()> {
                 );
             }
         }
+        Some(kind @ ("lip-dump" | "tri-dump")) => audio_formats::run(
+            kind,
+            args.get(1)
+                .context("usage: lip-dump|tri-dump <Data> [asset path]")?,
+            args.get(2).map(String::as_str),
+        )?,
         Some("aspc-survey") => audio_survey::spaces(&args[1])?,
         Some("music-survey") => audio_survey::music(&args[1])?,
         Some("audio-defaults") => audio_survey::defaults(&args[1])?,

@@ -1,6 +1,6 @@
 # Audio: the unblocked items
 
-**Status: in progress** (2026-10-27). Covers what can be built today from ROADMAP
+**Status: steps 0–8 implemented; 9a researched and gated** (2026-10-27). Covers what can be built today from ROADMAP
 Next item 7 (Audio), as sorted on 2026-10-27. It also covers three audio gaps
 the research turned up that ROADMAP doesn't list: the default music types
 (combat, death, level-up), acoustic spaces' ambient loops, and regions'
@@ -185,8 +185,8 @@ independent after 1. Lip sync (9) is last and largely separate.
   Add `sndr-stats`' priority column. Write `research/audio/defaults.md` with the
   findings above, including the xEdit 2D/3D label mismatch.
 - **1b `world::sound::AudioDefaults`**: parsed once from the load order's
-  winning `DOBJ` (Survival's `.esl` overrides `DOBJ` with a copy; take the
-  winning record): category ids, output models, reverb, underwater loop,
+  last named value per DOBJ key (the installed Survival override is sparse;
+  the original winning-record-only proposal was corrected by the 1a survey): category ids, output models, reverb, underwater loop,
   music types. Tests on a `RecordBuilder` `DOBJ`.
 - **1c Use them.** Dialogue lines go in `DDSC`'s category, so the voice
   category is no longer guessed. Non-dialogue voices (barks, combat
@@ -420,3 +420,13 @@ sounds, and lip sync if 9a stalls. Answer open questions in the
 - 6c: equal-power spatial pan and mild rear attenuation/filtering, with documented HRTF/radius limits.
 - 7: BNAM priority, cap of 64 non-exempt audible voices, audibility tie-breaks and virtual loops; cap-2 mixer tests.
 - 8: persistent AudioMenu settings, shared setter/console API and environment overrides; runtime sliders replace UNAM independently of headroom, with round-trip/volume tests.
+- 9a: FUZE/LIP diagnostics and TRI survey/reader; 560/569 TRI variants validate to EOF. LIP packing/key mapping remains unproven: **9b/9c are gated**, per `research/audio/lip-format.md`.
+
+## Remaining work after implementation
+
+- Resolve LIP packing/key semantics and phoneme mapping; map TRI vertices onto
+  FaceGen heads and handle nine remaining TRI variants before 9b/9c.
+- Audio slider UI on the System page, loading menu reporting, kill-move
+  category state remain dependent on their respective systems.
+- Listening comparisons can refine choices recorded in known_ambiguities;
+  none is claimed as verified by running Skyrim SE.
