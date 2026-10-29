@@ -370,6 +370,17 @@ fn is2(e: &Engine, subject: FormId, func: u16, param: u32, second: u32, value: f
 
 #[test]
 #[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn unmounted_actor_passes_riding_mount_zero_without_relaxing_unknown_conditions() {
+    let (_fixture, e) = fixture();
+    for subject in [PLAYER_REF, HUMAN_REF, BEAST_REF] {
+        assert!(is(&e, subject, 327, 0, 0.));
+        assert!(!is(&e, subject, 327, 0, 1.));
+        assert!(!is(&e, subject, u16::MAX, 0, 0.));
+    }
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn the_platform_is_a_pc_with_gore() {
     let (_f, e) = fixture();
     assert!(is(&e, PLAYER_REF, 521, 0, 1.0)); // IsWin32

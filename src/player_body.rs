@@ -1041,6 +1041,65 @@ impl Engine {
 mod tests {
     use super::*;
 
+    #[test]
+    #[ignore = "requires installed Skyrim SE assets and a headless GPU adapter"]
+    fn player_movement_resolves_vanilla_actions_and_leaves_standing() {
+        let data = vfs::locate_data_dir().unwrap();
+        let names = esp::BASE_MASTERS
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
+        let mut e = crate::stats::action_tests::headless_engine_plugins(&data, &names);
+        let project = e
+            .graphs
+            .project(&e.vfs, "meshes/actors/character/defaultmale.hkx")
+            .unwrap();
+        let skeleton = Arc::new(Skeleton::default());
+        let mut body = PlayerBody::new(skeleton.clone(), 0.);
+        let mut graph = GraphAnim::new(
+            project,
+            "meshes/actors/character/character assets/skeleton.nif",
+            false,
+            &skeleton,
+            1,
+        );
+        for name in ["IsNPC", "i1stPerson", "IsFirstPerson"] {
+            graph.set_variable(name, 0.);
+        }
+        body.graph = Some(graph);
+        e.player_body = Some(body);
+        e.player.grounded = true;
+        let actions = e.locomotion_actions(PLAYER_REF);
+        assert_eq!(actions.event("ActionMoveStart"), Some("moveStart"));
+        assert_eq!(actions.event("ActionMoveStop"), Some("moveStop"));
+        for speed in [crate::player::WALK_SPEED, crate::player::RUN_SPEED] {
+            e.player.moving = true;
+            for _ in 0..60 {
+                e.update_player_body(Vec3::Y * speed / 60., 1. / 60.);
+            }
+            let graph = e.player_body.as_ref().unwrap().graph.as_ref().unwrap();
+            let states = graph.active_states();
+            assert!(
+                states.iter().any(|s| s == "MT_Locomotion_State"),
+                "{states:?}"
+            );
+            assert!(
+                !states.iter().any(|s| s == "MT_Standing_State"),
+                "{states:?}"
+            );
+            assert!((graph.variable("Speed").unwrap() - speed).abs() < 0.01);
+            e.player.moving = false;
+            for _ in 0..60 {
+                e.update_player_body(Vec3::ZERO, 1. / 60.);
+            }
+            let states = e.player_graph_states().unwrap();
+            assert!(
+                states.iter().any(|s| s == "MT_Standing_State"),
+                "{states:?}"
+            );
+        }
+    }
+
     fn equipment_body() -> PlayerBody {
         use havok::behavior::runtime::Shared;
         use havok::behavior::{

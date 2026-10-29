@@ -1166,6 +1166,9 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
             .and_then(|s| e.inventories.get(&s))
             .is_some_and(|i| i.is_equipped(p1))), // GetEquipped
         263 => b(subject.is_some_and(|s| e.weapon_drawn(s))), // IsWeaponOut
+        // Mounted actors are not implemented, as for Actor.IsOnMount. Vanilla
+        // on-foot move/turn actions require this query to compare equal to zero.
+        327 => b(false), // IsRidingMount
         // Outside idle picking, sitting / sleeping come from what the actor is doing.
         159 | 49 if ctx.idle.is_none() => {
             Some(subject.map_or(0.0, |s| e.sit_sleep_state(s, c.func == 49)))

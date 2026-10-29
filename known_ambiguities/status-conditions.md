@@ -396,3 +396,30 @@ object one).
   unconscious state (the old Oblivion flag, also used by knock-out) has no
   public description beyond the one line, and no other source of it exists
   here. Nothing in vanilla's conditions calls either function.
+
+## IsRidingMount
+
+`IsRidingMount` (327) reports false while mounted actors are not implemented,
+matching the existing vanilla `Actor.IsOnMount` native in this engine.
+
+Evidence: the installed Skyrim.esm `CharacterMoveStart` (000959FA) and
+`CharacterMoveStop` (000959FB) both require `IsRidingMount == 0`; the same check
+gates humanoid turning. The on-foot behavior graph accepts `moveStart` and
+enters `MT_Locomotion_State`. Treating the query as unsupported rejects even
+the comparison with zero, leaving a moving player in the standing state.
+These are asset and project-engine observations, not Skyrim SE measurements.
+
+Local UESP searches for `IsRidingMount` and `IsOnMount`, including all namespaces,
+found no explanatory pages. Choice: answer unmounted explicitly until the
+mounted-actor system exists, without relaxing the evaluator's refusal of other
+unsupported conditions. Mount transitions and their query timing remain part
+of ROADMAP's riding work.
+
+Verification (2026-10-29): the installed-assets player-body regression first
+failed because ActionMoveStart resolved to no event. With the explicit unmounted
+answer, it enters locomotion at walk/run speeds and returns to standing on stop.
+All 9 player-body tests and 31 status-condition tests pass with ignored fixtures
+enabled; the workspace suite passes (786 tests, 371 ignored). Offscreen checks
+in VibeRM's WhiterunBanneredMare confirm rendered walk/run strides and separate
+locomotion/standing graph states. Captures and logs remain under
+`/tmp/vibe-player-animation/`; Skyrim SE itself was not run.
