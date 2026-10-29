@@ -92,6 +92,7 @@ pub struct Snapshot {
     pub forms: Vec<Vec<u8>>,
     pub crafting_help: HashSet<[u8; 4]>,
     pub failed_alchemy: HashSet<(FormId, FormId)>,
+    pub enchantments: HashSet<FormId>,
     pub item_copies: HashMap<FormId, Vec<crate::item_copies::ItemCopy>>,
     pub metadata: Option<super::metadata::Metadata>,
     pub(crate) continuity: super::continuity::Continuity,
@@ -509,6 +510,7 @@ impl Snapshot {
             forms: e.lo.runtime_records(),
             crafting_help: e.knowledge.crafting_help.clone(),
             failed_alchemy: e.knowledge.failed_alchemy.clone(),
+            enchantments: e.knowledge.enchantments.clone(),
             item_copies: e.ref_state.item_copies.clone(),
             metadata: Some(super::metadata::Metadata::capture(e)),
             continuity,
@@ -688,6 +690,9 @@ impl Snapshot {
             failed.form(b);
         }
         file.add(b"ALFL", failed.0);
+        let mut known = Writer::default();
+        put_forms(&mut known, &self.enchantments);
+        file.add(b"ENKN", known.0);
         if let Some(meta) = &self.metadata {
             file.add(b"META", meta.encode());
             if let Some(image) = &meta.thumbnail {
@@ -1266,6 +1271,18 @@ impl Snapshot {
     /// Read every section; nothing is applied until all of them read.
     pub fn read(file: &SaveFile) -> Result<Snapshot> {
         let mut s = Snapshot::default();
+        if file.sections.iter().filter(|(t, _)| t == b"ENKN").count() > 1 {
+            return Err(Corrupt("duplicate ENKN section".into()));
+        }
+        if let Some(data) = file.section(b"ENKN") {
+            let mut r = Reader::new(data);
+            s.enchantments = get_forms(&mut r)?;
+            if s.enchantments.contains(&FormId::NULL) {
+                return Err(Corrupt("null known enchantment".into()));
+            }
+            r.finish()?;
+        }
+
         if file.sections.iter().filter(|(t, _)| t == b"ALFL").count() > 1 {
             return Err(Corrupt("duplicate ALFL section".into()));
         }
@@ -2392,6 +2409,7 @@ impl Snapshot {
         e.inventories = self.inventories;
         e.knowledge.crafting_help = self.crafting_help;
         e.knowledge.failed_alchemy = self.failed_alchemy;
+        e.knowledge.enchantments = self.enchantments;
         e.ref_state.item_copies = self.item_copies;
         e.casting.restore_power_uses(self.power_uses);
         e.magic.souls_taken = self.spent_souls;

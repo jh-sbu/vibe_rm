@@ -16,6 +16,7 @@ pub(super) struct CraftingMenu {
     improvements: Vec<crate::crafting::Improvement>,
     ingredients: Vec<crate::items::ListedItem>,
     selected_ingredients: Vec<FormId>,
+    disenchanting: Vec<crate::items::ListedItem>,
 }
 impl CraftingMenu {
     pub fn open(
@@ -90,11 +91,16 @@ impl CraftingMenu {
             improvements: Vec::new(),
             ingredients: Vec::new(),
             selected_ingredients: Vec::new(),
+            disenchanting: Vec::new(),
         };
         result.rebuild(e);
         Ok(result)
     }
     pub fn rebuild(&mut self, e: &mut Engine) {
+        if self.kind == 3 {
+            self.rebuild_enchanting(e);
+            return;
+        }
         if self.kind == 5 {
             self.rebuild_alchemy(e);
             return;
@@ -155,7 +161,7 @@ impl CraftingMenu {
         self.display(e);
     }
     pub fn update(&mut self, e: &mut Engine) {
-        if matches!(self.kind, 1 | 2 | 5 | 7)
+        if matches!(self.kind, 1 | 2 | 3 | 5 | 7)
             && e.inventories
                 .get(&crate::engine::PLAYER_REF)
                 .is_some_and(|i| i.items != self.last_items)
@@ -224,6 +230,86 @@ impl CraftingMenu {
             crate::messages::BoxAction::CraftRecipe {
                 station: self.station,
                 recipe: r.id,
+            },
+        );
+    }
+    fn rebuild_enchanting(&mut self, e: &mut Engine) {
+        self.disenchanting = e.disenchantable();
+        self.last_items = e
+            .inventories
+            .get(&crate::engine::PLAYER_REF)
+            .map(|i| i.items.clone())
+            .unwrap_or_default();
+        let entries: Vec<_> = self
+            .disenchanting
+            .iter()
+            .enumerate()
+            .map(|(i, r)| {
+                super::item_menu::object([
+                    ("text", text(&r.info.name)),
+                    ("count", num(r.count as f32)),
+                    (
+                        "filterFlag",
+                        num(
+                            if r.info.kind == crate::world::inventory::ItemKind::Weapon {
+                                2.
+                            } else {
+                                8.
+                            },
+                        ),
+                    ),
+                    ("enabled", Value::Bool(true)),
+                    ("vrmRow", num(i as f32)),
+                ])
+            })
+            .collect();
+        self.menu.invoke(
+            &format!("{M}.SetPartitionedFilterMode"),
+            &[Value::Bool(false)],
+        );
+        self.menu.callback(
+            "SetCategoriesList",
+            &[
+                text(
+                    &e.gmst_string("sDisenchant")
+                        .unwrap_or_else(|| "Disenchant".into()),
+                ),
+                num(10.),
+                Value::Bool(true),
+            ],
+        );
+        let list = format!("{M}.ItemList.entryList");
+        self.menu.invoke(&format!("{list}.splice"), &[num(0.)]);
+        if !entries.is_empty() {
+            self.menu.invoke(&format!("{list}.push"), &entries);
+        }
+        self.menu
+            .invoke(&format!("{M}.UpdateItemList"), &[Value::Bool(true)]);
+        self.display(e);
+    }
+    fn request_disenchant(&mut self, e: &mut Engine, index: Option<usize>) {
+        let index = match self.menu.get(&format!("{M}.ItemList.selectedEntry.vrmRow")) {
+            Value::Number(n) if n >= 0. => Some(n as usize),
+            _ => index.or(self.selected),
+        };
+        let Some(row) = index.and_then(|i| self.disenchanting.get(i)) else {
+            return;
+        };
+        let question = e
+            .gmst_string("sConfirmDisenchant")
+            .unwrap_or_else(|| "Destroy this item and learn its enchantment?".into());
+        let buttons = vec![
+            e.gmst_string("sYes").unwrap_or_else(|| "Yes".into()),
+            e.gmst_string("sNo").unwrap_or_else(|| "No".into()),
+        ];
+        e.ask(
+            question,
+            buttons,
+            crate::messages::BoxAction::Disenchant {
+                station: self.station,
+                item: row.item,
+                owner: row.owner,
+                key: row.copy.fingerprint(),
             },
         );
     }
@@ -361,6 +447,15 @@ impl CraftingMenu {
             .invoke(&format!("{M}.UpdateItemList"), &[Value::Bool(false)]);
     }
     fn display(&self, e: &Engine) {
+        if self.kind == 3 {
+            if let Some(row) = self.selected.and_then(|i| self.disenchanting.get(i)) {
+                let card = super::item_menu::item_card(e, row, None, false);
+                self.menu
+                    .invoke(&format!("{M}.ItemInfo.SetItemInfo"), &[card]);
+            }
+            return;
+        }
+
         if self.kind == 5 {
             self.menu.set(
                 &format!("{M}.bCanCraft"),
@@ -545,6 +640,7 @@ impl CraftingMenu {
                 }
                 self.rebuild_alchemy(e);
             }
+            "ChooseItem" if self.kind == 3 => self.request_disenchant(e, index()),
             "CloseMenu" if self.kind == 5 && !self.selected_ingredients.is_empty() => {
                 let question = e
                     .gmst_string("sQuitAlchemy")

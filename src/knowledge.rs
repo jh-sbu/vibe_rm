@@ -20,6 +20,7 @@ pub enum IniValue {
 
 #[derive(Default)]
 pub struct Knowledge {
+    pub(crate) enchantments: std::collections::HashSet<FormId>,
     pub(crate) failed_alchemy: std::collections::HashSet<(FormId, FormId)>,
     pub(crate) crafting_help: std::collections::HashSet<[u8; 4]>,
     /// INI settings scripts set this session, by lower-cased name
@@ -73,6 +74,9 @@ impl Engine {
     /// ingredient) or an enchantment (nothing here teaches one: false).
     pub fn player_knows(&self, form: FormId) -> bool {
         match self.lo.tag_of(form).map(|t| t.0) {
+            Some(t) if &t == b"ENCH" => self
+                .base_enchantment(form)
+                .is_some_and(|e| self.knowledge.enchantments.contains(&e)),
             Some(t) if &t == b"WOOP" => self.shouts.known.contains(&form),
             Some(t) if &t == b"MGEF" => self.world_state.learned_effects.iter().any(|&(ing, i)| {
                 self.magic_item(ing)

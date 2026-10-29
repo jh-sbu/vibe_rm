@@ -138,3 +138,16 @@ a completely failed three-ingredient attempt marks all three pairs failed.
 The exact failure use value and whether a triple teaches all pair failures
 remain manual-test questions. Potions use DefaultPotion/DefaultPoison art,
 keywords, pickup/drop sounds and consume sound, with weight 0.5.
+
+## Disenchanting (step 8a)
+
+Follow ENIT's base-enchantment chain and learn its terminal base, saved in ENKN.
+Disallowed keywords and staff enchantment types are excluded. Player-created
+copy enchantments are also excluded (their component effects are already learned);
+this last inventory rule remains a manual-test choice. A confirmation is checked
+against the exact metadata row again before one copy is destroyed.
+
+UESP establishes variable disenchanting XP, and the data supplies
+fDisenchantSkillUse=.0025. Choice: multiply the destroyed item's enchantment cost
+(manual ENIT cost or auto-calculated effect total) by that setting. The exact
+original cost input still needs the manual plugin.

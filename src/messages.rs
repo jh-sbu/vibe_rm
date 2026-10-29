@@ -34,6 +34,12 @@ pub struct MessageBox {
 /// A question the engine asks the player itself, done on the first button.
 #[derive(Debug, Clone, Copy)]
 pub enum BoxAction {
+    Disenchant {
+        station: FormId,
+        item: FormId,
+        owner: Option<FormId>,
+        key: u64,
+    },
     CloseCrafting {
         station: FormId,
     },
@@ -446,6 +452,18 @@ impl Engine {
             self.vm.signal_with(key, Value::Int(index));
         }
         match b.action {
+            Some(BoxAction::Disenchant {
+                station,
+                item,
+                owner,
+                key,
+            }) if index == 0 => {
+                if let Err(error) = self.disenchant_item(station, item, owner, key)
+                    && !error.is_empty()
+                {
+                    self.scripts.notify(error);
+                }
+            }
             Some(BoxAction::CloseCrafting { station }) if index == 0 => {
                 if matches!(self.menu,Some(crate::items::Menu::Crafting {station:s,..}) if s==station)
                 {

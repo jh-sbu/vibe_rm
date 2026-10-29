@@ -1,0 +1,223 @@
+use super::*;
+use esp::writer::{Node, RecordBuilder, write_plugin};
+const BASE: FormId = FormId(0x820);
+const LOOT: FormId = FormId(0x821);
+const ARMOR_ENCH: FormId = FormId(0x822);
+const SWORD: FormId = FormId(0x830);
+const MAGIC_SWORD: FormId = FormId(0x831);
+const FORBIDDEN: FormId = FormId(0x832);
+const ARMOR: FormId = FormId(0x833);
+const GEM: FormId = FormId(0x840);
+const STAR: FormId = FormId(0x842);
+const STATION: FormId = FormId(0x871);
+fn fixture() -> (std::path::PathBuf, Engine) {
+    let dir = std::env::temp_dir().join(format!(
+        "vrm-enchanting-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let effect = |id: u32, flags: u32, skill: u32, name: &str| {
+        let mut data = [0u8; 0x98];
+        data[..4].copy_from_slice(&flags.to_le_bytes());
+        data[4..8].copy_from_slice(&1f32.to_le_bytes());
+        data[0x0c..0x10].copy_from_slice(&skill.to_le_bytes());
+        data[0x10..0x14].copy_from_slice(&u32::MAX.to_le_bytes());
+        data[0x44..0x48].copy_from_slice(&esp::actor_value::HEALTH.to_le_bytes());
+        RecordBuilder::new(b"MGEF", FormId(id))
+            .zstring(b"FULL", name)
+            .field(b"DATA", &data)
+    };
+    let enchantment = |id: FormId, base: u32, armor: bool, mag: f32| {
+        let mut enit = [0u8; 36];
+        enit[..4].copy_from_slice(&11u32.to_le_bytes());
+        enit[8..12].copy_from_slice(&if armor { 0u32 } else { 1 }.to_le_bytes());
+        enit[12..16].copy_from_slice(&11u32.to_le_bytes());
+        enit[16..20].copy_from_slice(&if armor { 0u32 } else { 1 }.to_le_bytes());
+        enit[20..24].copy_from_slice(&6u32.to_le_bytes());
+        enit[28..32].copy_from_slice(&base.to_le_bytes());
+        if armor {
+            enit[32..36].copy_from_slice(&0x850u32.to_le_bytes());
+        }
+        RecordBuilder::new(b"ENCH", id)
+            .zstring(
+                b"FULL",
+                if armor {
+                    "Fortify Health"
+                } else {
+                    "Fire Damage"
+                },
+            )
+            .field(b"ENIT", &enit)
+            .form(b"EFID", FormId(if armor { 0x801 } else { 0x800 }))
+            .field(
+                b"EFIT",
+                &[mag.to_le_bytes(), 0u32.to_le_bytes(), 0u32.to_le_bytes()].concat(),
+            )
+    };
+    let data = [
+        10u32.to_le_bytes().as_slice(),
+        1f32.to_le_bytes().as_slice(),
+        5u16.to_le_bytes().as_slice(),
+    ]
+    .concat();
+    let weapon = |id: FormId, name: &str| {
+        RecordBuilder::new(b"WEAP", id)
+            .zstring(b"FULL", name)
+            .field(b"DATA", &data)
+    };
+    let nodes = [
+        Node::top(
+            b"MGEF",
+            vec![
+                effect(
+                    0x800,
+                    crate::magic::flags::HOSTILE
+                        | crate::magic::flags::POWER_AFFECTS_MAGNITUDE
+                        | crate::magic::flags::NO_DURATION,
+                    20,
+                    "Fire Damage",
+                ),
+                effect(
+                    0x801,
+                    crate::magic::flags::RECOVER
+                        | crate::magic::flags::POWER_AFFECTS_MAGNITUDE
+                        | crate::magic::flags::NO_DURATION,
+                    u32::MAX,
+                    "Fortify Health",
+                ),
+            ],
+        ),
+        Node::top(
+            b"ENCH",
+            vec![
+                enchantment(BASE, 0, false, 10.),
+                enchantment(LOOT, BASE.0, false, 20.),
+                enchantment(ARMOR_ENCH, 0, true, 20.),
+            ],
+        ),
+        Node::top(
+            b"WEAP",
+            vec![
+                weapon(SWORD, "Sword"),
+                weapon(MAGIC_SWORD, "Fire Sword")
+                    .form(b"EITM", LOOT)
+                    .field(b"EAMT", &1000u16.to_le_bytes()),
+                weapon(FORBIDDEN, "Artifact")
+                    .form(b"EITM", LOOT)
+                    .form(b"KWDA", FormId(0x860)),
+            ],
+        ),
+        Node::top(
+            b"ARMO",
+            vec![
+                RecordBuilder::new(b"ARMO", ARMOR)
+                    .zstring(b"FULL", "Armor")
+                    .field(b"DATA", &data[..8])
+                    .form(b"KWDA", FormId(0x861))
+                    .field(b"BOD2", &[4u32.to_le_bytes(), 1u32.to_le_bytes()].concat()),
+            ],
+        ),
+        Node::top(
+            b"SLGM",
+            vec![
+                RecordBuilder::new(b"SLGM", GEM)
+                    .zstring(b"FULL", "Grand Soul Gem")
+                    .field(b"DATA", &data[..8])
+                    .field(b"SOUL", &[5])
+                    .field(b"SLCP", &[5]),
+                RecordBuilder::new(b"SLGM", STAR)
+                    .zstring(b"FULL", "Star")
+                    .field(b"DATA", &data[..8])
+                    .field(b"SOUL", &[0])
+                    .field(b"SLCP", &[5])
+                    .form(b"KWDA", FormId(0x862)),
+            ],
+        ),
+        Node::top(
+            b"FLST",
+            vec![RecordBuilder::new(b"FLST", FormId(0x850)).form(b"LNAM", FormId(0x861))],
+        ),
+        Node::top(
+            b"KYWD",
+            vec![
+                RecordBuilder::new(b"KYWD", FormId(0x860))
+                    .zstring(b"EDID", "MagicDisallowEnchanting"),
+                RecordBuilder::new(b"KYWD", FormId(0x861)).zstring(b"EDID", "ArmorCuirass"),
+                RecordBuilder::new(b"KYWD", FormId(0x862)).zstring(b"EDID", "ReusableSoulGem"),
+            ],
+        ),
+        Node::top(
+            b"FURN",
+            vec![RecordBuilder::new(b"FURN", FormId(0x870)).field(b"WBDT", &[3, 23])],
+        ),
+        Node::top(
+            b"REFR",
+            vec![RecordBuilder::new(b"REFR", STATION).form(b"NAME", FormId(0x870))],
+        ),
+        Node::top(
+            b"PERK",
+            vec![
+                RecordBuilder::new(b"PERK", FormId(0x880))
+                    .field(b"PRKE", &[2, 0, 0])
+                    .field(b"DATA", &[80, 1, 1])
+                    .field(b"EPFT", &[1])
+                    .f32(b"EPFD", 2.)
+                    .field(b"PRKF", &[]),
+                RecordBuilder::new(b"PERK", FormId(0x881))
+                    .field(b"PRKE", &[2, 0, 0])
+                    .field(b"DATA", &[77, 3, 3])
+                    .field(b"EPFT", &[1])
+                    .f32(b"EPFD", 2.)
+                    .field(b"PRKF", &[]),
+            ],
+        ),
+    ];
+    std::fs::write(
+        dir.join("Enchanting.esp"),
+        write_plugin(0, &[], "test", "synthetic enchanting", 0x900, &nodes),
+    )
+    .unwrap();
+    let mut e = crate::stats::action_tests::headless_engine(&dir, "Enchanting.esp");
+    for (f, n) in [
+        (SWORD, 2),
+        (MAGIC_SWORD, 2),
+        (FORBIDDEN, 1),
+        (ARMOR, 1),
+        (GEM, 5),
+        (STAR, 1),
+    ] {
+        e.inventory_mut(PLAYER_REF).add(f, n);
+    }
+    e.inventory_mut(PLAYER_REF).put_soul(STAR, 5);
+    e.open_crafting_station(STATION);
+    (dir, e)
+}
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn crafting_disenchant_learns_the_base_once_and_refuses_forbidden_items() {
+    let (dir, mut e) = fixture();
+    assert_eq!(
+        e.disenchantable()
+            .iter()
+            .map(|r| r.item)
+            .collect::<Vec<_>>(),
+        vec![MAGIC_SWORD]
+    );
+    let key = e.disenchantable()[0].copy.fingerprint();
+    e.disenchant_item(STATION, MAGIC_SWORD, None, key).unwrap();
+    assert_eq!(e.inventories[&PLAYER_REF].count(MAGIC_SWORD), 1);
+    assert!(e.player_knows(BASE));
+    assert!(e.player_knows(LOOT));
+    assert!(e.disenchantable().is_empty());
+    assert!(e.disenchant_item(STATION, FORBIDDEN, None, key).is_err());
+    let snapshot =
+        crate::save::state::Snapshot::read(&crate::save::state::Snapshot::capture(&e).write())
+            .unwrap();
+    assert!(snapshot.enchantments.contains(&BASE));
+    drop(e);
+    std::fs::remove_dir_all(dir).unwrap();
+}
