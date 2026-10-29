@@ -2484,12 +2484,14 @@ impl Engine {
 
     /// The equipped shield's base armor rating, if any.
     fn shield_rating(&self, actor: FormId) -> Option<f32> {
-        let r = self.lo.get(self.equipped_shield(actor)?)?;
+        let shield = self.equipped_shield(actor)?;
+        let r = self.lo.get(shield)?;
         Some(
             r.get(b"DNAM")
                 .filter(|d| d.len() >= 4)
                 .map_or(0, |d| i32::from_le_bytes(d[0..4].try_into().unwrap())) as f32
-                / 100.0,
+                / 100.0
+                + self.equipped_copy(actor, shield).rating_bonus(false),
         )
     }
 
