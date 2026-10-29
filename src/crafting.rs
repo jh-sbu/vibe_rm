@@ -4,6 +4,7 @@ mod enchanting;
 use crate::engine::Engine;
 use crate::world::crafting::Recipe;
 use crate::world::inventory::item_info;
+pub(crate) use enchanting::EnchantSelection;
 use esp::FormId;
 
 pub(crate) fn constructible_xp(lo: &esp::LoadOrder, value: f32) -> f32 {

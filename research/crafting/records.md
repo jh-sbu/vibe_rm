@@ -87,3 +87,12 @@ handles it without staff-specific output rules.
 A PEX event survey found no override of OnStoryCraftItem beyond the native Quest
 base declaration. This does not establish which original-game actions emit CRFT;
 keep that question for the manual test rather than infer absence from consumers.
+
+Enchanting restrictions were checked against the authored records:
+EnchArmorFortifyHealthBase ENIT offset 32 points to EnchantmentHealth, whose LNAM
+members are keywords (e.g. ArmorShield and ClothingNecklace), not equip-slot
+records. A matching item keyword permits that enchantment. Constant-effect
+ENCHs are apparel; fire-and-forget ENCHs are weapons; staff type 12 is excluded.
+The movie's enchanting categories use ordinary bit filters (Item 1/4,
+Disenchant 2/8, Effect 16/32, Soul Gem 64), so partitioned filter mode is disabled
+for enchanting and enabled for alchemy's packed effect IDs.

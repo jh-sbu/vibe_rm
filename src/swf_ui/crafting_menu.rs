@@ -5,6 +5,14 @@ use esp::FormId;
 use ui_swf::{GameCall, Menu, UiSwf, Value};
 pub(super) const M: &str = "_root.Menu";
 
+#[derive(Clone)]
+enum EnchantRow {
+    Disenchant(crate::items::ListedItem),
+    Item(crate::items::ListedItem),
+    Effect(FormId),
+    Gem(crate::items::ListedItem, u8),
+}
+
 pub(super) struct CraftingMenu {
     pub menu: Menu,
     pub station: FormId,
@@ -16,7 +24,8 @@ pub(super) struct CraftingMenu {
     improvements: Vec<crate::crafting::Improvement>,
     ingredients: Vec<crate::items::ListedItem>,
     selected_ingredients: Vec<FormId>,
-    disenchanting: Vec<crate::items::ListedItem>,
+    enchant_rows: Vec<EnchantRow>,
+    enchant: crate::crafting::EnchantSelection,
 }
 impl CraftingMenu {
     pub fn open(
@@ -41,6 +50,8 @@ impl CraftingMenu {
             _ => super::respond(&buttons, call),
         });
         menu.invoke(&format!("{M}.gotoAndStop"), &[text(frame)]);
+        menu.alias(&format!("{M}.CategoryList"),&format!("{M}.InventoryLists"));
+        menu.alias(&format!("{M}.ItemInfo"),&format!("{M}.ItemInfoHolder.ItemInfo"));
         menu.invoke(&format!("{M}.Initialize"), &[]);
         menu.invoke(&format!("{M}.SetPlatform"), &[num(0.), Value::Bool(false)]);
         let description = match kind {
@@ -91,7 +102,8 @@ impl CraftingMenu {
             improvements: Vec::new(),
             ingredients: Vec::new(),
             selected_ingredients: Vec::new(),
-            disenchanting: Vec::new(),
+            enchant_rows: Vec::new(),
+            enchant: Default::default(),
         };
         result.rebuild(e);
         Ok(result)
@@ -234,31 +246,94 @@ impl CraftingMenu {
         );
     }
     fn rebuild_enchanting(&mut self, e: &mut Engine) {
-        self.disenchanting = e.disenchantable();
+        let items = e.enchantable_items();
+        if self.enchant.item.as_ref().is_some_and(|selected| {
+            !items.iter().any(|r| {
+                r.item == selected.item && r.owner == selected.owner && r.copy == selected.copy
+            })
+        }) {
+            self.enchant.item = None;
+        }
+        let selected_item = self.enchant.item.as_ref().map(|r| r.item);
+        self.enchant
+            .effects
+            .retain(|f| e.known_enchantments_for(selected_item).contains(f));
+        let souls = e.enchanting_souls();
+        if self
+            .enchant
+            .gem
+            .is_some_and(|(gem, soul)| !souls.iter().any(|(r, s)| r.item == gem && *s == soul))
+        {
+            self.enchant.gem = None;
+        }
+        self.enchant_rows = e
+            .disenchantable()
+            .into_iter()
+            .map(EnchantRow::Disenchant)
+            .chain(souls.into_iter().map(|(r, s)| EnchantRow::Gem(r, s)))
+            .chain(items.into_iter().map(EnchantRow::Item))
+            .chain(
+                e.known_enchantments_for(selected_item)
+                    .into_iter()
+                    .map(EnchantRow::Effect),
+            )
+            .collect();
         self.last_items = e
             .inventories
             .get(&crate::engine::PLAYER_REF)
             .map(|i| i.items.clone())
             .unwrap_or_default();
         let entries: Vec<_> = self
-            .disenchanting
+            .enchant_rows
             .iter()
             .enumerate()
-            .map(|(i, r)| {
-                super::item_menu::object([
-                    ("text", text(&r.info.name)),
-                    ("count", num(r.count as f32)),
-                    (
-                        "filterFlag",
-                        num(
-                            if r.info.kind == crate::world::inventory::ItemKind::Weapon {
-                                2.
-                            } else {
-                                8.
-                            },
-                        ),
+            .map(|(i, row)| {
+                let (name, count, flag, selected) = match row {
+                    EnchantRow::Disenchant(r) => (
+                        r.info.name.clone(),
+                        r.count,
+                        if r.info.kind == crate::world::inventory::ItemKind::Weapon {
+                            2
+                        } else {
+                            8
+                        },
+                        false,
                     ),
+                    EnchantRow::Item(r) => (
+                        r.info.name.clone(),
+                        r.count,
+                        if r.info.kind == crate::world::inventory::ItemKind::Weapon {
+                            1
+                        } else {
+                            4
+                        },
+                        self.enchant.item.as_ref().is_some_and(|s| {
+                            s.item == r.item && s.owner == r.owner && s.copy == r.copy
+                        }),
+                    ),
+                    EnchantRow::Gem(r, s) => (
+                        r.info.name.clone(),
+                        r.count,
+                        64,
+                        self.enchant.gem == Some((r.item, *s)),
+                    ),
+                    EnchantRow::Effect(f) => (
+                        e.form_name(*f),
+                        1,
+                        if e.magic_item(*f).is_some_and(|m| m.cast_type == 0) {
+                            32
+                        } else {
+                            16
+                        },
+                        self.enchant.effects.contains(f),
+                    ),
+                };
+                super::item_menu::object([
+                    ("text", text(&name)),
+                    ("count", num(count as f32)),
+                    ("filterFlag", num(flag as f32)),
                     ("enabled", Value::Bool(true)),
+                    ("isSelected", Value::Bool(selected)),
                     ("vrmRow", num(i as f32)),
                 ])
             })
@@ -267,17 +342,20 @@ impl CraftingMenu {
             &format!("{M}.SetPartitionedFilterMode"),
             &[Value::Bool(false)],
         );
-        self.menu.callback(
-            "SetCategoriesList",
-            &[
-                text(
-                    &e.gmst_string("sDisenchant")
-                        .unwrap_or_else(|| "Disenchant".into()),
-                ),
-                num(10.),
+        let mut categories = Vec::new();
+        for (setting, fallback, flag) in [
+            ("sDisenchant", "Disenchant", 10.),
+            ("sSoulGem", "Soul Gem", 64.),
+            ("sItem", "Item", 5.),
+            ("sEnchantment", "Enchantment", 48.),
+        ] {
+            categories.extend([
+                text(&e.gmst_string(setting).unwrap_or_else(|| fallback.into())),
+                num(flag),
                 Value::Bool(true),
-            ],
-        );
+            ]);
+        }
+        self.menu.callback("SetCategoriesList", &categories);
         let list = format!("{M}.ItemList.entryList");
         self.menu.invoke(&format!("{list}.splice"), &[num(0.)]);
         if !entries.is_empty() {
@@ -287,12 +365,63 @@ impl CraftingMenu {
             .invoke(&format!("{M}.UpdateItemList"), &[Value::Bool(true)]);
         self.display(e);
     }
+    fn choose_enchanting(&mut self, e: &mut Engine, index: Option<usize>) {
+        let index = match self.menu.get(&format!("{M}.ItemList.selectedEntry.vrmRow")) {
+            Value::Number(n) if n >= 0. => Some(n as usize),
+            _ => index.or(self.selected),
+        };
+        match index.and_then(|i| self.enchant_rows.get(i)).cloned() {
+            Some(EnchantRow::Disenchant(_)) => {
+                self.request_disenchant(e, index);
+                return;
+            }
+            Some(EnchantRow::Item(row)) => {
+                if self.enchant.item.as_ref().is_some_and(|r| {
+                    r.item == row.item && r.owner == row.owner && r.copy == row.copy
+                }) {
+                    self.enchant.item = None;
+                } else {
+                    self.enchant.item = Some(row);
+                }
+                self.enchant.slider = 1.;
+            }
+            Some(EnchantRow::Gem(row, soul)) => {
+                let gem = (row.item, soul);
+                self.enchant.gem = if self.enchant.gem == Some(gem) {
+                    None
+                } else {
+                    Some(gem)
+                };
+            }
+            Some(EnchantRow::Effect(form)) => {
+                if let Some(i) = self.enchant.effects.iter().position(|f| *f == form) {
+                    self.enchant.effects.remove(i);
+                } else if self.enchant.effects.len() < e.enchantment_slots()
+                    && self
+                        .enchant
+                        .item
+                        .as_ref()
+                        .is_none_or(|r| e.enchantment_compatible(form, r.item))
+                {
+                    self.enchant.effects.push(form);
+                } else {
+                    e.scripts.notify(
+                        e.gmst_string("sEnchantArmorIncompatible")
+                            .unwrap_or_else(|| "This enchantment cannot be applied.".into()),
+                    );
+                }
+                self.enchant.slider = 1.;
+            }
+            _ => {}
+        }
+        self.rebuild_enchanting(e);
+    }
     fn request_disenchant(&mut self, e: &mut Engine, index: Option<usize>) {
         let index = match self.menu.get(&format!("{M}.ItemList.selectedEntry.vrmRow")) {
             Value::Number(n) if n >= 0. => Some(n as usize),
             _ => index.or(self.selected),
         };
-        let Some(row) = index.and_then(|i| self.disenchanting.get(i)) else {
+        let Some(EnchantRow::Disenchant(row)) = index.and_then(|i| self.enchant_rows.get(i)) else {
             return;
         };
         let question = e
@@ -448,14 +577,32 @@ impl CraftingMenu {
     }
     fn display(&self, e: &Engine) {
         if self.kind == 3 {
-            if let Some(row) = self.selected.and_then(|i| self.disenchanting.get(i)) {
-                let card = super::item_menu::item_card(e, row, None, false);
+            if let Some(row) = self.selected.and_then(|i| self.enchant_rows.get(i)) {
+                let card = match row {
+                    EnchantRow::Disenchant(r) | EnchantRow::Item(r) => {
+                        super::item_menu::item_card(e, r, None, false)
+                    }
+                    EnchantRow::Gem(r, soul) => {
+                        super::item_menu::item_card(e, r, Some(*soul), false)
+                    }
+                    EnchantRow::Effect(form) => super::item_menu::object([
+                        ("name", text(&e.form_name(*form))),
+                        ("effects", text(&e.effects_text(*form))),
+                        ("type", num(7.)),
+                        ("value", num(e.enchantment_cost(*form))),
+                    ]),
+                };
                 self.menu
                     .invoke(&format!("{M}.ItemInfo.SetItemInfo"), &[card]);
             }
+            let can = self.enchant.item.is_some()
+                && !self.enchant.effects.is_empty()
+                && self.enchant.effects.len() <= e.enchantment_slots()
+                && self.enchant.gem.is_some();
+            self.menu.set(&format!("{M}.bCanCraft"), Value::Bool(can));
+            self.menu.invoke(&format!("{M}.UpdateButtonText"), &[]);
             return;
         }
-
         if self.kind == 5 {
             self.menu.set(
                 &format!("{M}.bCanCraft"),
@@ -640,7 +787,7 @@ impl CraftingMenu {
                 }
                 self.rebuild_alchemy(e);
             }
-            "ChooseItem" if self.kind == 3 => self.request_disenchant(e, index()),
+            "ChooseItem" if self.kind == 3 => self.choose_enchanting(e, index()),
             "CloseMenu" if self.kind == 5 && !self.selected_ingredients.is_empty() => {
                 let question = e
                     .gmst_string("sQuitAlchemy")

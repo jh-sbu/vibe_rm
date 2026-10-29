@@ -221,3 +221,31 @@ fn crafting_disenchant_learns_the_base_once_and_refuses_forbidden_items() {
     drop(e);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn crafting_enchanting_categories_filter_item_types_restrictions_and_souls() {
+    let (dir, mut e) = fixture();
+    e.knowledge.enchantments.extend([BASE, ARMOR_ENCH]);
+    let items = e
+        .enchantable_items()
+        .iter()
+        .map(|r| r.item)
+        .collect::<Vec<_>>();
+    assert!(items.contains(&SWORD));
+    assert!(items.contains(&ARMOR));
+    assert!(!items.contains(&MAGIC_SWORD));
+    assert!(!items.contains(&FORBIDDEN));
+    assert_eq!(e.known_enchantments_for(Some(SWORD)), vec![BASE]);
+    assert_eq!(e.known_enchantments_for(Some(ARMOR)), vec![ARMOR_ENCH]);
+    assert!(!e.enchantment_compatible(ARMOR_ENCH, SWORD));
+    assert!(!e.enchantment_compatible(BASE, ARMOR));
+    let souls = e.enchanting_souls();
+    assert!(souls.iter().any(|(r, s)| r.item == GEM && *s == 5));
+    assert!(souls.iter().any(|(r, s)| r.item == STAR && *s == 5));
+    assert_eq!(e.enchantment_slots(), 1);
+    e.add_perk(PLAYER_REF, FormId(0x880));
+    assert_eq!(e.enchantment_slots(), 2);
+    drop(e);
+    std::fs::remove_dir_all(dir).unwrap();
+}
