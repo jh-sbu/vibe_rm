@@ -85,6 +85,30 @@ impl Engine {
     }
 
     /// What charging `weapon` with a soul of `soul` would add, as a percent
+    pub(crate) fn charge_added_percent_for_copy(
+        &self,
+        actor: FormId,
+        weapon: FormId,
+        copy: &crate::item_copies::CopyState,
+        soul: u8,
+    ) -> f32 {
+        let full = if copy.capacity > 0. {
+            copy.capacity
+        } else {
+            self.weapon_capacity(weapon)
+        };
+        let left = if copy.capacity > 0. {
+            copy.charge
+        } else {
+            full
+        };
+        if full <= 0. {
+            return 0.;
+        }
+        self.recharge_amount(actor, left, full, soul) / full * 100.
+    }
+
+    /// What charging `weapon` with a soul of `soul` would add, as a percent
     /// of its most.
     pub(crate) fn charge_added_percent(&self, actor: FormId, weapon: FormId, soul: u8) -> f32 {
         let full = self.weapon_capacity_for(actor, weapon);
@@ -103,10 +127,46 @@ impl Engine {
         gem: FormId,
         soul: u8,
     ) -> bool {
-        let full = self.weapon_capacity_for(actor, weapon);
-        let left = self.weapon_charge(actor, weapon);
-        if full <= 0.0 || left >= full || self.item_enchantment_for(actor, weapon).is_none() {
+        self.recharge_copy(actor, weapon, gem, soul, None)
+    }
+
+    pub(crate) fn recharge_copy(
+        &mut self,
+        actor: FormId,
+        weapon: FormId,
+        gem: FormId,
+        soul: u8,
+        copy: Option<(Option<FormId>, &crate::item_copies::CopyState)>,
+    ) -> bool {
+        let full = copy.map_or_else(
+            || self.weapon_capacity_for(actor, weapon),
+            |(_, c)| {
+                if c.capacity > 0. {
+                    c.capacity
+                } else {
+                    self.weapon_capacity(weapon)
+                }
+            },
+        );
+        let left = copy.map_or_else(
+            || self.weapon_charge(actor, weapon),
+            |(_, c)| if c.capacity > 0. { c.charge } else { full },
+        );
+        let enchantment = copy
+            .and_then(|(_, c)| c.enchantment)
+            .or_else(|| self.item_enchantment_for(actor, weapon));
+        if full <= 0.0 || left >= full || enchantment.is_none() {
             return false;
+        }
+        if let Some((owner, state)) = copy {
+            let inv = self.inventory_mut(actor);
+            if !inv
+                .copies
+                .iter()
+                .any(|c| c.item == weapon && c.owner == owner && c.state == *state && c.count > 0)
+            {
+                return false;
+            }
         }
         let Some(record) = self.soul_gem(gem).map(|g| g.soul) else {
             return false;
@@ -123,7 +183,14 @@ impl Engine {
         }
         let now = left + self.recharge_amount(actor, left, full, soul);
         if let Some(inv) = self.inventories.get_mut(&actor) {
-            inv.set_charge(weapon, now, full);
+            if let Some((owner, state)) = copy {
+                let mut new = state.clone();
+                new.capacity = full;
+                new.charge = now;
+                inv.replace_copy_state(weapon, owner, state, new);
+            } else {
+                inv.set_charge(weapon, now, full);
+            }
         }
         log::info!(
             "{actor} charges {} with a soul of {soul} from {}: {left:.0} -> {now:.0} / {full:.0}",

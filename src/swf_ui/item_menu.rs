@@ -598,11 +598,11 @@ impl ItemMenu {
         if r.item.info.kind != ItemKind::Weapon {
             return None;
         }
-        if r.item.copy.enchantment.is_some() {
+        if r.item.copy.capacity > 0. {
             return (r.item.copy.capacity > 0.)
                 .then(|| r.item.copy.charge / r.item.copy.capacity * 100.);
         }
-        engine.charge_percent(self.kind.source(r.theirs), r.item.item)
+        (engine.weapon_capacity(r.item.item) > 0.).then_some(100.)
     }
 
     /// The control map's Charge Item key (the Wait key): the inventory's
@@ -626,7 +626,7 @@ impl ItemMenu {
             return;
         };
         let weapon = row.item.item;
-        let Some(now) = engine.charge_percent(PLAYER_REF, weapon) else {
+        let Some(now) = self.charge(engine, &row) else {
             return;
         };
         let souls = engine.charging_souls(PLAYER_REF);
@@ -646,7 +646,12 @@ impl ItemMenu {
                     ("text", text(&format!("{name} ({size})"))),
                     (
                         "chargeAdded",
-                        num(engine.charge_added_percent(PLAYER_REF, weapon, soul)),
+                        num(engine.charge_added_percent_for_copy(
+                            PLAYER_REF,
+                            weapon,
+                            &row.item.copy,
+                            soul,
+                        )),
                     ),
                 ])
             })
@@ -735,8 +740,15 @@ impl ItemMenu {
                     return true;
                 };
                 let picked = number(0).and_then(|i| souls.get(i as usize).copied());
+                let copy = self.selected().map(|r| r.item.clone());
                 if let Some((gem, soul)) = picked
-                    && engine.recharge(PLAYER_REF, weapon, gem, soul)
+                    && engine.recharge_copy(
+                        PLAYER_REF,
+                        weapon,
+                        gem,
+                        soul,
+                        copy.as_ref().map(|r| (r.owner, &r.copy)),
+                    )
                 {
                     self.update(engine);
                     if let Some(card) = self.selected().map(|r| self.card(engine, &r)) {
@@ -1239,14 +1251,18 @@ fn listed_state(
 /// from another actor. Poison metadata currently belongs to a weapon form,
 /// not an individual instance or ownership stack; see poisons.md.
 fn row_poisoned(kind: &Kind, row: &Row, inventories: &HashMap<FormId, Inventory>) -> bool {
+    if row.item.copy.poison.is_some() {
+        return true;
+    }
     row.item.info.kind == ItemKind::Weapon
         && inventories
             .get(&kind.source(row.theirs))
             .is_some_and(|inv| {
                 inv.count(row.item.item) > 0
                     && inv
-                        .poison_on(row.item.item)
-                        .is_some_and(|(_, doses)| doses > 0)
+                        .poisoned
+                        .iter()
+                        .any(|(w, _, doses)| *w == row.item.item && *doses > 0)
             })
 }
 
@@ -1256,6 +1272,9 @@ fn row_soul_level(
     inventories: &HashMap<FormId, Inventory>,
     base: u8,
 ) -> Option<u8> {
+    if let Some(soul) = row.item.copy.soul {
+        return Some(soul);
+    }
     soul_level(
         inventories.get(&kind.source(row.theirs)),
         row.item.item,
