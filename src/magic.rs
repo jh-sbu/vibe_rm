@@ -533,6 +533,12 @@ pub struct Magic {
 }
 
 impl Engine {
+    pub(crate) fn clear_runtime_magic_cache(&mut self) {
+        self.magic
+            .item_cache
+            .get_mut()
+            .retain(|id, _| id.0 >> 24 != 0xFF);
+    }
     pub(crate) fn saved_rolled_spells(&self) -> Vec<SavedRolledSpell> {
         self.magic.rolled.save()
     }

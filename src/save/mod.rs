@@ -6,6 +6,7 @@
 pub mod autosave;
 pub mod codec;
 mod continuity;
+mod copies;
 pub mod file;
 pub mod metadata;
 pub mod state;
@@ -274,6 +275,7 @@ impl Engine {
         let bytes = snapshot.write().to_bytes();
         write_save_bytes(path, &bytes)?;
         self.lo.clear_runtime_records();
+        self.clear_runtime_magic_cache();
         for bytes in &snapshot.forms {
             self.lo.insert_runtime_record(bytes)?;
         }

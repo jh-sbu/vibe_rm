@@ -6381,3 +6381,99 @@ fn help_manual_uses_default_form_list_titles_and_keeps_button_tags() {
     assert_eq!(topics[0].title, "Jumping");
     assert_eq!(topics[0].body, "Press [Jump]. Count 42.");
 }
+
+#[test]
+fn crafting_copy_metadata_round_trip_legacy_and_corruption() {
+    use crate::item_copies::{CopyState, ItemCopy};
+    let state = CopyState {
+        name: Some("Spark".into()),
+        enchantment: Some(FormId(0xFF000800)),
+        capacity: 250.,
+        charge: 100.,
+        ..CopyState::at_level(3)
+    };
+    let mut inv = Inventory::default();
+    inv.add(SWORD, 2);
+    inv.wear(SWORD);
+    inv.add_copy_state(ItemCopy {
+        item: SWORD,
+        owner: None,
+        state: state.clone(),
+        count: 1,
+    });
+    inv.equipped_copies.insert(SWORD, state.clone());
+    let mut s = Snapshot::default();
+    s.inventories.insert(PLAYER_REF, inv);
+    s.item_copies.insert(
+        FormId(0xFF000801),
+        vec![ItemCopy {
+            item: SWORD,
+            owner: None,
+            state: state.clone(),
+            count: 1,
+        }],
+    );
+    let file = s.write();
+    let loaded = Snapshot::read(&file).unwrap();
+    assert_eq!(loaded.inventories[&PLAYER_REF].copies[0].state, state);
+    assert_eq!(loaded.inventories[&PLAYER_REF].copy_state(SWORD), state);
+    assert_eq!(loaded.item_copies, s.item_copies);
+    let mut legacy = file.clone();
+    legacy.sections.retain(|(t, _)| t != b"COPY");
+    assert!(
+        Snapshot::read(&legacy).unwrap().inventories[&PLAYER_REF]
+            .copies
+            .is_empty()
+    );
+    let mut duplicate = file.clone();
+    duplicate.add(b"COPY", vec![]);
+    assert!(Snapshot::read(&duplicate).is_err());
+    for quality in [f32::NAN, 0., f32::INFINITY] {
+        s.inventories.get_mut(&PLAYER_REF).unwrap().copies[0]
+            .state
+            .quality = quality;
+        assert!(Snapshot::read(&s.write()).is_err());
+    }
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn crafting_created_forms_references_and_copy_state_share_ids_across_load() {
+    use crate::item_copies::{CopyState, ItemCopy};
+    let (_dir, mut e) = engine("crafting-runtime-a");
+    let potion = e
+        .intern_base_form(RecordBuilder::new(b"ALCH", FormId::NULL).zstring(b"FULL", "Test Potion"))
+        .unwrap();
+    let again = e
+        .intern_base_form(RecordBuilder::new(b"ALCH", FormId::NULL).zstring(b"FULL", "Other name"))
+        .unwrap();
+    assert_eq!(potion, again);
+    let reference = e.create_ref(potion, PLAYER_REF, true).unwrap();
+    let enchantment = e
+        .create_base_form(
+            RecordBuilder::new(b"ENCH", FormId::NULL).zstring(b"FULL", "Test Enchantment"),
+        )
+        .unwrap();
+    assert!(potion < reference && reference < enchantment);
+    e.inventory_mut(PLAYER_REF).add(SWORD, 1);
+    let state = CopyState {
+        enchantment: Some(enchantment),
+        name: Some("Test sword".into()),
+        ..CopyState::at_level(2)
+    };
+    e.inventory_mut(PLAYER_REF).add_copy_state(ItemCopy {
+        item: SWORD,
+        owner: None,
+        state: state.clone(),
+        count: 1,
+    });
+    let snapshot = Snapshot::read(&Snapshot::capture(&e).write()).unwrap();
+    let (_other, mut loaded) = engine("crafting-runtime-b");
+    snapshot.apply(&mut loaded).unwrap();
+    assert_eq!(loaded.lo.tag_of(potion), Some(esp::Tag(*b"ALCH")));
+    assert_eq!(loaded.inventories[&PLAYER_REF].copies[0].state, state);
+    let next = loaded
+        .create_base_form(RecordBuilder::new(b"ALCH", FormId::NULL).zstring(b"FULL", "New Potion"))
+        .unwrap();
+    assert!(next > enchantment);
+}

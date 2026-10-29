@@ -485,3 +485,8 @@ Optional `FORM` stores complete owned ALCH/ENCH record bytes in global ID order.
 Absent means no created base forms. Fields and IDs are validated before applying;
 forms are inserted before inventories are restored. Runtime forms are excluded
 from HEAD plugin dependencies. References and base forms share the FF allocator.
+
+Optional `COPY` version 1 saves inventory copy states, which copy is equipped,
+and dropped-reference copy states. `INVT` retains its previous layout. Missing
+COPY means untouched items; malformed states and counts exceeding an ownership
+stack are rejected. Runtime magic caches are invalidated when FORM is replaced.

@@ -90,6 +90,7 @@ pub struct Spot {
 pub struct Snapshot {
     /// Owned runtime base records, in global form-ID order (optional FORM).
     pub forms: Vec<Vec<u8>>,
+    pub item_copies: HashMap<FormId, Vec<crate::item_copies::ItemCopy>>,
     pub metadata: Option<super::metadata::Metadata>,
     pub(crate) continuity: super::continuity::Continuity,
     pub plugins: Vec<String>,
@@ -504,6 +505,7 @@ impl Snapshot {
         continuity.executions = executions;
         let mut snapshot = Snapshot {
             forms: e.lo.runtime_records(),
+            item_copies: e.ref_state.item_copies.clone(),
             metadata: Some(super::metadata::Metadata::capture(e)),
             continuity,
             plugins: e
@@ -776,6 +778,7 @@ impl Snapshot {
             put_inventory(&mut w, inv);
         }
         file.add(b"INVT", w.0);
+        super::copies::write(self, &mut file);
 
         let mut w = Writer::default();
         put_forms(&mut w, &self.looted);
@@ -1788,6 +1791,7 @@ impl Snapshot {
             s.inventories.insert(owner, get_inventory(&mut r)?);
         }
         r.finish()?;
+        super::copies::read(&mut s, file)?;
 
         let mut r = section(file, b"SCRP")?;
         s.looted = get_forms(&mut r)?;
@@ -2264,6 +2268,7 @@ impl Snapshot {
         e.day = self.day;
         e.hour = self.hour;
         e.lo.clear_runtime_records();
+        e.clear_runtime_magic_cache();
         for bytes in &self.forms {
             e.lo.insert_runtime_record(bytes)?;
         }
@@ -2330,6 +2335,7 @@ impl Snapshot {
             log::warn!("{dropped} saved script threads can't be resumed");
         }
         e.inventories = self.inventories;
+        e.ref_state.item_copies = self.item_copies;
         e.casting.restore_power_uses(self.power_uses);
         e.magic.souls_taken = self.spent_souls;
         e.fast_travel_disabled = self.fast_travel_disabled;
