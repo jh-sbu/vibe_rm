@@ -979,7 +979,12 @@ fn dragon_souls_text(engine: &Engine) -> String {
 /// The item card: name, count, value and weight, and by kind the armor rating,
 /// damage, effects or description, with how much worn armor or the weapon
 /// held would change.
-fn item_card(engine: &Engine, row: &ListedItem, soul: Option<u8>, poisoned: bool) -> Value {
+pub(super) fn item_card(
+    engine: &Engine,
+    row: &ListedItem,
+    soul: Option<u8>,
+    poisoned: bool,
+) -> Value {
     let item = row.item;
     let mut f = common_card(row, poisoned);
     let worn = engine

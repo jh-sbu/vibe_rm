@@ -11,6 +11,7 @@ mod barter;
 mod casting;
 mod condition;
 mod console;
+mod crafting;
 mod created;
 mod crime;
 mod detection;

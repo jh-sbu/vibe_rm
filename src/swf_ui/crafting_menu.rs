@@ -11,6 +11,7 @@ pub(super) struct CraftingMenu {
     pub kind: u8,
     pub selected: Option<usize>,
     pub category: usize,
+    pub recipes: Vec<crate::world::crafting::Recipe>,
 }
 impl CraftingMenu {
     pub fn open(
@@ -74,13 +75,109 @@ impl CraftingMenu {
                 Value::Bool(true),
             ],
         );
-        Ok(Self {
+        let mut result = Self {
             menu,
             station,
             kind,
             selected: None,
             category: 0,
-        })
+            recipes: Vec::new(),
+        };
+        result.rebuild(e);
+        Ok(result)
+    }
+    pub fn rebuild(&mut self, e: &Engine) {
+        if self.kind != 1 {
+            return;
+        }
+        self.recipes = e.recipes_at(self.station);
+        let mut categories = std::collections::BTreeMap::new();
+        let mut entries = Vec::new();
+        for (i, r) in self.recipes.iter().enumerate() {
+            let Some(info) = crate::world::inventory::item_info(&e.lo, r.output) else {
+                continue;
+            };
+            let (name, flag) = e.crafting_category(r.output);
+            categories.insert(name, flag);
+            let can = e
+                .inventories
+                .get(&crate::engine::PLAYER_REF)
+                .is_some_and(|inv| r.affordable(inv));
+            entries.push(super::item_menu::object([
+                ("text", text(&info.name)),
+                ("count", num(r.count as f32)),
+                ("filterFlag", Value::Number(flag as f64)),
+                ("enabled", Value::Bool(can)),
+                ("isEnabled", Value::Bool(can)),
+                ("vrmRow", num(i as f32)),
+            ]));
+        }
+        let mut cats = vec![
+            text(&e.gmst_string("sAll").unwrap_or_else(|| "All".into())),
+            Value::Number(0x3FFFFFFFu32 as f64),
+            Value::Bool(true),
+        ];
+        for (name, flag) in categories {
+            cats.extend([text(&name), Value::Number(flag as f64), Value::Bool(false)]);
+        }
+        self.menu.invoke(&format!("{M}.PreRebuildList"), &[]);
+        self.menu.callback("SetCategoriesList", &cats);
+        let list = format!("{M}.ItemList.entryList");
+        self.menu.invoke(&format!("{list}.splice"), &[num(0.)]);
+        if !entries.is_empty() {
+            self.menu.invoke(&format!("{list}.push"), &entries);
+        }
+        self.menu
+            .invoke(&format!("{M}.UpdateItemList"), &[Value::Bool(true)]);
+        self.menu
+            .invoke(&format!("{M}.PostRebuildList"), &[Value::Bool(true)]);
+        self.display(e);
+    }
+    fn display(&self, e: &Engine) {
+        let Some(r) = self.selected.and_then(|i| self.recipes.get(i)) else {
+            self.menu.set(&format!("{M}.bCanCraft"), Value::Bool(false));
+            return;
+        };
+        if let Some(info) = crate::world::inventory::item_info(&e.lo, r.output) {
+            let row = crate::items::ListedItem {
+                item: r.output,
+                owner: None,
+                count: r.count as i32,
+                copy: Default::default(),
+                info,
+            };
+            let card = super::item_menu::item_card(e, &row, None, false);
+            self.menu
+                .invoke(&format!("{M}.ItemInfo.SetItemInfo"), &[card]);
+        }
+        let inv = e.inventories.get(&crate::engine::PLAYER_REF);
+        let inputs = r
+            .inputs
+            .iter()
+            .map(|&(item, n)| {
+                super::item_menu::object([
+                    ("Name", text(&e.form_name(item))),
+                    ("RequiredCount", num(n as f32)),
+                    ("PlayerCount", num(inv.map_or(0, |i| i.count(item)) as f32)),
+                ])
+            })
+            .collect();
+        self.menu.invoke(
+            &format!("{M}.UpdateIngredients"),
+            &[
+                text(
+                    &e.gmst_string("sRequires")
+                        .unwrap_or_else(|| "Requires".into()),
+                ),
+                Value::List(inputs),
+                Value::Bool(true),
+            ],
+        );
+        self.menu.set(
+            &format!("{M}.bCanCraft"),
+            Value::Bool(inv.is_some_and(|i| r.affordable(i))),
+        );
+        self.menu.invoke(&format!("{M}.UpdateButtonText"), &[]);
     }
     pub fn answer(&mut self, e: &mut Engine, c: &GameCall) -> bool {
         let index = || {
@@ -92,7 +189,10 @@ impl CraftingMenu {
         match c.name.as_str() {
             "CloseMenu" => e.menu = None,
             "SetSelectedCategory" => self.category = index().unwrap_or(0),
-            "SetSelectedItem" => self.selected = index(),
+            "SetSelectedItem" => {
+                self.selected = index();
+                self.display(e);
+            }
             "CanFadeItemInfo" => {
                 self.menu
                     .callback("SetCanFadeItemInfo", &[Value::Bool(true)]);
