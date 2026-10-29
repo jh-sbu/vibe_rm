@@ -55,6 +55,7 @@ pub(super) struct JournalMenu {
     toggles: Arc<Mutex<Vec<(FormId, bool)>>>,
     system: Arc<Mutex<super::journal_system::System>>,
     captured: Option<crate::input_map::Button>,
+    screenshot_captured: bool,
     controls_generation: u64,
     buttons: Arc<Buttons>,
 }
@@ -183,7 +184,6 @@ impl JournalMenu {
         saved: &Saved,
         buttons: Arc<Buttons>,
     ) -> anyhow::Result<Self> {
-        engine.capture_save_thumbnail();
         let menu = ui.open("quest_journal.swf", size)?;
         let mut data = Data::of(engine);
         let toggles: Arc<Mutex<Vec<(FormId, bool)>>> = Default::default();
@@ -265,8 +265,6 @@ impl JournalMenu {
                 "RequestPlayerInfo" => Some(data.player.clone()),
                 // No Creations entry on the System page.
                 "ShouldShowMod" => Some(vec![Value::Bool(false)]),
-                // Quit lists Quit to Main Menu and Quit to Desktop.
-                "RequestIsOnPC" => Some(vec![Value::Bool(true)]),
                 _ => super::respond(&buttons, call),
             }
         });
@@ -284,6 +282,7 @@ impl JournalMenu {
             toggles,
             system,
             captured: None,
+            screenshot_captured: false,
             controls_generation: engine.input_map.read().unwrap().generation,
             buttons: live_buttons,
         })
@@ -399,6 +398,7 @@ impl JournalMenu {
                 }
             }
             "SaveGame" => {
+                self.capture_screenshot(engine);
                 let index = super::journal_system::index(call).unwrap_or(0);
                 let name = if index == 0 {
                     engine.new_save_name()
@@ -417,6 +417,7 @@ impl JournalMenu {
                 }
             }
             "QuickSave" => {
+                self.capture_screenshot(engine);
                 engine.request_save(false);
                 engine.flush_save_requests();
                 self.system.lock().unwrap().all = engine.save_list();
@@ -427,15 +428,17 @@ impl JournalMenu {
                     _ => -1,
                 };
                 let thumbnail = if index < 0 {
+                    self.capture_screenshot(engine);
                     engine.save_thumbnail.clone()
                 } else {
-                    self.system
+                    let save = self
+                        .system
                         .lock()
                         .unwrap()
                         .visible
                         .get(index as usize)
-                        .and_then(|s| s.metadata.as_ref())
-                        .and_then(|m| m.thumbnail.clone())
+                        .cloned();
+                    save.and_then(|s| engine.save_preview(&s.name))
                 };
                 // A blank fallback clears an image from the previous highlighted save.
                 let fallback = crate::save::metadata::Thumbnail {
@@ -472,19 +475,22 @@ impl JournalMenu {
                     engine.menu = None;
                 }
             }
-            // The tab shown, kept with `CloseMenu`; showing a target on the
-            // map (not offered) and the System page's saving, loading and
-            // settings, which aren't built. There is no main menu to quit to.
-            "SetVersionText" => self.menu.set(
-                "_root.QuestJournalFader.Menu_mc.SystemFader.Page_mc.VersionText.text",
-                text(concat!("VibeRM ", env!("CARGO_PKG_VERSION"))),
-            ),
+            // CloseMenu keeps the tab; Show on Map awaits map integration.
             "RememberCurrentTabIndex" | "ShowTargetOnMap" => {}
             "QuitToMainMenu" => log::warn!("QuitToMainMenu requires startmenu.swf support"),
             "QuitToDesktop" => engine.quit_requested = true,
             _ => return false,
         }
         true
+    }
+
+    // Render once only when Save needs the current world's preview. Merely
+    // opening Quests, Settings or Load does not require another world render.
+    fn capture_screenshot(&mut self, engine: &mut Engine) {
+        if !self.screenshot_captured {
+            engine.capture_save_thumbnail();
+            self.screenshot_captured = true;
+        }
     }
 
     /// Capture before ordinary menu or developer-key handling, including

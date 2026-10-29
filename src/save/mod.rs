@@ -236,6 +236,20 @@ impl Engine {
         save_list_in(&self.save_directory, &plugins)
     }
 
+    pub fn save_preview(&self, name: &str) -> Option<metadata::Thumbnail> {
+        let result = (|| -> Result<_> {
+            let path = save_path_in(&self.save_directory, name).context("invalid save name")?;
+            metadata::read_thumbnail(std::fs::File::open(path)?)
+        })();
+        match result {
+            Ok(image) => image,
+            Err(error) => {
+                log::warn!("save preview {name}: {error:#}");
+                None
+            }
+        }
+    }
+
     /// Write the game to `path` (to a temporary file first, so a crash
     /// leaves the old save whole).
     pub fn save_game_to(&self, path: &Path) -> Result<()> {

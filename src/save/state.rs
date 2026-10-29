@@ -597,6 +597,12 @@ impl Snapshot {
         let mut file = SaveFile::default();
         if let Some(meta) = &self.metadata {
             file.add(b"META", meta.encode());
+            if let Some(image) = &meta.thumbnail {
+                match image.encode_png() {
+                    Ok(png) => file.add(b"THMB", png),
+                    Err(error) => log::warn!("save thumbnail: {error}"),
+                }
+            }
         }
 
         let mut w = Writer::default();
@@ -1232,6 +1238,11 @@ impl Snapshot {
             .section(b"META")
             .map(super::metadata::Metadata::decode)
             .transpose()?;
+        if let Some(meta) = &mut s.metadata
+            && let Some(png) = file.section(b"THMB")
+        {
+            meta.thumbnail = Some(super::metadata::Thumbnail::decode_png(png)?);
+        }
         let mut r = section(file, b"HEAD")?;
         for _ in 0..r.count(4)? {
             s.plugins.push(r.str()?);

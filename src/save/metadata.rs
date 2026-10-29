@@ -73,7 +73,7 @@ impl Metadata {
     }
     pub fn encode(&self) -> Vec<u8> {
         let mut w = Writer::default();
-        w.u32(2);
+        w.u32(3);
         w.u64(self.character);
         w.u32(self.file_num);
         w.str(&self.name);
@@ -84,19 +84,12 @@ impl Metadata {
         w.u64(self.play_seconds);
         w.u64(self.written);
         w.u64(self.plugins_hash);
-        w.bool(self.thumbnail.is_some());
-        if let Some(t) = &self.thumbnail {
-            w.u32(t.width);
-            w.u32(t.height);
-            w.len(t.rgba.len());
-            w.0.extend_from_slice(&t.rgba);
-        }
         w.0
     }
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         let mut r = Reader::new(bytes);
         let version = r.u32()?;
-        if !matches!(version, 1 | 2) {
+        if !matches!(version, 1..=3) {
             return Err(Corrupt("unknown META version".into()));
         }
         let mut result = Self {
@@ -112,7 +105,7 @@ impl Metadata {
             plugins_hash: r.u64()?,
             thumbnail: None,
         };
-        if version >= 2 && r.bool()? {
+        if version == 2 && r.bool()? {
             let width = r.u32()?;
             let height = r.u32()?;
             let len = r.count(1)?;
@@ -142,6 +135,91 @@ impl Metadata {
 mod tests {
     use super::*;
     #[test]
+    fn thumbnails_fit_both_bounds_without_changing_aspect() {
+        for (width, height, expected) in [
+            (800, 600, (288, 216)),
+            (1920, 1080, (384, 216)),
+            (600, 800, (162, 216)),
+            (1000, 400, (384, 154)),
+            (4, 4, (4, 4)),
+        ] {
+            let image =
+                Thumbnail::downscale(&vec![17; width * height * 4], width as u32, height as u32)
+                    .unwrap();
+            assert_eq!((image.width, image.height), expected);
+            let png = image.encode_png().unwrap();
+            assert_eq!(Thumbnail::decode_png(&png).unwrap(), image);
+            if width > 4 {
+                assert!(png.len() < image.rgba.len() / 10);
+            }
+        }
+        assert!(Thumbnail::decode_png(b"invalid").is_err());
+    }
+
+    #[test]
+    fn legacy_metadata_keeps_raw_previews_readable() {
+        let image = Thumbnail::downscale(&[17; 64], 4, 4).unwrap();
+        let mut bytes = Metadata::default().encode();
+        bytes[..4].copy_from_slice(&2u32.to_le_bytes());
+        let mut w = Writer(bytes);
+        w.bool(true);
+        w.u32(image.width);
+        w.u32(image.height);
+        w.len(image.rgba.len());
+        w.0.extend_from_slice(&image.rgba);
+        assert_eq!(Metadata::decode(&w.0).unwrap().thumbnail, Some(image));
+        let mut v1 = Metadata::default().encode();
+        v1[..4].copy_from_slice(&1u32.to_le_bytes());
+        assert!(Metadata::decode(&v1).unwrap().thumbnail.is_none());
+    }
+
+    #[test]
+    fn previews_are_separate_lazy_and_crc_checked() {
+        let image = Thumbnail::downscale(&vec![17; 800 * 600 * 4], 800, 600).unwrap();
+        let meta = Metadata {
+            thumbnail: Some(image.clone()),
+            ..Default::default()
+        };
+        let mut file = super::super::file::SaveFile::default();
+        file.add(b"META", meta.encode());
+        file.add(b"THMB", image.encode_png().unwrap());
+        file.add(b"HEAD", vec![0; 200]);
+        let bytes = file.to_bytes();
+        let header_end = 28 + meta.encode().len();
+        assert!(header_end < 256);
+        let prefix = super::super::file::SaveFile::read_prefix(&bytes[..header_end]).unwrap();
+        assert!(
+            Metadata::decode(prefix.section(b"META").unwrap())
+                .unwrap()
+                .thumbnail
+                .is_none()
+        );
+        let mut input = std::io::Cursor::new(&bytes);
+        assert_eq!(read_thumbnail(&mut input).unwrap(), Some(image));
+        assert_eq!(
+            input.position() as usize,
+            header_end + 12 + file.section(b"THMB").unwrap().len()
+        );
+        let mut damaged = bytes;
+        damaged[header_end + 12] ^= 1;
+        assert!(read_thumbnail(damaged.as_slice()).is_err());
+        // Damage outside META neither increases listing I/O nor corrupts its row data.
+        assert!(super::super::file::SaveFile::read_prefix(damaged.as_slice()).is_ok());
+        file.sections.remove(1);
+        assert!(
+            read_thumbnail(file.to_bytes().as_slice())
+                .unwrap()
+                .is_none()
+        );
+        let oversized = Thumbnail {
+            width: 1025,
+            height: 1,
+            rgba: vec![0; 1025 * 4],
+        };
+        assert!(Thumbnail::decode_png(&oversized.encode_png().unwrap()).is_err());
+    }
+
+    #[test]
     fn metadata_round_trip_and_version() {
         let m = Metadata {
             character: 77,
@@ -156,7 +234,12 @@ mod tests {
             plugins_hash: plugin_hash(&["Skyrim.esm".into()]),
             thumbnail: Some(Thumbnail::downscale(&[17; 64], 4, 4).unwrap()),
         };
-        assert_eq!(Metadata::decode(&m.encode()).unwrap(), m);
+        let mut header = m.clone();
+        header.thumbnail = None;
+        assert_eq!(Metadata::decode(&m.encode()).unwrap(), header);
+        let thumbnail = m.thumbnail.as_ref().unwrap();
+        let png = thumbnail.encode_png().unwrap();
+        assert_eq!(Thumbnail::decode_png(&png).unwrap(), *thumbnail);
         let mut b = m.encode();
         b[0] = 99;
         assert!(Metadata::decode(&b).is_err());
@@ -216,7 +299,7 @@ mod listing_tests {
     }
 }
 
-/// Small uncompressed RGBA image; no image codec or game asset is persisted.
+/// In-memory RGBA preview. New saves store it as PNG in a separate THMB section.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Thumbnail {
     pub width: u32,
@@ -224,12 +307,51 @@ pub struct Thumbnail {
     pub rgba: Vec<u8>,
 }
 impl Thumbnail {
+    pub fn encode_png(&self) -> std::result::Result<Vec<u8>, png::EncodingError> {
+        let mut bytes = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut bytes, self.width, self.height);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            encoder.write_header()?.write_image_data(&self.rgba)?;
+        }
+        Ok(bytes)
+    }
+
+    pub fn decode_png(bytes: &[u8]) -> Result<Self> {
+        let bad = |e: png::DecodingError| Corrupt(format!("invalid thumbnail PNG: {e}"));
+        let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
+        decoder.set_limits(png::Limits {
+            bytes: 8 * 1024 * 1024,
+        });
+        let mut reader = decoder.read_info().map_err(bad)?;
+        let info = reader.info();
+        if info.width == 0
+            || info.height == 0
+            || info.width > 1024
+            || info.height > 1024
+            || info.color_type != png::ColorType::Rgba
+            || info.bit_depth != png::BitDepth::Eight
+        {
+            return Err(Corrupt("invalid thumbnail PNG dimensions or format".into()));
+        }
+        let mut rgba = vec![0; reader.output_buffer_size()];
+        let info = reader.next_frame(&mut rgba).map_err(bad)?;
+        rgba.truncate(info.buffer_size());
+        Ok(Self {
+            width: info.width,
+            height: info.height,
+            rgba,
+        })
+    }
+
     pub fn downscale(rgba: &[u8], width: u32, height: u32) -> Option<Self> {
         if width == 0 || height == 0 || rgba.len() != width as usize * height as usize * 4 {
             return None;
         }
-        let w = width.min(384);
-        let h = ((height as f64 * w as f64 / width as f64).round() as u32).clamp(1, 216);
+        let scale = (384. / width as f64).min(216. / height as f64).min(1.);
+        let w = (width as f64 * scale).round().max(1.) as u32;
+        let h = (height as f64 * scale).round().max(1.) as u32;
         let mut pixels = Vec::with_capacity(w as usize * h as usize * 4);
         for y in 0..h {
             for x in 0..w {
@@ -246,9 +368,36 @@ impl Thumbnail {
         })
     }
 }
+/// New files place THMB immediately after META. Older META v2 embeds RGBA.
+/// Listing reads only META; only the selected row reads and decodes its PNG.
+pub fn read_thumbnail(mut input: impl std::io::Read) -> anyhow::Result<Option<Thumbnail>> {
+    let prefix = super::file::SaveFile::read_prefix(&mut input)?;
+    let Some(bytes) = prefix.section(b"META") else {
+        return Ok(None);
+    };
+    let meta = Metadata::decode(bytes)?;
+    if u32::from_le_bytes(bytes[..4].try_into()?) < 3 {
+        return Ok(meta.thumbnail);
+    }
+    let mut section = [0; 12];
+    input.read_exact(&mut section)?;
+    if &section[..4] != b"THMB" {
+        return Ok(None);
+    }
+    let len = u32::from_le_bytes(section[4..8].try_into()?) as usize;
+    anyhow::ensure!(len <= 8 * 1024 * 1024, "thumbnail too large");
+    let mut png = vec![0; len];
+    input.read_exact(&mut png)?;
+    anyhow::ensure!(
+        super::file::crc32(&png) == u32::from_le_bytes(section[8..12].try_into()?),
+        "damaged thumbnail"
+    );
+    Ok(Some(Thumbnail::decode_png(&png)?))
+}
+
 impl Engine {
-    /// Render the world alone, before opening an overlay. Readback occurs
-    /// only at save/menu boundaries rather than on every gameplay frame.
+    /// Render the world alone. Readback occurs only when a save or its live
+    /// preview needs it, rather than on every journal opening/gameplay frame.
     pub fn capture_save_thumbnail(&mut self) {
         let camera = self.view_camera();
         let pixels = self

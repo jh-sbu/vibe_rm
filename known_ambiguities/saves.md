@@ -466,8 +466,14 @@ The native format is this engine’s choice; it does not claim ESS compatibility
 The System page supersedes the single-slot autosave policy above: native
 autosaves now rotate autosave1–autosave3, preserving a legacy autosave.vrs.
 
-META also keeps the file number, character identity and optional downscaled
-RGBA screenshot. Prefix reads check META CRC without decoding the snapshot.
+META also keeps the file number and character identity. META v3 omits image
+bytes: an optional THMB section immediately after it stores a PNG screenshot,
+scaled to fit 384×216 while preserving aspect ratio. Listings read and CRC-check
+only META; highlighting a row reads and CRC-checks its THMB and decodes that PNG.
+META v1 and v2 remain readable, including v2's embedded raw RGBA image (legacy
+listings still read those embedded bytes). Capture is deferred until the Save
+page requests the live preview or the journal writes a save, once per opening;
+opening the journal alone no longer renders an extra world frame.
 HEAD-only saves have no stored player name; their journal metadata is unknown
 and they share one legacy “?” character group rather than inventing a name.
 Write timestamps format as UTC; screenshots are host img:// images, not SWFs

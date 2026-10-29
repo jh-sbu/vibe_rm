@@ -6242,7 +6242,9 @@ fn journal_metadata_characters_autosave_preferences_and_thumbnails() {
     let prefix = super::file::SaveFile::read_prefix(std::fs::File::open(&path).unwrap()).unwrap();
     let metadata = super::metadata::Metadata::decode(prefix.section(b"META").unwrap()).unwrap();
     assert_eq!(metadata.character, a.scripts.character_id);
-    assert!(metadata.thumbnail.is_some());
+    assert!(metadata.thumbnail.is_none());
+    let preview = super::metadata::read_thumbnail(std::fs::File::open(&path).unwrap()).unwrap();
+    assert_eq!(preview, a.save_thumbnail);
     assert_eq!(metadata.file_num, 1);
     let old_number = metadata.file_num;
     a.save_game_to(&path).unwrap();
