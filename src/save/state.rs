@@ -667,6 +667,30 @@ impl Snapshot {
 
     pub fn write(&self) -> SaveFile {
         let mut file = SaveFile::default();
+        if let Some(meta) = &self.metadata {
+            file.add(b"META", meta.encode());
+            if let Some(image) = &meta.thumbnail {
+                match image.encode_png() {
+                    Ok(png) => file.add(b"THMB", png),
+                    Err(error) => log::warn!("save thumbnail: {error}"),
+                }
+            }
+        }
+
+        let mut w = Writer::default();
+        w.len(self.plugins.len());
+        for p in &self.plugins {
+            w.str(p);
+        }
+        w.bool(self.spot.is_some());
+        if let Some(spot) = &self.spot {
+            put_location(&mut w, spot.location);
+            w.vec3(spot.feet);
+            w.f32(spot.yaw);
+        }
+        file.add(b"HEAD", w.0);
+
+        // Save listings read only META (or legacy HEAD) at the front.
         let mut forms = Writer::default();
         forms.len(self.forms.len());
         for record in &self.forms {
@@ -693,28 +717,6 @@ impl Snapshot {
         let mut known = Writer::default();
         put_forms(&mut known, &self.enchantments);
         file.add(b"ENKN", known.0);
-        if let Some(meta) = &self.metadata {
-            file.add(b"META", meta.encode());
-            if let Some(image) = &meta.thumbnail {
-                match image.encode_png() {
-                    Ok(png) => file.add(b"THMB", png),
-                    Err(error) => log::warn!("save thumbnail: {error}"),
-                }
-            }
-        }
-
-        let mut w = Writer::default();
-        w.len(self.plugins.len());
-        for p in &self.plugins {
-            w.str(p);
-        }
-        w.bool(self.spot.is_some());
-        if let Some(spot) = &self.spot {
-            put_location(&mut w, spot.location);
-            w.vec3(spot.feet);
-            w.f32(spot.yaw);
-        }
-        file.add(b"HEAD", w.0);
 
         let mut w = Writer::default();
         w.u32(self.day);

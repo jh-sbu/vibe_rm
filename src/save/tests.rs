@@ -24,11 +24,13 @@ fn crafting_forms_round_trip_and_legacy_saves_have_none() {
     let record = RecordBuilder::new(b"ALCH", id)
         .zstring(b"FULL", "Potion of Testing")
         .to_bytes();
-    let s = Snapshot {
+    let mut s = Snapshot {
         forms: vec![record.clone()],
         ..Default::default()
     };
     let file = s.write();
+    let prefix = SaveFile::read_prefix(std::io::Cursor::new(file.to_bytes())).unwrap();
+    assert!(prefix.section(b"HEAD").is_some());
     let loaded = Snapshot::read(&file).unwrap();
     assert_eq!(loaded.forms, vec![record]);
     let mut lo = esp::LoadOrder::load(std::env::temp_dir(), &[]).unwrap();
@@ -43,6 +45,9 @@ fn crafting_forms_round_trip_and_legacy_saves_have_none() {
     let mut duplicate = file;
     duplicate.add(b"FORM", vec![0; 4]);
     assert!(Snapshot::read(&duplicate).is_err());
+    s.metadata = Some(super::metadata::Metadata::default());
+    let prefix = SaveFile::read_prefix(std::io::Cursor::new(s.write().to_bytes())).unwrap();
+    assert!(prefix.section(b"META").is_some());
     let bad = Snapshot {
         forms: vec![vec![0; 24]],
         ..Default::default()

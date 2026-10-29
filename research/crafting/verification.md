@@ -72,3 +72,28 @@ working choices in known_ambiguities/crafting.md. The native engine's separate
 per-hand identity for differently modified copies of one base weapon remains
 a broader engine follow-up in ROADMAP. This verification does not claim original
 game parity for those choices or the excluded station animation/3D preview.
+
+## Audit corrections (2026-10-29)
+
+- Shared created ENCH records now have separate active effects per worn piece.
+  Two +25 Health pieces grant +50; removing either leaves +25. Save/load keeps
+  effect IDs, equipment sources and held values. Legacy source-less effects
+  acquire their worn source without restarting. Invalid equipment sources and
+  malformed extended AEFF payloads are rejected.
+- Custom Muffle and Waterbreathing retain magnitude 1 at skills 15/100, all
+  five soul sizes and with Enchanter bonuses. Tests cover previews, created
+  records and worn actor values; the sources are in formulas.md.
+- First depletion of a tempered/named authored enchanted weapon keeps its
+  selected metadata. Regression checks cover repeat depletion, inventory
+  listing, untouched sibling copies, save/load and legacy charge migration.
+- Broader save checks exposed crafting sections preceding META/HEAD. They now
+  follow the headers, preserving journal listing, previews and save numbering.
+  Prefix-reader tests cover generated forms with and without META.
+
+Final checks with `WGPU_BACKEND=vulkan` and a headless GPU adapter:
+`cargo test --workspace -j 2` (786 passed, 369 ignored), plus
+`cargo test --bin vibe_rm crafting_ -- --include-ignored` (27 passed),
+`cargo test --bin vibe_rm save::tests:: -- --include-ignored` (165 passed), and
+`cargo test --bin vibe_rm staffs:: -- --include-ignored` (3 passed).
+`cargo fmt --check` and `git diff --check` are clean. These remain project-engine
+checks; the original-game probe has not been run.
