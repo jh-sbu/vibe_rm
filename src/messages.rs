@@ -34,6 +34,9 @@ pub struct MessageBox {
 /// A question the engine asks the player itself, done on the first button.
 #[derive(Debug, Clone, Copy)]
 pub enum BoxAction {
+    CloseCrafting {
+        station: FormId,
+    },
     ImproveItem {
         station: FormId,
         item: FormId,
@@ -443,6 +446,12 @@ impl Engine {
             self.vm.signal_with(key, Value::Int(index));
         }
         match b.action {
+            Some(BoxAction::CloseCrafting { station }) if index == 0 => {
+                if matches!(self.menu,Some(crate::items::Menu::Crafting {station:s,..}) if s==station)
+                {
+                    self.menu = None;
+                }
+            }
             Some(BoxAction::ImproveItem {
                 station,
                 item,

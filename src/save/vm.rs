@@ -392,6 +392,10 @@ impl VmSnapshot {
                 }
                 match b.action {
                     None => m.u8(0),
+                    Some(crate::messages::BoxAction::CloseCrafting { station }) => {
+                        m.u8(6);
+                        m.form(station);
+                    }
                     Some(crate::messages::BoxAction::ImproveItem {
                         station,
                         item,
@@ -660,6 +664,13 @@ impl VmSnapshot {
                             owner,
                             key,
                         })
+                    }
+                    6 => {
+                        let station = r.form()?;
+                        if station.is_null() {
+                            return Err(Corrupt("invalid close-crafting action".into()));
+                        }
+                        Some(crate::messages::BoxAction::CloseCrafting { station })
                     }
                     n => return Err(Corrupt(format!("message-box action {n}"))),
                 };
