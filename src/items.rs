@@ -860,6 +860,26 @@ impl Engine {
             let gold = self.item_count(PLAYER_REF, item);
             self.raise_stat_to("Most Gold Carried", gold);
         }
+        // A transfer sends this once, on addition at its destination. A
+        // destruction has no destination and sends it from the removal side.
+        if (added || other.is_none()) && self.lo.get(item).is_some_and(|r| r.get(b"VMAD").is_some())
+        {
+            let new = if added {
+                self.object_value(owner)
+            } else {
+                papyrus::Value::None
+            };
+            let old = if added {
+                other.map_or(papyrus::Value::None, |r| self.object_value(r))
+            } else {
+                self.object_value(owner)
+            };
+            self.scripts.pending_events.push((
+                papyrus::ObjectId::Form(item.0),
+                "OnContainerChanged".into(),
+                vec![new, old],
+            ));
+        }
         let event = if added {
             "OnItemAdded"
         } else {

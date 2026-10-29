@@ -60,3 +60,30 @@ Seven vanilla placeholder recipes have no CNAM output and are excluded from the
 usable recipe index: RecipeArmorSteelPlateShield, TemperArmorSteelPlateShield,
 TemperArmorDA03Masque, and four TemperArmorGildedElven* records. Thus usable
 forge/workbench counts are 241/313; the survey's raw counts are 242/319.
+
+## Hearthfire's actual building-token chain (step 5c)
+
+The authored assets refine the plan's hypothesis: BYOHHouseBuildingPlayerScript's
+OnItemAdded calls UpdateLogCount (materials display), rather than consuming a
+house token itself. Example COBJ BYOHHouseRecipe187Room11ARoof_3 outputs
+BYOHHousePart187Room11ARoof. That MISC has BYOHBuildingObjectScript, which extends
+Form and handles OnContainerChanged. Entering the player inventory from no
+container calls BYOHhousebuildingscript.BuildHousePart using the current house
+location and the token's authored IDs. The house quest script then dispatches
+the building stage/room work to its selected house quest.
+
+BYOHWorkbenchScript.OnActivate sets the active house location and calls its
+linked BYOHHouseCraftingTriggerScript.StartCrafting. The trigger returns hidden
+building items from a holding chest and manages stages. These are authored
+scripts; support their ordinary events and natives instead of detecting house
+recipe names in crafting code. Form-derived item scripts must be attached to
+the base-form VM object before OnContainerChanged delivery. Reference-derived
+scripts retain the existing placed/created-reference path.
+
+Dragonborn's staff enchanter is WBDT Create Object with DLC2StaffEnchanter and 43
+recipes gated by HasSpell. The same station-keyword/condition transaction path
+handles it without staff-specific output rules.
+
+A PEX event survey found no override of OnStoryCraftItem beyond the native Quest
+base declaration. This does not establish which original-game actions emit CRFT;
+keep that question for the manual test rather than infer absence from consumers.

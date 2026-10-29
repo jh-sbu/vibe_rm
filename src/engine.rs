@@ -4301,6 +4301,7 @@ impl Engine {
                 }
                 let events = std::mem::take(&mut host.engine.scripts.pending_events);
                 for (obj, ev, args) in events {
+                    crate::script::attach_form_event_scripts(&mut vm, &mut host, obj);
                     vm.send_event(&mut host, obj, &ev, args);
                 }
                 vm.run(&mut host, now, 20_000);

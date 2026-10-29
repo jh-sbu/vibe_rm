@@ -211,7 +211,14 @@ mod tests {
                         .field(b"DATA", &data),
                     RecordBuilder::new(b"MISC", FormId(0x803))
                         .zstring(b"FULL", "Result")
-                        .field(b"DATA", &data),
+                        .field(b"DATA", &data)
+                        .field(
+                            b"VMAD",
+                            &esp::writer::vmad(&[esp::writer::AttachedScript {
+                                name: "VrmCraftOutput".into(),
+                                properties: Vec::new(),
+                            }]),
+                        ),
                 ],
             ),
             Node::top(
@@ -223,6 +230,20 @@ mod tests {
         std::fs::write(
             dir.join("Crafting.esp"),
             write_plugin(0, &[], "test", "synthetic crafting", 0x900, &nodes),
+        )
+        .unwrap();
+        std::fs::create_dir_all(dir.join("scripts")).unwrap();
+        let mut script = papyrus::build::ScriptBuilder::new("VrmCraftOutput", "Form");
+        let seen = script.variable("seen", "Bool", false.into());
+        let mut on = papyrus::build::FunctionBuilder::new("None");
+        on.param("newContainer", "ObjectReference");
+        on.param("oldContainer", "ObjectReference");
+        on.assign(seen, true.into());
+        on.ret(papyrus::build::Arg::None);
+        script.function("OnContainerChanged", on);
+        std::fs::write(
+            dir.join("scripts/VrmCraftOutput.pex"),
+            papyrus::pex::write(&script.build().unwrap()).unwrap(),
         )
         .unwrap();
         let mut e = crate::stats::action_tests::headless_engine(&dir, "Crafting.esp");
@@ -260,6 +281,31 @@ mod transaction_tests {
         let lo = esp::LoadOrder::load(std::env::temp_dir(), &[]).unwrap();
         assert!((constructible_xp(&lo, 10.) - 38.4).abs() < 0.1);
         assert!(constructible_xp(&lo, 20.) > constructible_xp(&lo, 10.));
+    }
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic generated records and PEX only"]
+    fn crafting_delivers_container_changes_to_form_derived_output_scripts() {
+        let (dir, mut e) = super::tests::fixture();
+        e.open_crafting_station(FormId(0x810));
+        e.inventory_mut(PLAYER_REF).add(FormId(0x802), 2);
+        e.craft_recipe(FormId(0x810), FormId(0x811)).unwrap();
+        let mut vm = std::mem::take(&mut e.vm);
+        let events = std::mem::take(&mut e.scripts.pending_events);
+        {
+            let mut host = crate::script::EngineHost { engine: &mut e };
+            for (obj, event, args) in events {
+                crate::script::attach_form_event_scripts(&mut vm, &mut host, obj);
+                vm.send_event(&mut host, obj, &event, args);
+            }
+            vm.run(&mut host, 0., 2000);
+        }
+        assert_eq!(
+            vm.get_var(papyrus::ObjectId::Form(0x803), "seen"),
+            Some(papyrus::Value::Bool(true))
+        );
+        e.vm = vm;
+        drop(e);
+        std::fs::remove_dir_all(dir).unwrap();
     }
     #[test]
     #[ignore = "needs a headless GPU adapter; synthetic records only"]

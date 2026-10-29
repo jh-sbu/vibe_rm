@@ -239,3 +239,45 @@ mod actor_natives_tests;
 
 #[cfg(test)]
 mod query_natives_tests;
+
+/// Inventory base forms can carry Form-derived scripts (Hearthfire's building
+/// tokens do). Attach these on their form identity before delivering an event.
+/// Reference-derived scripts still belong to placed/created references.
+pub(crate) fn attach_form_event_scripts(
+    vm: &mut papyrus::Vm,
+    host: &mut EngineHost<'_>,
+    obj: papyrus::ObjectId,
+) {
+    let papyrus::ObjectId::Form(id) = obj else {
+        return;
+    };
+    let Some(rec) = host.engine.lo.get(esp::FormId(id)).filter(|r| {
+        matches!(
+            &r.tag().0,
+            b"MISC" | b"WEAP" | b"ARMO" | b"ALCH" | b"INGR" | b"BOOK" | b"KEYM" | b"SLGM" | b"SCRL"
+        )
+    }) else {
+        return;
+    };
+    let scripts = vmad::parse(&rec).map(|v| v.scripts).unwrap_or_default();
+    let mut attached = false;
+    for script in scripts {
+        if vm.has_instance(obj, &script.name) || vm.derives(host, &script.name, "ObjectReference") {
+            continue;
+        }
+        let props = script
+            .properties
+            .iter()
+            .map(|(n, v)| {
+                (
+                    n.clone(),
+                    vmad::to_value(v, &|f| host.engine.native_class(f)),
+                )
+            })
+            .collect::<Vec<_>>();
+        attached |= vm.attach(host, obj, &script.name, &props);
+    }
+    if attached && host.engine.scripts.initialized.insert(obj) {
+        vm.send_event(host, obj, "OnInit", vec![]);
+    }
+}
