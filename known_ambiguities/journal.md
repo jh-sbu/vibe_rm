@@ -76,6 +76,10 @@ its data isn't public; the choices below are what the movie's code allows.
   (main, side, the guilds, Daedric, Civil War, Dawnguard, Dragonborn);
   miscellaneous quests count each completed objective in Misc Objectives
   Completed instead. Questlines Completed is left to scripts.
+- **Crafting statistics**: successful recipes count Weapons Made / Armor Made
+  by output count; tempering counts Weapons Improved / Armor Improved once;
+  mixing counts Potions Mixed / Poisons Mixed; enchanting counts Magic Items
+  Made and Soul Gems Used. Refused/stale operations do not increment them.
 - **What the engine counts** (the game's scripts count Horses Owned,
   Persuasions, Bribes and the rest they call `IncrementStat` for; when the
   game counts these isn't published):

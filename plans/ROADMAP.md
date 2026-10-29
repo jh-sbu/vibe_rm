@@ -5,6 +5,13 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Crafting (`plans/crafting.md`): station activation and authored menus, COBJ
+  recipes and transactions, tempering, alchemy discovery/mixing, disenchanting,
+  enchantment strength/charge/rename, vanilla/DLC perk hooks, skill XP and
+  statistics. Runtime ALCH/ENCH forms and per-copy state survive saves and item
+  movement. Create Object emits CRFT. Research and manual-test choices:
+  `research/crafting/`, `known_ambiguities/crafting.md`. Original-game probe
+  `crafting1` is generated; user-run comparison is still pending.
 - Journal System page (`plans/system-page.md`): native save/load/delete and
   character filtering, META headers and screenshots, F5/F9, rotating autosaves
   for rest/wait/travel/pause, persistent Gameplay/Display/Audio settings,
@@ -1755,7 +1762,7 @@ game each piece unlocks.
      named material sequences: see Done;
      `known_ambiguities/sequence-material-controllers.md`)
 2. **Story Manager** (core and seventeen events done, `LOCK` and `TRES` among them; see Done)
-   - Events waiting on their systems: crafting, NPCs'
+   - Events waiting on their systems: NPCs'
      spell casts (combat suppression and concentration cadence need evidence;
      `known_ambiguities/story-cast-events.md`), new voice powers, bribe /
      intimidate / flatter
@@ -1865,8 +1872,7 @@ game each piece unlocks.
      whether NPCs over their carry weight are slowed or changed is unconfirmed, so
      other actors fail it (`known_ambiguities/comparison-conditions.md`)
 5. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
-   stuck in actors, sneak shots, tempering
-   and enchantments, killmoves and the decapitations they end in, the player's own weapon and
+   stuck in actors, sneak shots, killmoves and the decapitations they end in, the player's own weapon and
    animations), magic (see Done; next: native healing thresholds and timing, spells chosen by their
    scores, NPCs raising wards against spells already in flight and arrows (`known_ambiguities/wards.md`), summons and buffs in combat, runes, magic sounds, the other archetypes (Illusion's calm, fear, frenzy
    and rally, summons, bound weapons done: see Done): NPCs summoning, reanimation,
@@ -1876,16 +1882,15 @@ game each piece unlocks.
    (`known_ambiguities/invisibility.md`); illusion spells chosen by NPCs; enchantment charges,
    NPCs poisoning their weapons; `known_ambiguities/magic.md`), shouts (see Done: NPCs and dragons
    shouting, the push throwing actors, "Spend Soul?"), perks (see Done: the entry points
-   waiting on casting, crafting, barter, attack types;
+   waiting on casting, barter, attack types;
    `known_ambiguities/perks.md`), inventory (player's, armor from
    inventory, ammo / quivers (the weakest arrows equipped with a bow, UESP);
    torches in dark interiors, burning out), crime
    (escape routes, yielding, skill loss in jail; witnesses running to the
    guards; fences; see Done)
-   - Crafting: the forge, grindstone, workbench, arcane enchanter, alchemy lab
-     and the other stations, their menus (`craftingmenu.swf`) and formulas,
-     forms made while playing and per-copy item state (plan:
-     `plans/crafting.md`)
+   - Crafting furniture: the player entering/leaving stations and their use
+     animations; standalone EnchantDestruct routing and original-game formula
+     comparisons remain research questions (`plans/crafting.md`).
    - Death conditions: `GetCauseofDeath` (the cause's values are unknown,
      `known_ambiguities/death.md`) and `GetKillingBlowLimb` (the killing blow's
      hit limb isn't kept)
@@ -1906,7 +1911,7 @@ game each piece unlocks.
      including scene and quest-alias packages)
    - Sneak attacks (see Done): NPCs sneaking up on the player
    - Skills (see Done): the other skills' uses as their systems come (magic,
-     crafting, speech); Guardian Stone activation and verifying sleeping's
+     speech); Guardian Stone activation and verifying sleeping's
      Rested spell selection (UESP sources in `known_ambiguities/skills.md`).
      Active effects' "Perk to Apply" is supported (see Done); temporary perk
      ability / quest sections remain unresolved (`known_ambiguities/effect-perks.md`)
@@ -2053,9 +2058,8 @@ game each piece unlocks.
      stays open; distant LOD around the loaded cells on by default (the
      blocks are now placed right: `VRM_LOD=1`)
    - The inventory's rest: the item's model beside the card (`UpdateItem3D`,
-     rotating and zooming it), rows grouped by captured soul with per-item
-     selection and transfers (`known_ambiguities/inventory-cards.md`); alchemy
-     teaching the effects two ingredients share (waits on crafting),
+     rotating and zooming it), including crafting previews; independent per-hand
+     selection for two differently modified copies of the same weapon base;
      equipping torches in a hand (the player's body doesn't show a carried
      light), the survival warmth rating
    - The HUD: notifications' display
@@ -2075,7 +2079,7 @@ game each piece unlocks.
      options; DDOF's option once depth of field renders; Main Menu quitting once
      `plans/main-menu.md` is implemented. Creations/Installed Content remain
      excluded from the vanilla runtime. The statistics
-     whose systems aren't there yet (crafting, dragon souls collected, horses
+     whose systems aren't there yet (dragon souls collected, horses
      stolen)
    - The HUD's compass: the player's own marker (with the map), location
      aliases as quest targets (research-gated: no direct examples found in

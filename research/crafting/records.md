@@ -96,3 +96,11 @@ ENCHs are apparel; fire-and-forget ENCHs are weapons; staff type 12 is excluded.
 The movie's enchanting categories use ordinary bit filters (Item 1/4,
 Disenchant 2/8, Effect 16/32, Soul Gem 64), so partitioned filter mode is disabled
 for enchanting and enabled for alchemy's packed effect IDs.
+
+
+The offscreen Lakeview check on 2026-10-29 supplied the drafted small-house
+layout (03003060), sawn logs and stone after initializing the building quest.
+Creating foundation 03003014 called the real building-item script, advanced
+BYOHHouseFalkreath through stages 120/130, completed its foundation objective
+and hid that recipe. This verifies event delivery through the project's VM;
+it is not observation in Skyrim SE. The house-purchase path was bypassed.

@@ -192,3 +192,27 @@ immediately. The confirmation captures the exact copy and revalidates it,
 the known effects, restrictions and gem before spending anything. Pending
 confirmation state is also serializable for internal snapshot tests; public
 saving remains disabled in crafting menus.
+
+
+## Integration decisions (step 10)
+
+COPY v3 adds soul and poison to the same per-copy identity as quality,
+enchantment, name and charge. V1/V2 are still accepted. Legacy ownership
+correlations were never stored; materialize those entries into player-owned
+copies first and then stolen stacks in inventory order. New captures
+materialize immediately. Exact row selection is honored in SWF and egui
+movement/quantity paths; a poisoned copy carries its remaining doses through
+transfers, drops, pickup and saves. Reusable empty gems can capture again.
+
+Choice: emit CRFT only for successful Create Object recipes. The permitted
+PEX survey found no OnStoryCraftItem override beyond Quest's native declaration;
+this supplies no concrete evidence for additional tempering/alchemy/enchanting
+sources. Keep those sources restricted pending original-game observation.
+
+The authored movie's setter is ItemCard.itemInfo (there is no SetItemInfo
+method). Initialize after the chosen timeline's children load; invalidate the
+single tempering list explicitly. Bottom bars use the station's skill where
+present and ordinary player information otherwise. Enchantment-only cards use
+the crafting card kind, avoiding spell-level/cost fields that have no meaning
+for a known enchantment. Recipe conditions are refreshed when activation
+scripts alter visibility without changing inventory.

@@ -1,7 +1,7 @@
 # Plan: crafting
 
-**Status: in progress** (2026-10-28). Crafting is the system ROADMAP's other items
-wait on: the Story Manager's craft event (item 2), the crafting perks' entry
+**Status: implemented** (2026-10-29); original-game comparison awaits the user-run
+`crafting1` probe. Crafting connects ROADMAP's other systems: the Story Manager's craft event (item 2), the crafting perks' entry
 points (item 5, Perks), alchemy teaching the effects two ingredients share and
 the crafting statistics (item 6), and the Smithing, Alchemy and Enchanting skill
 uses (item 5, Skills). This plan builds the game's five crafting menus at the
@@ -14,7 +14,7 @@ stations that open them:
 | Arcane enchanter (3, Enchanting) | `EnchantConstruct` | enchants items with known enchantments and a filled soul gem; destroys items to learn their enchantments |
 | Alchemy lab (5, Alchemy) | `Alchemy` | mixes ingredients into potions and poisons |
 
-`EnchantDestruct` is the movie's fifth frame. Which station opens it (if any
+`EnchantDestruct` is the movie's fourth frame. Which station opens it (if any
 does in vanilla) is part of step 0.
 
 What this plan leaves out, and why:
@@ -170,7 +170,7 @@ Message boxes go through `messagebox.swf` with GMST texts:
   enchantment and a filled gem. Weapons get a charge/strength slider. Items
   can be renamed (32 characters on PC).
 
-### What the engine has
+### Starting point before implementation
 
 - Ingredient effects the player learned (`src/knowledge.rs`, saved in the
   world state); `Ingredient.LearnEffect` and its siblings.
@@ -182,7 +182,7 @@ Message boxes go through `messagebox.swf` with GMST texts:
   `OnStoryCraftItem` (`src/story.rs`), the crafting statistics' names
   (`src/stats.rs`), stations' idles for NPCs (`src/ai/furniture.rs`) and the
   item menus and item card (`src/swf_ui/item_menu.rs`).
-- **Missing**: forms made while playing (the load order is mmapped plugins
+- **Previously missing**: forms made while playing (the load order is mmapped plugins
   only, so a new potion or enchantment has nowhere to live); per-copy item
   quality, player enchantments and custom names; the player using a station;
   every crafting record and formula.
@@ -191,9 +191,11 @@ Message boxes go through `messagebox.swf` with GMST texts:
 
 ### 0. Research and a survey
 
-Implemented survey and research notes. Open: standalone EnchantDestruct routing,
-unknown-potion/new-recipe translation strings, original-game prompt and formula
-rounding checks. See `research/crafting/`. Later steps remain pending.
+Steps 0–10 were implemented in the numbered commit order below, with each
+lettered substep committed separately. See `research/crafting/` and the
+verification record at the end. Open research: standalone EnchantDestruct
+routing, the new-recipe translation string, original-game prompt and formula
+rounding checks. DefaultPotion FULL supplies the unknown-potion name.
 
 - `research/crafting/menu.md` (the contract above, with argument types and
   each frame's clips), `research/crafting/records.md` (`COBJ`, `FURN` `WBDT`,
@@ -334,8 +336,9 @@ forge; find the ref with `cell-refs`) and screenshots of the menu.
     a cooking pot grants none (no source gives cooking XP). Rebuild the list.
 5c. **The staff enchanter** (Dragonborn) and **Hearthfire's benches**. These
     are Create Object menus over their own keywords. Hearthfire's building
-    benches output `MISC` items that the house scripts consume (`OnItemAdded`
-    on the player alias, then a stage change). Check that chain with the
+    benches output `MISC` items whose Form-derived script handles
+    `OnContainerChanged` and calls the building quest. The player alias also
+    updates objective/log state on `OnItemAdded`. Check that chain with the
     survey's script list and an offscreen run at a house plot. Fix what the
     chain needs from natives and events, not by special-casing it.
 
@@ -478,7 +481,8 @@ lines each:
    reports `GetItemHealthPercent` on each reference against UESP's table.
 2. **Potions.** Fixed Alchemy and perks, given ingredients. The user mixes the
    listed pairs. A player alias's `OnItemAdded` reports the created potion's
-   `GetGoldValue` and `GetName` for comparison with 7c.
+   `GetGoldValue` and `GetFormID`; screenshots supply its name for comparison
+   with 7c (`GetName` is absent from vanilla scripts).
 3. **Enchanting.** Fixed Enchanting, a known enchantment and gems of each
    size. The user enchants an iron dagger at each gem and slider end and
    screenshots each item card (magnitude, charge meter). No vanilla native
@@ -493,7 +497,7 @@ lines each:
 
 - Unit tests per step, as listed; formula tests against UESP's worked numbers.
 - Offscreen runs that open each station in Riverwood (Alvor's forge,
-  grindstone and workbench, the Sleeping Giant's cooking pot), Whiterun
+  grindstone and workbench, Riverwood's outdoor cooking pot), Whiterun
   (Arcadia's alchemy lab, Farengar's arcane enchanter) and a Hearthfire plot,
   with screenshots of each menu before and after crafting.
 - `cargo test`, including the GPU-ignored tests here with `--include-ignored`.
@@ -510,3 +514,40 @@ lines each:
 - ROADMAP: move each finished step to Done; remove "waits on crafting" from
   items 2, 5 and 6 as each is satisfied; add the sit animation and the 3D
   item preview where they belong (items 5 and 6) if not already there.
+
+
+## Implementation and verification record (2026-10-29)
+
+The numbered commit schedule is complete. The manual probe is generated at
+`tests/assets/crafting1.esp` with its two scripts; instructions are in
+`research/crafting/manual-test.md`. It has **not** been installed or run in
+Skyrim SE. All comparisons reported here run this project's engine.
+
+- Workspace tests with Vulkan: 786 passed, 366 ignored. The sandbox's default
+  OpenGL adapter hits an existing 16-texture limit; the Vulkan rerun passes.
+- Crafting integration/formula/save tests, including the installed vanilla perk
+  audit and GPU-ignored crafting cases: 24 passed. Related charge/quantity
+  checks and the manual probe's typed-call/dry-run test are included in the
+  final verification notes in research/crafting/verification.md.
+- Offscreen captures under ignored `tests/captures/crafting/` cover forge
+  creation, weapon/armor tempering, cooking, alchemy at Arcadia's lab and the
+  Sleeping Giant, and disenchanting/enchanting at Farengar's table. Hearthfire's
+  controlled Lakeview setup supplies the house layout and required materials;
+  foundation creation advances BYOHHouseFalkreath through stages 120/130 and
+  completes its objective, then removes that recipe. This bypasses land
+  purchase; it verifies the crafting script chain, not house acquisition. No visual comparison with the original game is
+  implied.
+- The movie adapter initializes its frame's clips before binding them, uses
+  ItemCard.itemInfo, invalidates the tempering list, supplies skill/player
+  bottom bars and follows live crafting key bindings. Recipe conditions are
+  rechecked after activation scripts change quest variables.
+- Per-copy rows include quality, enchantment, charge/capacity, name, poison,
+  captured soul and ownership. Legacy sparse metadata is materialized in a
+  deterministic ownership order; COPY v3 reads v1/v2. The engine's one selected
+  equipped state per base form still limits independent dual-wield identity
+  for differently modified copies of the same weapon; that broader follow-up
+  is in ROADMAP.
+
+The remaining original-game questions and the working decisions are separated
+between this plan and known_ambiguities/crafting.md. Station use animations,
+3D previews and Creation Club behavior remain outside this plan's scope.

@@ -486,7 +486,11 @@ Absent means no created base forms. Fields and IDs are validated before applying
 forms are inserted before inventories are restored. Runtime forms are excluded
 from HEAD plugin dependencies. References and base forms share the FF allocator.
 
-Optional `COPY` version 1 saves inventory copy states, which copy is equipped,
+Optional `COPY` version 3 saves inventory copy states, which copy is equipped,
 and dropped-reference copy states. `INVT` retains its previous layout. Missing
-COPY means untouched items; malformed states and counts exceeding an ownership
-stack are rejected. Runtime magic caches are invalidated when FORM is replaced.
+COPY means untouched items; versions 1 and 2 remain readable (v2 added per-use
+charge cost; v3 adds captured souls and poison). Malformed states and counts
+exceeding an ownership stack are rejected. Runtime magic caches are invalidated
+when FORM is replaced. Active effects on created items validate against the
+incoming FORM records before live state changes. ENKN stores learned base
+enchantments, ALFL failed ingredient pairs, and CHLP first-use crafting help.

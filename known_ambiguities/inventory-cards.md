@@ -42,14 +42,14 @@ gifts received from an actor, rather than always the player's inventory.
   consuming the item instead of magicka](https://www.reddit.com/r/skyrim/comments/sutjpe/),
   but the original card's exact appearance and cost label have not been
   established by a controlled game comparison.
-- **Mixed souls and owners.** Inventory rows still group by base form and
-  ownership; captured souls aggregate by base form and soul size without
-  ownership identity. A whole form's homogeneous soul state is safe to show
-  on each ownership row. When that form mixes empty and filled gems or
-  several soul sizes, the card shows an em dash instead of asserting that
-  the selected ownership row is empty or has a particular soul. Invalid
-  levels also show the dash. This placeholder is an implementation choice,
-  not an original-game string.
+- **Mixed souls and owners.** Crafting's copy rows now separate captured soul,
+  authored/custom charge, poison, quality, enchantment and name within each
+  ownership stack. Old saves lacked correlations between their sparse soul,
+  charge and poison lists and ownership. Choice: materialize those legacy
+  entries into player-owned copies first, then owned stacks in inventory order.
+  New captures materialize immediately. Exact-row transfers, drops and pickup
+  preserve this identity in both SWF and egui paths. Grand/black identity remains
+  size-only as below.
 - **Black soul labels.** The current soul metadata stores size only;
   grand white and black souls both use value 5. This card therefore shows
   the grand label for either. Whether the original card distinguishes them
@@ -136,6 +136,7 @@ default slider position and exact keyboard focus behavior are not established.
 Crafting adds separate rows for quality, player enchantment, remaining custom
 charge, name and ownership. SWF transfer, gift, barter, drop and pickpocket paths
 carry the selected copy state. Armor cards use the row's quality; weapon cards
-include its exact quality bonus before rounding. Legacy soul/charge/poison
-metadata still has the older grouping limits described above; see the remaining
-work in plans/crafting.md rather than treating that migration as complete.
+include its exact quality bonus before rounding. The selected copy supplies charge
+and poison to combat/recharge. One equipped-state slot per base form remains an
+engine limitation for dual wielding differently modified copies of the same base;
+that follow-up is recorded in ROADMAP rather than silently claiming per-hand identity.
