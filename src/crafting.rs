@@ -1,4 +1,5 @@
 //! Station recipe queries and crafting transactions.
+mod alchemy;
 use crate::engine::Engine;
 use crate::world::crafting::Recipe;
 use crate::world::inventory::item_info;
