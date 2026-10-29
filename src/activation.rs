@@ -63,6 +63,47 @@ impl Engine {
         if bench.frame().is_none() {
             return false;
         }
+        let help = match bench.kind {
+            2 => *b"HBSM",
+            7 => *b"HBSA",
+            3 => *b"HBEC",
+            5 => *b"HBAL",
+            _ => {
+                let has = |name: &str| {
+                    self.lo
+                        .find_editor_id(name)
+                        .is_some_and(|k| bench.keywords.contains(&k))
+                };
+                if has("CraftingSmelter") {
+                    *b"HBML"
+                } else if has("CraftingTanningRack") {
+                    *b"HBTA"
+                } else if has("CraftingCookpot") || has("BYOHCraftingOven") {
+                    *b"HBCO"
+                } else if has("CraftingSmithingForge") || has("CraftingSmithingSkyforge") {
+                    *b"HBFG"
+                } else {
+                    *b"HBOC"
+                }
+            }
+        };
+        if !self.knowledge.crafting_help.contains(&help)
+            && let Some(message) = self
+                .lo
+                .default_objects()
+                .get(&help)
+                .copied()
+                .filter(|m| !m.is_null())
+        {
+            self.show_help_message(
+                message,
+                &format!("crafting-{}", String::from_utf8_lossy(&help)),
+                10.,
+                0.,
+                1,
+            );
+            self.knowledge.crafting_help.insert(help);
+        }
         self.menu = Some(crate::items::Menu::Crafting {
             station,
             kind: bench.kind,

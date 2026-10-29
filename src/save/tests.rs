@@ -6477,3 +6477,19 @@ fn crafting_created_forms_references_and_copy_state_share_ids_across_load() {
         .unwrap();
     assert!(next > enchantment);
 }
+
+#[test]
+fn crafting_first_use_help_round_trip_and_legacy() {
+    let mut s = Snapshot::default();
+    s.crafting_help.insert(*b"HBFG");
+    let file = s.write();
+    assert_eq!(
+        Snapshot::read(&file).unwrap().crafting_help,
+        s.crafting_help
+    );
+    let mut legacy = file.clone();
+    legacy.sections.retain(|(t, _)| t != b"CHLP");
+    assert!(Snapshot::read(&legacy).unwrap().crafting_help.is_empty());
+    s.crafting_help.insert(*b"XXXX");
+    assert!(Snapshot::read(&s.write()).is_err());
+}

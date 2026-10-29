@@ -90,6 +90,7 @@ pub struct Spot {
 pub struct Snapshot {
     /// Owned runtime base records, in global form-ID order (optional FORM).
     pub forms: Vec<Vec<u8>>,
+    pub crafting_help: HashSet<[u8; 4]>,
     pub item_copies: HashMap<FormId, Vec<crate::item_copies::ItemCopy>>,
     pub metadata: Option<super::metadata::Metadata>,
     pub(crate) continuity: super::continuity::Continuity,
@@ -505,6 +506,7 @@ impl Snapshot {
         continuity.executions = executions;
         let mut snapshot = Snapshot {
             forms: e.lo.runtime_records(),
+            crafting_help: e.knowledge.crafting_help.clone(),
             item_copies: e.ref_state.item_copies.clone(),
             metadata: Some(super::metadata::Metadata::capture(e)),
             continuity,
@@ -667,6 +669,14 @@ impl Snapshot {
             forms.bytes(record);
         }
         file.add(b"FORM", forms.0);
+        let mut help = Writer::default();
+        help.len(self.crafting_help.len());
+        let mut shown: Vec<_> = self.crafting_help.iter().collect();
+        shown.sort();
+        for key in shown {
+            help.u32(u32::from_le_bytes(*key));
+        }
+        file.add(b"CHLP", help.0);
         if let Some(meta) = &self.metadata {
             file.add(b"META", meta.encode());
             if let Some(image) = &meta.thumbnail {
@@ -1245,6 +1255,25 @@ impl Snapshot {
     /// Read every section; nothing is applied until all of them read.
     pub fn read(file: &SaveFile) -> Result<Snapshot> {
         let mut s = Snapshot::default();
+        if file.sections.iter().filter(|(t, _)| t == b"CHLP").count() > 1 {
+            return Err(Corrupt("duplicate CHLP section".into()));
+        }
+        if let Some(data) = file.section(b"CHLP") {
+            let mut r = Reader::new(data);
+            for _ in 0..r.count(4)? {
+                let key = r.u32()?.to_le_bytes();
+                if ![
+                    *b"HBFG", *b"HBML", *b"HBTA", *b"HBCO", *b"HBOC", *b"HBSM", *b"HBSA", *b"HBEC",
+                    *b"HBAL",
+                ]
+                .contains(&key)
+                    || !s.crafting_help.insert(key)
+                {
+                    return Err(Corrupt("invalid crafting help key".into()));
+                }
+            }
+            r.finish()?;
+        }
         if file.sections.iter().filter(|(t, _)| t == b"FORM").count() > 1 {
             return Err(Corrupt("duplicate FORM section".into()));
         }
@@ -2335,6 +2364,7 @@ impl Snapshot {
             log::warn!("{dropped} saved script threads can't be resumed");
         }
         e.inventories = self.inventories;
+        e.knowledge.crafting_help = self.crafting_help;
         e.ref_state.item_copies = self.item_copies;
         e.casting.restore_power_uses(self.power_uses);
         e.magic.souls_taken = self.spent_souls;

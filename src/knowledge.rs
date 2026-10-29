@@ -20,6 +20,7 @@ pub enum IniValue {
 
 #[derive(Default)]
 pub struct Knowledge {
+    pub(crate) crafting_help: std::collections::HashSet<[u8; 4]>,
     /// INI settings scripts set this session, by lower-cased name
     /// (`fGrassStartFadeDistance:Grass`). The game writes nothing back.
     pub(crate) ini: HashMap<String, IniValue>,

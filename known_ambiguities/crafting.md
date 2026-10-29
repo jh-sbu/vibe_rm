@@ -54,3 +54,11 @@ opens its crafting menu immediately after normal OnActivate processing and
 BlockActivation checks, and closes back to standing. This uses the authored
 station type and keywords. Experiment types remain unsupported: the vanilla
 survey found none, and their movie routing remains an open research question.
+
+## First-use help (step 4d)
+
+DOBJ supplies the nine HB* help messages, but the station survey and movie do
+not establish repetition cadence. Choice: each help key is shown once per
+character, for ten real seconds, with shown keys persisted in optional CHLP.
+Missing default messages do not consume their shown flag. Cooking and ovens
+share cooking help; unclassified Create Object stations use object-creation help.
