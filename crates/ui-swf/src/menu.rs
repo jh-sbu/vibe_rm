@@ -297,6 +297,16 @@ impl Menu {
         self.player.lock().unwrap().set_avm1_variable(path, value);
     }
 
+    /// Rebind a live movie object/function after changing a timeline frame.
+    pub fn alias(&self, target: &str, source: &str) -> bool {
+        self.player
+            .lock()
+            .unwrap()
+            .mutate_with_update_context(|context| {
+                ruffle_core::external::alias_avm1_variable(context, target, source)
+            })
+    }
+
     /// Places a root-level clip's origin at viewport pixels, using the movie's
     /// actual stage transform (including scaling and letterbox offsets).
     pub fn position_clip(&self, path: &str, x: f64, y: f64) {

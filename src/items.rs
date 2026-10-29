@@ -661,8 +661,11 @@ impl Engine {
         let Some(m) = self.magic_item(magic) else {
             return String::new();
         };
+        self.effect_items_text(&m.effects)
+    }
+    pub(crate) fn effect_items_text(&self, effects: &[crate::magic::EffectItem]) -> String {
         let mut out: Vec<String> = Vec::new();
-        for e in &m.effects {
+        for e in effects {
             let Some(rec) = self.lo.get(e.effect) else {
                 continue;
             };

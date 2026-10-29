@@ -26,6 +26,10 @@ pub(super) struct CraftingMenu {
     selected_ingredients: Vec<FormId>,
     enchant_rows: Vec<EnchantRow>,
     enchant: crate::crafting::EnchantSelection,
+    charge_request: std::sync::Arc<std::sync::Mutex<Option<f32>>>,
+    slider_configured: std::cell::Cell<bool>,
+    slider_active: std::cell::Cell<bool>,
+    slider_original: std::cell::Cell<f32>,
 }
 impl CraftingMenu {
     pub fn open(
@@ -45,14 +49,29 @@ impl CraftingMenu {
         };
         let menu = ui.open("craftingmenu.swf", size)?;
         super::set_button_mapping(&menu, &buttons);
+        let charge_request = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let charges = charge_request.clone();
         menu.set_responder(move |call, _| match call.name.as_str() {
+            "CalculateCharge" => {
+                if let Some(Value::Number(uses)) = call.args.first() {
+                    *charges.lock().unwrap() = Some(*uses as f32);
+                }
+                Some(Vec::new())
+            }
             "CanFadeItemInfo" => Some(vec![Value::Bool(true)]),
             _ => super::respond(&buttons, call),
         });
         menu.invoke(&format!("{M}.gotoAndStop"), &[text(frame)]);
-        menu.alias(&format!("{M}.CategoryList"),&format!("{M}.InventoryLists"));
-        menu.alias(&format!("{M}.ItemInfo"),&format!("{M}.ItemInfoHolder.ItemInfo"));
+        menu.alias(&format!("{M}.CategoryList"), &format!("{M}.InventoryLists"));
+        menu.alias(
+            &format!("{M}.ItemInfo"),
+            &format!("{M}.ItemInfoHolder.ItemInfo"),
+        );
         menu.invoke(&format!("{M}.Initialize"), &[]);
+        menu.alias(
+            &format!("{M}.SetChargeValues"),
+            &format!("{M}.UpdateButtonText"),
+        );
         menu.invoke(&format!("{M}.SetPlatform"), &[num(0.), Value::Bool(false)]);
         let description = match kind {
             1 => "sConstructibleMenuDescription",
@@ -104,6 +123,10 @@ impl CraftingMenu {
             selected_ingredients: Vec::new(),
             enchant_rows: Vec::new(),
             enchant: Default::default(),
+            charge_request,
+            slider_configured: std::cell::Cell::new(false),
+            slider_active: std::cell::Cell::new(false),
+            slider_original: std::cell::Cell::new(1.),
         };
         result.rebuild(e);
         Ok(result)
@@ -173,6 +196,18 @@ impl CraftingMenu {
         self.display(e);
     }
     pub fn update(&mut self, e: &mut Engine) {
+        let uses = { self.charge_request.lock().unwrap().take() };
+        if let Some(uses) = uses.filter(|v| v.is_finite() && *v > 0.) {
+            let mut full = self.enchant.clone();
+            full.slider = 1.;
+            if let Some(preview) = e.enchant_preview(&full) {
+                self.enchant.slider = (preview.capacity / (uses * preview.cost))
+                    .powf(1. / 1.1)
+                    .clamp(1. / preview.maximum.max(1.), 1.);
+                self.display(e);
+            }
+        }
+
         if matches!(self.kind, 1 | 2 | 3 | 5 | 7)
             && e.inventories
                 .get(&crate::engine::PLAYER_REF)
@@ -414,6 +449,8 @@ impl CraftingMenu {
             }
             _ => {}
         }
+        self.slider_configured.set(false);
+        self.slider_active.set(false);
         self.rebuild_enchanting(e);
     }
     fn request_disenchant(&mut self, e: &mut Engine, index: Option<usize>) {
@@ -595,12 +632,60 @@ impl CraftingMenu {
                 self.menu
                     .invoke(&format!("{M}.ItemInfo.SetItemInfo"), &[card]);
             }
+            self.menu.set(&format!("{M}.ButtonText.2"),text(&if self.enchant.item.is_some() {e.gmst_string("sRename").unwrap_or_else(||"Rename".into())}else{String::new()}));
             let can = self.enchant.item.is_some()
                 && !self.enchant.effects.is_empty()
                 && self.enchant.effects.len() <= e.enchantment_slots()
                 && self.enchant.gem.is_some();
             self.menu.set(&format!("{M}.bCanCraft"), Value::Bool(can));
             self.menu.invoke(&format!("{M}.UpdateButtonText"), &[]);
+            if let Some(preview) = e.enchant_preview(&self.enchant)
+                && let Some(row) = &self.enchant.item
+            {
+                let mut card = super::item_menu::item_card(e, row, None, false);
+                if let Value::Object(fields) = &mut card {
+                    fields.insert("type".into(), num(15.));
+                    fields.insert(
+                        "effects".into(),
+                        text(&e.effect_items_text(&preview.effects)),
+                    );
+                    fields.insert("value".into(), num(preview.value as f32));
+                    fields.insert(
+                        "totalCharges".into(),
+                        num(if preview.weapon {
+                            preview.uses as f32
+                        } else {
+                            0.
+                        }),
+                    );
+                    fields.insert(
+                        "usedCharge".into(),
+                        num(if preview.weapon { 100. } else { 0. }),
+                    );
+                    fields.insert("sliderShown".into(), Value::Bool(self.slider_active.get()));
+                    if let Some(name) = &self.enchant.name {
+                        fields.insert("name".into(), text(name));
+                    }
+                }
+                self.menu
+                    .invoke(&format!("{M}.ItemInfo.SetItemInfo"), &[card]);
+                if preview.weapon && !self.slider_configured.replace(true) {
+                    self.slider_original.set(self.enchant.slider);
+                    self.slider_active.set(true);
+                    let mut full = self.enchant.clone();
+                    full.slider = 1.;
+                    if let Some(full) = e.enchant_preview(&full) {
+                        let min = full.uses.max(1) as f32;
+                        let max = (full.capacity / (full.cost * (1. / full.maximum).powf(1.1)))
+                            .floor()
+                            .max(min);
+                        self.menu.invoke(
+                            &format!("{M}.ShowSlider"),
+                            &[num(max), num(min), num(preview.uses as f32), num(1.)],
+                        );
+                    }
+                }
+            }
             return;
         }
         if self.kind == 5 {
@@ -788,6 +873,25 @@ impl CraftingMenu {
                 self.rebuild_alchemy(e);
             }
             "ChooseItem" if self.kind == 3 => self.choose_enchanting(e, index()),
+            "SliderClose" if self.kind == 3 => {
+                if !matches!(c.args.first(), Some(Value::Bool(true))) {
+                    self.enchant.slider = self.slider_original.get();
+                }
+                self.slider_active.set(false);
+                self.display(e);
+            }
+            "AuxButtonPress" if self.kind==3=>{
+                if let Some(row)=&self.enchant.item {
+                    let current=self.enchant.name.clone().or_else(||row.copy.name.clone()).or_else(||crate::world::inventory::item_info(&e.lo,row.item).map(|i|i.name)).unwrap_or_default();
+                    self.menu.invoke(&format!("{M}.EditItemName"),&[text(&current),num(32.)]);
+                }
+            },
+            "EndItemRename" if self.kind==3=>{
+                if matches!(c.args.first(),Some(Value::Bool(true))) && let Some(Value::String(name))=c.args.get(1) {
+                    let name:String=name.chars().filter(|c|!c.is_control()).take(32).collect();
+                    if !name.is_empty() {self.enchant.name=Some(name);}
+                }self.display(e);
+            },
             "CloseMenu" if self.kind == 5 && !self.selected_ingredients.is_empty() => {
                 let question = e
                     .gmst_string("sQuitAlchemy")
@@ -835,6 +939,7 @@ impl CraftingMenu {
         true
     }
     pub fn key(&self, code: winit::keyboard::KeyCode) -> bool {
+        if self.menu.typing() {return false;}
         use winit::keyboard::KeyCode;
         let method = match code {
             KeyCode::Escape => "onExitButtonPress",

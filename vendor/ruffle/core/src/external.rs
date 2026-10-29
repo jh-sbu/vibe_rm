@@ -392,6 +392,29 @@ pub fn set_avm1_variable(context: &mut UpdateContext<'_>, path: &str, value: Val
     let _ = activation.set_variable(path, value);
 }
 
+/// Assigns a live AVM1 value without converting objects or functions through
+/// ExternalInterface's by-value representation. Native menu hosts use this
+/// when a timeline change replaces one of a menu's child clips.
+pub fn alias_avm1_variable(context: &mut UpdateContext<'_>, target: &str, source: &str) -> bool {
+    let Some(root) = context.stage.root_clip() else {
+        return false;
+    };
+    let mut activation = Avm1Activation::from_nothing(
+        context,
+        Avm1ActivationIdentifier::root("[AliasVariable]"),
+        root,
+    );
+    let source = AvmString::new_utf8(activation.gc(), source);
+    let Ok(value) = activation.get_variable(source).map(Avm1Value::from) else {
+        return false;
+    };
+    if matches!(value, Avm1Value::Undefined) {
+        return false;
+    }
+    let target = AvmString::new_utf8(activation.gc(), target);
+    activation.set_variable(target, value).is_ok()
+}
+
 /// Calls the AVM1 function at a target path (`_root.a.b.Method`) with `this`
 /// the object holding it, as Scaleform's `Invoke`, from code holding the
 /// update context. Objects returned come back as null.

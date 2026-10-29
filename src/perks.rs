@@ -124,6 +124,8 @@ mod effect_perk_sources_tests {
 
 /// Entry points used here (CommonLibSSE `BGSEntryPoint::ENTRY_POINTS`).
 pub mod ep {
+    pub const MOD_ENCHANTMENT_POWER: u8 = 77;
+    pub const MOD_SOUL_GEM_ENCHANTING: u8 = 79;
     pub const MOD_NUMBER_APPLIED_ENCHANTMENTS_ALLOWED: u8 = 80;
     pub const MOD_ALCHEMY_EFFECTIVENESS: u8 = 66;
     pub const PURIFY_ALCHEMY_INGREDIENTS: u8 = 73;

@@ -119,3 +119,18 @@ four known effect category IDs into four bytes of filterFlag. Category IDs are
 ListFilterer.EntryMatchesPartitionedFilter in the authored movie. Keep effect
 categories explicitly visible because the shared category visibility scan uses
 ordinary bit masks rather than partitioned IDs.
+
+The enchantment card uses ICT_CRAFT_ENCHANTING (15), `sliderShown`, `totalCharges`
+and `usedCharge`. Its quantity slider writes `TotalChargesValue`, so the host
+presents uses, converting to a magnitude fraction with the charge formula.
+The movie requests CalculateCharge with a SetChargeValues response method but
+contains no implementation of that method. The host acknowledges it through a
+live method alias and updates the preview/card itself. This adapter needs the
+planned screenshot/manual comparisons; it is not evidence of the engine's native
+response argument layout.
+
+The vendored Ruffle host bridge now supports assigning live AVM1 object/function
+references without flattening them through ExternalInterface values. This rebinds
+CategoryList and ItemInfo after a frame switch. Ruffle's existing dual MIT/Apache
+license was checked; this small bridge extension is authored here, not imported
+from a mod or engine source.

@@ -195,3 +195,152 @@ impl Engine {
             .collect()
     }
 }
+
+pub(crate) struct EnchantPreview {
+    pub effects: Vec<crate::magic::EffectItem>,
+    pub maximum: f32,
+    pub capacity: f32,
+    pub cost: f32,
+    pub uses: u32,
+    pub value: i32,
+    pub weapon: bool,
+}
+
+pub(crate) fn skill_strength(skill: f32) -> f32 {
+    let x = skill / 100.;
+    1. + x * (x - 0.14) / 3.4
+}
+pub(crate) fn weapon_charge_cost(base_cost: f32, skill: f32, fraction: f32) -> f32 {
+    3. * (base_cost.max(0.) * fraction.max(0.)).powf(1.1)
+        * (1. - (skill.max(0.) / 200.).sqrt()).max(0.)
+}
+
+impl Engine {
+    pub(crate) fn enchant_preview(&self, selection: &EnchantSelection) -> Option<EnchantPreview> {
+        let item = selection.item.as_ref()?;
+        let (gem, soul) = selection.gem?;
+        if selection.effects.is_empty()
+            || selection.effects.len() > self.enchantment_slots()
+            || selection.effects.iter().any(|f| {
+                !self.knowledge.enchantments.contains(f)
+                    || !self.enchantment_compatible(*f, item.item)
+            })
+        {
+            return None;
+        }
+        let weapon = item.info.kind == ItemKind::Weapon;
+        let capacity = self.perk_entry_point(
+            crate::perks::ep::MOD_SOUL_GEM_ENCHANTING,
+            PLAYER_REF,
+            &[Some(gem)],
+            crate::recharge::soul_charge(soul),
+        );
+        if !capacity.is_finite() || capacity <= 0. {
+            return None;
+        }
+        let power = skill_strength(self.actor_value(PLAYER_REF, esp::actor_value::ENCHANTING));
+        let skill = self.av_base(PLAYER_REF, esp::actor_value::ENCHANTING);
+        let full_cost = selection
+            .effects
+            .iter()
+            .map(|&f| weapon_charge_cost(self.enchantment_cost(f), skill, 1.))
+            .sum::<f32>();
+        let eligible = if weapon && full_cost > capacity {
+            (capacity / full_cost).powf(1. / 1.1)
+        } else {
+            1.
+        };
+        let fraction = if weapon {
+            selection.slider.clamp(0.001, 1.) * eligible
+        } else {
+            capacity / crate::recharge::soul_charge(5)
+        };
+        let mut effects = Vec::new();
+        let mut maximum = 0.;
+        for &enchantment in &selection.effects {
+            let source = self.magic_item(enchantment)?;
+            for e in &source.effects {
+                let m = self.magic_effect(e.effect)?;
+                let factor = self.perk_entry_point(
+                    crate::perks::ep::MOD_ENCHANTMENT_POWER,
+                    PLAYER_REF,
+                    &[Some(e.effect), Some(item.item)],
+                    power,
+                );
+                let mut effect = e.clone();
+                let max_mag = (e.magnitude * factor * if weapon { eligible } else { fraction })
+                    .floor()
+                    .max(0.);
+                let max_duration = if m.has(crate::magic::flags::POWER_AFFECTS_DURATION) {
+                    (e.duration as f32 * factor * if weapon { eligible } else { fraction })
+                        .floor()
+                        .max(0.) as u32
+                } else {
+                    e.duration
+                };
+                if maximum == 0. {
+                    maximum = if m.has(crate::magic::flags::POWER_AFFECTS_DURATION)
+                        && m.has(crate::magic::flags::NO_MAGNITUDE)
+                    {
+                        max_duration as f32
+                    } else {
+                        max_mag
+                    };
+                }
+                effect.magnitude = if m.has(crate::magic::flags::NO_MAGNITUDE) {
+                    0.
+                } else {
+                    (if weapon {
+                        max_mag * selection.slider.clamp(0.001, 1.)
+                    } else {
+                        max_mag
+                    })
+                    .floor()
+                    .max(if max_mag > 0. { 1. } else { 0. })
+                };
+                effect.duration = if m.has(crate::magic::flags::NO_DURATION) {
+                    0
+                } else if weapon && m.has(crate::magic::flags::POWER_AFFECTS_DURATION) {
+                    (max_duration as f32 * selection.slider.clamp(0.001, 1.))
+                        .floor()
+                        .max(1.) as u32
+                } else {
+                    max_duration
+                };
+                effects.push(effect);
+            }
+        }
+        let cost = if weapon {
+            full_cost * fraction.powf(1.1)
+        } else {
+            0.
+        };
+        let uses = if cost > 0. {
+            (capacity / cost).floor().max(1.) as u32
+        } else {
+            u32::MAX
+        };
+        let value_cost = effects
+            .iter()
+            .map(|e| self.alchemy_effect_cost(e))
+            .sum::<f32>();
+        let base = self.copy_item_info(item.item, &item.copy)?.value;
+        let value = base.saturating_add(if weapon {
+            (crate::ai::combat::gmst_f32(&self.lo, "fEnchantmentPointsMult", 0.12) * capacity
+                + crate::ai::combat::gmst_f32(&self.lo, "fEnchantmentEffectPointsMult", 8.)
+                    * value_cost)
+                .floor() as i32
+        } else {
+            value_cost.floor() as i32
+        });
+        Some(EnchantPreview {
+            effects,
+            maximum: maximum.max(1.),
+            capacity,
+            cost,
+            uses,
+            value,
+            weapon,
+        })
+    }
+}

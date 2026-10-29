@@ -151,3 +151,26 @@ UESP establishes variable disenchanting XP, and the data supplies
 fDisenchantSkillUse=.0025. Choice: multiply the destroyed item's enchantment cost
 (manual ENIT cost or auto-calculated effect total) by that setting. The exact
 original cost input still needs the manual plugin.
+
+## Enchanting strength, charges and value (step 8c)
+
+Use UESP Enchanting Effects revision 3595887's vanilla effective-skill formula;
+current Enchanting includes the vanilla potion's direct skill bonus. Entry point
+77 receives the effect and item as subjects. Apparel scales by soul capacity;
+weapons scale charge capacity and trade a common magnitude fraction against uses.
+At most one use's capacity caps a too-powerful weapon enchantment. Destruction
+magnitude perks remain in the existing landing path, so they are not baked into
+created effects twice.
+
+[Skepmanmods' public formula notes](https://www.nexusmods.com/skyrimspecialedition/articles/1025)
+describe weapon value changing on reload in vanilla. Choice: consistently use the
+reported post-reload value rule: base value plus .12 * soul capacity plus 8 times
+summed effect cost. Armor adds effect cost. Do not emulate the transient pre-save
+price bug. This supersedes step 3c's provisional weapon value rule; the manual
+plugin should compare both creation and reload.
+
+The slider is presented in uses, based on the movie's TotalChargesValue, and
+inverts the documented cost exponent to select power. Magnitudes round down;
+a nonzero selected effect keeps at least one point/second. The exact native
+SetChargeValues payload and multi-effect minimum-power rounding remain open;
+the host updates the card directly.

@@ -249,3 +249,68 @@ fn crafting_enchanting_categories_filter_item_types_restrictions_and_souls() {
     drop(e);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn crafting_enchantment_skill_and_weapon_charge_formulas() {
+    assert!((skill_strength(100.) - 1.2529411).abs() < 0.00001);
+    assert!((skill_strength(15.) - 1.0004412).abs() < 0.00001);
+    let full = weapon_charge_cost(10., 100., 1.);
+    let half = weapon_charge_cost(10., 100., 0.5);
+    assert!(half < full);
+    assert!((half / full - 0.5f32.powf(1.1)).abs() < 0.00001);
+    for (soul, charge) in [(1, 250.), (2, 500.), (3, 1000.), (4, 2000.), (5, 3000.)] {
+        assert_eq!(crate::recharge::soul_charge(soul), charge);
+    }
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn crafting_enchantment_strength_souls_slider_and_perks() {
+    let (dir, mut e) = fixture();
+    e.knowledge.enchantments.extend([BASE, ARMOR_ENCH]);
+    e.set_actor_value(PLAYER_REF, esp::actor_value::ENCHANTING, 100.);
+    let sword = e
+        .enchantable_items()
+        .into_iter()
+        .find(|r| r.item == SWORD)
+        .unwrap();
+    let mut selection = EnchantSelection {
+        item: Some(sword),
+        effects: vec![BASE],
+        gem: Some((GEM, 5)),
+        ..Default::default()
+    };
+    let full = e.enchant_preview(&selection).unwrap();
+    assert_eq!(full.effects[0].magnitude, 12.);
+    assert_eq!(full.capacity, 3000.);
+    selection.slider = 0.5;
+    let half = e.enchant_preview(&selection).unwrap();
+    assert_eq!(half.effects[0].magnitude, 6.);
+    assert!(half.uses > full.uses);
+    selection.slider = 1.;
+    selection.gem = Some((GEM, 1));
+    assert_eq!(
+        e.enchant_preview(&selection).unwrap().effects[0].magnitude,
+        12.
+    );
+    selection.item = e.enchantable_items().into_iter().find(|r| r.item == ARMOR);
+    selection.effects = vec![ARMOR_ENCH];
+    selection.gem = Some((GEM, 5));
+    assert_eq!(
+        e.enchant_preview(&selection).unwrap().effects[0].magnitude,
+        25.
+    );
+    selection.gem = Some((GEM, 1));
+    assert_eq!(
+        e.enchant_preview(&selection).unwrap().effects[0].magnitude,
+        2.
+    );
+    e.add_perk(PLAYER_REF, FormId(0x881));
+    selection.gem = Some((GEM, 5));
+    assert_eq!(
+        e.enchant_preview(&selection).unwrap().effects[0].magnitude,
+        50.
+    );
+    drop(e);
+    std::fs::remove_dir_all(dir).unwrap();
+}
