@@ -34,6 +34,11 @@ pub struct PluginInfo {
 impl PluginInfo {
     /// Convert a FormID read from this plugin's data into the global id space.
     pub fn globalize(&self, local: FormId) -> FormId {
+        // Runtime records already carry global IDs, including cross-plugin
+        // effect IDs. Never reinterpret their high byte as a master index.
+        if self.slot == Slot::Full(0xFF) {
+            return local;
+        }
         if local.0 == 0 {
             return local;
         }
@@ -215,6 +220,13 @@ impl LoadOrder {
         for i in 0..lo.plugins.len() {
             lo.index_plugin(i)?;
         }
+        let index = lo.plugins.len();
+        lo.plugins.push(PluginInfo {
+            plugin: Plugin::runtime(),
+            slot: Slot::Full(0xFF),
+            index,
+            resolve: Vec::new(),
+        });
         Ok(lo)
     }
 
@@ -364,7 +376,84 @@ impl LoadOrder {
         &self.data_dir
     }
     pub fn plugins(&self) -> &[PluginInfo] {
-        &self.plugins
+        // Runtime records are save state, never a load-order dependency.
+        &self.plugins[..self.plugins.len() - 1]
+    }
+
+    /// Insert an owned runtime ALCH/ENCH. The caller allocates the ID from
+    /// the same sequence as created references. Replacements are forbidden.
+    pub fn insert_runtime_record(&mut self, bytes: &[u8]) -> Result<FormId> {
+        use crate::record::RECORD_HEADER_SIZE;
+        if bytes.len() < RECORD_HEADER_SIZE {
+            return Err(Error::Corrupt("short runtime record".into()));
+        }
+        let h = RecordHeader::parse(bytes);
+        if h.form_id.0 < 0xFF00_0800
+            || h.is_compressed()
+            || h.flags != 0
+            || !matches!(&h.tag.0, b"ALCH" | b"ENCH")
+            || bytes.len() != RECORD_HEADER_SIZE + h.data_size as usize
+            || self.records.contains_key(&h.form_id)
+        {
+            return Err(Error::Corrupt("invalid or duplicate runtime record".into()));
+        }
+        // Validate every subrecord boundary before allowing save bytes into
+        // ordinary record readers. Runtime builders don't need XXXX fields.
+        let mut at = RECORD_HEADER_SIZE;
+        while at < bytes.len() {
+            let Some(head) = bytes.get(at..at + 6) else {
+                return Err(Error::Corrupt("short runtime field".into()));
+            };
+            if &head[..4] == b"XXXX" {
+                return Err(Error::Corrupt("oversized runtime field".into()));
+            }
+            at += 6 + u16::from_le_bytes(head[4..6].try_into().unwrap()) as usize;
+            if at > bytes.len() {
+                return Err(Error::Corrupt("runtime field overrun".into()));
+            }
+        }
+        let pi = self.plugins.len() - 1;
+        let offset = self.plugins[pi].plugin.append_runtime(bytes)?;
+        self.records.insert(
+            h.form_id,
+            RecordRef {
+                plugin: pi as u16,
+                offset,
+                tag: h.tag,
+            },
+        );
+        self.by_type.entry(h.tag).or_default().push(h.form_id);
+        self.editor_ids.take();
+        Ok(h.form_id)
+    }
+
+    /// Serialized records in ID order, independent of insertion order.
+    pub fn runtime_records(&self) -> Vec<Vec<u8>> {
+        let pi = self.plugins.len() - 1;
+        let mut records: Vec<_> = self
+            .records
+            .iter()
+            .filter(|(_, r)| r.plugin as usize == pi)
+            .collect();
+        records.sort_by_key(|(id, _)| **id);
+        records
+            .into_iter()
+            .map(|(_, r)| {
+                let data = &self.plugins[pi].plugin.bytes()[r.offset as usize..];
+                let h = RecordHeader::parse(data);
+                data[..24 + h.data_size as usize].to_vec()
+            })
+            .collect()
+    }
+
+    pub fn clear_runtime_records(&mut self) {
+        let pi = self.plugins.len() - 1;
+        self.records.retain(|_, r| r.plugin as usize != pi);
+        for ids in self.by_type.values_mut() {
+            ids.retain(|id| id.0 >> 24 != 0xFF);
+        }
+        self.plugins[pi].plugin = Plugin::runtime();
+        self.editor_ids.take();
     }
     /// The plugin that owns a global FormID's prefix, and the id local to it
     /// (as used in e.g. FaceGen file names).
@@ -540,5 +629,53 @@ impl LoadOrder {
         } else {
             crate::decode_zstring(data)
         }
+    }
+}
+
+#[cfg(test)]
+mod runtime_tests {
+    use super::*;
+    use crate::writer::RecordBuilder;
+
+    #[test]
+    fn runtime_forms_use_all_normal_lookup_paths_without_globalizing_again() {
+        let mut lo = LoadOrder::load(std::env::temp_dir(), &[]).unwrap();
+        let id = FormId(0xFF00_0801);
+        let record = RecordBuilder::new(b"ALCH", id)
+            .zstring(b"FULL", "Potion")
+            .form(b"EFID", FormId(0x0400_1234));
+        lo.insert_runtime_record(&record.to_bytes()).unwrap();
+        assert!(lo.plugins().is_empty());
+        assert_eq!(lo.tag_of(id), Some(Tag(*b"ALCH")));
+        assert_eq!(lo.ids_of_type(b"ALCH"), &[id]);
+        let r = lo.get(id).unwrap();
+        assert_eq!(r.fid(FormId(0x0400_1234)), FormId(0x0400_1234));
+        assert_eq!(lo.lstring(&r, r.get(b"FULL").unwrap()), "Potion");
+        assert!(lo.insert_runtime_record(&record.to_bytes()).is_err());
+        let second = RecordBuilder::new(b"ENCH", FormId(0xFF00_0800)).to_bytes();
+        lo.insert_runtime_record(&second).unwrap();
+        assert_eq!(lo.runtime_records(), vec![second, record.to_bytes()]);
+        lo.clear_runtime_records();
+        assert!(lo.get(id).is_none());
+        assert!(lo.ids_of_type(b"ALCH").is_empty());
+    }
+
+    #[test]
+    fn runtime_records_reject_bad_ids_tags_and_truncated_fields() {
+        let mut lo = LoadOrder::load(std::env::temp_dir(), &[]).unwrap();
+        for bytes in [
+            vec![],
+            vec![0; 24],
+            RecordBuilder::new(b"ALCH", FormId(0x800)).to_bytes(),
+            RecordBuilder::new(b"REFR", FormId(0xFF00_0800)).to_bytes(),
+        ] {
+            assert!(lo.insert_runtime_record(&bytes).is_err());
+        }
+        let mut bytes = RecordBuilder::new(b"ALCH", FormId(0xFF00_0800))
+            .zstring(b"FULL", "Potion")
+            .to_bytes();
+        bytes[28..30].copy_from_slice(&100u16.to_le_bytes());
+        assert!(lo.insert_runtime_record(&bytes).is_err());
+        assert!(lo.runtime_records().is_empty());
     }
 }

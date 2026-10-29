@@ -79,10 +79,25 @@ pub enum Item {
 pub struct Plugin {
     name: String,
     path: PathBuf,
-    map: Mmap,
+    map: Backing,
     header: PluginHeader,
     /// Offset of the first top-level group.
     body_start: usize,
+}
+
+enum Backing {
+    Mapped(Mmap),
+    Owned(Vec<u8>),
+}
+
+impl std::ops::Deref for Backing {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] {
+        match self {
+            Self::Mapped(m) => m,
+            Self::Owned(b) => b,
+        }
+    }
 }
 
 impl Plugin {
@@ -126,10 +141,39 @@ impl Plugin {
         Ok(Plugin {
             name,
             path,
-            map,
+            map: Backing::Mapped(map),
             header,
             body_start,
         })
+    }
+
+    pub(crate) fn runtime() -> Self {
+        Self {
+            name: "<runtime>".into(),
+            path: PathBuf::new(),
+            map: Backing::Owned(Vec::new()),
+            body_start: 0,
+            header: PluginHeader {
+                flags: 0,
+                version: 1.71,
+                num_records: 0,
+                next_object_id: 0,
+                author: String::new(),
+                description: String::new(),
+                masters: Vec::new(),
+            },
+        }
+    }
+
+    pub(crate) fn append_runtime(&mut self, bytes: &[u8]) -> Result<u32> {
+        let Backing::Owned(data) = &mut self.map else {
+            return Err(Error::Corrupt("cannot append to a disk plugin".into()));
+        };
+        let offset = u32::try_from(data.len())
+            .map_err(|_| Error::Corrupt("runtime plugin exceeds 4 GiB".into()))?;
+        data.extend_from_slice(bytes);
+        self.header.num_records += 1;
+        Ok(offset)
     }
 
     pub fn name(&self) -> &str {

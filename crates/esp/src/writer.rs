@@ -22,6 +22,13 @@ pub struct RecordBuilder {
 }
 
 impl RecordBuilder {
+    /// One uncompressed record, including its TES4-format header.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        self.write(&mut bytes);
+        bytes
+    }
+
     pub fn new(tag: &[u8; 4], form_id: FormId) -> Self {
         RecordBuilder {
             tag: Tag(*tag),

@@ -55,6 +55,29 @@ pub struct CreatedRefs {
 }
 
 impl Engine {
+    /// Shared ID sequence for runtime base forms and created references.
+    pub(crate) fn allocate_created_id(&mut self) -> FormId {
+        self.created_refs.next = self.created_refs.next.max(FIRST);
+        loop {
+            let id = FormId(self.created_refs.next);
+            self.created_refs.next = self
+                .created_refs
+                .next
+                .checked_add(1)
+                .expect("runtime form IDs exhausted");
+            if !self.created_refs.refs.contains_key(&id) && self.lo.get(id).is_none() {
+                return id;
+            }
+        }
+    }
+
+    pub(crate) fn create_base_form(
+        &mut self,
+        mut record: esp::writer::RecordBuilder,
+    ) -> esp::Result<FormId> {
+        record.form_id = self.allocate_created_id();
+        self.lo.insert_runtime_record(&record.to_bytes())
+    }
     pub fn created(&self, r: FormId) -> Option<&Created> {
         self.created_refs.refs.get(&r)
     }
@@ -118,11 +141,7 @@ impl Engine {
         } else {
             at
         };
-        if self.created_refs.next == 0 {
-            self.created_refs.next = FIRST;
-        }
-        let id = FormId(self.created_refs.next);
-        self.created_refs.next += 1;
+        let id = self.allocate_created_id();
         let location = self.ref_current_location(at);
         if inside && !actor {
             let item = if &tag == b"LVLI" {
@@ -189,11 +208,7 @@ impl Engine {
         rotation: Vec3,
         count: i32,
     ) -> FormId {
-        if self.created_refs.next == 0 {
-            self.created_refs.next = FIRST;
-        }
-        let id = FormId(self.created_refs.next);
-        self.created_refs.next += 1;
+        let id = self.allocate_created_id();
         let c = Created {
             base,
             position,
