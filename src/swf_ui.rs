@@ -14,6 +14,7 @@
 //! (`_root.HUDMovieBaseInstance...`); how the game words some of them isn't
 //! known (`known_ambiguities/swf-hud.md`).
 
+mod crafting_menu;
 mod cursor_menu;
 mod dialogue_menu;
 mod favorites_menu;
@@ -70,6 +71,7 @@ pub struct SwfUi {
     sleep_wait: Option<sleep_wait_menu::SleepWaitMenu>,
     /// The training menu, while open.
     training: Option<training_menu::TrainingMenu>,
+    crafting: Option<crafting_menu::CraftingMenu>,
     /// The skills menu, while open.
     stats: Option<stats_menu::StatsMenu>,
     /// A click or wheel turn in the skills menu, for its next update.
@@ -143,6 +145,7 @@ impl SwfUi {
             tween: None,
             sleep_wait: None,
             training: None,
+            crafting: None,
             stats: None,
             stats_act: None,
             map: None,
@@ -181,6 +184,9 @@ impl SwfUi {
         if let Some(sleep_wait) = &mut self.sleep_wait {
             sleep_wait.menu.resize(width, height);
         }
+        if let Some(crafting) = &mut self.crafting {
+            crafting.menu.resize(width, height);
+        }
         if let Some(training) = &mut self.training {
             training.menu.resize(width, height);
         }
@@ -215,6 +221,7 @@ impl SwfUi {
         self.tween_menu(engine, dt);
         self.sleep_wait_menu(engine, dt);
         self.training_menu(engine, dt);
+        self.crafting_menu(engine, dt);
         self.stats_menu(engine, dt);
         self.map_menu(engine, dt);
         self.dialogue_menu(engine, dt);
@@ -468,6 +475,44 @@ impl SwfUi {
 
     /// Opens the training menu when the engine's menu is it, closes it when
     /// it goes, and keeps its card and meter.
+    fn crafting_menu(&mut self, engine: &mut Engine, dt: Duration) {
+        let Some(crate::items::Menu::Crafting { station, kind }) = engine.menu else {
+            self.crafting = None;
+            return;
+        };
+        if self
+            .crafting
+            .as_ref()
+            .is_some_and(|m| m.station != station || m.kind != kind)
+        {
+            self.crafting = None;
+        }
+        if self.crafting.is_none() {
+            match crafting_menu::CraftingMenu::open(
+                &self.ui,
+                self.size,
+                engine,
+                station,
+                kind,
+                self.buttons.clone(),
+            ) {
+                Ok(m) => self.crafting = Some(m),
+                Err(e) => {
+                    log::error!("crafting menu: {e:#}");
+                    engine.menu = None;
+                    return;
+                }
+            }
+        }
+        let m = self.crafting.as_mut().unwrap();
+        m.menu.advance(dt);
+        for call in m.menu.take_calls() {
+            if !m.answer(engine, &call) {
+                answer(&m.menu, engine, &call);
+            }
+        }
+    }
+
     fn training_menu(&mut self, engine: &mut Engine, dt: Duration) {
         let Some(crate::items::Menu::Training(trainer)) = engine.menu else {
             self.training = None;
@@ -635,6 +680,7 @@ impl SwfUi {
                     | crate::items::Menu::Tween
                     | crate::items::Menu::SleepWait { .. }
                     | crate::items::Menu::Training(_)
+                    | crate::items::Menu::Crafting { .. }
                     | crate::items::Menu::Skills
                     | crate::items::Menu::Map
             )
@@ -650,6 +696,7 @@ impl SwfUi {
             || self.tween.is_some()
             || self.sleep_wait.is_some()
             || self.training.is_some()
+            || self.crafting.is_some()
             || self.stats.is_some()
             || self.map.is_some()
             || self.dialogue.as_ref().is_some_and(|d| !d.closing)
@@ -723,6 +770,7 @@ impl SwfUi {
                 && (self.tween.is_some()
                     || self.sleep_wait.is_some()
                     || self.training.is_some()
+                    || self.crafting.is_some()
                     || self.stats.is_some()
                     || self.dialogue.is_some()));
         let closing = self.items.as_ref().is_some_and(|i| i.closing)
@@ -905,6 +953,8 @@ impl SwfUi {
             &tween.menu
         } else if let Some(sleep_wait) = &self.sleep_wait {
             &sleep_wait.menu
+        } else if let Some(crafting) = &self.crafting {
+            &crafting.menu
         } else if let Some(training) = &self.training {
             &training.menu
         } else if let Some(stats) = &self.stats {
@@ -966,6 +1016,12 @@ impl SwfUi {
             && let Some(stats) = &mut self.stats
         {
             return stats.key(code);
+        }
+        if self.message_box.shown.is_none()
+            && let Some(m) = &self.crafting
+            && m.key(code)
+        {
+            return true;
         }
         // The training menu: its buttons' keys.
         if self.message_box.shown.is_none()
@@ -1196,6 +1252,10 @@ impl SwfUi {
         {
             dialogue.menu.render();
             menus.push(&dialogue.menu);
+        }
+        if let Some(crafting) = &mut self.crafting {
+            crafting.menu.render();
+            menus.push(&crafting.menu);
         }
         if let Some(training) = &mut self.training {
             training.menu.render();
