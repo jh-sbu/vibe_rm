@@ -55,7 +55,7 @@ impl Engine {
     /// The charge left on one of an actor's `weapon`s.
     pub(crate) fn weapon_charge(&self, actor: FormId, weapon: FormId) -> f32 {
         let copy = self.equipped_copy(actor, weapon);
-        if copy.enchantment.is_some() {
+        if copy.capacity > 0. {
             return copy.charge.min(copy.capacity);
         }
 

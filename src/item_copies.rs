@@ -11,6 +11,8 @@ pub struct CopyState {
     pub capacity: f32,
     pub charge: f32,
     pub use_cost: Option<f32>,
+    pub soul: Option<u8>,
+    pub poison: Option<(FormId, i32)>,
     pub name: Option<String>,
 }
 impl Default for CopyState {
@@ -21,6 +23,8 @@ impl Default for CopyState {
             capacity: 0.0,
             charge: 0.0,
             use_cost: None,
+            soul: None,
+            poison: None,
             name: None,
         }
     }
@@ -34,6 +38,8 @@ impl CopyState {
         self.capacity.to_bits().hash(&mut h);
         self.charge.to_bits().hash(&mut h);
         self.use_cost.map(f32::to_bits).hash(&mut h);
+        self.soul.hash(&mut h);
+        self.poison.hash(&mut h);
         self.name.hash(&mut h);
         h.finish()
     }
@@ -240,7 +246,24 @@ impl Inventory {
             }
         }
         self.copies.retain(|c| c.count > 0);
-        if self.count(item) == 0 {
+        if self.count(item) == 0
+            || self.equipped_copies.get(&item).is_some_and(|state| {
+                if *state == CopyState::default() {
+                    self.count(item)
+                        <= self
+                            .copies
+                            .iter()
+                            .filter(|c| c.item == item)
+                            .map(|c| c.count)
+                            .sum()
+                } else {
+                    !self
+                        .copies
+                        .iter()
+                        .any(|c| c.item == item && c.state == *state)
+                }
+            })
+        {
             self.equipped_copies.remove(&item);
         }
         out
@@ -248,6 +271,102 @@ impl Inventory {
 }
 
 impl Engine {
+    /// Upgrade the older sparse lists before presenting exact inventory rows.
+    /// Their original representation did not retain ownership correlations;
+    /// assign those entries to owned-by-player copies first, deterministically.
+    pub(crate) fn materialize_copy_extras(&mut self, actor: FormId) {
+        let charges = std::mem::take(&mut self.inventory_mut(actor).charges);
+        let souls = std::mem::take(&mut self.inventory_mut(actor).souls);
+        let poisons = std::mem::take(&mut self.inventory_mut(actor).poisoned);
+        for (item, charge) in charges {
+            let capacity = self.weapon_capacity(item).max(charge);
+            let inv = self.inventory_mut(actor);
+            let owner = std::iter::once(None)
+                .chain(
+                    inv.owned
+                        .iter()
+                        .filter(|(f, _, _)| *f == item)
+                        .map(|(_, o, _)| Some(*o)),
+                )
+                .find(|&owner| inv.plain_copies(item, owner) > 0);
+            if let Some(owner) = owner {
+                let state = CopyState {
+                    capacity,
+                    charge,
+                    ..Default::default()
+                };
+                let first = !inv
+                    .copies
+                    .iter()
+                    .any(|c| c.item == item && c.state.capacity > 0.);
+                inv.replace_copy_state(item, owner, &Default::default(), state.clone());
+                if first {
+                    inv.equipped_copies.insert(item, state);
+                }
+            } else if inv.copy_state(item).capacity == 0. {
+                let old = inv.copy_state(item);
+                if let Some(c) = inv
+                    .copies
+                    .iter()
+                    .find(|c| c.item == item && c.state == old)
+                    .cloned()
+                {
+                    let mut state = old.clone();
+                    state.capacity = capacity;
+                    state.charge = charge;
+                    inv.replace_copy_state(item, c.owner, &old, state);
+                }
+            }
+        }
+        for (item, soul, count) in souls {
+            for _ in 0..count {
+                let inv = self.inventory_mut(actor);
+                let owner = std::iter::once(None)
+                    .chain(
+                        inv.owned
+                            .iter()
+                            .filter(|(f, _, _)| *f == item)
+                            .map(|(_, o, _)| Some(*o)),
+                    )
+                    .find(|&owner| inv.plain_copies(item, owner) > 0);
+                if let Some(owner) = owner {
+                    inv.replace_copy_state(
+                        item,
+                        owner,
+                        &Default::default(),
+                        CopyState {
+                            soul: Some(soul),
+                            ..Default::default()
+                        },
+                    );
+                }
+            }
+        }
+        for (item, poison, doses) in poisons {
+            let inv = self.inventory_mut(actor);
+            let old = inv.copy_state(item);
+            let owner = if old == CopyState::default() {
+                std::iter::once(None)
+                    .chain(
+                        inv.owned
+                            .iter()
+                            .filter(|(f, _, _)| *f == item)
+                            .map(|(_, o, _)| Some(*o)),
+                    )
+                    .find(|&o| inv.plain_copies(item, o) > 0)
+            } else {
+                inv.copies
+                    .iter()
+                    .find(|c| c.item == item && c.state == old)
+                    .map(|c| c.owner)
+            };
+            if let Some(owner) = owner {
+                let mut new = old.clone();
+                new.poison = Some((poison, doses));
+                inv.replace_copy_state(item, owner, &old, new);
+            }
+        }
+    }
     pub(crate) fn copy_item_info(
         &self,
         item: FormId,

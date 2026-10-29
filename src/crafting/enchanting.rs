@@ -188,7 +188,13 @@ impl Engine {
             .filter_map(|(gem, soul)| {
                 items
                     .iter()
-                    .find(|r| r.item == gem)
+                    .find(|r| {
+                        r.item == gem
+                            && r.copy
+                                .soul
+                                .unwrap_or_else(|| self.soul_gem(gem).map_or(0, |g| g.soul))
+                                == soul
+                    })
                     .cloned()
                     .map(|row| (row, soul))
             })

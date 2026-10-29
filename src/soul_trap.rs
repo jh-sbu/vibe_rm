@@ -114,6 +114,7 @@ impl Engine {
             }
             None => self.inventory_mut(caster).put_soul(gem.form, size),
         }
+        self.materialize_copy_extras(caster);
         log::info!(
             "{victim}'s soul ({size}, black {black}) into {} ({})",
             gem.form,

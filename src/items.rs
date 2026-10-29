@@ -735,6 +735,7 @@ impl Engine {
     /// An inventory's items with what they are, by kind then name; those
     /// belonging to someone (stolen) in rows of their own after the rest.
     pub fn listed_inventory(&mut self, r: FormId) -> Vec<ListedItem> {
+        self.materialize_copy_extras(r);
         let inv = self.inventory_mut(r).clone();
         let mut out: Vec<ListedItem> = Vec::new();
         for &(item, _) in &inv.items {

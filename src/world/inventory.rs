@@ -552,6 +552,9 @@ impl Inventory {
 
     /// The poison on one of the carried `weapon`s, with its doses left.
     pub fn poison_on(&self, weapon: FormId) -> Option<(FormId, i32)> {
+        if let Some(poison) = self.copy_state(weapon).poison {
+            return Some(poison);
+        }
         self.poisoned
             .iter()
             .find(|(w, _, _)| *w == weapon)
@@ -560,6 +563,20 @@ impl Inventory {
 
     /// One of the carried `weapon`s takes `doses` of `poison`.
     pub fn poison(&mut self, weapon: FormId, poison: FormId, doses: i32) {
+        let old = self.copy_state(weapon);
+        if old != Default::default() {
+            if let Some(copy) = self
+                .copies
+                .iter()
+                .find(|c| c.item == weapon && c.state == old)
+                .cloned()
+            {
+                let mut new = old.clone();
+                new.poison = (doses > 0).then_some((poison, doses));
+                self.replace_copy_state(weapon, copy.owner, &old, new);
+                return;
+            }
+        }
         self.poisoned.retain(|(w, _, _)| *w != weapon);
         if doses > 0 && self.count(weapon) > 0 {
             self.poisoned.push((weapon, poison, doses));
@@ -568,6 +585,12 @@ impl Inventory {
 
     /// A dose of the poison on `weapon` used: the poison, if it had one.
     pub fn take_poison_dose(&mut self, weapon: FormId) -> Option<FormId> {
+        if let Some((poison, doses)) = self.copy_state(weapon).poison {
+            self.change_equipped_copy(weapon, |s| {
+                s.poison = (doses > 1).then_some((poison, doses - 1))
+            });
+            return Some(poison);
+        }
         let i = self.poisoned.iter().position(|(w, _, _)| *w == weapon)?;
         let poison = self.poisoned[i].1;
         self.poisoned[i].2 -= 1;
@@ -589,7 +612,7 @@ impl Inventory {
     /// A fully recharged copy needs no sparse entry; the next depleted copy
     /// becomes selected until inventory rows can identify individual copies.
     pub fn set_charge(&mut self, weapon: FormId, left: f32, full: f32) {
-        if self.copy_state(weapon).enchantment.is_some()
+        if self.copy_state(weapon).capacity > 0.
             && self.change_equipped_copy(weapon, |s| s.charge = left.clamp(0.0, full))
         {
             return;
@@ -617,11 +640,17 @@ impl Inventory {
 
     /// How many of a soul gem hold a soul of the side list's.
     fn souls_in(&self, form: FormId) -> i32 {
-        self.souls
+        self.copies
             .iter()
-            .filter(|(f, _, _)| *f == form)
-            .map(|(_, _, n)| n)
-            .sum()
+            .filter(|c| c.item == form && c.state.soul.is_some_and(|s| s > 0))
+            .map(|c| c.count)
+            .sum::<i32>()
+            + self
+                .souls
+                .iter()
+                .filter(|(f, _, _)| *f == form)
+                .map(|(_, _, n)| n)
+                .sum::<i32>()
     }
 
     /// Of the soul gems `form` carried, how many hold no soul but their
@@ -636,6 +665,21 @@ impl Inventory {
     /// `keep` (reusable gems, which then hold nothing; only side-list souls
     /// can be taken from them). Whether there was one.
     pub fn spend_soul(&mut self, form: FormId, soul: u8, record: u8, keep: bool) -> bool {
+        if let Some(copy) = self
+            .copies
+            .iter()
+            .find(|c| c.item == form && c.state.soul == Some(soul) && soul > 0 && c.count > 0)
+            .cloned()
+        {
+            if keep {
+                let mut empty = copy.state.clone();
+                empty.soul = Some(0);
+                self.replace_copy_state(form, copy.owner, &copy.state, empty);
+            } else {
+                self.remove_copy(form, 1, copy.owner, &copy.state);
+            }
+            return true;
+        }
         if let Some(i) = self
             .souls
             .iter()
@@ -655,6 +699,17 @@ impl Inventory {
 
     /// One of the carried `form` gems takes a `soul` (1 petty .. 5 grand).
     pub fn put_soul(&mut self, form: FormId, soul: u8) {
+        if let Some(copy) = self
+            .copies
+            .iter()
+            .find(|c| c.item == form && c.state.soul == Some(0) && c.count > 0)
+            .cloned()
+        {
+            let mut filled = copy.state.clone();
+            filled.soul = Some(soul);
+            self.replace_copy_state(form, copy.owner, &copy.state, filled);
+            return;
+        }
         match self
             .souls
             .iter_mut()

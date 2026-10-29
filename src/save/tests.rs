@@ -6455,10 +6455,10 @@ fn crafting_copy_v1_remains_readable() {
         .iter_mut()
         .find(|(t, _)| t == b"COPY")
         .unwrap();
-    assert_eq!(data[0], 2);
+    assert_eq!(data[0], 3);
     assert_eq!(data[38], 0); // Absent per-use cost, added in version 2.
     data[0] = 1;
-    data.remove(38);
+    data.drain(38..41);
     let loaded = Snapshot::read(&file).unwrap();
     assert_eq!(loaded.inventories[&PLAYER_REF].copies[0].state.level(), 1);
     assert_eq!(

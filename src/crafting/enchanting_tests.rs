@@ -265,6 +265,87 @@ fn crafting_enchantment_skill_and_weapon_charge_formulas() {
 
 #[test]
 #[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn crafting_rows_preserve_legacy_charge_poison_and_captured_souls() {
+    let (dir, mut e) = fixture();
+    e.inventory_mut(PLAYER_REF)
+        .set_charge(MAGIC_SWORD, 123., 1000.);
+    e.inventory_mut(PLAYER_REF)
+        .poison(MAGIC_SWORD, FormId(0x890), 2);
+    e.inventory_mut(PLAYER_REF).add(STAR, 2);
+    e.inventory_mut(PLAYER_REF).put_soul(STAR, 1);
+    let rows = e.listed_inventory(PLAYER_REF);
+    let charged = rows
+        .iter()
+        .find(|r| r.item == MAGIC_SWORD && r.copy.capacity > 0.)
+        .unwrap();
+    assert_eq!(charged.copy.charge, 123.);
+    assert_eq!(charged.copy.poison, Some((FormId(0x890), 2)));
+    assert!(
+        rows.iter()
+            .any(|r| r.item == MAGIC_SWORD && r.copy == Default::default())
+    );
+    assert_eq!(rows.iter().filter(|r| r.item == STAR).count(), 3);
+    let gem = rows
+        .iter()
+        .find(|r| r.item == STAR && r.copy.soul == Some(1))
+        .unwrap();
+    let target = FormId(0x899);
+    assert_eq!(
+        e.transfer_item_copy(PLAYER_REF, target, STAR, 1, Some(None), Some(&gem.copy)),
+        1
+    );
+    assert!(e.charging_souls(target).contains(&(STAR, 1)));
+    assert!(!e.charging_souls(PLAYER_REF).contains(&(STAR, 1)));
+    assert_eq!(
+        e.transfer_item_copy(
+            PLAYER_REF,
+            target,
+            MAGIC_SWORD,
+            1,
+            Some(None),
+            Some(&charged.copy)
+        ),
+        1
+    );
+    let inv = &e.inventories[&target];
+    assert_eq!(
+        inv.copies
+            .iter()
+            .find(|c| c.item == MAGIC_SWORD)
+            .unwrap()
+            .state,
+        charged.copy
+    );
+    let saved =
+        crate::save::state::Snapshot::read(&crate::save::state::Snapshot::capture(&e).write())
+            .unwrap();
+    assert_eq!(saved.inventories[&target].copies, inv.copies);
+    e.transfer_item_copy(
+        target,
+        PLAYER_REF,
+        MAGIC_SWORD,
+        1,
+        Some(None),
+        Some(&charged.copy),
+    );
+    e.location = crate::engine::Location::Interior(FormId(0x850));
+    let dropped = e
+        .drop_item_copy(PLAYER_REF, MAGIC_SWORD, 1, Some(None), Some(&charged.copy))
+        .unwrap();
+    assert_eq!(e.ref_state.item_copies[&dropped][0].state, charged.copy);
+    assert!(e.take_item(dropped));
+    assert!(
+        e.inventories[&PLAYER_REF]
+            .copies
+            .iter()
+            .any(|c| c.item == MAGIC_SWORD && c.state == charged.copy)
+    );
+    drop(e);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn crafting_enchant_transaction_preserves_copies_empties_stars_and_saves() {
     let (dir, mut e) = fixture();
     e.knowledge.enchantments.extend([BASE, ARMOR_ENCH]);
@@ -315,6 +396,9 @@ fn crafting_enchant_transaction_preserves_copies_empties_stars_and_saves() {
     e.enchant_item(request).unwrap();
     assert_eq!(e.item_count(PLAYER_REF, STAR), 1);
     assert!(!e.charging_souls(PLAYER_REF).iter().any(|(f, _)| *f == STAR));
+    assert_eq!(e.inventories[&PLAYER_REF].without_soul(STAR), 1);
+    e.inventory_mut(PLAYER_REF).put_soul(STAR, 3);
+    assert!(e.charging_souls(PLAYER_REF).contains(&(STAR, 3)));
     let states: Vec<_> = e.inventories[&PLAYER_REF]
         .copies
         .iter()

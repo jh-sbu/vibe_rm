@@ -393,7 +393,7 @@ impl VmSnapshot {
                 match b.action.clone() {
                     None => m.u8(0),
                     Some(crate::messages::BoxAction::Enchant(request)) => {
-                        m.u8(8);
+                        m.u8(9);
                         m.form(request.station);
                         m.form(request.item);
                         m.opt_form(request.owner);
@@ -717,11 +717,12 @@ impl VmSnapshot {
                             key,
                         })
                     }
-                    8 => {
+                    version @ (8 | 9) => {
                         let station = r.form()?;
                         let item = r.form()?;
                         let owner = r.opt_form()?;
-                        let copy = super::copies::get_state(&mut r, 2)?;
+                        let copy =
+                            super::copies::get_state(&mut r, if version == 8 { 2 } else { 3 })?;
                         let count = r.count(4)?;
                         if !(1..=2).contains(&count) {
                             return Err(Corrupt("invalid enchanting effect count".into()));

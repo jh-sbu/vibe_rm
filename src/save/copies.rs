@@ -18,6 +18,15 @@ pub(super) fn put_state(w: &mut Writer, s: &CopyState) {
     if let Some(cost) = s.use_cost {
         w.f32(cost);
     }
+    w.bool(s.soul.is_some());
+    if let Some(soul) = s.soul {
+        w.u8(soul);
+    }
+    w.bool(s.poison.is_some());
+    if let Some((poison, doses)) = s.poison {
+        w.form(poison);
+        w.i32(doses);
+    }
 }
 pub(super) fn get_state(r: &mut Reader, version: u8) -> Result<CopyState> {
     let s = CopyState {
@@ -28,6 +37,16 @@ pub(super) fn get_state(r: &mut Reader, version: u8) -> Result<CopyState> {
         name: if r.bool()? { Some(r.str()?) } else { None },
         use_cost: if version >= 2 && r.bool()? {
             Some(r.f32()?)
+        } else {
+            None
+        },
+        soul: if version >= 3 && r.bool()? {
+            Some(r.u8()?)
+        } else {
+            None
+        },
+        poison: if version >= 3 && r.bool()? {
+            Some((r.form()?, r.i32()?))
         } else {
             None
         },
@@ -42,6 +61,8 @@ pub(super) fn get_state(r: &mut Reader, version: u8) -> Result<CopyState> {
         || s.name.as_ref().is_some_and(|n| n.chars().count() > 32)
         || s.use_cost
             .is_some_and(|cost| !cost.is_finite() || cost < 0. || s.enchantment.is_none())
+        || s.soul.is_some_and(|s| s > 5)
+        || s.poison.is_some_and(|(p, n)| p.is_null() || n <= 0)
     {
         return Err(Corrupt("invalid item copy state".into()));
     }
@@ -81,7 +102,7 @@ fn get_copies(r: &mut Reader, version: u8) -> Result<Vec<ItemCopy>> {
 
 pub(super) fn write(s: &Snapshot, file: &mut SaveFile) {
     let mut w = Writer::default();
-    w.u8(2);
+    w.u8(3);
     let mut invs: Vec<_> = s
         .inventories
         .iter()
@@ -123,7 +144,7 @@ pub(super) fn read(s: &mut Snapshot, file: &SaveFile) -> Result<()> {
     };
     let mut r = Reader::new(data);
     let version = r.u8()?;
-    if !matches!(version, 1 | 2) {
+    if !matches!(version, 1 | 2 | 3) {
         return Err(Corrupt("unsupported COPY version".into()));
     }
     let mut seen = HashSet::new();

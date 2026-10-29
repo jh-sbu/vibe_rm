@@ -63,6 +63,13 @@ impl Engine {
                     out.push((form, soul));
                 }
             }
+            for copy in inv.copies.iter().filter(|c| c.item == form && c.count > 0) {
+                if let Some(soul) = copy.state.soul.filter(|s| *s > 0) {
+                    if !out.contains(&(form, soul)) {
+                        out.push((form, soul));
+                    }
+                }
+            }
         }
         out.retain(|&(_, s)| soul_charge(s) > 0.0);
         out.sort_by_key(|&(f, s)| (s, f.0));
