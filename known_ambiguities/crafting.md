@@ -123,3 +123,18 @@ separately. Positive hidden durations participate in value, even below ten
 seconds. The final value floors the sum of exact costs, following ALCH format
 notes rather than summing individually floored effect costs from the effect
 page's illustrative calculation.
+
+## Mixing and failed attempts (step 7d)
+
+Mixing uses one of each selected ingredient, material ownership as above, and
+teaches each retained shared effect on every selected ingredient carrying it.
+Identical generated effect records reuse one runtime ALCH. Values supply the
+Alchemy skill use input, so AVIF controls its XP multiplier.
+
+UESP Alchemy revision 3596102 line 410 describes small failed-mix XP but does not
+supply its exact use value. Choice: a failed attempt consumes the selected
+ingredients and grants one base skill use. Failed pairs are recorded in ALFL;
+a completely failed three-ingredient attempt marks all three pairs failed.
+The exact failure use value and whether a triple teaches all pair failures
+remain manual-test questions. Potions use DefaultPotion/DefaultPoison art,
+keywords, pickup/drop sounds and consume sound, with weight 0.5.

@@ -537,6 +537,30 @@ impl CraftingMenu {
                     self.rebuild_alchemy(e);
                 }
             }
+            "CraftButtonPress" if self.kind == 5 => {
+                if let Err(error) = e.mix_ingredients(self.station, &self.selected_ingredients)
+                    && !error.is_empty()
+                {
+                    e.scripts.notify(error);
+                }
+                self.rebuild_alchemy(e);
+            }
+            "CloseMenu" if self.kind == 5 && !self.selected_ingredients.is_empty() => {
+                let question = e
+                    .gmst_string("sQuitAlchemy")
+                    .unwrap_or_else(|| "Quit alchemy?".into());
+                let buttons = vec![
+                    e.gmst_string("sYes").unwrap_or_else(|| "Yes".into()),
+                    e.gmst_string("sNo").unwrap_or_else(|| "No".into()),
+                ];
+                e.ask(
+                    question,
+                    buttons,
+                    crate::messages::BoxAction::CloseCrafting {
+                        station: self.station,
+                    },
+                );
+            }
             "CloseMenu" => e.menu = None,
             "SetSelectedCategory" => self.category = index().unwrap_or(0),
             "SetSelectedItem" => {

@@ -193,3 +193,33 @@ fn crafting_potion_strength_flags_perk_queries_purity_and_names() {
     drop(e);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn crafting_mixing_learns_effects_stacks_identical_forms_and_records_failures() {
+    let (dir, mut e) = fixture();
+    e.set_actor_value(PLAYER_REF, esp::actor_value::ALCHEMY, 100.);
+    let station = FormId(0x900);
+    e.menu = Some(crate::items::Menu::Crafting { station, kind: 5 });
+    let first = e.mix_ingredients(station, &[A, B]).unwrap().unwrap();
+    let second = e.mix_ingredients(station, &[B, A]).unwrap().unwrap();
+    assert_eq!(first, second);
+    assert_eq!(e.inventories[&PLAYER_REF].count(first), 2);
+    assert_eq!(e.inventories[&PLAYER_REF].count(A), 8);
+    assert_eq!(e.inventories[&PLAYER_REF].count(B), 8);
+    for ingredient in [A, B] {
+        assert!(e.effect_learned(ingredient, 0));
+        assert!(e.effect_learned(ingredient, 1));
+    }
+    assert_eq!(e.stat("Potions Mixed"), crate::stats::StatValue::Count(2));
+    assert_eq!(e.magic_item(first).unwrap().effects.len(), 2);
+    assert!(e.mix_ingredients(station, &[A, D]).unwrap().is_none());
+    assert_eq!(e.inventories[&PLAYER_REF].count(D), 9);
+    assert!(e.knowledge.failed_alchemy.contains(&(A, D)));
+    let saved =
+        crate::save::state::Snapshot::read(&crate::save::state::Snapshot::capture(&e).write())
+            .unwrap();
+    assert!(saved.failed_alchemy.contains(&(A, D)));
+    drop(e);
+    std::fs::remove_dir_all(dir).unwrap();
+}

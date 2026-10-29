@@ -91,6 +91,7 @@ pub struct Snapshot {
     /// Owned runtime base records, in global form-ID order (optional FORM).
     pub forms: Vec<Vec<u8>>,
     pub crafting_help: HashSet<[u8; 4]>,
+    pub failed_alchemy: HashSet<(FormId, FormId)>,
     pub item_copies: HashMap<FormId, Vec<crate::item_copies::ItemCopy>>,
     pub metadata: Option<super::metadata::Metadata>,
     pub(crate) continuity: super::continuity::Continuity,
@@ -507,6 +508,7 @@ impl Snapshot {
         let mut snapshot = Snapshot {
             forms: e.lo.runtime_records(),
             crafting_help: e.knowledge.crafting_help.clone(),
+            failed_alchemy: e.knowledge.failed_alchemy.clone(),
             item_copies: e.ref_state.item_copies.clone(),
             metadata: Some(super::metadata::Metadata::capture(e)),
             continuity,
@@ -677,6 +679,15 @@ impl Snapshot {
             help.u32(u32::from_le_bytes(*key));
         }
         file.add(b"CHLP", help.0);
+        let mut failed = Writer::default();
+        let mut pairs: Vec<_> = self.failed_alchemy.iter().copied().collect();
+        pairs.sort();
+        failed.len(pairs.len());
+        for (a, b) in pairs {
+            failed.form(a);
+            failed.form(b);
+        }
+        file.add(b"ALFL", failed.0);
         if let Some(meta) = &self.metadata {
             file.add(b"META", meta.encode());
             if let Some(image) = &meta.thumbnail {
@@ -1255,6 +1266,21 @@ impl Snapshot {
     /// Read every section; nothing is applied until all of them read.
     pub fn read(file: &SaveFile) -> Result<Snapshot> {
         let mut s = Snapshot::default();
+        if file.sections.iter().filter(|(t, _)| t == b"ALFL").count() > 1 {
+            return Err(Corrupt("duplicate ALFL section".into()));
+        }
+        if let Some(data) = file.section(b"ALFL") {
+            let mut r = Reader::new(data);
+            for _ in 0..r.count(8)? {
+                let a = r.form()?;
+                let b = r.form()?;
+                if a.is_null() || a >= b || !s.failed_alchemy.insert((a, b)) {
+                    return Err(Corrupt("invalid failed alchemy pair".into()));
+                }
+            }
+            r.finish()?;
+        }
+
         if file.sections.iter().filter(|(t, _)| t == b"CHLP").count() > 1 {
             return Err(Corrupt("duplicate CHLP section".into()));
         }
@@ -2365,6 +2391,7 @@ impl Snapshot {
         }
         e.inventories = self.inventories;
         e.knowledge.crafting_help = self.crafting_help;
+        e.knowledge.failed_alchemy = self.failed_alchemy;
         e.ref_state.item_copies = self.item_copies;
         e.casting.restore_power_uses(self.power_uses);
         e.magic.souls_taken = self.spent_souls;

@@ -248,3 +248,148 @@ impl Engine {
 #[cfg(test)]
 #[path = "alchemy_tests.rs"]
 mod integration_tests;
+
+impl Engine {
+    fn potion_record(&self, result: &PotionResult) -> esp::writer::RecordBuilder {
+        let mut record = esp::writer::RecordBuilder::new(b"ALCH", FormId::NULL)
+            .windows1252_zstring(b"FULL", &result.name)
+            .f32(b"DATA", 0.5);
+        let mut enit = [0u8; 20];
+        enit[..4].copy_from_slice(&(result.value.max(0) as u32).to_le_bytes());
+        enit[4..8].copy_from_slice(&(1u32 | if result.poison { 0x20000 } else { 0 }).to_le_bytes());
+        if let Some(template) = self
+            .lo
+            .find_editor_id(if result.poison {
+                "DefaultPoison"
+            } else {
+                "DefaultPotion"
+            })
+            .and_then(|f| self.lo.get(f))
+        {
+            for tag in [b"MODL", b"OBND"] {
+                if let Some(bytes) = template.get(tag) {
+                    record = record.field(tag, bytes);
+                }
+            }
+            for tag in [b"YNAM", b"ZNAM"] {
+                if let Some(bytes) = template.get(tag).and_then(|d| d.get(..4)) {
+                    record = record.form(
+                        tag,
+                        template.fid(FormId(u32::from_le_bytes(bytes.try_into().unwrap()))),
+                    );
+                }
+            }
+            if let Some(bytes) = template.get(b"KWDA") {
+                let keywords: Vec<_> = bytes
+                    .chunks_exact(4)
+                    .flat_map(|b| {
+                        template
+                            .fid(FormId(u32::from_le_bytes(b.try_into().unwrap())))
+                            .0
+                            .to_le_bytes()
+                    })
+                    .collect();
+                record = record
+                    .u32(b"KSIZ", (keywords.len() / 4) as u32)
+                    .field(b"KWDA", &keywords);
+            }
+            if let Some(sound) = template.get(b"ENIT").and_then(|d| d.get(16..20)) {
+                enit[16..20].copy_from_slice(
+                    &template
+                        .fid(FormId(u32::from_le_bytes(sound.try_into().unwrap())))
+                        .0
+                        .to_le_bytes(),
+                );
+            }
+        }
+        record = record.field(b"ENIT", &enit);
+        for effect in &result.effects {
+            record = record.form(b"EFID", effect.effect).field(
+                b"EFIT",
+                &[
+                    effect.magnitude.to_le_bytes(),
+                    effect.area.to_le_bytes(),
+                    effect.duration.to_le_bytes(),
+                ]
+                .concat(),
+            );
+        }
+        record
+    }
+
+    pub(crate) fn mix_ingredients(
+        &mut self,
+        station: FormId,
+        ingredients: &[FormId],
+    ) -> Result<Option<FormId>, String> {
+        if self.menu != Some(crate::items::Menu::Crafting { station, kind: 5 })
+            || !(2..=3).contains(&ingredients.len())
+            || ingredients
+                .iter()
+                .copied()
+                .collect::<std::collections::HashSet<_>>()
+                .len()
+                != ingredients.len()
+            || ingredients.iter().any(|&f| {
+                self.lo.tag_of(f).map(|t| t.0) != Some(*b"INGR")
+                    || self
+                        .inventories
+                        .get(&PLAYER_REF)
+                        .is_none_or(|i| i.count(f) <= 0)
+            })
+        {
+            return Err(String::new());
+        }
+        let result = self.potion_result(ingredients);
+        let potion = match &result {
+            Some(result) => {
+                let id = self
+                    .intern_base_form(self.potion_record(result))
+                    .map_err(|e| e.to_string())?;
+                if self.inventory_mut(PLAYER_REF).count(id) == i32::MAX {
+                    return Err(String::new());
+                }
+                Some(id)
+            }
+            None => None,
+        };
+        for &ingredient in ingredients {
+            self.remove_stack(PLAYER_REF, ingredient, 1, None, None, None);
+        }
+        if let (Some(result), Some(potion)) = (result, potion) {
+            self.inventory_mut(PLAYER_REF).add(potion, 1);
+            self.inventory_event(PLAYER_REF, true, potion, 1, None);
+            for &ingredient in ingredients {
+                if let Some(item) = self.magic_item(ingredient) {
+                    for (i, effect) in item.effects.iter().enumerate() {
+                        if result.effects.iter().any(|e| e.effect == effect.effect) {
+                            self.learn_effect(ingredient, i as i32);
+                        }
+                    }
+                }
+            }
+            self.use_skill(esp::actor_value::ALCHEMY, result.value.max(0) as f32);
+            self.increment_stat(
+                if result.poison {
+                    "Poisons Mixed"
+                } else {
+                    "Potions Mixed"
+                },
+                1,
+            );
+            Ok(Some(potion))
+        } else {
+            for (i, &a) in ingredients.iter().enumerate() {
+                for &b in &ingredients[i + 1..] {
+                    self.knowledge.failed_alchemy.insert((a.min(b), a.max(b)));
+                }
+            }
+            self.use_skill(esp::actor_value::ALCHEMY, 1.);
+            self.scripts.notify(
+                self.gmst_string("sPotionCreationFailed")
+                    .unwrap_or_else(|| "Potion creation failed".into()),
+            );
+            Ok(None)
+        }
+    }
+}

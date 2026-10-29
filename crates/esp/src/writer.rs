@@ -52,6 +52,18 @@ impl RecordBuilder {
     }
 
     /// A zero-terminated string (Windows-1252; test mods keep to ASCII).
+    /// A runtime name derived from decoded plugin text, preserving Windows-1252.
+    pub fn windows1252_zstring(self, tag: &[u8; 4], s: &str) -> Self {
+        let (bytes, _, unmappable) = encoding_rs::WINDOWS_1252.encode(s);
+        assert!(
+            !unmappable,
+            "runtime name cannot be encoded as Windows-1252"
+        );
+        let mut bytes = bytes.into_owned();
+        bytes.push(0);
+        self.field(tag, &bytes)
+    }
+
     pub fn zstring(self, tag: &[u8; 4], s: &str) -> Self {
         assert!(s.is_ascii(), "{s:?}: not ASCII");
         let mut b = s.as_bytes().to_vec();
