@@ -205,7 +205,11 @@ fn fixture() -> (Fixture, Engine) {
 /// An engine on one plugin in `dir`, rendering to nothing (a headless GPU
 /// adapter: software Vulkan will do).
 pub(crate) fn headless_engine(dir: &std::path::Path, plugin: &str) -> Engine {
-    let lo = esp::LoadOrder::load(dir, &[plugin.into()]).unwrap();
+    headless_engine_plugins(dir, &[plugin.into()])
+}
+
+pub(crate) fn headless_engine_plugins(dir: &std::path::Path, plugins: &[String]) -> Engine {
+    let lo = esp::LoadOrder::load(dir, plugins).unwrap();
     let vfs = vfs::Vfs::new(dir, &[]);
     let instance =
         wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());

@@ -475,3 +475,7 @@ mod transaction_tests {
 #[cfg(test)]
 #[path = "crafting/smithing_tests.rs"]
 mod smithing_tests;
+
+#[cfg(test)]
+#[path = "crafting/perk_tests.rs"]
+mod perk_tests;

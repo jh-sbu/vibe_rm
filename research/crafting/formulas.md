@@ -78,3 +78,23 @@ pseudocode is copied into project code.
 The authored ALCH DefaultPotion (0005661F) is named **Unknown Potion**. It supplies
 the unknown-result title; DefaultPoison supplies poison art. This settles the
 plan's missing unknown-potion GMST: its text is a localized FULL, not a GMST.
+
+## Vanilla perk audit (step 9)
+
+`vrm-tool perks <Data> <editor-id>` and `ep <number>` were checked against
+the installed base masters. Alchemist ranks multiply entry point 66 by
+1.2..2, Physician by 1.25 for restore effects, Benefactor/Poisoner by 1.25
+conditioned on 500/501. Purity sets 73. Material smithing perks multiply 76
+by two (Advanced covers its authored material keywords); Arcane Blacksmith
+is a recipe condition, not an improvement multiplier. Enchanter ranks
+multiply 77 by 1.2..2, elemental/Insightful/Corpus bonuses by 1.25 with
+effect-keyword conditions; Extra Effect sets 80 to two. Dragonborn's
+BlackBookSeekerPerks multiplies 76/66/77 by 1.1 for Might/Shadows/Sorcery,
+respectively, selected by its global. Stalhrim uses the effect and item tabs
+of 77. Fortify apparel and potion actor values flow through the authored
+skill boost perks for 66 and 76; Enchanting's potion changes the skill itself.
+
+Soul Squeezer adds 250 to entry point 49, **recharging**; it does not change
+enchanting gem capacity. Entry point 79 is retained for authored enchanting
+modifiers but no vanilla perk was found using it. Both recharge preview and
+transaction apply 49 before clamping to missing charge.

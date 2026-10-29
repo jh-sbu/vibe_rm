@@ -10,6 +10,16 @@ perks`).
 
 ## Settled
 
+- **Crafting**: entry points 66 (alchemy effectiveness), 73 (Purity), 76
+  (tempering), 77 (enchantment power), 79 (soul capacity when enchanting)
+  and 80 (effect count) are wired into crafting. Tab subjects for 76 are
+  owner/item; for 77 owner/effect/item. Alchemy's owner conditions 500/501
+  see the potion currently being calculated. Vanilla Soul Squeezer uses 49
+  (recharging, +250), not 79. Fortify Smithing/Alchemy are supplied by the
+  authored PerkSkillBoosts and AlchemySkillBoosts records; Fortify Enchanting
+  directly raises effective Enchanting. Dragonborn Seeker bonuses use the
+  same entry points and global conditions. See research/crafting/formulas.md.
+
 - **Record**: `DATA` (trait, level, ranks, playable, hidden), the conditions
   before the first section (what it takes to buy it), `NNAM` (the next rank),
   then sections `PRKE` (type, rank, priority) .. `PRKF`. Quest sections:

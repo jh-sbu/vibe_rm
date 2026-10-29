@@ -34,6 +34,16 @@ fn charge_added(left: f32, full: f32, soul: u8) -> f32 {
 }
 
 impl Engine {
+    fn recharge_amount(&self, actor: FormId, left: f32, full: f32, soul: u8) -> f32 {
+        self.perk_entry_point(
+            crate::perks::ep::MOD_SOUL_GEM_RECHARGE,
+            actor,
+            &[None],
+            soul_charge(soul),
+        )
+        .max(0.)
+        .min((full - left).max(0.))
+    }
     /// The souls `actor` carries to charge with: (gem, soul), one for each
     /// kind, smallest soul first.
     pub(crate) fn charging_souls(&self, actor: FormId) -> Vec<(FormId, u8)> {
@@ -74,7 +84,7 @@ impl Engine {
         if full <= 0.0 {
             return 0.0;
         }
-        charge_added(self.weapon_charge(actor, weapon), full, soul) / full * 100.0
+        self.recharge_amount(actor, self.weapon_charge(actor, weapon), full, soul) / full * 100.0
     }
 
     /// `actor` charges one of its `weapon`s with a `soul` from one of its
@@ -104,7 +114,7 @@ impl Engine {
         {
             return false;
         }
-        let now = left + charge_added(left, full, soul);
+        let now = left + self.recharge_amount(actor, left, full, soul);
         if let Some(inv) = self.inventories.get_mut(&actor) {
             inv.set_charge(weapon, now, full);
         }
