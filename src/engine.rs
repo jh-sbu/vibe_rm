@@ -3261,6 +3261,18 @@ impl Engine {
             Some(t) if t == *b"CONT" && owned => "Steal from",
             Some(t) if t == *b"CONT" => "Search",
             Some(t) if t == *b"FURN" => {
+                if self
+                    .lo
+                    .get(base)
+                    .as_ref()
+                    .and_then(records::Workbench::parse)
+                    .is_some_and(|w| w.frame().is_some())
+                {
+                    return self
+                        .gmst_string("sCraft")
+                        .unwrap_or_else(|| "Craft".into())
+                        .into();
+                }
                 let sleep = self.furniture.get(*id).is_some_and(|f| {
                     f.markers
                         .iter()
@@ -3381,6 +3393,9 @@ impl Engine {
         }
         if self.serves_sentence_in(owner) {
             self.menu = Some(crate::items::Menu::ServeSentence);
+            return Ok(());
+        }
+        if self.open_crafting_station(owner) {
             return Ok(());
         }
         // A bed: the sleep menu.

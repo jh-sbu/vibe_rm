@@ -51,6 +51,24 @@ pub(crate) fn parent_activate_only(lo: &esp::LoadOrder, r: FormId) -> bool {
 }
 
 impl Engine {
+    pub(crate) fn open_crafting_station(&mut self, station: FormId) -> bool {
+        let Some(bench) = self
+            .base_of(station)
+            .and_then(|b| self.lo.get(b))
+            .as_ref()
+            .and_then(crate::world::records::Workbench::parse)
+        else {
+            return false;
+        };
+        if bench.frame().is_none() {
+            return false;
+        }
+        self.menu = Some(crate::items::Menu::Crafting {
+            station,
+            kind: bench.kind,
+        });
+        true
+    }
     /// Note the activate parents of a loaded cell's references.
     pub(crate) fn load_activate_parents(&mut self, refs: &[FormId]) {
         for &r in refs {
@@ -78,6 +96,9 @@ impl Engine {
         }
         if !self.scripts.blocked_activation.contains(&target) {
             self.activate_children(target);
+            if by == Some(crate::engine::PLAYER_REF) {
+                self.open_crafting_station(target);
+            }
         }
     }
 

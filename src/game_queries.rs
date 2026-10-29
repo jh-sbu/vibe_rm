@@ -164,6 +164,7 @@ impl Engine {
 
     pub fn saving_disabled(&self) -> bool {
         self.game_flags.chargen.is_some_and(|c| c.no_saving)
+            || matches!(self.menu, Some(crate::items::Menu::Crafting { .. }))
     }
 
     pub fn waiting_disabled(&self) -> bool {

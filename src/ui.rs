@@ -929,6 +929,7 @@ impl Ui {
             // Only the game's menus have the gift, skills, magic, favorites, tween and
             // sleep / wait menus: they close at once.
             Menu::Gift(_)
+            | Menu::Crafting { .. }
             | Menu::Skills
             | Menu::Magic
             | Menu::Favorites

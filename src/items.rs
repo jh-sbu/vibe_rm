@@ -9,6 +9,10 @@ use crate::world::inventory::{ItemInfo, ItemKind, armor_slots, equip_slot, item_
 /// A menu taking the mouse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Menu {
+    Crafting {
+        station: FormId,
+        kind: u8,
+    },
     /// The player's inventory.
     Inventory,
     /// A container (or another inventory) being searched.
@@ -41,7 +45,9 @@ pub enum Menu {
     Tween,
     /// How long to sleep (in a bed) or wait (`Engine::waiting` while the
     /// hours pass).
-    SleepWait { sleeping: bool },
+    SleepWait {
+        sleeping: bool,
+    },
     /// A trainer's training menu.
     Training(FormId),
     /// The world map.

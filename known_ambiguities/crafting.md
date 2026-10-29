@@ -46,3 +46,11 @@ Use the created enchantment's stored cost as the additive value for now, also
 for weapons: the consulted ENCH/WEAP pages did not establish the player-created
 weapon value rule. Weapon value remains a provisional choice to compare in the
 manual enchanting test.
+
+## Entering a station (step 4a)
+
+The player's furniture animation isn't implemented. A supported WBDT station
+opens its crafting menu immediately after normal OnActivate processing and
+BlockActivation checks, and closes back to standing. This uses the authored
+station type and keywords. Experiment types remain unsupported: the vanilla
+survey found none, and their movie routing remains an open research question.
