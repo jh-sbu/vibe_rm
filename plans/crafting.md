@@ -247,12 +247,14 @@ reads `lo.get(form)` would need a second lookup.
 2b. **Saved** as an optional `FORM` section: the records' bytes in id order.
     Loading re-inserts them before anything that reads inventories. A save
     without `FORM` loads with none.
-2c. **Sharing and cleanup.** Making the same potion again (same effects,
+2c. **Sharing and lifetime.** Making the same potion again (same effects,
     magnitudes and durations) reuses its form, as the original does (players
-    see crafted potions stack). Enchantments are shared the same way. A
-    created form nothing holds any more stays until saving, then is dropped.
-    Whether and when the original deletes them isn't public; record the choice
-    in `known_ambiguities/crafting.md`.
+    see crafted potions stack). Enchantments are shared the same way. Keep all
+    created forms across saves: runtime-only references such as projectiles
+    are not represented in saved state. Saving leaves the live plugin intact.
+    Cleanup is deferred until both saved and runtime roots are tracked;
+    the original's collection timing remains unestablished. The working choice
+    is recorded in `known_ambiguities/crafting.md`.
 
 Tests: insert, look up, save, load, reuse; an id never handed out twice across
 references and forms; `FORM` missing.
@@ -518,17 +520,16 @@ lines each:
 
 ## Implementation and verification record (2026-10-29)
 
-The numbered commit schedule is complete. The manual probe is generated at
+The numbered implementation steps are complete, with form collection deferred
+until complete lifetime tracking is available. The manual probe is generated at
 `tests/assets/crafting1.esp` with its two scripts; instructions are in
 `research/crafting/manual-test.md`. It has **not** been installed or run in
 Skyrim SE. All comparisons reported here run this project's engine.
 
-- Workspace tests with Vulkan: 786 passed, 366 ignored. The sandbox's default
-  OpenGL adapter hits an existing 16-texture limit; the Vulkan rerun passes.
-- Crafting integration/formula/save tests, including the installed vanilla perk
-  audit and GPU-ignored crafting cases: 24 passed. Related charge/quantity
-  checks and the manual probe's typed-call/dry-run test are included in the
-  final verification notes in research/crafting/verification.md.
+- Current workspace and targeted test results are recorded once in
+  `research/crafting/verification.md`, including the Vulkan backend and ignored
+  fixture requirements. That record also covers the manual probe's typed-call
+  and dry-run test.
 - Offscreen captures under ignored `tests/captures/crafting/` cover forge
   creation, weapon/armor tempering, cooking, alchemy at Arcadia's lab and the
   Sleeping Giant, and disenchanting/enchanting at Farengar's table. Hearthfire's

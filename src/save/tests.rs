@@ -57,34 +57,77 @@ fn crafting_forms_round_trip_and_legacy_saves_have_none() {
 }
 
 #[test]
-fn crafting_collection_keeps_inventory_and_transitive_forms() {
-    let potion = FormId(0xFF00_0800);
-    let enchantment = FormId(0xFF00_0801);
-    let orphan = FormId(0xFF00_0802);
-    let forms = vec![
-        RecordBuilder::new(b"ALCH", potion)
-            .form(b"EFID", enchantment)
-            .to_bytes(),
-        RecordBuilder::new(b"ENCH", enchantment).to_bytes(),
-        RecordBuilder::new(b"ALCH", orphan).to_bytes(),
-    ];
-    let mut s = Snapshot {
-        forms,
-        ..Default::default()
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn crafting_saves_preserve_runtime_only_forms_and_live_plugin() {
+    use crate::ai::archery::{Arrow, Projectile};
+    let (fixture, mut e) = engine("crafting-runtime-save");
+    let poison_record = || {
+        RecordBuilder::new(b"ALCH", FormId::NULL)
+            .zstring(b"FULL", "Runtime poison")
+            .u32(b"ENIT", 0)
     };
-    let mut inv = Inventory::default();
-    inv.add(potion, 1);
-    s.inventories.insert(PLAYER_REF, inv);
-    s.collect_forms();
-    let ids: Vec<_> = s
-        .forms
-        .iter()
-        .map(|b| esp::RecordHeader::parse(b).form_id)
-        .collect();
-    assert_eq!(ids, vec![potion, enchantment]);
-    s.inventories.clear();
-    s.collect_forms();
-    assert!(s.forms.is_empty());
+    let poison = e.intern_base_form(poison_record()).unwrap();
+    let enchantment = e
+        .create_base_form(RecordBuilder::new(b"ENCH", FormId::NULL))
+        .unwrap();
+    // The last dose has left the inventory; only an unsaved projectile uses it.
+    e.projectiles.push(Projectile {
+        shooter: PLAYER_REF,
+        arrow: Arrow {
+            ammo: FormId::NULL,
+            projectile: FormId::NULL,
+            damage: 0.,
+            speed: 10.,
+            gravity: 0.,
+            range: 100.,
+            model: None,
+        },
+        pos: Vec3::ZERO,
+        vel: Vec3::X * 10.,
+        damage: 0.,
+        model: None,
+        fx: None,
+        age: 0.,
+        stuck: None,
+        dir: Vec3::X,
+        spell: None,
+        dual: false,
+        poison: Some(poison),
+        lifetime: 10.,
+    });
+    let records = e.lo.runtime_records();
+    let cached_poison = e.magic_item(poison).unwrap();
+    let next = e.created_refs.next;
+    let path = fixture.0.join("runtime.vrs");
+    for _ in 0..2 {
+        e.save_game_to(&path).unwrap();
+        assert_eq!(e.lo.runtime_records(), records);
+        assert_eq!(e.projectiles[0].poison, Some(poison));
+        assert!(std::sync::Arc::ptr_eq(
+            &e.magic_item(poison).unwrap(),
+            &cached_poison,
+        ));
+        assert_eq!(e.intern_base_form(poison_record()).unwrap(), poison);
+        assert_eq!(e.created_refs.next, next);
+        let saved =
+            Snapshot::read(&SaveFile::from_bytes(&std::fs::read(&path).unwrap()).unwrap()).unwrap();
+        assert_eq!(saved.forms, records);
+    }
+    // Failed writes leave both the previous save and live forms intact.
+    let previous = std::fs::read(&path).unwrap();
+    std::fs::create_dir(path.with_extension("tmp")).unwrap();
+    assert!(e.save_game_to(&path).is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), previous);
+    assert_eq!(e.lo.runtime_records(), records);
+    assert!(std::sync::Arc::ptr_eq(
+        &e.magic_item(poison).unwrap(),
+        &cached_poison,
+    ));
+    let (_other, mut loaded) = engine("crafting-runtime-save-load");
+    loaded.load_game_from(&path).unwrap();
+    assert_eq!(loaded.lo.runtime_records(), records);
+    assert_eq!(loaded.intern_base_form(poison_record()).unwrap(), poison);
+    assert!(loaded.allocate_created_id() > enchantment);
 }
 const SHIELD: FormId = FormId(0x801);
 const GEM: FormId = FormId(0x802);

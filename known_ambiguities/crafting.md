@@ -9,15 +9,19 @@ Choice: intern generated forms by non-name fields and sorted effect pairs;
 record IDs and FULL/EDID do not distinguish them. IDs share the created-reference
 allocator and are never reused during a game.
 
-Collect unreachable forms when serializing a snapshot and compact the live
-runtime plugin only after the save has been written successfully. Collection
-conservatively treats any matching four-byte handle in saved state as a root,
-excluding FORM itself and thumbnails, and follows matching handles in retained
-records. This covers VM arrays, story memory and future optional sections as
-well as inventories without maintaining a second, easily incomplete root list.
-Accidental byte matches can retain an otherwise unused form, but cannot delete
-one still mentioned by a save. This is a deliberate conservative lifetime choice;
-the original's collection timing and root algorithm are not established.
+Keep all created forms in snapshots and leave the live runtime plugin and magic
+cache untouched when saving. Saved state is not a complete lifetime root set:
+projectiles, for example, can still carry the last dose of a created poison while
+no inventory or other saved object refers to it. Scanning serialized handles and
+then rebuilding the live plugin could therefore invalidate the running game;
+a failed rebuild could also leave it partially empty after writing the save.
+
+This supersedes save-time byte scanning and collection. It also avoids a second
+serialization and thumbnail encoding. Unused records can grow the save and
+runtime plugin; collection is deferred until lifetime tracking accounts for
+both saved and runtime-only references. The consulted sources do not establish
+the original's collection timing or root algorithm; retaining everything is the
+conservative working choice, not a claim about Skyrim SE's algorithm.
 
 ## Quality and health (step 3a)
 

@@ -506,7 +506,9 @@ impl Snapshot {
         let (executions, wounds) = e.saved_executions();
         let mut continuity = super::continuity::Continuity::capture(e);
         continuity.executions = executions;
-        let mut snapshot = Snapshot {
+        Snapshot {
+            // Saved state omits runtime roots such as projectiles. Keep every
+            // created form until lifetime tracking covers those roots too.
             forms: e.lo.runtime_records(),
             crafting_help: e.knowledge.crafting_help.clone(),
             failed_alchemy: e.knowledge.failed_alchemy.clone(),
@@ -618,51 +620,7 @@ impl Snapshot {
                 animation_waits: e.anim_events.waiting(),
                 kept_effects: e.saved_active_effects().0.iter().map(|x| x.id).collect(),
             },
-        };
-        snapshot.collect_forms();
-        snapshot
-    }
-
-    /// Conservative collection across all serialized state, including opaque VM
-    /// arrays and future optional sections. False positives retain a form; no
-    /// serialized handle can be left dangling by an incomplete typed root list.
-    pub(super) fn collect_forms(&mut self) {
-        let forms = std::mem::take(&mut self.forms);
-        if forms.is_empty() {
-            return;
         }
-        let candidates: HashMap<_, _> = forms
-            .iter()
-            .map(|b| (esp::RecordHeader::parse(b).form_id, b))
-            .collect();
-        let mut keep = HashSet::new();
-        let scan = |bytes: &[u8], keep: &mut HashSet<FormId>| {
-            for b in bytes.windows(4).filter(|b| b[3] == 0xFF) {
-                let id = FormId(u32::from_le_bytes(b.try_into().unwrap()));
-                if candidates.contains_key(&id) {
-                    keep.insert(id);
-                }
-            }
-        };
-        for (tag, bytes) in self.write().sections {
-            if &tag != b"FORM" && &tag != b"THMB" {
-                scan(&bytes, &mut keep);
-            }
-        }
-        loop {
-            let before = keep.len();
-            let roots: Vec<_> = keep.iter().copied().collect();
-            for id in roots {
-                scan(candidates[&id], &mut keep);
-            }
-            if keep.len() == before {
-                break;
-            }
-        }
-        self.forms = forms
-            .into_iter()
-            .filter(|b| keep.contains(&esp::RecordHeader::parse(b).form_id))
-            .collect();
     }
 
     pub fn write(&self) -> SaveFile {

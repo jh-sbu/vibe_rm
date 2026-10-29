@@ -2128,7 +2128,11 @@ game each piece unlocks.
    built yet (key, LOS gain, tracked hits); reading the
    original's `.ess` saves later;
    load orders that changed since the save, and the original's refusals to
-   save (combat, menus, scripted)
+   save (combat, menus, scripted). Runtime form collection is deferred: all
+   created ALCH/ENCH records currently persist. Track both saved and runtime-only
+   roots (including projectile poison) before reclaiming forms; saving must
+   preserve live plugin/cache state. Original collection timing is still an open
+   research question.
 10. **Performance**: async loading, GPU-driven culling
 11. **New game and the opening** (an eventual goal; it needs most of the items above)
    - Main menu and Continue/Load/Credits (`plans/main-menu.md`); loading screens
