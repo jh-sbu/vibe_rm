@@ -1020,7 +1020,7 @@ impl SwfUi {
         }
         if self.message_box.shown.is_none()
             && let Some(m) = &self.crafting
-            && m.key(code)
+            && m.key(code, &self.buttons)
         {
             return true;
         }

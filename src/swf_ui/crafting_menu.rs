@@ -48,7 +48,7 @@ impl CraftingMenu {
             5 => "Alchemy",
             _ => anyhow::bail!("unsupported workbench {kind}"),
         };
-        let menu = ui.open("craftingmenu.swf", size)?;
+        let mut menu = ui.open("craftingmenu.swf", size)?;
         super::set_button_mapping(&menu, &buttons);
         let charge_request = std::sync::Arc::new(std::sync::Mutex::new(None));
         let charges = charge_request.clone();
@@ -63,12 +63,26 @@ impl CraftingMenu {
             _ => super::respond(&buttons, call),
         });
         menu.invoke(&format!("{M}.gotoAndStop"), &[text(frame)]);
+        // The chosen timeline creates its lists and card on the next movie
+        // frame; initialize only after their constructors and onLoad ran.
+        for _ in 0..3 {
+            menu.advance(std::time::Duration::from_secs_f64(1. / 30.));
+        }
         menu.alias(&format!("{M}.CategoryList"), &format!("{M}.InventoryLists"));
         menu.alias(
             &format!("{M}.ItemInfo"),
             &format!("{M}.ItemInfoHolder.ItemInfo"),
         );
         menu.invoke(&format!("{M}.Initialize"), &[]);
+        log::debug!(
+            "crafting frame={:?} type={:?} list={:?} categories={:?}",
+            menu.get(&format!("{M}._currentframe")),
+            menu.get(&format!("{M}.MenuType")),
+            menu.get(&format!("{M}.ItemList.entryList.length")),
+            menu.get(&format!(
+                "{M}.CategoryList._CategoriesList.entryList.length"
+            ))
+        );
         menu.alias(
             &format!("{M}.SetChargeValues"),
             &format!("{M}.UpdateButtonText"),
@@ -102,6 +116,7 @@ impl CraftingMenu {
             ]),
         );
         menu.set(&format!("{M}.bCanCraft"), Value::Bool(false));
+        menu.set(&format!("{M}.AdditionalDescription.text"), text(""));
         menu.invoke(&format!("{M}.UpdateButtonText"), &[]);
         menu.callback(
             "SetCategoriesList",
@@ -162,7 +177,7 @@ impl CraftingMenu {
                 continue;
             };
             let (name, flag) = e.crafting_category(r.output);
-            categories.insert(name, flag);
+            categories.insert(flag, name);
             let can = e
                 .inventories
                 .get(&crate::engine::PLAYER_REF)
@@ -181,7 +196,7 @@ impl CraftingMenu {
             Value::Number(0x3FFFFFFFu32 as f64),
             Value::Bool(true),
         ];
-        for (name, flag) in categories {
+        for (flag, name) in categories {
             cats.extend([text(&name), Value::Number(flag as f64), Value::Bool(false)]);
         }
         self.menu.invoke(&format!("{M}.PreRebuildList"), &[]);
@@ -198,6 +213,43 @@ impl CraftingMenu {
         self.display(e);
     }
     pub fn update(&mut self, e: &mut Engine) {
+        // Activation scripts (notably Hearthfire's workbench script) can set
+        // recipe conditions after the menu opens, without changing inventory.
+        if self.kind == 1
+            && e.recipes_at(self.station)
+                .iter()
+                .map(|r| r.id)
+                .ne(self.recipes.iter().map(|r| r.id))
+        {
+            self.rebuild(e);
+        }
+        if let Some(skill) = e
+            .base_of(self.station)
+            .and_then(|f| e.lo.get(f))
+            .as_ref()
+            .and_then(crate::world::records::Workbench::parse)
+            .and_then(|b| b.skill)
+            .filter(|s| {
+                esp::actor_value::FIRST_SKILL <= *s
+                    && *s < esp::actor_value::FIRST_SKILL + crate::skills::SKILL_COUNT as u32
+            })
+        {
+            let level = e.av_base(crate::engine::PLAYER_REF, skill);
+            let progress = e.skills.xp[(skill - esp::actor_value::FIRST_SKILL) as usize]
+                / e.skill_xp_needed(skill).max(1.);
+            self.menu.invoke(
+                &format!("{M}.BottomBarInfo.UpdateCraftingInfo"),
+                &[text(&e.skill_name(skill)), num(level), num(progress * 100.)],
+            );
+        } else {
+            self.menu.invoke(
+                &format!("{M}.BottomBarInfo.UpdatePlayerInfo"),
+                &[
+                    super::item_menu::player_info(e),
+                    super::item_menu::object([("type", num(3.))]),
+                ],
+            );
+        }
         if self.last_revision != e.crafting.revision {
             self.last_revision = e.crafting.revision;
             self.enchant = Default::default();
@@ -601,6 +653,7 @@ impl CraftingMenu {
                         ),
                     ),
                     ("count", num(r.row.count as f32)),
+                    ("filterFlag", num(1.)),
                     (
                         "enabled",
                         Value::Bool(
@@ -620,7 +673,10 @@ impl CraftingMenu {
             self.menu.invoke(&format!("{list}.push"), &entries);
         }
         self.menu
+            .invoke(&format!("{M}.ItemList.InvalidateData"), &[]);
+        self.menu
             .invoke(&format!("{M}.UpdateItemList"), &[Value::Bool(false)]);
+        self.menu.invoke(&format!("{M}.UpdateItemDisplay"), &[]);
     }
     fn display(&self, e: &Engine) {
         if self.kind == 3 {
@@ -635,12 +691,13 @@ impl CraftingMenu {
                     EnchantRow::Effect(form) => super::item_menu::object([
                         ("name", text(&e.form_name(*form))),
                         ("effects", text(&e.effects_text(*form))),
-                        ("type", num(7.)),
+                        ("type", num(15.)),
+                        ("usedCharge", num(0.)),
+                        ("totalCharges", num(0.)),
                         ("value", num(e.enchantment_cost(*form))),
                     ]),
                 };
-                self.menu
-                    .invoke(&format!("{M}.ItemInfo.SetItemInfo"), &[card]);
+                self.menu.set(&format!("{M}.ItemInfo.itemInfo"), card);
             }
             self.menu.set(
                 &format!("{M}.ButtonText.2"),
@@ -684,8 +741,7 @@ impl CraftingMenu {
                         fields.insert("name".into(), text(name));
                     }
                 }
-                self.menu
-                    .invoke(&format!("{M}.ItemInfo.SetItemInfo"), &[card]);
+                self.menu.set(&format!("{M}.ItemInfo.itemInfo"), card);
                 if preview.weapon && !self.slider_configured.replace(true) {
                     self.slider_original.set(self.enchant.slider);
                     self.slider_active.set(true);
@@ -757,14 +813,12 @@ impl CraftingMenu {
                     ("type", num(6.)),
                     ("effects", text(&names)),
                 ]);
-                self.menu
-                    .invoke(&format!("{M}.ItemInfo.SetItemInfo"), &[card]);
+                self.menu.set(&format!("{M}.ItemInfo.itemInfo"), card);
                 return;
             }
             if let Some(row) = self.selected.and_then(|i| self.ingredients.get(i)) {
                 let card = super::item_menu::item_card(e, row, None, false);
-                self.menu
-                    .invoke(&format!("{M}.ItemInfo.SetItemInfo"), &[card]);
+                self.menu.set(&format!("{M}.ItemInfo.itemInfo"), card);
             }
             return;
         }
@@ -777,8 +831,7 @@ impl CraftingMenu {
                     .copy_item_info(row.item, &row.copy)
                     .unwrap_or_else(|| row.info.clone());
                 let card = super::item_menu::item_card(e, &row, None, false);
-                self.menu
-                    .invoke(&format!("{M}.ItemInfo.SetItemInfo"), &[card]);
+                self.menu.set(&format!("{M}.ItemInfo.itemInfo"), card);
                 let inv = e.inventories.get(&crate::engine::PLAYER_REF);
                 self.menu.set(
                     &format!("{M}.bCanCraft"),
@@ -827,8 +880,7 @@ impl CraftingMenu {
                 info,
             };
             let card = super::item_menu::item_card(e, &row, None, false);
-            self.menu
-                .invoke(&format!("{M}.ItemInfo.SetItemInfo"), &[card]);
+            self.menu.set(&format!("{M}.ItemInfo.itemInfo"), card);
         }
         let inv = e.inventories.get(&crate::engine::PLAYER_REF);
         let inputs = r
@@ -1028,16 +1080,20 @@ impl CraftingMenu {
         }
         true
     }
-    pub fn key(&self, code: winit::keyboard::KeyCode) -> bool {
+    pub fn key(&self, code: winit::keyboard::KeyCode, buttons: &Buttons) -> bool {
         if self.menu.typing() {
             return false;
         }
         use winit::keyboard::KeyCode;
-        let method = match code {
-            KeyCode::Escape => "onExitButtonPress",
-            KeyCode::KeyR => "onCraftButtonPress",
-            KeyCode::KeyF => "onAuxButtonPress",
-            _ => return false,
+        let scan = crate::input_map::scan_code(code);
+        let method = if code == KeyCode::Escape {
+            "onExitButtonPress"
+        } else if scan.is_some() && scan == buttons.key("Ready Weapon") {
+            "onCraftButtonPress"
+        } else if scan.is_some() && scan == buttons.key("Toggle POV") {
+            "onAuxButtonPress"
+        } else {
+            return false;
         };
         self.menu.invoke(&format!("{M}.{method}"), &[]);
         true
