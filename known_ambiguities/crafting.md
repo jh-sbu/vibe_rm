@@ -108,3 +108,18 @@ Craft gate versus failed-mix requirement. Highest source effect cost chooses an
 ingredient's entire effect parameters; equal costs use deterministic form/order
 ties pending original-game tests (Alchemy Effects revision 3536120 lines 9–14
 says cost priority is believed, rather than verified).
+
+## Potion naming, polarity and value (step 7c)
+
+Use the highest-cost resulting effect's localized name with the authored
+sCreatedPotionNamePrefix/sCreatedPoisonNamePrefix. Ties follow effect form-ID
+order. Hostile dominant effects make poisons. Purity first filters using the
+unscaled dominant effect; the scaled result then determines its final label and
+polarity. The sources establish strongest-effect naming and Purity, but not this
+tie rule or the precise mixed-effect order; these remain manual-test choices.
+
+Magnitude and duration follow the documented power/no-value flags and round
+separately. Positive hidden durations participate in value, even below ten
+seconds. The final value floors the sum of exact costs, following ALCH format
+notes rather than summing individually floored effect costs from the effect
+page's illustrative calculation.

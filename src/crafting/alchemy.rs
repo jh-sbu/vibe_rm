@@ -15,7 +15,10 @@ impl Engine {
 use crate::magic::{EffectItem, flags};
 use esp::FormId;
 
+#[derive(Clone)]
 pub(crate) struct PotionResult {
+    pub name: String,
+    pub value: i32,
     pub effects: Vec<EffectItem>,
     pub poison: bool,
 }
@@ -107,7 +110,12 @@ impl Engine {
                     .is_some_and(|m| (m.has(flags::HOSTILE) || m.has(flags::DETRIMENTAL)) == poison)
             });
         }
-        (!effects.is_empty()).then_some(PotionResult { effects, poison })
+        (!effects.is_empty()).then_some(PotionResult {
+            effects,
+            poison,
+            name: String::new(),
+            value: 0,
+        })
     }
 }
 
@@ -142,3 +150,101 @@ mod tests {
         assert!(shared_effects(&[vec![effect(1, 1.), effect(1, 1.)]], |e| e.magnitude).is_empty());
     }
 }
+
+#[derive(Clone, Copy)]
+pub(crate) struct AlchemyQuery {
+    pub effect: FormId,
+    pub poison: bool,
+}
+
+fn ingredient_power(skill: f32, initial: f32, skill_factor: f32) -> f32 {
+    initial * (1. + (skill_factor - 1.) * skill / 100.)
+}
+
+impl Engine {
+    pub(crate) fn potion_result(&self, ingredients: &[FormId]) -> Option<PotionResult> {
+        let mut result = self.unscaled_potion(ingredients)?;
+        let initial = crate::ai::combat::gmst_f32(&self.lo, "fAlchemyIngredientInitMult", 4.);
+        let skill_factor = crate::ai::combat::gmst_f32(&self.lo, "fAlchemySkillFactor", 1.5);
+        let power = ingredient_power(
+            self.av_base(PLAYER_REF, esp::actor_value::ALCHEMY),
+            initial,
+            skill_factor,
+        );
+        for effect in &mut result.effects {
+            let flags = self.magic_effect(effect.effect)?.flags;
+            let previous = self.crafting.alchemy_query.replace(Some(AlchemyQuery {
+                effect: effect.effect,
+                poison: result.poison,
+            }));
+            let factor = self.perk_entry_point(
+                crate::perks::ep::MOD_ALCHEMY_EFFECTIVENESS,
+                PLAYER_REF,
+                &[],
+                power,
+            );
+            self.crafting.alchemy_query.set(previous);
+            let factor = if factor < 0. || !factor.is_finite() {
+                1.
+            } else {
+                factor
+            };
+            effect.magnitude = if flags & crate::magic::flags::NO_MAGNITUDE != 0 {
+                0.
+            } else {
+                (effect.magnitude
+                    * if flags & crate::magic::flags::POWER_AFFECTS_MAGNITUDE != 0 {
+                        factor
+                    } else {
+                        1.
+                    })
+                .round()
+            };
+            effect.duration = if flags & crate::magic::flags::NO_DURATION != 0 {
+                0
+            } else {
+                (effect.duration as f32
+                    * if flags & crate::magic::flags::POWER_AFFECTS_DURATION != 0 {
+                        factor
+                    } else {
+                        1.
+                    })
+                .round()
+                .max(0.) as u32
+            };
+        }
+        let dominant = result.effects.iter().max_by(|a, b| {
+            self.alchemy_effect_cost(a)
+                .total_cmp(&self.alchemy_effect_cost(b))
+        })?;
+        result.poison = self
+            .magic_effect(dominant.effect)
+            .is_some_and(|m| m.has(flags::HOSTILE));
+        let prefix = self
+            .gmst_string(if result.poison {
+                "sCreatedPoisonNamePrefix"
+            } else {
+                "sCreatedPotionNamePrefix"
+            })
+            .unwrap_or_else(|| {
+                if result.poison {
+                    "Poison of ".into()
+                } else {
+                    "Potion of ".into()
+                }
+            });
+        result.name = format!("{prefix}{}", self.form_name(dominant.effect));
+        result.value = result
+            .effects
+            .iter()
+            .map(|e| self.alchemy_effect_cost(e))
+            .sum::<f32>()
+            .floor()
+            .max(0.) as i32;
+        Some(result)
+    }
+}
+
+#[cfg(test)]
+#[path = "alchemy_tests.rs"]
+mod integration_tests;

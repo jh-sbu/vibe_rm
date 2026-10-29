@@ -367,7 +367,7 @@ impl CraftingMenu {
                 Value::Bool(self.selected_ingredients.len() >= 2),
             );
             self.menu.invoke(&format!("{M}.UpdateButtonText"), &[]);
-            if let Some(result) = e.unscaled_potion(&self.selected_ingredients) {
+            if let Some(result) = e.potion_result(&self.selected_ingredients) {
                 let names = result
                     .effects
                     .iter()
@@ -389,6 +389,33 @@ impl CraftingMenu {
                     .join(", ");
                 self.menu
                     .set(&format!("{M}.AdditionalDescription.text"), text(&names));
+                let known = result.effects.iter().all(|effect| {
+                    self.selected_ingredients.iter().any(|&ingredient| {
+                        e.magic_item(ingredient).is_some_and(|m| {
+                            m.effects.iter().enumerate().any(|(i, ef)| {
+                                ef.effect == effect.effect && e.effect_learned(ingredient, i)
+                            })
+                        })
+                    })
+                });
+                let name = if known {
+                    result.name.clone()
+                } else {
+                    e.lo.find_editor_id("DefaultPotion")
+                        .map(|f| e.form_name(f))
+                        .unwrap_or_else(|| "Unknown Potion".into())
+                };
+                let card = super::item_menu::object([
+                    ("name", text(&name)),
+                    ("count", num(1.)),
+                    ("value", num(if known { result.value as f32 } else { 0. })),
+                    ("weight", num(0.5)),
+                    ("type", num(6.)),
+                    ("effects", text(&names)),
+                ]);
+                self.menu
+                    .invoke(&format!("{M}.ItemInfo.SetItemInfo"), &[card]);
+                return;
             }
             if let Some(row) = self.selected.and_then(|i| self.ingredients.get(i)) {
                 let card = super::item_menu::item_card(e, row, None, false);

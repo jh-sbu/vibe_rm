@@ -11,6 +11,11 @@ pub(crate) fn constructible_xp(lo: &esp::LoadOrder, value: f32) -> f32 {
         + g("fConstructibleSkillUseConst", 25.)
 }
 
+#[derive(Default)]
+pub(crate) struct CraftingState {
+    pub alchemy_query: std::cell::Cell<Option<alchemy::AlchemyQuery>>,
+}
+
 #[derive(Clone)]
 pub(crate) struct Improvement {
     pub row: crate::items::ListedItem,

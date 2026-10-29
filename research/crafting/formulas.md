@@ -63,3 +63,18 @@ AlchemySkillBoosts also modify entry point 76 from SmithingMod and SmithingPower
 Feed (Smithing - 13.29) through that entry point, then add 13.29 and apply the
 quality formula. This includes material perks, fortify apparel/potions and any
 authored Seeker modifier without applying them twice.
+
+Alchemy Effects [revision 3536120](https://en.uesp.net/w/index.php?oldid=3536120),
+lines 9–14 and 85–129, clarifies that one highest-priority ingredient supplies
+all effect parameters; power flags independently scale magnitude and duration,
+then each is rounded. NoMagnitude/NoDuration force zero. A zero duration uses
+one in the cost multiplier; a positive duration uses duration/10, including
+one-second hidden durations. Do not clamp those to ten seconds: this matters
+for the documented Damage Health value bug. ALCH's final value floors the sum
+of exact effect costs (ALCH format page), rather than summing per-effect floors.
+The mathematical relationships here are independently implemented; no wiki
+pseudocode is copied into project code.
+
+The authored ALCH DefaultPotion (0005661F) is named **Unknown Potion**. It supplies
+the unknown-result title; DefaultPoison supplies poison art. This settles the
+plan's missing unknown-potion GMST: its text is a localized FULL, not a GMST.

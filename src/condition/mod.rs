@@ -518,6 +518,12 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         659 => b(ctx
             .tempering_enchanted
             .unwrap_or_else(|| ctx.target.is_some_and(|f| e.item_enchantment(f).is_some()))),
+        500 => e.crafting.alchemy_query.get().and_then(|q| b(q.poison)),
+        501 => e
+            .crafting
+            .alchemy_query
+            .get()
+            .and_then(|q| b(e.has_keyword(q.effect, p1))),
         660 => ctx.target.and_then(|f| b(e.has_keyword(f, p1))),
         18 => Some(e.hour),                       // GetCurrentTime
         170 => Some((e.day % 7) as f32),          // GetDayOfWeek

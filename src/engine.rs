@@ -56,6 +56,7 @@ pub enum Location {
 pub struct Engine {
     pub lo: LoadOrder,
     pub(crate) recipes: crate::world::crafting::Recipes,
+    pub(crate) crafting: crate::crafting::CraftingState,
     pub vfs: std::sync::Arc<vfs::Vfs>,
     pub renderer: Renderer,
     pub models: ModelCache,
@@ -439,6 +440,7 @@ impl Engine {
         Engine {
             lo,
             recipes,
+            crafting: Default::default(),
             vfs: std::sync::Arc::new(vfs),
             renderer,
             models,
