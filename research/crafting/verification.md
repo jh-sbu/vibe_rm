@@ -97,3 +97,13 @@ Final checks with `WGPU_BACKEND=vulkan` and a headless GPU adapter:
 `cargo test --bin vibe_rm staffs:: -- --include-ignored` (3 passed).
 `cargo fmt --check` and `git diff --check` are clean. These remain project-engine
 checks; the original-game probe has not been run.
+
+## Exit-key correction (2026-10-29)
+
+Offscreen input checks confirm Tab calls `CloseMenu` and exits forge,
+grindstone, armor workbench, alchemy and enchanting frames. With an ingredient
+or enchanting item selected, Tab opens the existing quit confirmation: No
+keeps the selection/menu, another Tab asks again, and Yes exits. These checks
+use the authored movie and the rebuilt VibeRM client; captures and callback
+logs stay under `/tmp/vibe-crafting-exit/`. The host also accepts the configured
+Tween Menu key through the same exit handler. All 27 crafting tests pass.

@@ -134,3 +134,9 @@ references without flattening them through ExternalInterface values. This rebind
 CategoryList and ItemInfo after a frame switch. Ruffle's existing dual MIT/Apache
 license was checked; this small bridge extension is authored here, not imported
 from a mod or engine source.
+
+The host routes Tab, Escape and the configured Tween Menu key to
+`Menu.onExitButtonPress`. The authored method sends `CloseMenu` directly;
+its bottom-bar click hookup alone does not handle keyboard Tab in this host.
+The existing engine handler supplies pending alchemy/enchanting quit
+confirmations. Focused rename text fields retain their ordinary text input.

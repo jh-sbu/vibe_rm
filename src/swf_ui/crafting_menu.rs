@@ -1086,7 +1086,9 @@ impl CraftingMenu {
         }
         use winit::keyboard::KeyCode;
         let scan = crate::input_map::scan_code(code);
-        let method = if code == KeyCode::Escape {
+        let method = if matches!(code, KeyCode::Escape | KeyCode::Tab)
+            || scan.is_some_and(|scan| buttons.key("Tween Menu") == Some(scan))
+        {
             "onExitButtonPress"
         } else if scan.is_some() && scan == buttons.key("Ready Weapon") {
             "onCraftButtonPress"
