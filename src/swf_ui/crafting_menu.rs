@@ -632,7 +632,14 @@ impl CraftingMenu {
                 self.menu
                     .invoke(&format!("{M}.ItemInfo.SetItemInfo"), &[card]);
             }
-            self.menu.set(&format!("{M}.ButtonText.2"),text(&if self.enchant.item.is_some() {e.gmst_string("sRename").unwrap_or_else(||"Rename".into())}else{String::new()}));
+            self.menu.set(
+                &format!("{M}.ButtonText.2"),
+                text(&if self.enchant.item.is_some() {
+                    e.gmst_string("sRename").unwrap_or_else(|| "Rename".into())
+                } else {
+                    String::new()
+                }),
+            );
             let can = self.enchant.item.is_some()
                 && !self.enchant.effects.is_empty()
                 && self.enchant.effects.len() <= e.enchantment_slots()
@@ -880,18 +887,32 @@ impl CraftingMenu {
                 self.slider_active.set(false);
                 self.display(e);
             }
-            "AuxButtonPress" if self.kind==3=>{
-                if let Some(row)=&self.enchant.item {
-                    let current=self.enchant.name.clone().or_else(||row.copy.name.clone()).or_else(||crate::world::inventory::item_info(&e.lo,row.item).map(|i|i.name)).unwrap_or_default();
-                    self.menu.invoke(&format!("{M}.EditItemName"),&[text(&current),num(32.)]);
+            "AuxButtonPress" if self.kind == 3 => {
+                if let Some(row) = &self.enchant.item {
+                    let current = self
+                        .enchant
+                        .name
+                        .clone()
+                        .or_else(|| row.copy.name.clone())
+                        .or_else(|| {
+                            crate::world::inventory::item_info(&e.lo, row.item).map(|i| i.name)
+                        })
+                        .unwrap_or_default();
+                    self.menu
+                        .invoke(&format!("{M}.EditItemName"), &[text(&current), num(32.)]);
                 }
-            },
-            "EndItemRename" if self.kind==3=>{
-                if matches!(c.args.first(),Some(Value::Bool(true))) && let Some(Value::String(name))=c.args.get(1) {
-                    let name:String=name.chars().filter(|c|!c.is_control()).take(32).collect();
-                    if !name.is_empty() {self.enchant.name=Some(name);}
-                }self.display(e);
-            },
+            }
+            "EndItemRename" if self.kind == 3 => {
+                if matches!(c.args.first(), Some(Value::Bool(true)))
+                    && let Some(Value::String(name)) = c.args.get(1)
+                {
+                    let name: String = name.chars().filter(|c| !c.is_control()).take(32).collect();
+                    if !name.is_empty() {
+                        self.enchant.name = Some(name);
+                    }
+                }
+                self.display(e);
+            }
             "CloseMenu" if self.kind == 5 && !self.selected_ingredients.is_empty() => {
                 let question = e
                     .gmst_string("sQuitAlchemy")
@@ -939,7 +960,9 @@ impl CraftingMenu {
         true
     }
     pub fn key(&self, code: winit::keyboard::KeyCode) -> bool {
-        if self.menu.typing() {return false;}
+        if self.menu.typing() {
+            return false;
+        }
         use winit::keyboard::KeyCode;
         let method = match code {
             KeyCode::Escape => "onExitButtonPress",
