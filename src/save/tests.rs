@@ -50,6 +50,37 @@ fn crafting_forms_round_trip_and_legacy_saves_have_none() {
     .write();
     assert!(Snapshot::read(&bad).is_err());
 }
+
+#[test]
+fn crafting_collection_keeps_inventory_and_transitive_forms() {
+    let potion = FormId(0xFF00_0800);
+    let enchantment = FormId(0xFF00_0801);
+    let orphan = FormId(0xFF00_0802);
+    let forms = vec![
+        RecordBuilder::new(b"ALCH", potion)
+            .form(b"EFID", enchantment)
+            .to_bytes(),
+        RecordBuilder::new(b"ENCH", enchantment).to_bytes(),
+        RecordBuilder::new(b"ALCH", orphan).to_bytes(),
+    ];
+    let mut s = Snapshot {
+        forms,
+        ..Default::default()
+    };
+    let mut inv = Inventory::default();
+    inv.add(potion, 1);
+    s.inventories.insert(PLAYER_REF, inv);
+    s.collect_forms();
+    let ids: Vec<_> = s
+        .forms
+        .iter()
+        .map(|b| esp::RecordHeader::parse(b).form_id)
+        .collect();
+    assert_eq!(ids, vec![potion, enchantment]);
+    s.inventories.clear();
+    s.collect_forms();
+    assert!(s.forms.is_empty());
+}
 const SHIELD: FormId = FormId(0x801);
 const GEM: FormId = FormId(0x802);
 const WEATHER: FormId = FormId(0x890);

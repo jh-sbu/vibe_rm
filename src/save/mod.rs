@@ -252,7 +252,7 @@ impl Engine {
 
     /// Write the game to `path` (to a temporary file first, so a crash
     /// leaves the old save whole).
-    pub fn save_game_to(&self, path: &Path) -> Result<()> {
+    pub fn save_game_to(&mut self, path: &Path) -> Result<()> {
         let mut snapshot = Snapshot::capture(self);
         if let Some(meta) = &mut snapshot.metadata {
             meta.written = std::time::SystemTime::now()
@@ -273,6 +273,10 @@ impl Engine {
         }
         let bytes = snapshot.write().to_bytes();
         write_save_bytes(path, &bytes)?;
+        self.lo.clear_runtime_records();
+        for bytes in &snapshot.forms {
+            self.lo.insert_runtime_record(bytes)?;
+        }
         self.last_save.set(std::time::Instant::now());
         log::info!("saved {} ({} bytes)", path.display(), bytes.len());
         Ok(())
@@ -289,7 +293,7 @@ impl Engine {
     }
 
     /// Save as `name` in the saves directory.
-    pub fn save_game(&self, name: &str) -> Result<PathBuf> {
+    pub fn save_game(&mut self, name: &str) -> Result<PathBuf> {
         if self.saving_disabled() || self.player_dead() {
             bail!("saving is disabled");
         }

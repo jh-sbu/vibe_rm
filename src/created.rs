@@ -54,6 +54,38 @@ pub struct CreatedRefs {
     pub(crate) next: u32,
 }
 
+/// Canonical fields for generated (unconditioned) magic items. Sort effect
+/// pairs together so their magnitudes/durations stay attached to the effect.
+fn magic_form_key(bytes: &[u8]) -> esp::Result<Vec<u8>> {
+    let r = esp::Record::from_raw(bytes)?;
+    let mut key = r.tag().0.to_vec();
+    let mut effects = Vec::new();
+    let mut effect = None;
+    for s in r.subrecords() {
+        match &s.tag.0 {
+            b"FULL" | b"EDID" => {}
+            b"EFID" => effect = Some(s.data.to_vec()),
+            b"EFIT" => {
+                let Some(mut e) = effect.take() else {
+                    return Err(esp::Error::Corrupt("EFIT without EFID".into()));
+                };
+                e.extend_from_slice(s.data);
+                effects.push(e);
+            }
+            _ => {
+                key.extend_from_slice(&s.tag.0);
+                key.extend_from_slice(&(s.data.len() as u32).to_le_bytes());
+                key.extend_from_slice(s.data);
+            }
+        }
+    }
+    effects.sort();
+    for e in effects {
+        key.extend_from_slice(&e);
+    }
+    Ok(key)
+}
+
 impl Engine {
     /// Shared ID sequence for runtime base forms and created references.
     pub(crate) fn allocate_created_id(&mut self) -> FormId {
@@ -78,6 +110,19 @@ impl Engine {
         record.form_id = self.allocate_created_id();
         self.lo.insert_runtime_record(&record.to_bytes())
     }
+    pub(crate) fn intern_base_form(
+        &mut self,
+        record: esp::writer::RecordBuilder,
+    ) -> esp::Result<FormId> {
+        let key = magic_form_key(&record.to_bytes())?;
+        for existing in self.lo.runtime_records() {
+            if magic_form_key(&existing)? == key {
+                return Ok(esp::RecordHeader::parse(&existing).form_id);
+            }
+        }
+        self.create_base_form(record)
+    }
+
     pub fn created(&self, r: FormId) -> Option<&Created> {
         self.created_refs.refs.get(&r)
     }
@@ -312,5 +357,34 @@ impl Engine {
         if let Some(key) = self.key_of_place(place) {
             self.spawn_actors(key, &[(id, Some(position))]);
         }
+    }
+}
+
+#[cfg(test)]
+mod crafting_tests {
+    use super::*;
+    use esp::writer::RecordBuilder;
+
+    #[test]
+    fn magic_identity_ignores_names_ids_and_effect_order() {
+        let efit = [1f32.to_le_bytes(), 0u32.to_le_bytes(), 10u32.to_le_bytes()].concat();
+        let make = |id, name, order: [u32; 2]| {
+            let mut r = RecordBuilder::new(b"ALCH", FormId(id)).zstring(b"FULL", name);
+            for f in order {
+                r = r.form(b"EFID", FormId(f)).field(b"EFIT", &efit);
+            }
+            r
+        };
+        let a = make(0xFF000800, "Potion", [1, 2]);
+        let b = make(0xFF000801, "Other name", [2, 1]);
+        assert_eq!(
+            magic_form_key(&a.to_bytes()).unwrap(),
+            magic_form_key(&b.to_bytes()).unwrap()
+        );
+        let c = make(0xFF000802, "Potion", [1, 3]);
+        assert_ne!(
+            magic_form_key(&a.to_bytes()).unwrap(),
+            magic_form_key(&c.to_bytes()).unwrap()
+        );
     }
 }
