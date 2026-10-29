@@ -3,6 +3,7 @@ use anyhow::{Context, Result, bail};
 mod animation_survey;
 mod audio_formats;
 mod audio_survey;
+mod crafting_survey;
 #[path = "../../../src/condition/functions.rs"]
 #[allow(dead_code)]
 mod functions;
@@ -10,6 +11,9 @@ mod saves;
 mod seams;
 mod spell_fx;
 mod test_mods;
+#[path = "../../../src/script/vmad.rs"]
+#[allow(dead_code)]
+mod vmad;
 
 /// A behaviour project named by its directory (humanoids: `behaviors/0_master.hkx`)
 /// or by its project file (`meshes/actors/canine/dogproject.hkx`), with its directory.
@@ -42,6 +46,7 @@ fn main() -> Result<()> {
     env_logger::init();
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
+        Some("crafting-survey") => crafting_survey::run(&args[1])?,
         Some("spell-fx") => spell_fx::run(&args[1..])?,
         Some("bsa-list") => {
             let a = bsa::Archive::open(&args[1])?;

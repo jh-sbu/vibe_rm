@@ -1,6 +1,6 @@
 # Plan: crafting
 
-**Status: planned** (2026-10-28). Crafting is the system ROADMAP's other items
+**Status: in progress** (2026-10-28). Crafting is the system ROADMAP's other items
 wait on: the Story Manager's craft event (item 2), the crafting perks' entry
 points (item 5, Perks), alchemy teaching the effects two ingredients share and
 the crafting statistics (item 6), and the Smithing, Alchemy and Enchanting skill
@@ -190,6 +190,10 @@ Message boxes go through `messagebox.swf` with GMST texts:
 ## Steps
 
 ### 0. Research and a survey
+
+Implemented survey and research notes. Open: standalone EnchantDestruct routing,
+unknown-potion/new-recipe translation strings, original-game prompt and formula
+rounding checks. See `research/crafting/`. Later steps remain pending.
 
 - `research/crafting/menu.md` (the contract above, with argument types and
   each frame's clips), `research/crafting/records.md` (`COBJ`, `FURN` `WBDT`,
