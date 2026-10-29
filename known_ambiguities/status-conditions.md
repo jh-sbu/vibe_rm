@@ -414,12 +414,3 @@ found no explanatory pages. Choice: answer unmounted explicitly until the
 mounted-actor system exists, without relaxing the evaluator's refusal of other
 unsupported conditions. Mount transitions and their query timing remain part
 of ROADMAP's riding work.
-
-Verification (2026-10-29): the installed-assets player-body regression first
-failed because ActionMoveStart resolved to no event. With the explicit unmounted
-answer, it enters locomotion at walk/run speeds and returns to standing on stop.
-All 9 player-body tests and 31 status-condition tests pass with ignored fixtures
-enabled; the workspace suite passes (786 tests, 371 ignored). Offscreen checks
-in VibeRM's WhiterunBanneredMare confirm rendered walk/run strides and separate
-locomotion/standing graph states. Captures and logs remain under
-`/tmp/vibe-player-animation/`; Skyrim SE itself was not run.

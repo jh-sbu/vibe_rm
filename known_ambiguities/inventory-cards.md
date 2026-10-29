@@ -46,7 +46,7 @@ gifts received from an actor, rather than always the player's inventory.
   authored/custom charge, poison, quality, enchantment and name within each
   ownership stack. Old saves lacked correlations between their sparse soul,
   charge and poison lists and ownership. Choice: materialize those legacy
-  entries into player-owned copies first, then owned stacks in inventory order.
+  entries into player-owned copies first, then stolen stacks in inventory order.
   New captures materialize immediately. Exact-row transfers, drops and pickup
   preserve this identity in both SWF and egui paths. Grand/black identity remains
   size-only as below.

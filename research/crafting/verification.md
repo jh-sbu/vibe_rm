@@ -6,18 +6,27 @@ generated plugins and compiled probe scripts remain ignored and uncommitted.
 
 ## Automated checks
 
+Current review run (2026-10-29), with `WGPU_BACKEND=vulkan` and access to a
+headless GPU adapter:
+
+- `cargo test --workspace -j 2`: **785 passed, 372 ignored**, no failures.
+- `cargo test --bin vibe_rm save::tests:: -- --include-ignored`: 165 passed.
+- `cargo test --bin vibe_rm crafting_ -- --include-ignored`: 27 passed.
 - `cargo fmt --check` and `git diff --check`: clean.
-- `WGPU_BACKEND=vulkan cargo test --workspace -j 2`: 786 passed, 366 ignored.
-  A first sandbox run hit the default OpenGL adapter's 16-texture limit in
-  existing renderer tests. The unsandboxed Vulkan rerun passes.
-- `WGPU_BACKEND=vulkan cargo test --bin vibe_rm crafting_ -- --include-ignored`:
-  24 passed, including installed vanilla/DLC perks, transactions, scripted
-  output events, created forms, copy identity, legacy saves, active armor
-  enchantment reload, stars becoming refillable, and drop/pickup metadata.
-- `... cargo test --bin vibe_rm staffs:: -- --include-ignored`: 3 passed.
-- `... cargo test --bin vibe_rm ui::quantity_tests -- --include-ignored`:
-  8 passed, including stale/cancelled quantities and ownership/pickpocket paths.
-- The crafting1 probe's typed vanilla-call and bounded-page dry run passes in
+
+Logs are retained under ignored `tests/captures/crafting/review/`. The obsolete
+collection unit test was replaced by an ignored GPU regression covering saves
+with a runtime-only projectile root, so one passing test moved into the ignored
+count. Earlier workspace totals reflected earlier revisions and are superseded
+by this run. The sandbox exposes no Vulkan adapter; these tests ran with adapter
+access. Earlier OpenGL attempts hit the renderer's 16-texture adapter limit.
+
+Other checks recorded during implementation, before the review corrections:
+
+- `cargo test --bin vibe_rm staffs:: -- --include-ignored`: 3 passed.
+- `cargo test --bin vibe_rm ui::quantity_tests -- --include-ignored`: 8 passed,
+  including stale/cancelled quantities and ownership/pickpocket paths.
+- The crafting1 probe's typed vanilla-call and bounded-page dry run passed in
   the tools suite. Rebuilt `vrm-tool` before generating its plugin/scripts.
 
 ## Offscreen authored-menu checks
@@ -90,13 +99,9 @@ game parity for those choices or the excluded station animation/3D preview.
   follow the headers, preserving journal listing, previews and save numbering.
   Prefix-reader tests cover generated forms with and without META.
 
-Final checks with `WGPU_BACKEND=vulkan` and a headless GPU adapter:
-`cargo test --workspace -j 2` (786 passed, 369 ignored), plus
-`cargo test --bin vibe_rm crafting_ -- --include-ignored` (27 passed),
-`cargo test --bin vibe_rm save::tests:: -- --include-ignored` (165 passed), and
-`cargo test --bin vibe_rm staffs:: -- --include-ignored` (3 passed).
-`cargo fmt --check` and `git diff --check` are clean. These remain project-engine
-checks; the original-game probe has not been run.
+These corrections passed the workspace, crafting, save and staff suites with
+`WGPU_BACKEND=vulkan` and a headless GPU adapter, plus formatting and diff checks.
+These remain project-engine checks; the original-game probe has not been run.
 
 ## Exit-key correction (2026-10-29)
 
@@ -105,7 +110,7 @@ grindstone, armor workbench, alchemy and enchanting frames. With an ingredient
 or enchanting item selected, Tab opens the existing quit confirmation: No
 keeps the selection/menu, another Tab asks again, and Yes exits. These checks
 use the authored movie and the rebuilt VibeRM client; captures and callback
-logs stay under `/tmp/vibe-crafting-exit/`. The host also accepts the configured
+logs stay under `tests/captures/crafting/exit/`. The host also accepts the configured
 Tween Menu key through the same exit handler. All 27 crafting tests pass.
 
 ## Tutorial hint height (2026-10-29)
@@ -119,9 +124,37 @@ to long and back, including hiding and showing the hint again.
 
 End-to-end renders in the rebuilt VibeRM client open the Riverwood workbench,
 exit with Tab, and show the complete final line at both 1280x720 and 800x600.
-Captures and measurements remain under `/tmp/vibe-help-layout/` (the initial
-isolated reproduction is `/tmp/vibe-hint-before.png`).
+Captures and measurements remain under `tests/captures/crafting/help-layout/`;
+the initial isolated reproduction is `help-layout/hint-before.png` there.
 `cargo build --features remote-console --bin vibe_rm`, `cargo fmt --check` and
 `git diff --check` pass. The existing running client's remote console was queried
 without changing its gameplay state; its process must restart to load the code
 correction. These are VibeRM/asset checks, not original-engine observations.
+
+## Player locomotion verification (2026-10-29)
+
+The installed-assets player-body regression first failed because ActionMoveStart
+resolved to no event. With the explicit unmounted answer, it enters locomotion at
+walk/run speeds and returns to standing on stop.
+All 9 player-body tests and 31 status-condition tests pass with ignored fixtures
+enabled; the workspace suite passed at that stage. Current workspace totals
+are recorded in the automated checks above. Offscreen checks in VibeRM's
+WhiterunBanneredMare confirm rendered walk/run strides and separate
+locomotion/standing graph states. Captures and logs remain under
+`tests/captures/player-animation/`; Skyrim SE itself was not run.
+
+## Review corrections (2026-10-29)
+
+Saving now retains every created ALCH/ENCH record and leaves the live runtime
+plugin and magic cache untouched. Capture no longer serializes state to scan for
+handles, so the save and thumbnail are encoded once. The regression exercises a
+poison referenced only by an unsaved projectile, an otherwise unused enchantment,
+repeat saves, failed writes preserving the previous save and live records,
+reload, interning and monotonic ID allocation. Reclamation remains deferred as
+recorded in the plan and runtime-lifetime decision.
+
+The old step 10 commit was split into persistence/migration, selected-copy
+recharge, fallback inventory actions, authored menu integration, shield quality,
+and documentation commits. The crafting1 probe now precedes its verification
+documentation. Temporary captures and logs were copied to the ignored capture
+paths above; no captures, game assets or external references were committed.
