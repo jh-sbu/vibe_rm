@@ -10,7 +10,39 @@ pub(crate) fn constructible_xp(lo: &esp::LoadOrder, value: f32) -> f32 {
         + g("fConstructibleSkillUseConst", 25.)
 }
 
+#[derive(Clone)]
+pub(crate) struct Improvement {
+    pub row: crate::items::ListedItem,
+    pub recipe: Recipe,
+}
 impl Engine {
+    pub(crate) fn improvements_at(&mut self, station: FormId) -> Vec<Improvement> {
+        let Some(bench) = self
+            .base_of(station)
+            .and_then(|b| self.lo.get(b))
+            .as_ref()
+            .and_then(crate::world::records::Workbench::parse)
+            .filter(|b| matches!(b.kind, 2 | 7))
+        else {
+            return Vec::new();
+        };
+        let recipes = self.recipes_at(station);
+        self.listed_inventory(crate::engine::PLAYER_REF)
+            .into_iter()
+            .filter(|row| match bench.kind {
+                2 => row.info.kind == crate::world::inventory::ItemKind::Weapon,
+                _ => row.info.kind == crate::world::inventory::ItemKind::Armor,
+            })
+            .filter_map(|row| {
+                let recipe = recipes
+                    .iter()
+                    .find(|r| r.output == row.item && r.visible_for(self, Some(&row.copy)))?
+                    .clone();
+                Some(Improvement { row, recipe })
+            })
+            .collect()
+    }
+
     pub(crate) fn craft_event(&self, station: FormId, item: FormId) -> crate::story::StoryEvent {
         let mut event = crate::story::StoryEvent::new(b"CRFT");
         event.refs[0] = station;
@@ -341,3 +373,7 @@ mod transaction_tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
+
+#[cfg(test)]
+#[path = "crafting/smithing_tests.rs"]
+mod smithing_tests;

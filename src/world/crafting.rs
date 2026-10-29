@@ -57,12 +57,20 @@ impl Recipe {
     }
 
     pub fn visible(&self, e: &Engine) -> bool {
+        self.visible_for(e, None)
+    }
+    pub fn visible_for(&self, e: &Engine, copy: Option<&crate::item_copies::CopyState>) -> bool {
         condition::evaluate(
             e,
             &self.conditions,
             Context {
                 subject: Some(PLAYER_REF),
                 target: Some(self.output),
+                tempering_enchanted: Some(
+                    copy.and_then(|s| s.enchantment)
+                        .or_else(|| e.item_enchantment(self.output))
+                        .is_some(),
+                ),
                 ..Default::default()
             },
         )

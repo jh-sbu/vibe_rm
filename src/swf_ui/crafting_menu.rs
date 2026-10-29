@@ -13,12 +13,13 @@ pub(super) struct CraftingMenu {
     pub category: usize,
     pub recipes: Vec<crate::world::crafting::Recipe>,
     last_items: Vec<(FormId, i32)>,
+    improvements: Vec<crate::crafting::Improvement>,
 }
 impl CraftingMenu {
     pub fn open(
         ui: &UiSwf,
         size: (u32, u32),
-        e: &Engine,
+        e: &mut Engine,
         station: FormId,
         kind: u8,
         buttons: std::sync::Arc<Buttons>,
@@ -84,11 +85,16 @@ impl CraftingMenu {
             category: 0,
             recipes: Vec::new(),
             last_items: Vec::new(),
+            improvements: Vec::new(),
         };
         result.rebuild(e);
         Ok(result)
     }
-    pub fn rebuild(&mut self, e: &Engine) {
+    pub fn rebuild(&mut self, e: &mut Engine) {
+        if matches!(self.kind, 2 | 7) {
+            self.rebuild_improvements(e);
+            return;
+        }
         if self.kind != 1 {
             return;
         }
@@ -140,7 +146,7 @@ impl CraftingMenu {
             .invoke(&format!("{M}.PostRebuildList"), &[Value::Bool(true)]);
         self.display(e);
     }
-    pub fn update(&mut self, e: &Engine) {
+    pub fn update(&mut self, e: &mut Engine) {
         if self.kind == 1
             && e.inventories
                 .get(&crate::engine::PLAYER_REF)
@@ -179,7 +185,43 @@ impl CraftingMenu {
             },
         );
     }
+    fn rebuild_improvements(&mut self, e: &mut Engine) {
+        self.improvements = e.improvements_at(self.station);
+        self.last_items = e
+            .inventories
+            .get(&crate::engine::PLAYER_REF)
+            .map(|i| i.items.clone())
+            .unwrap_or_default();
+        let entries: Vec<_> = self
+            .improvements
+            .iter()
+            .enumerate()
+            .map(|(i, r)| {
+                super::item_menu::object([
+                    ("text", text(&r.row.info.name)),
+                    ("count", num(r.row.count as f32)),
+                    ("enabled", Value::Bool(true)),
+                    ("vrmRow", num(i as f32)),
+                ])
+            })
+            .collect();
+        let list = format!("{M}.ItemList.entryList");
+        self.menu.invoke(&format!("{list}.splice"), &[num(0.)]);
+        if !entries.is_empty() {
+            self.menu.invoke(&format!("{list}.push"), &entries);
+        }
+        self.menu
+            .invoke(&format!("{M}.UpdateItemList"), &[Value::Bool(false)]);
+    }
     fn display(&self, e: &Engine) {
+        if matches!(self.kind, 2 | 7) {
+            if let Some(r) = self.selected.and_then(|i| self.improvements.get(i)) {
+                let card = super::item_menu::item_card(e, &r.row, None, false);
+                self.menu
+                    .invoke(&format!("{M}.ItemInfo.SetItemInfo"), &[card]);
+            }
+            return;
+        }
         let Some(r) = self.selected.and_then(|i| self.recipes.get(i)) else {
             self.menu.set(&format!("{M}.bCanCraft"), Value::Bool(false));
             return;

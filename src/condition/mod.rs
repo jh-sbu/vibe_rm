@@ -234,6 +234,7 @@ pub struct Context {
     /// A magic effect's conditions: its spell was dual cast
     /// (`EffectWasDualCast`).
     pub dual_cast: bool,
+    pub tempering_enchanted: Option<bool>,
 }
 
 /// The subject's furniture state while picking an idle.
@@ -514,6 +515,10 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
             _ => None,
         },
         723 => Some(subject.map_or(1.0, |r| e.item_health_percent(r))),
+        659 => b(ctx
+            .tempering_enchanted
+            .unwrap_or_else(|| ctx.target.is_some_and(|f| e.item_enchantment(f).is_some()))),
+        660 => ctx.target.and_then(|f| b(e.has_keyword(f, p1))),
         18 => Some(e.hour),                       // GetCurrentTime
         170 => Some((e.day % 7) as f32),          // GetDayOfWeek
         77 => Some((e.peek_rand() % 100) as f32), // GetRandomPercent
