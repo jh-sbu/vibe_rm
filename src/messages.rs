@@ -32,8 +32,9 @@ pub struct MessageBox {
 }
 
 /// A question the engine asks the player itself, done on the first button.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum BoxAction {
+    Enchant(crate::crafting::EnchantRequest),
     Disenchant {
         station: FormId,
         item: FormId,
@@ -452,6 +453,13 @@ impl Engine {
             self.vm.signal_with(key, Value::Int(index));
         }
         match b.action {
+            Some(BoxAction::Enchant(request)) if index == 0 => {
+                if let Err(error) = self.enchant_item(request)
+                    && !error.is_empty()
+                {
+                    self.scripts.notify(error);
+                }
+            }
             Some(BoxAction::Disenchant {
                 station,
                 item,

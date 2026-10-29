@@ -174,3 +174,21 @@ inverts the documented cost exponent to select power. Magnitudes round down;
 a nonzero selected effect keeps at least one point/second. The exact native
 SetChargeValues payload and multi-effect minimum-power rounding remain open;
 the host updates the card directly.
+
+## Enchanting transaction (step 8e)
+
+Created ENCH records describe effects independently of gem capacity, charge,
+quality and name. Those stay on the item copy. Cache the calculated per-use
+charge cost on that copy too: reconstructing it from rounded EFIT magnitudes
+would lose the slider's fractional power. COPY version 2 adds that optional
+float and still accepts version 1. Identical effect records can consequently
+be shared by items made with different souls. The exact original ENIT fields
+for a player enchantment remain unverified; the stored fields describe its
+effect cost and casting type, while combat uses the cached charge cost.
+
+Choice: enchanting grants one base Enchanting use, preserves the source copy's
+ownership and quality, empties reusable gems, and refreshes worn enchantments
+immediately. The confirmation captures the exact copy and revalidates it,
+the known effects, restrictions and gem before spending anything. Pending
+confirmation state is also serializable for internal snapshot tests; public
+saving remains disabled in crafting menus.

@@ -344,3 +344,145 @@ impl Engine {
         })
     }
 }
+
+#[derive(Clone, Debug)]
+pub(crate) struct EnchantRequest {
+    pub station: FormId,
+    pub item: FormId,
+    pub owner: Option<FormId>,
+    pub copy: crate::item_copies::CopyState,
+    pub effects: Vec<FormId>,
+    pub gem: FormId,
+    pub soul: u8,
+    pub name: Option<String>,
+    pub slider: f32,
+}
+
+impl Engine {
+    pub(crate) fn enchant_item(&mut self, request: EnchantRequest) -> Result<(), String> {
+        if self.menu
+            != Some(crate::items::Menu::Crafting {
+                station: request.station,
+                kind: 3,
+            })
+        {
+            return Err(String::new());
+        }
+        let missing = || {
+            self.gmst_string("sEnchantMustChooseItems")
+                .unwrap_or_else(|| "Choose an item, enchantment, and soul gem.".into())
+        };
+        if !request.slider.is_finite()
+            || request.slider <= 0.
+            || request.slider > 1.
+            || request
+                .effects
+                .iter()
+                .copied()
+                .collect::<std::collections::HashSet<_>>()
+                .len()
+                != request.effects.len()
+            || request
+                .name
+                .as_ref()
+                .is_some_and(|n| n.chars().count() > 32 || n.chars().any(char::is_control))
+        {
+            return Err(missing());
+        }
+        let Some(item) = self
+            .enchantable_items()
+            .into_iter()
+            .find(|r| r.item == request.item && r.owner == request.owner && r.copy == request.copy)
+        else {
+            return Err(self
+                .gmst_string("sEnchantMustChooseItems")
+                .unwrap_or_default());
+        };
+        if !self
+            .charging_souls(PLAYER_REF)
+            .contains(&(request.gem, request.soul))
+        {
+            return Err(self
+                .gmst_string("sEnchantInsufficientCharge")
+                .unwrap_or_default());
+        }
+        let selection = EnchantSelection {
+            item: Some(item),
+            effects: request.effects.clone(),
+            gem: Some((request.gem, request.soul)),
+            name: request.name.clone(),
+            slider: request.slider,
+        };
+        let Some(preview) = self.enchant_preview(&selection) else {
+            return Err(self
+                .gmst_string("sEnchantArmorIncompatible")
+                .unwrap_or_default());
+        };
+        let mut enit = [0u8; 36];
+        let effect_cost = preview
+            .effects
+            .iter()
+            .map(|e| self.alchemy_effect_cost(e))
+            .sum::<f32>()
+            .floor()
+            .max(0.) as u32;
+        enit[..4].copy_from_slice(&effect_cost.to_le_bytes());
+        enit[8..12].copy_from_slice(&if preview.weapon { 1u32 } else { 0 }.to_le_bytes());
+        enit[12..16].copy_from_slice(&effect_cost.to_le_bytes());
+        enit[16..20].copy_from_slice(&if preview.weapon { 1u32 } else { 0 }.to_le_bytes());
+        enit[20..24].copy_from_slice(&6u32.to_le_bytes());
+        enit[28..32].copy_from_slice(&request.effects.iter().min().unwrap().0.to_le_bytes());
+        let mut record = esp::writer::RecordBuilder::new(b"ENCH", FormId::NULL)
+            .zstring(b"FULL", "Player Enchantment")
+            .field(b"ENIT", &enit);
+        for e in &preview.effects {
+            record = record.form(b"EFID", e.effect).field(
+                b"EFIT",
+                &[
+                    e.magnitude.to_le_bytes(),
+                    e.area.to_le_bytes(),
+                    e.duration.to_le_bytes(),
+                ]
+                .concat(),
+            );
+        }
+        let enchantment = self.intern_base_form(record).map_err(|e| e.to_string())?;
+        let reusable = self
+            .lo
+            .find_editor_id("ReusableSoulGem")
+            .is_some_and(|k| self.has_keyword(request.gem, k));
+        let record_soul = self.soul_gem(request.gem).map_or(0, |g| g.soul);
+        if !self.inventory_mut(PLAYER_REF).spend_soul(
+            request.gem,
+            request.soul,
+            record_soul,
+            reusable,
+        ) {
+            return Err(String::new());
+        }
+        let mut state = request.copy.clone();
+        state.enchantment = Some(enchantment);
+        state.capacity = if preview.weapon { preview.capacity } else { 0. };
+        state.charge = state.capacity;
+        state.use_cost = preview.weapon.then_some(preview.cost);
+        state.name = request.name.or(state.name);
+        let changed = self.inventory_mut(PLAYER_REF).replace_copy_state(
+            request.item,
+            request.owner,
+            &request.copy,
+            state,
+        );
+        debug_assert!(changed, "validated enchanting copy disappeared");
+        if !reusable {
+            self.inventory_event(PLAYER_REF, false, request.gem, 1, None);
+        }
+        self.inventory_event(PLAYER_REF, false, request.item, 1, None);
+        self.inventory_event(PLAYER_REF, true, request.item, 1, None);
+        self.refresh_crafting_effects();
+        self.use_skill(esp::actor_value::ENCHANTING, 1.);
+        self.increment_stat("Magic Items Made", 1);
+        self.increment_stat("Soul Gems Used", 1);
+        self.crafting.revision = self.crafting.revision.wrapping_add(1);
+        Ok(())
+    }
+}

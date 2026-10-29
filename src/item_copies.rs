@@ -10,6 +10,7 @@ pub struct CopyState {
     pub enchantment: Option<FormId>,
     pub capacity: f32,
     pub charge: f32,
+    pub use_cost: Option<f32>,
     pub name: Option<String>,
 }
 impl Default for CopyState {
@@ -19,6 +20,7 @@ impl Default for CopyState {
             enchantment: None,
             capacity: 0.0,
             charge: 0.0,
+            use_cost: None,
             name: None,
         }
     }
@@ -31,6 +33,7 @@ impl CopyState {
         self.enchantment.hash(&mut h);
         self.capacity.to_bits().hash(&mut h);
         self.charge.to_bits().hash(&mut h);
+        self.use_cost.map(f32::to_bits).hash(&mut h);
         self.name.hash(&mut h);
         h.finish()
     }
@@ -276,11 +279,21 @@ impl Engine {
             info.value = (info.value as f32 * state.quality).floor() as i32;
         }
         if let Some(enchantment) = state.enchantment {
-            let cost = self
-                .magic_item(enchantment)
-                .and_then(|m| m.enchantment)
-                .map_or(0, |e| e.cost);
-            info.value = info.value.saturating_add(cost as i32);
+            let effects = self.magic_item(enchantment).map_or(0., |m| {
+                m.effects
+                    .iter()
+                    .map(|e| self.alchemy_effect_cost(e))
+                    .sum::<f32>()
+            });
+            let extra = if info.kind == crate::world::inventory::ItemKind::Weapon {
+                crate::ai::combat::gmst_f32(&self.lo, "fEnchantmentPointsMult", 0.12)
+                    * state.capacity
+                    + crate::ai::combat::gmst_f32(&self.lo, "fEnchantmentEffectPointsMult", 8.)
+                        * effects
+            } else {
+                effects
+            };
+            info.value = info.value.saturating_add(extra.floor().max(0.) as i32);
         }
         Some(info)
     }

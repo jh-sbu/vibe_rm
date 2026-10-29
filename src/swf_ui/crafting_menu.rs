@@ -30,6 +30,7 @@ pub(super) struct CraftingMenu {
     slider_configured: std::cell::Cell<bool>,
     slider_active: std::cell::Cell<bool>,
     slider_original: std::cell::Cell<f32>,
+    last_revision: u64,
 }
 impl CraftingMenu {
     pub fn open(
@@ -127,6 +128,7 @@ impl CraftingMenu {
             slider_configured: std::cell::Cell::new(false),
             slider_active: std::cell::Cell::new(false),
             slider_original: std::cell::Cell::new(1.),
+            last_revision: e.crafting.revision,
         };
         result.rebuild(e);
         Ok(result)
@@ -196,6 +198,14 @@ impl CraftingMenu {
         self.display(e);
     }
     pub fn update(&mut self, e: &mut Engine) {
+        if self.last_revision != e.crafting.revision {
+            self.last_revision = e.crafting.revision;
+            self.enchant = Default::default();
+            self.slider_configured.set(false);
+            self.slider_active.set(false);
+            self.rebuild(e);
+        }
+
         let uses = { self.charge_request.lock().unwrap().take() };
         if let Some(uses) = uses.filter(|v| v.is_finite() && *v > 0.) {
             let mut full = self.enchant.clone();
@@ -912,6 +922,65 @@ impl CraftingMenu {
                     }
                 }
                 self.display(e);
+            }
+            "CraftButtonPress" if self.kind == 3 => {
+                let Some(row) = &self.enchant.item else {
+                    e.scripts
+                        .notify(e.gmst_string("sEnchantMustChooseItems").unwrap_or_default());
+                    return true;
+                };
+                let Some((gem, soul)) = self.enchant.gem else {
+                    e.scripts
+                        .notify(e.gmst_string("sEnchantMustChooseItems").unwrap_or_default());
+                    return true;
+                };
+                if e.enchant_preview(&self.enchant).is_none() {
+                    return true;
+                }
+                let request = crate::crafting::EnchantRequest {
+                    station: self.station,
+                    item: row.item,
+                    owner: row.owner,
+                    copy: row.copy.clone(),
+                    effects: self.enchant.effects.clone(),
+                    gem,
+                    soul,
+                    name: self.enchant.name.clone(),
+                    slider: self.enchant.slider,
+                };
+                let question = e
+                    .gmst_string("sEnchantItem")
+                    .unwrap_or_else(|| "Enchant item?".into());
+                let buttons = vec![
+                    e.gmst_string("sYes").unwrap_or_else(|| "Yes".into()),
+                    e.gmst_string("sNo").unwrap_or_else(|| "No".into()),
+                ];
+                e.ask(
+                    question,
+                    buttons,
+                    crate::messages::BoxAction::Enchant(request),
+                );
+            }
+            "CloseMenu"
+                if self.kind == 3
+                    && (self.enchant.item.is_some()
+                        || !self.enchant.effects.is_empty()
+                        || self.enchant.gem.is_some()) =>
+            {
+                let question = e
+                    .gmst_string("sQuitEnchanting")
+                    .unwrap_or_else(|| "Quit enchanting?".into());
+                let buttons = vec![
+                    e.gmst_string("sYes").unwrap_or_else(|| "Yes".into()),
+                    e.gmst_string("sNo").unwrap_or_else(|| "No".into()),
+                ];
+                e.ask(
+                    question,
+                    buttons,
+                    crate::messages::BoxAction::CloseCrafting {
+                        station: self.station,
+                    },
+                );
             }
             "CloseMenu" if self.kind == 5 && !self.selected_ingredients.is_empty() => {
                 let question = e

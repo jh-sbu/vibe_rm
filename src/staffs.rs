@@ -87,7 +87,17 @@ impl Engine {
         if self.weapon_capacity_for(attacker, weapon) <= 0.0 {
             return true;
         }
-        let cost = self.staff_cost(attacker, ench);
+        let cost = if let Some(cost) = self.equipped_copy(attacker, weapon).use_cost {
+            let school = self.spell_school(ench);
+            cost * school.map_or(1., |skill| {
+                crate::spells::skill_cost_factor(
+                    &self.lo,
+                    self.actor_value(attacker, skill).clamp(0., 100.),
+                )
+            })
+        } else {
+            self.staff_cost(attacker, ench)
+        };
         if self.weapon_charge(attacker, weapon) < cost {
             return false;
         }

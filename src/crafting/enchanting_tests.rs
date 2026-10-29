@@ -265,6 +265,112 @@ fn crafting_enchantment_skill_and_weapon_charge_formulas() {
 
 #[test]
 #[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn crafting_enchant_transaction_preserves_copies_empties_stars_and_saves() {
+    let (dir, mut e) = fixture();
+    e.knowledge.enchantments.extend([BASE, ARMOR_ENCH]);
+    e.set_actor_value(PLAYER_REF, esp::actor_value::ENCHANTING, 100.);
+    let quality = crate::item_copies::CopyState::at_level(3);
+    assert!(e.inventory_mut(PLAYER_REF).replace_copy_state(
+        SWORD,
+        None,
+        &Default::default(),
+        quality.clone()
+    ));
+    let row = e
+        .enchantable_items()
+        .into_iter()
+        .find(|r| r.item == SWORD && r.copy == quality)
+        .unwrap();
+    e.use_listed_item(&row, Some(1));
+    let mut request = EnchantRequest {
+        station: STATION,
+        item: SWORD,
+        owner: None,
+        copy: quality.clone(),
+        effects: vec![BASE],
+        gem: GEM,
+        soul: 5,
+        name: Some("Éclair".into()),
+        slider: 1.,
+    };
+    e.enchant_item(request.clone()).unwrap();
+    assert_eq!(e.item_count(PLAYER_REF, SWORD), 2);
+    assert_eq!(e.item_count(PLAYER_REF, GEM), 4);
+    let state = e.equipped_copy(PLAYER_REF, SWORD);
+    assert_eq!(state.quality, quality.quality);
+    assert_eq!(state.name.as_deref(), Some("Éclair"));
+    assert_eq!(state.charge, 3000.);
+    let enchantment = state.enchantment.unwrap();
+    assert!(e.pay_weapon_charge(PLAYER_REF, SWORD, enchantment));
+    assert!(e.weapon_charge(PLAYER_REF, SWORD) < 3000.);
+    assert!(e.enchant_item(request.clone()).is_err()); // Stale confirmation.
+    assert_eq!(e.item_count(PLAYER_REF, GEM), 4);
+
+    assert!(e.inventory_mut(PLAYER_REF).spend_soul(STAR, 5, 0, true));
+    e.inventory_mut(PLAYER_REF).put_soul(STAR, 1);
+    request.copy = Default::default();
+    request.name = None;
+    request.gem = STAR;
+    request.soul = 1;
+    e.enchant_item(request).unwrap();
+    assert_eq!(e.item_count(PLAYER_REF, STAR), 1);
+    assert!(!e.charging_souls(PLAYER_REF).iter().any(|(f, _)| *f == STAR));
+    let states: Vec<_> = e.inventories[&PLAYER_REF]
+        .copies
+        .iter()
+        .filter(|c| c.item == SWORD)
+        .collect();
+    assert_eq!(states.len(), 2);
+    assert!(
+        states
+            .iter()
+            .any(|c| c.state.capacity == 250. && c.state.enchantment == Some(enchantment))
+    );
+    assert_eq!(
+        e.equipped_copy(PLAYER_REF, SWORD).name.as_deref(),
+        Some("Éclair")
+    );
+
+    let armor = e
+        .enchantable_items()
+        .into_iter()
+        .find(|r| r.item == ARMOR)
+        .unwrap();
+    e.use_listed_item(&armor, None);
+    let health = e.av_max(PLAYER_REF, esp::actor_value::HEALTH);
+    e.enchant_item(EnchantRequest {
+        station: STATION,
+        item: ARMOR,
+        owner: None,
+        copy: armor.copy,
+        effects: vec![ARMOR_ENCH],
+        gem: GEM,
+        soul: 5,
+        name: None,
+        slider: 1.,
+    })
+    .unwrap();
+    e.update_magic(0.);
+    assert_eq!(e.av_max(PLAYER_REF, esp::actor_value::HEALTH), health + 25.);
+    let saved =
+        crate::save::state::Snapshot::read(&crate::save::state::Snapshot::capture(&e).write())
+            .unwrap();
+    let expected = e.inventories[&PLAYER_REF].copies.clone();
+    drop(e);
+    let mut restored = crate::stats::action_tests::headless_engine(&dir, "Enchanting.esp");
+    saved.apply(&mut restored).unwrap();
+    assert_eq!(restored.inventories[&PLAYER_REF].copies, expected);
+    assert!(restored.magic_item(enchantment).is_some());
+    assert_eq!(
+        restored.equipped_copy(PLAYER_REF, SWORD).name.as_deref(),
+        Some("Éclair")
+    );
+    drop(restored);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn crafting_enchantment_strength_souls_slider_and_perks() {
     let (dir, mut e) = fixture();
     e.knowledge.enchantments.extend([BASE, ARMOR_ENCH]);

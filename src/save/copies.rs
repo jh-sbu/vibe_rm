@@ -5,7 +5,7 @@ use super::state::Snapshot;
 use crate::item_copies::{CopyState, ItemCopy};
 use std::collections::{HashMap, HashSet};
 
-fn put_state(w: &mut Writer, s: &CopyState) {
+pub(super) fn put_state(w: &mut Writer, s: &CopyState) {
     w.f32(s.quality);
     w.opt_form(s.enchantment);
     w.f32(s.capacity);
@@ -14,14 +14,23 @@ fn put_state(w: &mut Writer, s: &CopyState) {
     if let Some(n) = &s.name {
         w.str(n);
     }
+    w.bool(s.use_cost.is_some());
+    if let Some(cost) = s.use_cost {
+        w.f32(cost);
+    }
 }
-fn get_state(r: &mut Reader) -> Result<CopyState> {
+pub(super) fn get_state(r: &mut Reader, version: u8) -> Result<CopyState> {
     let s = CopyState {
         quality: r.f32()?,
         enchantment: r.opt_form()?,
         capacity: r.f32()?,
         charge: r.f32()?,
         name: if r.bool()? { Some(r.str()?) } else { None },
+        use_cost: if version >= 2 && r.bool()? {
+            Some(r.f32()?)
+        } else {
+            None
+        },
     };
     if !s.quality.is_finite()
         || s.quality < 1.
@@ -31,6 +40,8 @@ fn get_state(r: &mut Reader) -> Result<CopyState> {
         || s.charge < 0.
         || s.charge > s.capacity
         || s.name.as_ref().is_some_and(|n| n.chars().count() > 32)
+        || s.use_cost
+            .is_some_and(|cost| !cost.is_finite() || cost < 0. || s.enchantment.is_none())
     {
         return Err(Corrupt("invalid item copy state".into()));
     }
@@ -45,13 +56,13 @@ fn put_copies(w: &mut Writer, copies: &[ItemCopy]) {
         w.i32(c.count);
     }
 }
-fn get_copies(r: &mut Reader) -> Result<Vec<ItemCopy>> {
+fn get_copies(r: &mut Reader, version: u8) -> Result<Vec<ItemCopy>> {
     let mut copies = Vec::new();
     for _ in 0..r.count(29)? {
         let c = ItemCopy {
             item: r.form()?,
             owner: r.opt_form()?,
-            state: get_state(r)?,
+            state: get_state(r, version)?,
             count: r.i32()?,
         };
         if c.item.is_null()
@@ -70,7 +81,7 @@ fn get_copies(r: &mut Reader) -> Result<Vec<ItemCopy>> {
 
 pub(super) fn write(s: &Snapshot, file: &mut SaveFile) {
     let mut w = Writer::default();
-    w.u8(1);
+    w.u8(2);
     let mut invs: Vec<_> = s
         .inventories
         .iter()
@@ -111,7 +122,8 @@ pub(super) fn read(s: &mut Snapshot, file: &SaveFile) -> Result<()> {
         return Ok(());
     };
     let mut r = Reader::new(data);
-    if r.u8()? != 1 {
+    let version = r.u8()?;
+    if !matches!(version, 1 | 2) {
         return Err(Corrupt("unsupported COPY version".into()));
     }
     let mut seen = HashSet::new();
@@ -123,7 +135,7 @@ pub(super) fn read(s: &mut Snapshot, file: &SaveFile) -> Result<()> {
         let Some(inv) = s.inventories.get_mut(&holder) else {
             return Err(Corrupt("copy metadata without inventory".into()));
         };
-        inv.copies = get_copies(&mut r)?;
+        inv.copies = get_copies(&mut r, version)?;
         let mut counts = HashMap::new();
         for c in &inv.copies {
             let n = counts.entry((c.item, c.owner)).or_insert(0i64);
@@ -134,7 +146,7 @@ pub(super) fn read(s: &mut Snapshot, file: &SaveFile) -> Result<()> {
         }
         for _ in 0..r.count(21)? {
             let item = r.form()?;
-            let state = get_state(&mut r)?;
+            let state = get_state(&mut r, version)?;
             if !inv.is_equipped(item)
                 || inv.equipped_copies.insert(item, state.clone()).is_some()
                 || if state == CopyState::default() {
@@ -160,7 +172,7 @@ pub(super) fn read(s: &mut Snapshot, file: &SaveFile) -> Result<()> {
     }
     for _ in 0..r.count(8)? {
         let reference = r.form()?;
-        let copies = get_copies(&mut r)?;
+        let copies = get_copies(&mut r, version)?;
         if reference.is_null() || s.item_copies.insert(reference, copies).is_some() {
             return Err(Corrupt("invalid or duplicate reference copies".into()));
         }

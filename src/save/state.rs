@@ -62,7 +62,7 @@ use crate::world::inventory::Inventory;
 use crate::world_state::{Moved, Wounds};
 
 /// Validate even snapshots built directly by tests/callers before mutating an Engine.
-fn validate_forms(forms: &[Vec<u8>]) -> Result<()> {
+fn validate_forms(forms: &[Vec<u8>]) -> Result<esp::LoadOrder> {
     let mut lo =
         esp::LoadOrder::load(std::env::temp_dir(), &[]).map_err(|e| Corrupt(e.to_string()))?;
     let mut previous = None;
@@ -75,7 +75,7 @@ fn validate_forms(forms: &[Vec<u8>]) -> Result<()> {
         }
         previous = Some(id);
     }
-    Ok(())
+    Ok(lo)
 }
 
 /// Where the player stood.
@@ -2210,7 +2210,7 @@ impl Snapshot {
     /// Put this state into the engine, in place of its own, and go where the
     /// player stood. The engine must have the plugins the save was made with.
     pub fn apply(self, e: &mut Engine) -> anyhow::Result<()> {
-        validate_forms(&self.forms)?;
+        let runtime = validate_forms(&self.forms)?;
         anyhow::ensure!(
             self.forms.iter().all(|b| !self
                 .created
@@ -2283,9 +2283,9 @@ impl Snapshot {
             &self.scene_force_greeted,
         )?;
         e.validate_saved_rolled_spells(&self.rolled_spells)?;
-        e.validate_saved_active_effects(&self.continuity.active_effects.0)?;
+        e.validate_saved_active_effects(&self.continuity.active_effects.0, &runtime)?;
         let tapering: Vec<_> = self.continuity.tapers.iter().map(|t| t.0.clone()).collect();
-        e.validate_saved_active_effects(&tapering)?;
+        e.validate_saved_active_effects(&tapering, &runtime)?;
         // Effect scripts load only with their effects.
         let effect_ids: HashSet<u64> = self
             .continuity
@@ -2330,6 +2330,10 @@ impl Snapshot {
         // unloading writes into it.
         e.discard_conversation_for_load();
         e.unload_all();
+        if matches!(e.menu, Some(crate::items::Menu::Crafting { .. })) {
+            e.menu = None;
+        }
+        e.crafting = Default::default();
         e.waiting = None;
         if matches!(e.menu, Some(crate::items::Menu::SleepWait { .. })) {
             e.menu = None;

@@ -533,6 +533,9 @@ pub struct Magic {
 }
 
 impl Engine {
+    pub(crate) fn refresh_crafting_effects(&mut self) {
+        self.sync_abilities();
+    }
     pub(crate) fn clear_runtime_magic_cache(&mut self) {
         self.magic
             .item_cache
@@ -596,14 +599,24 @@ impl Engine {
     pub(crate) fn validate_saved_active_effects(
         &self,
         saved: &[ActiveEffect],
+        runtime: &esp::LoadOrder,
     ) -> anyhow::Result<()> {
         for x in saved {
-            let item = self.magic_item(x.item);
+            // Validate a created item's effects against the incoming FORM
+            // section, before replacing any live engine state or caches.
+            let matches = if x.item.0 >> 24 == 0xFF {
+                runtime.get(x.item).is_some_and(|r| {
+                    r.subrecords()
+                        .filter(|s| s.tag.0 == *b"EFID" && s.data.len() >= 4)
+                        .nth(x.index)
+                        .is_some_and(|s| r.fid(FormId(s.u32(0))) == x.effect)
+                })
+            } else {
+                self.magic_item(x.item)
+                    .is_some_and(|m| m.effects.get(x.index).is_some_and(|e| e.effect == x.effect))
+            };
             anyhow::ensure!(
-                item.as_ref()
-                    .and_then(|m| m.effects.get(x.index))
-                    .is_some_and(|e| e.effect == x.effect)
-                    && self.magic_effect(x.effect).is_some(),
+                matches && self.magic_effect(x.effect).is_some(),
                 "save has active effect {} that isn't effect {} of item {}",
                 x.id,
                 x.index,

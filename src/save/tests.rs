@@ -6390,6 +6390,7 @@ fn crafting_copy_metadata_round_trip_legacy_and_corruption() {
         enchantment: Some(FormId(0xFF000800)),
         capacity: 250.,
         charge: 100.,
+        use_cost: Some(2.75),
         ..CopyState::at_level(3)
     };
     let mut inv = Inventory::default();
@@ -6434,6 +6435,36 @@ fn crafting_copy_metadata_round_trip_legacy_and_corruption() {
             .quality = quality;
         assert!(Snapshot::read(&s.write()).is_err());
     }
+}
+
+#[test]
+fn crafting_copy_v1_remains_readable() {
+    let mut s = Snapshot::default();
+    let mut inv = Inventory::default();
+    inv.add(SWORD, 1);
+    inv.add_copy_state(crate::item_copies::ItemCopy {
+        item: SWORD,
+        owner: None,
+        state: crate::item_copies::CopyState::at_level(1),
+        count: 1,
+    });
+    s.inventories.insert(PLAYER_REF, inv);
+    let mut file = s.write();
+    let (_, data) = file
+        .sections
+        .iter_mut()
+        .find(|(t, _)| t == b"COPY")
+        .unwrap();
+    assert_eq!(data[0], 2);
+    assert_eq!(data[38], 0); // Absent per-use cost, added in version 2.
+    data[0] = 1;
+    data.remove(38);
+    let loaded = Snapshot::read(&file).unwrap();
+    assert_eq!(loaded.inventories[&PLAYER_REF].copies[0].state.level(), 1);
+    assert_eq!(
+        loaded.inventories[&PLAYER_REF].copies[0].state.use_cost,
+        None
+    );
 }
 
 #[test]

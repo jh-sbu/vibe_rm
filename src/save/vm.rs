@@ -390,8 +390,26 @@ impl VmSnapshot {
                 if let Some(key) = b.key {
                     m.u64(key);
                 }
-                match b.action {
+                match b.action.clone() {
                     None => m.u8(0),
+                    Some(crate::messages::BoxAction::Enchant(request)) => {
+                        m.u8(8);
+                        m.form(request.station);
+                        m.form(request.item);
+                        m.opt_form(request.owner);
+                        super::copies::put_state(&mut m, &request.copy);
+                        m.len(request.effects.len());
+                        for effect in request.effects {
+                            m.form(effect);
+                        }
+                        m.form(request.gem);
+                        m.u8(request.soul);
+                        m.f32(request.slider);
+                        m.bool(request.name.is_some());
+                        if let Some(name) = request.name {
+                            m.str(&name);
+                        }
+                    }
                     Some(crate::messages::BoxAction::Disenchant {
                         station,
                         item,
@@ -698,6 +716,54 @@ impl VmSnapshot {
                             owner,
                             key,
                         })
+                    }
+                    8 => {
+                        let station = r.form()?;
+                        let item = r.form()?;
+                        let owner = r.opt_form()?;
+                        let copy = super::copies::get_state(&mut r, 2)?;
+                        let count = r.count(4)?;
+                        if !(1..=2).contains(&count) {
+                            return Err(Corrupt("invalid enchanting effect count".into()));
+                        }
+                        let mut effects = Vec::new();
+                        for _ in 0..count {
+                            let f = r.form()?;
+                            if f.is_null() || effects.contains(&f) {
+                                return Err(Corrupt("invalid enchanting effect".into()));
+                            }
+                            effects.push(f);
+                        }
+                        let gem = r.form()?;
+                        let soul = r.u8()?;
+                        let slider = r.f32()?;
+                        let name = if r.bool()? { Some(r.str()?) } else { None };
+                        if station.is_null()
+                            || item.is_null()
+                            || gem.is_null()
+                            || !(1..=5).contains(&soul)
+                            || !slider.is_finite()
+                            || slider <= 0.
+                            || slider > 1.
+                            || name.as_ref().is_some_and(|n| {
+                                n.chars().count() > 32 || n.chars().any(char::is_control)
+                            })
+                        {
+                            return Err(Corrupt("invalid enchanting action".into()));
+                        }
+                        Some(crate::messages::BoxAction::Enchant(
+                            crate::crafting::EnchantRequest {
+                                station,
+                                item,
+                                owner,
+                                copy,
+                                effects,
+                                gem,
+                                soul,
+                                slider,
+                                name,
+                            },
+                        ))
                     }
                     n => return Err(Corrupt(format!("message-box action {n}"))),
                 };
