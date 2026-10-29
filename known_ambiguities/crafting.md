@@ -62,3 +62,14 @@ not establish repetition cadence. Choice: each help key is shown once per
 character, for ten real seconds, with shown keys persisted in optional CHLP.
 Missing default messages do not consume their shown flag. Cooking and ovens
 share cooking help; unclassified Create Object stations use object-creation help.
+
+## Recipe transactions (step 5b)
+
+UESP's COBJ and Smithing pages establish recipes, materials and value-based XP,
+but do not specify ownership order or stolen output propagation. Choice: consume
+owned materials first, then stolen ownership stacks in their inventory order;
+the output belongs to the player. Conditions and counts are rechecked when the
+confirmation is accepted. For forge recipes XP uses the combined output value.
+Cooking, smelting and tanning grant none. CRFT carries station R1, its current
+location L1 and output F1, following the existing Story Manager argument mapping.
+Create Object weapon/armor statistics count output items rather than button presses.

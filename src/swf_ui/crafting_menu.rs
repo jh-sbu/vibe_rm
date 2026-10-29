@@ -12,6 +12,7 @@ pub(super) struct CraftingMenu {
     pub selected: Option<usize>,
     pub category: usize,
     pub recipes: Vec<crate::world::crafting::Recipe>,
+    last_items: Vec<(FormId, i32)>,
 }
 impl CraftingMenu {
     pub fn open(
@@ -82,6 +83,7 @@ impl CraftingMenu {
             selected: None,
             category: 0,
             recipes: Vec::new(),
+            last_items: Vec::new(),
         };
         result.rebuild(e);
         Ok(result)
@@ -91,6 +93,11 @@ impl CraftingMenu {
             return;
         }
         self.recipes = e.recipes_at(self.station);
+        self.last_items = e
+            .inventories
+            .get(&crate::engine::PLAYER_REF)
+            .map(|i| i.items.clone())
+            .unwrap_or_default();
         let mut categories = std::collections::BTreeMap::new();
         let mut entries = Vec::new();
         for (i, r) in self.recipes.iter().enumerate() {
@@ -132,6 +139,45 @@ impl CraftingMenu {
         self.menu
             .invoke(&format!("{M}.PostRebuildList"), &[Value::Bool(true)]);
         self.display(e);
+    }
+    pub fn update(&mut self, e: &Engine) {
+        if self.kind == 1
+            && e.inventories
+                .get(&crate::engine::PLAYER_REF)
+                .is_some_and(|i| i.items != self.last_items)
+        {
+            self.rebuild(e);
+        }
+    }
+    fn request_recipe(&mut self, e: &mut Engine, index: Option<usize>) {
+        let selected = self.menu.get(&format!("{M}.ItemList.selectedEntry.vrmRow"));
+        let index = match selected {
+            Value::Number(n) if n >= 0. => Some(n as usize),
+            _ => index.or(self.selected),
+        };
+        let Some(r) = index.and_then(|i| self.recipes.get(i)) else {
+            return;
+        };
+        if !e
+            .inventories
+            .get(&crate::engine::PLAYER_REF)
+            .is_some_and(|i| r.affordable(i))
+        {
+            return;
+        }
+        let title = e
+            .gmst_string("sConstructibleMenuConfirm")
+            .unwrap_or_else(|| "Do you want to create this item?".into());
+        let yes = e.gmst_string("sYes").unwrap_or_else(|| "Yes".into());
+        let no = e.gmst_string("sNo").unwrap_or_else(|| "No".into());
+        e.ask(
+            title,
+            vec![yes, no],
+            crate::messages::BoxAction::CraftRecipe {
+                station: self.station,
+                recipe: r.id,
+            },
+        );
     }
     fn display(&self, e: &Engine) {
         let Some(r) = self.selected.and_then(|i| self.recipes.get(i)) else {
@@ -190,7 +236,10 @@ impl CraftingMenu {
             "CloseMenu" => e.menu = None,
             "SetSelectedCategory" => self.category = index().unwrap_or(0),
             "SetSelectedItem" => {
-                self.selected = index();
+                self.selected = match self.menu.get(&format!("{M}.ItemList.selectedEntry.vrmRow")) {
+                    Value::Number(n) if n >= 0. => Some(n as usize),
+                    _ => index(),
+                };
                 self.display(e);
             }
             "CanFadeItemInfo" => {
@@ -199,6 +248,9 @@ impl CraftingMenu {
             }
             "ShowItem3D" | "StartMouseRotation" | "StopMouseRotation" => {
                 log::debug!("crafting preview {}: {:?}", c.name, c.args)
+            }
+            "ChooseItem" | "CraftSelectedItem" | "CraftButtonPress" if self.kind == 1 => {
+                self.request_recipe(e, index());
             }
             "ChooseItem" | "CraftSelectedItem" | "CraftButtonPress" | "AuxButtonPress"
             | "EndItemRename" | "CalculateCharge" | "SliderClose" => {}

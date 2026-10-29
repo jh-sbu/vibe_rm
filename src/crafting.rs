@@ -4,7 +4,72 @@ use crate::world::crafting::Recipe;
 use crate::world::inventory::item_info;
 use esp::FormId;
 
+pub(crate) fn constructible_xp(lo: &esp::LoadOrder, value: f32) -> f32 {
+    let g = |n, d| crate::ai::combat::gmst_f32(lo, n, d);
+    g("fConstructibleSkillUseMult", 3.) * value.max(0.).powf(g("fConstructibleSkilluseExp", 0.65))
+        + g("fConstructibleSkillUseConst", 25.)
+}
+
 impl Engine {
+    pub(crate) fn craft_event(&self, station: FormId, item: FormId) -> crate::story::StoryEvent {
+        let mut event = crate::story::StoryEvent::new(b"CRFT");
+        event.refs[0] = station;
+        event.locs[0] = self.ref_current_location(station).unwrap_or(FormId::NULL);
+        event.form = item;
+        event
+    }
+    pub(crate) fn craft_recipe(
+        &mut self,
+        station: FormId,
+        recipe: FormId,
+    ) -> Result<FormId, String> {
+        use crate::engine::PLAYER_REF;
+        if self.menu != Some(crate::items::Menu::Crafting { station, kind: 1 }) {
+            return Err("".into());
+        }
+        let Some(r) = self
+            .recipes_at(station)
+            .into_iter()
+            .find(|r| r.id == recipe)
+        else {
+            return Err("".into());
+        };
+        let inv = self.inventory_mut(PLAYER_REF);
+        if !r.affordable(inv) || inv.count(r.output).checked_add(r.count as i32).is_none() {
+            return Err(self
+                .gmst_string("sLackRequiredToCreate")
+                .unwrap_or_else(|| "You lack the required components.".into()));
+        }
+        for &(item, n) in &r.inputs {
+            self.remove_stack(PLAYER_REF, item, n as i32, None, None, None);
+        }
+        self.inventory_mut(PLAYER_REF).add(r.output, r.count as i32);
+        self.inventory_event(PLAYER_REF, true, r.output, r.count as i32, None);
+        match self.lo.tag_of(r.output).map(|t| t.0) {
+            Some(t) if t == *b"WEAP" => self.increment_stat("Weapons Made", r.count as i32),
+            Some(t) if t == *b"ARMO" => self.increment_stat("Armor Made", r.count as i32),
+            _ => {}
+        }
+        let forge = [
+            "CraftingSmithingForge",
+            "CraftingSmithingSkyforge",
+            "DLC1CraftingDawnguard",
+            "DLC1LD_CraftingForgeAetherium",
+        ]
+        .iter()
+        .any(|name| self.lo.find_editor_id(name) == Some(r.bench));
+        if forge {
+            let value =
+                item_info(&self.lo, r.output).map_or(0, |i| i.value).max(0) as f32 * r.count as f32;
+            self.use_skill(
+                esp::actor_value::SMITHING,
+                constructible_xp(&self.lo, value),
+            );
+        }
+        let event = self.craft_event(station, r.output);
+        self.send_story_event(event);
+        Ok(r.output)
+    }
     pub(crate) fn recipes_at(&self, station: FormId) -> Vec<Recipe> {
         let Some(bench) = self
             .base_of(station)
@@ -181,6 +246,51 @@ mod tests {
                 .all(|r| r.affordable(&e.inventories[&PLAYER_REF]))
         );
         assert!(e.recipes_at(FormId(0x999)).is_empty());
+        drop(e);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod transaction_tests {
+    use super::*;
+    use crate::engine::PLAYER_REF;
+    #[test]
+    fn crafting_xp_uses_cumulative_output_value() {
+        let lo = esp::LoadOrder::load(std::env::temp_dir(), &[]).unwrap();
+        assert!((constructible_xp(&lo, 10.) - 38.4).abs() < 0.1);
+        assert!(constructible_xp(&lo, 20.) > constructible_xp(&lo, 10.));
+    }
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn crafting_consumes_exact_counts_rechecks_and_emits_inventory_events() {
+        let (dir, mut e) = super::tests::fixture();
+        let station = FormId(0x810);
+        let recipe = FormId(0x811);
+        e.open_crafting_station(station);
+        let owner = Some(FormId(0x999));
+        e.inventory_mut(PLAYER_REF).add(FormId(0x802), 1);
+        e.inventory_mut(PLAYER_REF)
+            .add_owned(FormId(0x802), owner, 2);
+        assert_eq!(e.craft_recipe(station, recipe).unwrap(), FormId(0x803));
+        let inv = &e.inventories[&PLAYER_REF];
+        assert_eq!(inv.count(FormId(0x802)), 1);
+        assert_eq!(inv.count_owned(FormId(0x802), owner), 1);
+        assert_eq!(inv.count_owned(FormId(0x803), None), 2);
+        assert!(
+            e.scripts
+                .pending_events
+                .iter()
+                .any(|(_, event, _)| event == "OnItemAdded")
+        );
+        let event = e.craft_event(station, FormId(0x803));
+        assert_eq!(event.code, *b"CRFT");
+        assert_eq!(event.refs[0], station);
+        assert_eq!(event.form, FormId(0x803));
+        assert!(e.craft_recipe(station, recipe).is_err());
+        assert_eq!(e.inventories[&PLAYER_REF].count(FormId(0x803)), 2);
+        e.menu = None;
+        assert!(e.craft_recipe(station, recipe).is_err());
         drop(e);
         std::fs::remove_dir_all(dir).unwrap();
     }

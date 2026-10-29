@@ -511,6 +511,7 @@ impl SwfUi {
                 answer(&m.menu, engine, &call);
             }
         }
+        m.update(engine);
     }
 
     fn training_menu(&mut self, engine: &mut Engine, dt: Duration) {

@@ -34,13 +34,25 @@ pub struct MessageBox {
 /// A question the engine asks the player itself, done on the first button.
 #[derive(Debug, Clone, Copy)]
 pub enum BoxAction {
+    CraftRecipe {
+        station: FormId,
+        recipe: FormId,
+    },
     /// Put a dose of `poison` on `weapon` (`crate::poisons`).
-    Poison { weapon: FormId, poison: FormId },
+    Poison {
+        weapon: FormId,
+        poison: FormId,
+    },
     /// A selected map marker; all travel checks run again on acceptance.
-    FastTravel { marker: FormId },
+    FastTravel {
+        marker: FormId,
+    },
     /// Making a skill Legendary, asked twice (`sLegendaryResetConfirm`, then
     /// `sLegendaryResetSecondConfirm`).
-    Legendary { skill: u32, second: bool },
+    Legendary {
+        skill: u32,
+        second: bool,
+    },
 }
 
 /// A help message (`ShowAsHelpMessage`): shown for `duration` seconds every
@@ -425,6 +437,13 @@ impl Engine {
             self.vm.signal_with(key, Value::Int(index));
         }
         match b.action {
+            Some(BoxAction::CraftRecipe { station, recipe }) if index == 0 => {
+                if let Err(error) = self.craft_recipe(station, recipe)
+                    && !error.is_empty()
+                {
+                    self.scripts.notify(error);
+                }
+            }
             Some(BoxAction::FastTravel { marker }) if index == 0 => {
                 if let Err(reason) = self.travel_to_map_marker(marker) {
                     let text = reason.message(self);
