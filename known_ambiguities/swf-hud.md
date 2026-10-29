@@ -31,6 +31,13 @@ isn't public; the choices below are what the movies' code allows.
 - **Notifications** (`Debug.Notification`) go to `ShowMessage`, each once.
   **Help messages** (`Message.ShowAsHelpMessage`) go to
   `ShowTutorialHintText(text, true)`, and `("", false)` when they go.
+  The authored `TutorialHintsText` is multiline and word-wrapped but has a
+  fixed 41.25-pixel height. The workbench hint needs 56 pixels of text height,
+  so the field's `autoSize` is set to `left`: with word wrapping this preserves
+  its authored 737.95-pixel width and grows vertically (60.9 pixels for that
+  hint), without shrinking the font. The movie's show/hide and button-art
+  handling remain responsible for content and fading. This corrects the host's
+  clipping; the original engine's native text-field sizing policy is unverified.
 - **Quest banners** go to `QuestUpdateBaseInstance.ShowNotification` as a
   `QUEST_UPDATE` (type 0) with the quest's name as the text and the status
   ("Quest added") as the status, no sound, objectives or level, one at a

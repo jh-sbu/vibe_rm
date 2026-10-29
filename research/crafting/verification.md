@@ -107,3 +107,21 @@ keeps the selection/menu, another Tab asks again, and Yes exits. These checks
 use the authored movie and the rebuilt VibeRM client; captures and callback
 logs stay under `/tmp/vibe-crafting-exit/`. The host also accepts the configured
 Tween Menu key through the same exit handler. All 27 crafting tests pass.
+
+## Tutorial hint height (2026-10-29)
+
+The workbench hint reproduced the reported clipping in an isolated HUD render:
+field height 41.25 pixels versus text height 56 pixels. Enabling vertical growth
+through the field's standard `autoSize` preserves its word-wrap width and font.
+The field then measures 60.9 pixels high, with maximum scroll 1 (all lines fit).
+Forge, armor workbench, alchemy and enchanting hints fit when changed from short
+to long and back, including hiding and showing the hint again.
+
+End-to-end renders in the rebuilt VibeRM client open the Riverwood workbench,
+exit with Tab, and show the complete final line at both 1280x720 and 800x600.
+Captures and measurements remain under `/tmp/vibe-help-layout/` (the initial
+isolated reproduction is `/tmp/vibe-hint-before.png`).
+`cargo build --features remote-console --bin vibe_rm`, `cargo fmt --check` and
+`git diff --check` pass. The existing running client's remote console was queried
+without changing its gameplay state; its process must restart to load the code
+correction. These are VibeRM/asset checks, not original-engine observations.

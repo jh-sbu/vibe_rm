@@ -1709,6 +1709,10 @@ impl Hud {
             &[text("All"), Value::Bool(true)],
         );
         menu.invoke(&format!("{H}.HideSubtitle"), &[]);
+        // The tutorial field already wraps text, but its authored height clips
+        // multi-line hints. With word wrapping, autoSize keeps its width and
+        // grows vertically to fit the complete hint, including button art.
+        menu.set(&format!("{H}.TutorialHintsText.autoSize"), text("left"));
         // The activate key's art beside the crosshair's verb.
         menu.invoke(
             &format!("{H}.RefreshActivateButtonArt"),
