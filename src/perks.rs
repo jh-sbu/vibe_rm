@@ -124,6 +124,7 @@ mod effect_perk_sources_tests {
 
 /// Entry points used here (CommonLibSSE `BGSEntryPoint::ENTRY_POINTS`).
 pub mod ep {
+    pub const PURIFY_ALCHEMY_INGREDIENTS: u8 = 73;
     pub const MOD_TEMPERING_HEALTH: u8 = 76;
     pub const CALCULATE_MY_CRITICAL_HIT_CHANCE: u8 = 1;
     pub const CALCULATE_MY_CRITICAL_HIT_DAMAGE: u8 = 2;

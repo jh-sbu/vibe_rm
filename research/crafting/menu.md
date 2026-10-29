@@ -112,3 +112,10 @@ activation-parent dispatch. No synthetic sit/get-up events are introduced here:
 there is no physical player furniture transition in this implementation.
 Inherited or quest-driven sit/get-up behavior remains a test-plugin question;
 add dispatch only when authored scripts or original-game evidence require it.
+
+Alchemy uses the movie's partitioned filter mode: each ingredient packs its
+four known effect category IDs into four bytes of filterFlag. Category IDs are
+1..255; the all-ingredients sentinel is FFFFFFFF. This comes directly from
+ListFilterer.EntryMatchesPartitionedFilter in the authored movie. Keep effect
+categories explicitly visible because the shared category visibility scan uses
+ordinary bit masks rather than partitioned IDs.

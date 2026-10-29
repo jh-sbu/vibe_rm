@@ -96,3 +96,15 @@ GMSTs. Verify against the manual plugin before calling the exact XP compatible.
 Later research on the same page, line 447, explicitly confirms that stolen
 components do not mark the result stolen, and improving/enchanting retains the
 item's stolen status. Only material consumption order remains a choice.
+
+## Alchemy experimentation (step 7b)
+
+UESP Alchemy revision 3596102 lines 146–148 describes failed-combination greying,
+not omniscient filtering by hidden shared effects. Only previously failed pairs
+are greyed. Two or three distinct selected ingredients enable Craft even if no
+shared effect exists, so experimentation can fail without revealing unknown
+compatibility in advance. This corrects the plan's conflicting shared-effect
+Craft gate versus failed-mix requirement. Highest source effect cost chooses an
+ingredient's entire effect parameters; equal costs use deterministic form/order
+ties pending original-game tests (Alchemy Effects revision 3536120 lines 9–14
+says cost priority is believed, rather than verified).

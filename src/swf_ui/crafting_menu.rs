@@ -15,7 +15,7 @@ pub(super) struct CraftingMenu {
     last_items: Vec<(FormId, i32)>,
     improvements: Vec<crate::crafting::Improvement>,
     ingredients: Vec<crate::items::ListedItem>,
-    selected_ingredients:Vec<FormId>,
+    selected_ingredients: Vec<FormId>,
 }
 impl CraftingMenu {
     pub fn open(
@@ -89,7 +89,7 @@ impl CraftingMenu {
             last_items: Vec::new(),
             improvements: Vec::new(),
             ingredients: Vec::new(),
-            selected_ingredients:Vec::new(),
+            selected_ingredients: Vec::new(),
         };
         result.rebuild(e);
         Ok(result)
@@ -229,7 +229,8 @@ impl CraftingMenu {
     }
     fn rebuild_alchemy(&mut self, e: &mut Engine) {
         self.ingredients = e.alchemy_ingredients();
-        self.selected_ingredients.retain(|f|self.ingredients.iter().any(|r|r.item==*f));
+        self.selected_ingredients
+            .retain(|f| self.ingredients.iter().any(|r| r.item == *f));
         self.last_items = e
             .inventories
             .get(&crate::engine::PLAYER_REF)
@@ -283,8 +284,21 @@ impl CraftingMenu {
                     ("text", text(&row.info.name)),
                     ("count", num(row.count as f32)),
                     ("filterFlag", Value::Number(u32::from_le_bytes(ids) as f64)),
-                    ("enabled",Value::Bool(self.selected_ingredients.contains(&row.item) || self.selected_ingredients.iter().all(|f| !e.knowledge.failed_alchemy.contains(&((*f).min(row.item),(*f).max(row.item)))))),
-                    ("isSelected",Value::Bool(self.selected_ingredients.contains(&row.item))),
+                    (
+                        "enabled",
+                        Value::Bool(
+                            self.selected_ingredients.contains(&row.item)
+                                || self.selected_ingredients.iter().all(|f| {
+                                    !e.knowledge
+                                        .failed_alchemy
+                                        .contains(&((*f).min(row.item), (*f).max(row.item)))
+                                }),
+                        ),
+                    ),
+                    (
+                        "isSelected",
+                        Value::Bool(self.selected_ingredients.contains(&row.item)),
+                    ),
                     ("vrmRow", num(i as f32)),
                 ])
             })
@@ -348,14 +362,33 @@ impl CraftingMenu {
     }
     fn display(&self, e: &Engine) {
         if self.kind == 5 {
-            self.menu.set(&format!("{M}.bCanCraft"),Value::Bool(self.selected_ingredients.len()>=2));
-            self.menu.invoke(&format!("{M}.UpdateButtonText"),&[]);
-            if let Some(result)=e.unscaled_potion(&self.selected_ingredients) {
-                let names=result.effects.iter().map(|effect| {
-                    let known=self.selected_ingredients.iter().any(|&ingredient|e.magic_item(ingredient).is_some_and(|m|m.effects.iter().enumerate().any(|(i,ef)|ef.effect==effect.effect && e.effect_learned(ingredient,i))));
-                    if known {e.form_name(effect.effect)} else {"?".into()}
-                }).collect::<Vec<_>>().join(", ");
-                self.menu.set(&format!("{M}.AdditionalDescription.text"),text(&names));
+            self.menu.set(
+                &format!("{M}.bCanCraft"),
+                Value::Bool(self.selected_ingredients.len() >= 2),
+            );
+            self.menu.invoke(&format!("{M}.UpdateButtonText"), &[]);
+            if let Some(result) = e.unscaled_potion(&self.selected_ingredients) {
+                let names = result
+                    .effects
+                    .iter()
+                    .map(|effect| {
+                        let known = self.selected_ingredients.iter().any(|&ingredient| {
+                            e.magic_item(ingredient).is_some_and(|m| {
+                                m.effects.iter().enumerate().any(|(i, ef)| {
+                                    ef.effect == effect.effect && e.effect_learned(ingredient, i)
+                                })
+                            })
+                        });
+                        if known {
+                            e.form_name(effect.effect)
+                        } else {
+                            "?".into()
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                self.menu
+                    .set(&format!("{M}.AdditionalDescription.text"), text(&names));
             }
             if let Some(row) = self.selected.and_then(|i| self.ingredients.get(i)) {
                 let card = super::item_menu::item_card(e, row, None, false);
@@ -463,14 +496,20 @@ impl CraftingMenu {
             })
         };
         match c.name.as_str() {
-            "ChooseItem" if self.kind==5=> {
-                let picked=match self.menu.get(&format!("{M}.ItemList.selectedEntry.vrmRow")) {Value::Number(n) if n>=0.=>Some(n as usize),_=>index()};
-                if let Some(form)=picked.and_then(|i|self.ingredients.get(i)).map(|r|r.item) {
-                    if let Some(i)=self.selected_ingredients.iter().position(|f|*f==form) {self.selected_ingredients.remove(i);}
-                    else if self.selected_ingredients.len()<3 {self.selected_ingredients.push(form);}
+            "ChooseItem" if self.kind == 5 => {
+                let picked = match self.menu.get(&format!("{M}.ItemList.selectedEntry.vrmRow")) {
+                    Value::Number(n) if n >= 0. => Some(n as usize),
+                    _ => index(),
+                };
+                if let Some(form) = picked.and_then(|i| self.ingredients.get(i)).map(|r| r.item) {
+                    if let Some(i) = self.selected_ingredients.iter().position(|f| *f == form) {
+                        self.selected_ingredients.remove(i);
+                    } else if self.selected_ingredients.len() < 3 {
+                        self.selected_ingredients.push(form);
+                    }
                     self.rebuild_alchemy(e);
                 }
-            },
+            }
             "CloseMenu" => e.menu = None,
             "SetSelectedCategory" => self.category = index().unwrap_or(0),
             "SetSelectedItem" => {
