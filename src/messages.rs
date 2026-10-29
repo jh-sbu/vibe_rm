@@ -34,6 +34,12 @@ pub struct MessageBox {
 /// A question the engine asks the player itself, done on the first button.
 #[derive(Debug, Clone, Copy)]
 pub enum BoxAction {
+    ImproveItem {
+        station: FormId,
+        item: FormId,
+        owner: Option<FormId>,
+        key: u64,
+    },
     CraftRecipe {
         station: FormId,
         recipe: FormId,
@@ -437,6 +443,18 @@ impl Engine {
             self.vm.signal_with(key, Value::Int(index));
         }
         match b.action {
+            Some(BoxAction::ImproveItem {
+                station,
+                item,
+                owner,
+                key,
+            }) if index == 0 => {
+                if let Err(error) = self.improve_item(station, item, owner, key)
+                    && !error.is_empty()
+                {
+                    self.scripts.notify(error);
+                }
+            }
             Some(BoxAction::CraftRecipe { station, recipe }) if index == 0 => {
                 if let Err(error) = self.craft_recipe(station, recipe)
                     && !error.is_empty()

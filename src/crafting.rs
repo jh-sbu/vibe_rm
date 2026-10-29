@@ -36,6 +36,66 @@ impl Engine {
         crate::item_copies::CopyState::at_level(tempering_level(effective))
     }
 
+    pub(crate) fn improve_item(
+        &mut self,
+        station: FormId,
+        item: FormId,
+        owner: Option<FormId>,
+        key: u64,
+    ) -> Result<(), String> {
+        use crate::engine::PLAYER_REF;
+        let kind = match self.menu {
+            Some(crate::items::Menu::Crafting { station: s, kind })
+                if s == station && matches!(kind, 2 | 7) =>
+            {
+                kind
+            }
+            _ => return Err(String::new()),
+        };
+        let Some(improvement) = self.improvements_at(station).into_iter().find(|i| {
+            i.row.item == item && i.row.owner == owner && i.row.copy.fingerprint() == key
+        }) else {
+            return Err(String::new());
+        };
+        if improvement.preview.quality <= improvement.row.copy.quality
+            || !improvement
+                .recipe
+                .affordable(self.inventory_mut(PLAYER_REF))
+        {
+            return Err(self
+                .gmst_string("sLackRequiredToImprove")
+                .unwrap_or_else(|| "You cannot improve this item.".into()));
+        }
+        let old_value = improvement.row.info.value;
+        let new_value = self
+            .copy_item_info(item, &improvement.preview)
+            .map_or(old_value, |i| i.value);
+        for &(material, count) in &improvement.recipe.inputs {
+            self.remove_stack(PLAYER_REF, material, count as i32, None, None, None);
+        }
+        self.inventory_mut(PLAYER_REF).replace_copy_state(
+            item,
+            owner,
+            &improvement.row.copy,
+            improvement.preview,
+        );
+        let added = (new_value - old_value).max(0) as f32;
+        let g = |name, default| crate::ai::combat::gmst_f32(&self.lo, name, default);
+        let xp = (g("fTemperingSkillUseItemValMult", 8.)
+            * added.powf(g("fTemperingSkillUseItemValExp", 0.6))
+            + g("fTemperingSkillUseItemValConst", 25.))
+            * g("fTemperingSkillUseMult", 1.);
+        self.use_skill(esp::actor_value::SMITHING, xp);
+        self.increment_stat(
+            if kind == 2 {
+                "Weapons Improved"
+            } else {
+                "Armor Improved"
+            },
+            1,
+        );
+        Ok(())
+    }
     pub(crate) fn improvements_at(&mut self, station: FormId) -> Vec<Improvement> {
         let Some(bench) = self
             .base_of(station)

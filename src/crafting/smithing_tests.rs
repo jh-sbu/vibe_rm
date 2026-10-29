@@ -156,3 +156,37 @@ fn crafting_quality_boundaries_perks_and_fortify_use_the_documented_formula() {
     assert!((effective - 874.84f32).abs() < 0.01);
     assert_eq!(tempering_level(effective), 26);
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn crafting_improvement_updates_one_equipped_copy_and_never_lowers_it() {
+    let (dir, mut e) = fixture();
+    e.set_actor_value(PLAYER_REF, esp::actor_value::SMITHING, 50.);
+    e.open_crafting_station(STATION);
+    e.inventory_mut(PLAYER_REF).add(ITEM, 3);
+    e.inventory_mut(PLAYER_REF).add(MATERIAL, 2);
+    e.equip_in(PLAYER_REF, ITEM, None).unwrap();
+    let key = CopyState::default().fingerprint();
+    e.improve_item(STATION, ITEM, None, key).unwrap();
+    let inv = &e.inventories[&PLAYER_REF];
+    assert_eq!(inv.count(ITEM), 3);
+    assert_eq!(inv.count(MATERIAL), 1);
+    assert_eq!(inv.plain_copies(ITEM, None), 2);
+    assert!(inv.is_equipped(ITEM));
+    assert_eq!(inv.copy_state(ITEM).level(), 2);
+    let state = inv.copy_state(ITEM);
+    assert!(
+        e.improve_item(STATION, ITEM, None, state.fingerprint())
+            .is_err()
+    );
+    assert_eq!(e.inventories[&PLAYER_REF].count(MATERIAL), 1);
+    let rows = e.listed_inventory(PLAYER_REF);
+    let modified = rows
+        .iter()
+        .find(|r| r.item == ITEM && r.copy.level() == 2)
+        .unwrap();
+    assert!(modified.info.name.ends_with("(Superior)"));
+    assert_eq!(modified.info.value, 13);
+    drop(e);
+    std::fs::remove_dir_all(dir).unwrap();
+}

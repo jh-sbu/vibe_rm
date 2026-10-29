@@ -24,6 +24,17 @@ impl Default for CopyState {
     }
 }
 impl CopyState {
+    pub fn fingerprint(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        self.quality.to_bits().hash(&mut h);
+        self.enchantment.hash(&mut h);
+        self.capacity.to_bits().hash(&mut h);
+        self.charge.to_bits().hash(&mut h);
+        self.name.hash(&mut h);
+        h.finish()
+    }
+
     pub fn level(&self) -> u32 {
         ((self.quality - 1.0).max(0.0) * 6.0).round() as u32
     }
@@ -149,6 +160,42 @@ impl Inventory {
         removed
     }
 
+    /// Changes metadata in place: improving an item does not move it through
+    /// another container or unequip its last copy.
+    pub fn replace_copy_state(
+        &mut self,
+        item: FormId,
+        owner: Option<FormId>,
+        old: &CopyState,
+        new: CopyState,
+    ) -> bool {
+        let equipped = self.is_equipped(item) && self.copy_state(item) == *old;
+        if *old == CopyState::default() {
+            if self.plain_copies(item, owner) <= 0 {
+                return false;
+            }
+        } else {
+            let Some(i) = self
+                .copies
+                .iter()
+                .position(|c| c.item == item && c.owner == owner && c.state == *old && c.count > 0)
+            else {
+                return false;
+            };
+            self.copies[i].count -= 1;
+            self.copies.retain(|c| c.count > 0);
+        }
+        if equipped {
+            self.equipped_copies.insert(item, new.clone());
+        }
+        self.add_copy_state(ItemCopy {
+            item,
+            owner,
+            state: new,
+            count: 1,
+        });
+        true
+    }
     pub fn plain_copies(&self, item: FormId, owner: Option<FormId>) -> i32 {
         self.count_owned(item, owner)
             - self

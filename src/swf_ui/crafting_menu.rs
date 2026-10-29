@@ -147,13 +147,47 @@ impl CraftingMenu {
         self.display(e);
     }
     pub fn update(&mut self, e: &mut Engine) {
-        if self.kind == 1
+        if matches!(self.kind, 1 | 2 | 7)
             && e.inventories
                 .get(&crate::engine::PLAYER_REF)
                 .is_some_and(|i| i.items != self.last_items)
         {
             self.rebuild(e);
         }
+    }
+    fn request_improvement(&mut self, e: &mut Engine, index: Option<usize>) {
+        let index = match self.menu.get(&format!("{M}.ItemList.selectedEntry.vrmRow")) {
+            Value::Number(n) if n >= 0. => Some(n as usize),
+            _ => index.or(self.selected),
+        };
+        let Some(r) = index.and_then(|i| self.improvements.get(i)) else {
+            return;
+        };
+        if r.preview.quality <= r.row.copy.quality
+            || !e
+                .inventories
+                .get(&crate::engine::PLAYER_REF)
+                .is_some_and(|i| r.recipe.affordable(i))
+        {
+            return;
+        }
+        let question = e
+            .gmst_string("sSmithingConfirm")
+            .unwrap_or_else(|| "Do you want to improve this item?".into());
+        let buttons = vec![
+            e.gmst_string("sYes").unwrap_or_else(|| "Yes".into()),
+            e.gmst_string("sNo").unwrap_or_else(|| "No".into()),
+        ];
+        e.ask(
+            question,
+            buttons,
+            crate::messages::BoxAction::ImproveItem {
+                station: self.station,
+                item: r.row.item,
+                owner: r.row.owner,
+                key: r.row.copy.fingerprint(),
+            },
+        );
     }
     fn request_recipe(&mut self, e: &mut Engine, index: Option<usize>) {
         let selected = self.menu.get(&format!("{M}.ItemList.selectedEntry.vrmRow"));
@@ -342,6 +376,11 @@ impl CraftingMenu {
             }
             "ShowItem3D" | "StartMouseRotation" | "StopMouseRotation" => {
                 log::debug!("crafting preview {}: {:?}", c.name, c.args)
+            }
+            "ChooseItem" | "CraftSelectedItem" | "CraftButtonPress"
+                if matches!(self.kind, 2 | 7) =>
+            {
+                self.request_improvement(e, index());
             }
             "ChooseItem" | "CraftSelectedItem" | "CraftButtonPress" if self.kind == 1 => {
                 self.request_recipe(e, index());

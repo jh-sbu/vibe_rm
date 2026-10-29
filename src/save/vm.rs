@@ -392,6 +392,18 @@ impl VmSnapshot {
                 }
                 match b.action {
                     None => m.u8(0),
+                    Some(crate::messages::BoxAction::ImproveItem {
+                        station,
+                        item,
+                        owner,
+                        key,
+                    }) => {
+                        m.u8(5);
+                        m.form(station);
+                        m.form(item);
+                        m.opt_form(owner);
+                        m.u64(key);
+                    }
                     Some(crate::messages::BoxAction::CraftRecipe { station, recipe }) => {
                         m.u8(4);
                         m.form(station);
@@ -633,6 +645,21 @@ impl VmSnapshot {
                             return Err(Corrupt("invalid crafting action".into()));
                         }
                         Some(crate::messages::BoxAction::CraftRecipe { station, recipe })
+                    }
+                    5 => {
+                        let station = r.form()?;
+                        let item = r.form()?;
+                        let owner = r.opt_form()?;
+                        let key = r.u64()?;
+                        if station.is_null() || item.is_null() {
+                            return Err(Corrupt("invalid improve action".into()));
+                        }
+                        Some(crate::messages::BoxAction::ImproveItem {
+                            station,
+                            item,
+                            owner,
+                            key,
+                        })
                     }
                     n => return Err(Corrupt(format!("message-box action {n}"))),
                 };

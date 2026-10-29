@@ -78,3 +78,21 @@ The extended skill threshold table also disagrees with the explicit formula
 (e.g. quality 7 without a perk is listed at 202, while floor((skill+38)*3/103)
 reaches 7 at 203). Use the explicit formula consistently, with the documented
 minimum tempering threshold of 14, pending original-game boundary tests.
+
+## Improving copies and XP (step 6c)
+
+An explicit metadata row selects one copy in that row. When an identical copy
+is equipped, improvement updates that equipped selection first; other copies
+retain their state. This replaces the plan's form-only equipped/plain preference
+now that rows identify metadata. Improving changes metadata in place and keeps
+ownership, name, enchantment and charge. Ingredients use the same ownership
+order as Create Object.
+
+UESP Smithing revision 3612986 line 366 establishes value-added XP, while the
+local index and additional public search did not establish its exact equation.
+Provisional choice: (8 * valueAdded^0.6 + 25) * 1, using the four tempering
+GMSTs. Verify against the manual plugin before calling the exact XP compatible.
+
+Later research on the same page, line 447, explicitly confirms that stolen
+components do not mark the result stolen, and improving/enchanting retains the
+item's stolen status. Only material consumption order remains a choice.
