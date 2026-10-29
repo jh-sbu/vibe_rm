@@ -33,6 +33,7 @@ mod autotest6;
 mod autotest7;
 mod autotest8;
 mod autotest9;
+mod crafting1;
 mod dualcast;
 mod pex;
 mod places;
@@ -65,6 +66,7 @@ pub const NAMES: &[&str] = &[
     "autotest18",
     "autotest19",
     "dualcast",
+    "crafting1",
     "pex",
     "taper",
     "venv",
@@ -86,6 +88,7 @@ pub fn own(object_id: u32) -> FormId {
 /// The files of a test mod (one of [`NAMES`]), with Skyrim.esm loaded.
 pub fn build(name: &str, lo: &LoadOrder) -> Result<TestMod> {
     match name {
+        "crafting1" => crafting1::build(lo),
         "autotest" => autotest::build(lo),
         "autotest2" => autotest2::build(lo),
         "autotest3" => autotest3::build(lo),

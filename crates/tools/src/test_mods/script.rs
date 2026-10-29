@@ -16,6 +16,8 @@ use papyrus::pex::op;
 /// when built, and the dry runs in the tests declare them to the VM.
 const NATIVE_TABLE: &str = "\
 Form
+    Int GetGoldValue()
+    Int GetFormID()
     None RegisterForSingleUpdate(Float afInterval)
     Bool RegisterForAnimationEvent(ObjectReference akSender, String asEventName)
     None UnregisterForAnimationEvent(ObjectReference akSender, String asEventName)
@@ -80,6 +82,8 @@ Potion : Form
 MiscObject : Form
 Projectile : Form
 ObjectReference : Form
+    ObjectReference DropObject(Form akObject, Int aiCount)
+    Float GetItemHealthPercent()
     actor PlaceActorAtMe(ActorBase akActorToPlace, Int aiLevelMod, EncounterZone akZone)
     ObjectReference PlaceAtMe(Form akFormToPlace, Int aiCount, Bool abForcePersist, Bool abInitiallyDisabled)
     None Disable(Bool abFadeOut)
