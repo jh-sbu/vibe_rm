@@ -54,3 +54,12 @@ quality level = floor((effective skill + 38) * 3 / 103).
 The exact rating bonus is (3.6 * level - 1.6), halved outside chest armor.
 Some rounded entries in the summary table conflict with this; see the decision
 in known_ambiguities/crafting.md.
+
+Tempering's material multiplier comes from PERK entry point 76, not from a
+material HasPerk condition in its recipe. TemperWeaponSteelSword only tests
+EPTemperingItemIsEnchanted OR Arcane Blacksmith. SteelSmithing instead multiplies
+entry point 76 by 2 with item-keyword conditions. PerkSkillBoosts and
+AlchemySkillBoosts also modify entry point 76 from SmithingMod and SmithingPowerMod.
+Feed (Smithing - 13.29) through that entry point, then add 13.29 and apply the
+quality formula. This includes material perks, fortify apparel/potions and any
+authored Seeker modifier without applying them twice.

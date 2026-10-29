@@ -198,6 +198,46 @@ impl Inventory {
 }
 
 impl Engine {
+    pub(crate) fn copy_item_info(
+        &self,
+        item: FormId,
+        state: &CopyState,
+    ) -> Option<crate::world::inventory::ItemInfo> {
+        let mut info = crate::world::inventory::item_info(&self.lo, item)?;
+        if let Some(name) = &state.name {
+            info.name = name.clone();
+        }
+        let level = state.level();
+        if level > 0 {
+            let stem = if info.kind == crate::world::inventory::ItemKind::Weapon {
+                "Weap"
+            } else {
+                "Armo"
+            };
+            let fallback = [
+                "Fine",
+                "Superior",
+                "Exquisite",
+                "Flawless",
+                "Epic",
+                "Legendary",
+            ][(level.min(6) - 1) as usize];
+            let quality = self
+                .gmst_string(&format!("sHealthDataPrefix{stem}{}", level.min(6)))
+                .unwrap_or_else(|| fallback.into());
+            info.name = format!("{} ({quality})", info.name);
+            info.value = (info.value as f32 * state.quality).floor() as i32;
+        }
+        if let Some(enchantment) = state.enchantment {
+            let cost = self
+                .magic_item(enchantment)
+                .and_then(|m| m.enchantment)
+                .map_or(0, |e| e.cost);
+            info.value = info.value.saturating_add(cost as i32);
+        }
+        Some(info)
+    }
+
     pub(crate) fn equipped_copy(&self, actor: FormId, item: FormId) -> CopyState {
         self.inventories
             .get(&actor)

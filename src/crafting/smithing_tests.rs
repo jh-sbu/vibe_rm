@@ -115,3 +115,44 @@ fn crafting_tempering_conditions_inspect_each_copy_enchantment() {
     drop(e);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn crafting_quality_boundaries_perks_and_fortify_use_the_documented_formula() {
+    for (skill, level) in [
+        (13., 0),
+        (14., 1),
+        (30., 1),
+        (31., 2),
+        (64., 2),
+        (65., 3),
+        (99., 3),
+        (100., 4),
+        (133., 4),
+        (134., 5),
+        (167., 5),
+        (168., 6),
+        (202., 6),
+        (203., 7),
+    ] {
+        assert_eq!(tempering_level(skill), level, "skill {skill}");
+    }
+    for (skill, level) in [
+        (14., 1),
+        (21., 1),
+        (22., 2),
+        (40., 3),
+        (57., 4),
+        (74., 5),
+        (91., 6),
+        (108., 7),
+    ] {
+        assert_eq!(
+            tempering_level((skill - 13.29) * 2. + 13.29),
+            level,
+            "perked {skill}"
+        );
+    }
+    let effective = (100. - 13.29) * 2. * 2.16 * 2.3 + 13.29;
+    assert!((effective - 874.84f32).abs() < 0.01);
+    assert_eq!(tempering_level(effective), 26);
+}

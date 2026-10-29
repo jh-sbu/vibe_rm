@@ -14,8 +14,28 @@ pub(crate) fn constructible_xp(lo: &esp::LoadOrder, value: f32) -> f32 {
 pub(crate) struct Improvement {
     pub row: crate::items::ListedItem,
     pub recipe: Recipe,
+    pub preview: crate::item_copies::CopyState,
+}
+/// UESP's exact quality formula, after all effective-skill modifiers.
+pub(crate) fn tempering_level(effective: f32) -> u32 {
+    if !effective.is_finite() || effective < 14. {
+        0
+    } else {
+        ((effective + 38.) * 3. / 103.).floor().max(0.) as u32
+    }
 }
 impl Engine {
+    pub(crate) fn attainable_quality(&self, item: FormId) -> crate::item_copies::CopyState {
+        let skill = self.actor_value(crate::engine::PLAYER_REF, esp::actor_value::SMITHING);
+        let effective = self.perk_entry_point(
+            crate::perks::ep::MOD_TEMPERING_HEALTH,
+            crate::engine::PLAYER_REF,
+            &[Some(item)],
+            skill - 13.29,
+        ) + 13.29;
+        crate::item_copies::CopyState::at_level(tempering_level(effective))
+    }
+
     pub(crate) fn improvements_at(&mut self, station: FormId) -> Vec<Improvement> {
         let Some(bench) = self
             .base_of(station)
@@ -38,7 +58,16 @@ impl Engine {
                     .iter()
                     .find(|r| r.output == row.item && r.visible_for(self, Some(&row.copy)))?
                     .clone();
-                Some(Improvement { row, recipe })
+                let mut preview = row.copy.clone();
+                preview.quality = row
+                    .copy
+                    .quality
+                    .max(self.attainable_quality(row.item).quality);
+                Some(Improvement {
+                    row,
+                    recipe,
+                    preview,
+                })
             })
             .collect()
     }

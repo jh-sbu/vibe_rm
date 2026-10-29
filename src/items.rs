@@ -763,38 +763,9 @@ impl Engine {
                     .iter()
                     .filter(|c| c.item == item && c.owner == owner && c.count > 0)
                 {
-                    let mut display = info.clone();
-                    if let Some(name) = &c.state.name {
-                        display.name = name.clone();
-                    }
-                    let level = c.state.level();
-                    if level > 0 {
-                        let stem = if info.kind == ItemKind::Weapon {
-                            "Weap"
-                        } else {
-                            "Armo"
-                        };
-                        let fallback = [
-                            "Fine",
-                            "Superior",
-                            "Exquisite",
-                            "Flawless",
-                            "Epic",
-                            "Legendary",
-                        ][(level.min(6) - 1) as usize];
-                        let quality = self
-                            .gmst_string(&format!("sHealthDataPrefix{stem}{}", level.min(6)))
-                            .unwrap_or_else(|| fallback.into());
-                        display.name = format!("{} ({quality})", display.name);
-                        display.value = (display.value as f32 * c.state.quality).floor() as i32;
-                    }
-                    if let Some(enchantment) = c.state.enchantment {
-                        let cost = self
-                            .magic_item(enchantment)
-                            .and_then(|m| m.enchantment)
-                            .map_or(0, |e| e.cost);
-                        display.value = display.value.saturating_add(cost as i32);
-                    }
+                    let display = self
+                        .copy_item_info(item, &c.state)
+                        .unwrap_or_else(|| info.clone());
                     out.push(ListedItem {
                         item,
                         owner,

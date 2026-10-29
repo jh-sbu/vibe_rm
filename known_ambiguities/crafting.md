@@ -73,3 +73,8 @@ confirmation is accepted. For forge recipes XP uses the combined output value.
 Cooking, smelting and tanning grant none. CRFT carries station R1, its current
 location L1 and output F1, following the existing Story Manager argument mapping.
 Create Object weapon/armor statistics count output items rather than button presses.
+
+The extended skill threshold table also disagrees with the explicit formula
+(e.g. quality 7 without a perk is listed at 202, while floor((skill+38)*3/103)
+reaches 7 at 203). Use the explicit formula consistently, with the documented
+minimum tempering threshold of 14, pending original-game boundary tests.

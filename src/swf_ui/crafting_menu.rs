@@ -198,9 +198,24 @@ impl CraftingMenu {
             .enumerate()
             .map(|(i, r)| {
                 super::item_menu::object([
-                    ("text", text(&r.row.info.name)),
+                    (
+                        "text",
+                        text(
+                            &e.copy_item_info(r.row.item, &r.preview)
+                                .map(|i| i.name)
+                                .unwrap_or_default(),
+                        ),
+                    ),
                     ("count", num(r.row.count as f32)),
-                    ("enabled", Value::Bool(true)),
+                    (
+                        "enabled",
+                        Value::Bool(
+                            r.preview.quality > r.row.copy.quality
+                                && e.inventories
+                                    .get(&crate::engine::PLAYER_REF)
+                                    .is_some_and(|i| r.recipe.affordable(i)),
+                        ),
+                    ),
                     ("vrmRow", num(i as f32)),
                 ])
             })
@@ -216,9 +231,46 @@ impl CraftingMenu {
     fn display(&self, e: &Engine) {
         if matches!(self.kind, 2 | 7) {
             if let Some(r) = self.selected.and_then(|i| self.improvements.get(i)) {
-                let card = super::item_menu::item_card(e, &r.row, None, false);
+                let mut row = r.row.clone();
+                row.copy = r.preview.clone();
+                row.info = e
+                    .copy_item_info(row.item, &row.copy)
+                    .unwrap_or_else(|| row.info.clone());
+                let card = super::item_menu::item_card(e, &row, None, false);
                 self.menu
                     .invoke(&format!("{M}.ItemInfo.SetItemInfo"), &[card]);
+                let inv = e.inventories.get(&crate::engine::PLAYER_REF);
+                self.menu.set(
+                    &format!("{M}.bCanCraft"),
+                    Value::Bool(
+                        r.preview.quality > r.row.copy.quality
+                            && inv.is_some_and(|i| r.recipe.affordable(i)),
+                    ),
+                );
+                let inputs = r
+                    .recipe
+                    .inputs
+                    .iter()
+                    .map(|&(item, n)| {
+                        super::item_menu::object([
+                            ("Name", text(&e.form_name(item))),
+                            ("RequiredCount", num(n as f32)),
+                            ("PlayerCount", num(inv.map_or(0, |i| i.count(item)) as f32)),
+                        ])
+                    })
+                    .collect();
+                self.menu.invoke(
+                    &format!("{M}.UpdateIngredients"),
+                    &[
+                        text(
+                            &e.gmst_string("sRequires")
+                                .unwrap_or_else(|| "Requires".into()),
+                        ),
+                        Value::List(inputs),
+                        Value::Bool(true),
+                    ],
+                );
+                self.menu.invoke(&format!("{M}.UpdateButtonText"), &[]);
             }
             return;
         }
