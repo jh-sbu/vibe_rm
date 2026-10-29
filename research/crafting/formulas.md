@@ -79,6 +79,17 @@ The authored ALCH DefaultPotion (0005661F) is named **Unknown Potion**. It suppl
 the unknown-result title; DefaultPoison supplies poison art. This settles the
 plan's missing unknown-potion GMST: its text is a localized FULL, not a GMST.
 
+Custom apparel Muffle and Waterbreathing are fixed-strength exceptions:
+[Muffle revision 3275966](https://en.uesp.net/w/index.php?oldid=3275966),
+lines 39–47, explicitly gives custom Muffle magnitude 1 regardless of skill,
+perks or soul. [Waterbreathing revision 3380569](https://en.uesp.net/w/index.php?oldid=3380569),
+lines 44 and 64, likewise states that skill, perks and souls do not change it.
+The installed constant effects target MovementNoiseMult and WaterBreathing;
+their learned ENCHs have magnitudes 0.5 and 1 respectively. Generated apparel
+effects for these two values use magnitude 1 and duration 0, bypassing the
+general strength formula. This is source/game-asset evidence, not a Skyrim SE
+probe result; ordinary scalable effects in the same item still use the formula.
+
 ## Vanilla perk audit (step 9)
 
 `vrm-tool perks <Data> <editor-id>` and `ep <number>` were checked against

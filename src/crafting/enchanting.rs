@@ -267,13 +267,27 @@ impl Engine {
             let source = self.magic_item(enchantment)?;
             for e in &source.effects {
                 let m = self.magic_effect(e.effect)?;
+                let mut effect = e.clone();
+                // Custom Muffle and Waterbreathing apparel always has full
+                // strength, including when the learned Muffle base is 0.5.
+                if !weapon
+                    && matches!(
+                        m.primary,
+                        Some(esp::actor_value::MOVEMENT_NOISE_MULT)
+                            | Some(esp::actor_value::WATER_BREATHING)
+                    )
+                {
+                    effect.magnitude = 1.;
+                    effect.duration = 0;
+                    effects.push(effect);
+                    continue;
+                }
                 let factor = self.perk_entry_point(
                     crate::perks::ep::MOD_ENCHANTMENT_POWER,
                     PLAYER_REF,
                     &[Some(e.effect), Some(item.item)],
                     power,
                 );
-                let mut effect = e.clone();
                 let max_mag = (e.magnitude * factor * if weapon { eligible } else { fraction })
                     .floor()
                     .max(0.);

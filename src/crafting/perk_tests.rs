@@ -110,3 +110,77 @@ fn crafting_vanilla_perks_and_fortify_effects() {
     e.add_perk(PLAYER_REF, perk);
     assert_eq!(e.enchantment_slots(), 2);
 }
+
+#[test]
+#[ignore = "requires installed Skyrim assets and a headless GPU adapter"]
+fn crafting_fixed_apparel_enchantments_ignore_skill_perks_and_souls() {
+    let data = vfs::locate_data_dir().unwrap();
+    let names = esp::BASE_MASTERS
+        .iter()
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>();
+    let mut e = crate::stats::action_tests::headless_engine_plugins(&data, &names);
+    let gem = e.lo.find_editor_id("SoulGemPettyFilled").unwrap();
+    for (item, effect) in [
+        ("ArmorIronBoots", "EnchArmorMuffleBase"),
+        ("ArmorIronHelmet", "EnchArmorWaterbreathingBase"),
+    ] {
+        let item = e.lo.find_editor_id(item).unwrap();
+        let effect = e.lo.find_editor_id(effect).unwrap();
+        e.knowledge.enchantments.insert(effect);
+        e.inventory_mut(PLAYER_REF).add(item, 1);
+        let row = e
+            .enchantable_items()
+            .into_iter()
+            .find(|r| r.item == item)
+            .unwrap();
+        let mut selection = crate::crafting::EnchantSelection {
+            item: Some(row),
+            effects: vec![effect],
+            gem: Some((gem, 1)),
+            ..Default::default()
+        };
+        for skill in [15., 100.] {
+            e.set_actor_value(PLAYER_REF, esp::actor_value::ENCHANTING, skill);
+            for soul in 1..=5 {
+                selection.gem = Some((gem, soul));
+                let preview = e.enchant_preview(&selection).unwrap();
+                assert_eq!(preview.effects[0].magnitude, 1.);
+                assert_eq!(preview.effects[0].duration, 0);
+            }
+        }
+        let perk = e.lo.find_editor_id("Enchanter80").unwrap();
+        e.add_perk(PLAYER_REF, perk);
+        assert_eq!(
+            e.enchant_preview(&selection).unwrap().effects[0].magnitude,
+            1.
+        );
+        e.remove_perk(PLAYER_REF, perk);
+        // Check the actual created record and worn actor value as well as the preview.
+        e.inventory_mut(PLAYER_REF).add(gem, 1);
+        let station = FormId(0x14);
+        e.menu = Some(crate::items::Menu::Crafting { station, kind: 3 });
+        e.equip_armor(PLAYER_REF, item, true).unwrap();
+        e.enchant_item(crate::crafting::EnchantRequest {
+            station,
+            item,
+            owner: None,
+            copy: Default::default(),
+            effects: vec![effect],
+            gem,
+            soul: 1,
+            name: None,
+            slider: 1.,
+        })
+        .unwrap();
+        let created = e.equipped_copy(PLAYER_REF, item).enchantment.unwrap();
+        let magic = e.magic_item(created).unwrap();
+        assert_eq!(magic.effects[0].magnitude, 1.);
+        let value = e
+            .magic_effect(magic.effects[0].effect)
+            .unwrap()
+            .primary
+            .unwrap();
+        assert!(e.actor_value(PLAYER_REF, value) >= 1.);
+    }
+}
