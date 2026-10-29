@@ -24,6 +24,8 @@ pub fn multiplier(lo: &LoadOrder, level: usize, player: bool, fall: bool) -> f32
     if fall { value.min(1.) } else { value }
 }
 impl Engine {
+    /// Target-based even for NPC → NPC damage; this attacker policy remains
+    /// provisional. See known_ambiguities/system-page.md and the SE observations.
     pub fn difficulty_multiplier(&self, target: FormId, fall: bool) -> f32 {
         multiplier(
             &self.lo,

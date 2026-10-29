@@ -219,3 +219,27 @@ Installed Tamriel atlas UVs include tiny overshoots (for example approximately
 −0.00054 and 1.00098). The parser validates finite, ordered rectangles while
 preserving these values; restricting them to [0,1] incorrectly rejects vanilla
 assets. The synthetic parser test includes this border case.
+
+## Difficulty attacker scope review (2026-10-28)
+
+Local UESP was checked first: [Skyrim:Damage revision 3485809](https://en.uesp.net/w/index.php?oldid=3485809),
+Difficulty Level, lines 106–128, supplies target-labelled multipliers and says
+followers/summons follow the enemy rule, but does not specify who attacks them.
+The [Damage talk page revision 2763142](https://en.uesp.net/w/index.php?oldid=2763142#Difficulty_Level_:_Followers),
+lines 66–71, contains conflicting 2013 comments: one describes a player-only
+effect; the reply describes all NPC targets receiving reduced damage regardless
+of side. These are community discussion and a lead for testing, not verified
+Skyrim SE behavior. No local index match for fDiffMultHP supplied an attacker
+specification.
+
+[Bethesda's Skyrim SE support article](https://help.bethesda.net/app/answers/detail/a_id/36397/)
+describes difficulty changing the player's outgoing and incoming damage. It
+neither confirms nor excludes NPC-to-NPC scaling. Inferred ByPC/ToPC setting
+names alone cannot resolve that omission. The implementation retains its
+target-based rule provisionally; known_ambiguities/system-page.md now records
+that choice and plans/system-page.md asks for an SE observation comparing
+player → NPC, NPC → player and NPC → NPC damage, including followers/summons.
+No engine binaries, SKSE sources or SKSE behavior were examined.
+
+External reference copies remain ignored: refs/system-page-damage.wiki,
+refs/system-page-damage-talk.wiki and refs/system-page-difficulty-bethesda.json.

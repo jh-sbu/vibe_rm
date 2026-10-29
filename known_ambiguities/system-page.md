@@ -60,6 +60,26 @@ fDiffMultHPByPC{VE,E,N,H,VH,L} for NPC-taken damage. Missing values use UESP's
 names are inferred from the data's fDiffMultHPToPCL; only that value (3) was
 found in Skyrim.esm.
 
+The attacker rule was not established by that table or those inferred names.
+Choose **target-based scaling regardless of attacker**, retaining the existing
+combat and magic behavior: at Legendary, player → NPC and NPC → NPC both use
+0.25; NPC → player uses 3. Followers and summons use the NPC target rule even
+against other NPCs. Unattributed trap/hazard damage uses the same target rule;
+Equilibrium and the fall cap keep the exceptions above.
+
+Supporting research remains inconclusive: the local
+[Damage table, revision 3485809](https://en.uesp.net/w/index.php?oldid=3485809)
+labels the column “NPC Damage Taken” but does not identify attackers. Its
+[talk page, revision 2763142, Difficulty Level : Followers](https://en.uesp.net/w/index.php?oldid=2763142#Difficulty_Level_:_Followers)
+claims all NPCs take reduced damage regardless of side; that is a 2013 community
+discussion, not an SE measurement. Conversely,
+[Bethesda's SE support article](https://help.bethesda.net/app/answers/detail/a_id/36397/)
+describes damage dealt by and received by the player, without specifying
+NPC → NPC behavior. The provisional target rule follows the table and talk
+interpretation, not proof from the GMST name. Research and provenance are in
+research/ui/system-page.md; the plan's Observations requests a controlled SE
+comparison before treating this attacker policy as verified.
+
 ## Brightness mapping
 
 The SWF supplies a normalized slider and launcher preferences fGamma=1.0,

@@ -2062,7 +2062,15 @@ game each piece unlocks.
      time (`TNAM`) in the SWF HUD (fallback done; `INAM` is unused per xEdit;
      research-gated: the movie's queue and fade timeline expose no duration
      input; `known_ambiguities/messages.md`); controller rumble for camera shakes;
-     quest banners expiring while the HUD is hidden
+     quest banners expiring while the HUD is hidden; populate the HUD's
+     FloatingQuestMarker_mc clips with in-world tracked objectives and gate
+     them with bShowFloatingQuestMarkers (stored now; compass targets already
+     work)
+   - Control text tags: resolve `[Activate]` and other `[Control]` tags through
+     the live input map instead of messages::control_key's fixed labels. Cover
+     keyboard/mouse bindings, chords and unbound controls; preserve tags until
+     display or refresh already-expanded tutorial messages and journal/objective
+     text after a rebind or reset. Input dispatch and button art already remap.
    - The journal's rest: Show on Map; gamepad input and its Controller/Vibration
      options; DDOF's option once depth of field renders; Main Menu quitting once
      `plans/main-menu.md` is implemented. Creations/Installed Content remain
@@ -2132,10 +2140,3 @@ game each piece unlocks.
      default race (vehicles, player control); the execution and Alduin
      (killmoves, dragons, particles, image spaces); Helgen Keep (the player's
      combat, magic, leveling, help messages, journal); character creation last
-
-### System page follow-up: floating quest markers
-
-The Gameplay preference bShowFloatingQuestMarkers is stored. Populate the HUD
-FloatingQuestMarker_mc clips with in-world tracked objectives and gate them
-with this preference; the host currently supplies compass targets only.
-

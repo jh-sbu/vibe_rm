@@ -190,11 +190,14 @@ the listing corrupt without failing the list; numbering skips used numbers;
 
 ### 2. Screenshots
 
-2a. **Capture.** When the journal opens, keep the last world frame (before the
-    menu is drawn over it) as a downscaled RGBA thumbnail (e.g. 384×216). When
-    a save is written from the menu, `QuickSave` or an autosave, the thumbnail
-    goes into `META` (raw or PNG, whichever the workspace's existing
-    dependencies allow).
+2a. **Capture.** Capture the world alone when Save first requests a live
+    preview or writes a save, once per journal opening; opening the journal
+    alone must not render another world frame. Quick/autosaves outside the
+    menu capture at their save boundary. Scale to fit 384×216 using both
+    bounds and preserving the frame's aspect ratio. New saves keep PNG bytes
+    in a separate `THMB` section immediately after the small `META` v3 header.
+    Listings read only `META`; selected previews read and decode `THMB` on
+    demand. Retain support for `META` v2's embedded RGBA previews.
 2b. **`img://` images in `crates/ui-swf`.** A host image source keyed by name
     (`BGSSaveLoadHeader_Screenshot` now, `Local_Map` for the map later). In
     `vendor/ruffle` (one vendor commit), `MovieClipLoader.loadClip` resolves an
@@ -290,6 +293,10 @@ it's off; rotation replaces the oldest; disabled saving notifies.
     - Difficulty: 5d.
 5d. **Difficulty** (`crate::difficulty`). Applies UESP's damage table to damage
     taken by the player and by everyone else, followers and summons included.
+    The attacker scope is provisional: retain target-based scaling, including
+    NPC → NPC, pending the controlled SE comparison in Observations. The table
+    and inferred GMST names do not settle it; the choice and conflicting
+    sources are in `known_ambiguities/system-page.md`.
     It covers weapons, bashes, spells, falls (reduced below Adept only) and
     hazards. Damage that isn't "damage" keeps its value (UESP Ravage Health:
     Absorb/Ravage aren't multiplied). Equilibrium's health cost follows the
@@ -438,6 +445,17 @@ them in one batch, once the steps that use them are near:
    swapped, or refused?
 5. **Help.** A screenshot of the Help list (order, and whether all of
    `HelpManualPC`'s messages appear).
+6. **Difficulty attacker scope.** Compare repeatable hits at Adept and
+   Legendary for player → NPC, NPC → player and NPC → NPC (e.g. guard →
+   dragon), then repeat NPC pairs with a follower and a summon. Record
+   health deltas using the same actors, equipment and attack type, with
+   regeneration/armor/resistance controlled. Does NPC → NPC damage remain
+   unchanged or become 0.25×? Include a damaging spell as well as a weapon.
+   The current target-based rule is a recorded choice, not verified SE behavior.
+7. **Fast-travel autosave timing.** With Save on Travel enabled, travel between
+   two distinct locations and reload the resulting autosave. Does it restore
+   departure or arrival, and before or after travel's elapsed game time?
+   The current choice saves before arrival; see `known_ambiguities/fast-travel.md`.
 
 ## Verification
 
@@ -480,6 +498,15 @@ transition. Step 11 is sketched in `plans/loading-screen.md` and
 
 Corrections established during implementation:
 
+- Malformed settings values fall back individually while their original values
+  and unknown keys survive unrelated edits. Clean settings do not write on close;
+  audio saves through its existing volume-change API.
+- PNG previews live outside META and are loaded only for the selected save;
+  live capture waits until Save needs it. Non-16:9 captures preserve aspect ratio.
+- Text `[Control]` tags still use the fixed label table. Dynamic tags and
+  refreshing already-expanded tutorial/objective text are tracked under UI in
+  `plans/ROADMAP.md`; remapping input and button art alone does not complete this.
+
 - Installed INI sections/defaults supersede the illustrative section names
   above; bSaveOnPause defaults off. Slider endpoints remain documented choices.
 - HEAD-only saves have no stored name; they share an unknown legacy character
@@ -493,12 +520,12 @@ Corrections established during implementation:
   can run. A synthetic SWF test verifies intrinsic dimensions and onLoadInit
   resizing without external assets or network access.
 
-Run `python3 scripts/check-system-page.py --out /tmp/system-page-checks` after
+Run `python3 scripts/check-system-page.py` (default: `tests/assets/system-page`) after
 `cargo build` for repeatable offscreen menu captures and persistence checks.
 It uses isolated saves/settings, never writes the game's Data directory, and
 never runs Skyrim. All generated artifacts stay uncommitted.
 
-Verification completed:
+Initial implementation verification (before review corrections):
 
 - `cargo test --workspace -- --include-ignored --test-threads=1`: 1,113 tests
   passed, including 904 engine tests and the GPU tests.
@@ -514,3 +541,17 @@ Verification completed:
 These checks exercise this runtime. The SE observations above remain pending;
 the corresponding implemented choices are recorded in
 `known_ambiguities/system-page.md` rather than claimed as verified SE parity.
+
+Review verification (2026-10-28):
+
+- `cargo test --workspace -- --include-ignored --test-threads=1`: 1,117
+  tests passed, including all 908 engine tests. GPU tests required host GPU
+  access because sandbox GPU initialization failed.
+- `python3 scripts/check-system-page.py`: all 19 captures/checks passed with
+  host GPU access, including closing an unchanged journal with a malformed
+  settings value and unknown keys in both INIs, native save/load/delete and
+  the live Save preview. Outputs remain under ignored `tests/assets/system-page`.
+- `cargo build`, `cargo check --workspace`, `cargo fmt --check` and
+  `git diff --check` passed. The five modified Ruffle files pass Rust 2024
+  `rustfmt --check --config skip_children=true`; unrelated vendor files were
+  left untouched.
