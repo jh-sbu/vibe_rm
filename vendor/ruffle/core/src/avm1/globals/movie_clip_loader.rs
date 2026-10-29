@@ -74,8 +74,14 @@ fn load_clip<'gc>(
                     };
                     let base_clip = activation.base_clip();
                     let loaded = crate::loader::LoadManager::load_movie_into_clip_bytes(
-                        activation.context, target, bytes, url.to_utf8_lossy().into_owned(),
-                        MovieLoaderVMData::Avm1 { broadcaster: Some(this), base_clip },
+                        activation.context,
+                        target,
+                        bytes,
+                        url.to_utf8_lossy().into_owned(),
+                        MovieLoaderVMData::Avm1 {
+                            broadcaster: Some(this),
+                            base_clip,
+                        },
                     );
                     return Ok(loaded.is_ok().into());
                 }

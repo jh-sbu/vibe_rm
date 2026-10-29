@@ -157,11 +157,6 @@ impl SwfUi {
         })
     }
 
-    /// A favorite slot from any keyboard binding in the installed control map.
-    pub fn favorite_hotkey(&self, code: winit::keyboard::KeyCode) -> Option<usize> {
-        self.buttons.hotkey(code)
-    }
-
     pub fn resize(&mut self, width: u32, height: u32) {
         self.hud.menu.resize(width, height);
         self.message_box.menu.resize(width, height);

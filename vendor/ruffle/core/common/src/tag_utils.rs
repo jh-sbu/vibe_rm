@@ -207,12 +207,13 @@ impl SwfMovie {
         length: usize,
         width: u32,
         height: u32,
-        swf_version:u8,
+        swf_version: u8,
     ) -> Self {
         let stage_size = Rectangle::ZERO
             .with_width(Twips::from_pixels_i32(width as i32))
             .with_height(Twips::from_pixels_i32(height as i32));
-        let header = HeaderExt::default_with_uncompressed_len(length as i32, stage_size).with_swf_version(swf_version);
+        let header = HeaderExt::default_with_uncompressed_len(length as i32, stage_size)
+            .with_swf_version(swf_version);
         let sandbox_type = SandboxType::infer(url.as_str(), &header);
         let mut movie = Self {
             header,

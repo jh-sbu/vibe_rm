@@ -1726,7 +1726,11 @@ impl<'gc> MovieLoader<'gc> {
                     length,
                     width,
                     height,
-                    if url.starts_with("img://") {uc.root_swf.version()} else {0},
+                    if url.starts_with("img://") {
+                        uc.root_swf.version()
+                    } else {
+                        0
+                    },
                 ))
             }
             ContentType::Unknown => Arc::new(SwfMovie::error_movie(url.clone())),

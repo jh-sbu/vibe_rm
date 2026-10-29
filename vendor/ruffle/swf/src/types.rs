@@ -126,7 +126,10 @@ impl HeaderExt {
     }
 
     /// Assign a version to a host image wrapper which receives AVM1 events.
-    pub fn with_swf_version(mut self, version:u8)->Self {self.header.version=version;self}
+    pub fn with_swf_version(mut self, version: u8) -> Self {
+        self.header.version = version;
+        self
+    }
 
     /// Returns the header for a loaded image (JPEG, GIF or PNG).
     pub fn default_with_uncompressed_len(length: i32, stage_size: Rectangle<Twips>) -> Self {

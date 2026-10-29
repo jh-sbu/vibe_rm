@@ -112,25 +112,6 @@ pub fn control_key(control: &str) -> Option<&'static str> {
     })
 }
 
-/// The input event a key press is (`ShowAsHelpMessage`'s event names).
-pub fn key_events(key: winit::keyboard::KeyCode) -> &'static [&'static str] {
-    use winit::keyboard::KeyCode as K;
-    match key {
-        K::KeyW => &["Forward", "Move"],
-        K::KeyS => &["Back", "Move"],
-        K::KeyA => &["Strafe Left", "Move"],
-        K::KeyD => &["Strafe Right", "Move"],
-        K::KeyE => &["Activate"],
-        K::Space => &["Jump"],
-        K::ShiftLeft => &["Sprint"],
-        K::ControlLeft => &["Sneak"],
-        K::AltLeft => &["Run"],
-        K::Tab => &["Tween Menu"],
-        K::KeyJ => &["Journal"],
-        _ => &[],
-    }
-}
-
 /// Papyrus-style `printf` of `Show`'s float arguments: `%.0f`, `%g`, `%d`...;
 /// `%%` is a percent sign.
 pub fn format_floats(text: &str, args: &[f32]) -> String {
