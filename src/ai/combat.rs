@@ -638,6 +638,7 @@ pub fn protection(
     skills: [f32; 2],
     player: bool,
     perk: &dyn Fn(FormId, f32) -> f32,
+    temper: &dyn Fn(FormId) -> f32,
 ) -> Protection {
     let k = if player { set.player_max } else { set.npc_max } - set.rating_base;
     let mut p = Protection::default();
@@ -652,6 +653,7 @@ pub fn protection(
                 .filter(|d| d.len() >= 4)
                 .map_or(0, |d| i32::from_le_bytes(d[0..4].try_into().unwrap())) as f32
                 / 100.0;
+        let base = base + temper(f);
         let kind = match (rec.get(b"BOD2"), rec.get(b"BODT")) {
             (Some(d), _) if d.len() >= 8 => u32::from_le_bytes(d[4..8].try_into().unwrap()),
             (_, Some(d)) if d.len() >= 12 => u32::from_le_bytes(d[8..12].try_into().unwrap()),
@@ -1645,6 +1647,10 @@ impl Engine {
                 .map_or(4.0, |d| u16::from_le_bytes([d[8], d[9]]) as f32),
             None => a.stats.unarmed_damage,
         };
+        let base = base
+            + weapon
+                .filter(|_| !ignore)
+                .map_or(0.0, |w| self.tempering_bonus(a.ref_id, w));
         let mult = attack.map_or(1.0, |x| x.damage_mult.max(0.1))
             * if attack.is_some_and(|x| x.flags & ATK_POWER != 0) {
                 1.5
@@ -2449,8 +2455,9 @@ impl Engine {
     /// Base damage of what an actor (or the player) strikes with; 0 for creatures
     /// and bare hands.
     fn weapon_base(&self, actor: FormId) -> f32 {
-        self.weapon_of(actor)
-            .map_or(0.0, |w| weapon_damage(&self.lo, w))
+        self.weapon_of(actor).map_or(0.0, |w| {
+            weapon_damage(&self.lo, w) + self.tempering_bonus(actor, w)
+        })
     }
 
     /// The weapon an actor (or the player) strikes with, if any.
@@ -3046,7 +3053,15 @@ impl Engine {
         let perk = |piece: FormId, rating: f32| {
             self.perk_entry_point(ep::MOD_ARMOR_RATING, actor, &[Some(piece)], rating)
         };
-        let mut p = protection(&self.lo, &set, worn, skills, actor == PLAYER_REF, &perk);
+        let mut p = protection(
+            &self.lo,
+            &set,
+            worn,
+            skills,
+            actor == PLAYER_REF,
+            &perk,
+            &|f| self.tempering_bonus(actor, f),
+        );
         // Magic armor (Oakflesh..., the full set bonuses) adds to the rating.
         let magic = self.actor_value(actor, esp::actor_value::DAMAGE_RESIST);
         if magic != 0.0 {

@@ -156,6 +156,12 @@ impl Engine {
             .or_else(|| self.stolen_from(base, r, false));
         self.inventory_mut(PLAYER_REF)
             .add_owned(base, stolen, count);
+        if let Some(copies) = self.ref_state.item_copies.remove(&r) {
+            for mut copy in copies {
+                copy.owner = stolen;
+                self.inventory_mut(PLAYER_REF).add_copy_state(copy);
+            }
+        }
         if let Some(charges) = self.world_state.item_charges.remove(&r) {
             let full = self.weapon_capacity(base);
             for left in charges {

@@ -298,6 +298,8 @@ pub(crate) fn is_magic(lo: &LoadOrder, form: FormId) -> bool {
 
 #[derive(Debug, Clone, Default)]
 pub struct Inventory {
+    pub copies: Vec<crate::item_copies::ItemCopy>,
+    pub equipped_copies: std::collections::HashMap<FormId, crate::item_copies::CopyState>,
     /// Item and count, in the order they were added.
     pub items: Vec<(FormId, i32)>,
     /// Worn and wielded items: armor, ammunition, and the items in hand.
@@ -330,6 +332,7 @@ pub struct Inventory {
 /// with them when transferred or dropped.
 #[derive(Debug, Default, PartialEq)]
 pub struct RemovedItems {
+    pub copies: Vec<crate::item_copies::ItemCopy>,
     pub parts: Vec<(Option<FormId>, i32)>,
     pub souls: Vec<(u8, i32)>,
     pub charges: Vec<f32>,
@@ -477,6 +480,13 @@ impl Inventory {
         let Some(i) = self.items.iter().position(|(f, _)| *f == form) else {
             return RemovedItems::default();
         };
+        let mut plain = vec![(None, self.plain_copies(form, None))];
+        plain.extend(
+            self.owned
+                .iter()
+                .filter(|(f, _, _)| *f == form)
+                .map(|(_, o, _)| (Some(*o), self.plain_copies(form, Some(*o)))),
+        );
         let mut left = n.max(0);
         let mut out = Vec::new();
         if only.is_none_or(|o| o.is_none()) {
@@ -531,7 +541,9 @@ impl Inventory {
             self.poisoned.retain(|(w, _, _)| *w != form);
         }
         self.unequip_if_short(form);
+        let copies = self.detach_copies(form, &out, &plain);
         RemovedItems {
+            copies,
             parts: out,
             souls,
             charges,

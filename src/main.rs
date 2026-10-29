@@ -35,6 +35,7 @@ mod imagespace;
 mod impacts;
 mod input_map;
 mod invisibility;
+mod item_copies;
 mod items;
 mod journal;
 mod knowledge;

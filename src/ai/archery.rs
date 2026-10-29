@@ -556,7 +556,9 @@ impl Engine {
             let damage = if practice.is_some() {
                 0.0
             } else {
-                bow.map_or(0.0, |b| crate::ai::combat::weapon_damage(&self.lo, b)) + arrow.damage
+                bow.map_or(0.0, |b| {
+                    crate::ai::combat::weapon_damage(&self.lo, b) + self.tempering_bonus(shooter, b)
+                }) + arrow.damage
             };
             let to = aim - eye;
             let flat = to.truncate();
@@ -611,7 +613,10 @@ impl Engine {
         self.count_weapon_use(bow);
         let power = (held / full).min(1.0);
         self.remove_item(PLAYER_REF, arrow.ammo, 1, None);
-        let damage = (crate::ai::combat::weapon_damage(&self.lo, bow) + arrow.damage) * power;
+        let damage = (crate::ai::combat::weapon_damage(&self.lo, bow)
+            + self.tempering_bonus(PLAYER_REF, bow)
+            + arrow.damage)
+            * power;
         let (eye, dir) = self.player_aim();
         let from = eye + dir * 20.0 - Vec3::Z * 6.0;
         self.spawn_arrow(PLAYER_REF, arrow, from, dir, power.max(0.5), damage);

@@ -1122,6 +1122,9 @@ pub fn call(
             }
             none()
         }
+        ("objectreference", "getitemhealthpercent") => {
+            v(Value::Float(me.map_or(1.0, |r| e.item_health_percent(r))))
+        }
         ("objectreference", "getitemcount") => v(Value::Int(match (me, form_arg(args, 0)) {
             (Some(r), Some(item)) => e.item_count(r, FormId(item.0)),
             _ => 0,

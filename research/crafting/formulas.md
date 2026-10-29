@@ -46,3 +46,11 @@ how it participates in a formula. Use documented formulas rather than guessing
 from names. Ingredient tie-breaking, exact potion naming, mixed-effect poison
 classification, failed-mix consumption and Story Manager sources still need
 additional public or original-game evidence.
+
+Smithing revision 3612986 lines 264–273 additionally gives the exact formula:
+effective skill = (base skill - 13.29) * (1 + material perk) *
+(1 + sum of apparel bonuses) * (1 + potion bonus) + 13.29;
+quality level = floor((effective skill + 38) * 3 / 103).
+The exact rating bonus is (3.6 * level - 1.6), halved outside chest armor.
+Some rounded entries in the summary table conflict with this; see the decision
+in known_ambiguities/crafting.md.

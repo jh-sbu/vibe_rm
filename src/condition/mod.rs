@@ -513,6 +513,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
                 .and_then(b),
             _ => None,
         },
+        723 => Some(subject.map_or(1.0, |r| e.item_health_percent(r))),
         18 => Some(e.hour),                       // GetCurrentTime
         170 => Some((e.day % 7) as f32),          // GetDayOfWeek
         77 => Some((e.peek_rand() % 100) as f32), // GetRandomPercent

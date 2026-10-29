@@ -3840,6 +3840,10 @@ impl Engine {
                 let owner = owner.or(mark).filter(|&o| Some(o) != to_base);
                 self.inventory_mut(to).add_owned(item, owner, k);
             }
+            for mut copy in removed.copies.clone() {
+                copy.owner = copy.owner.or(mark).filter(|&o| Some(o) != to_base);
+                self.inventory_mut(to).add_copy_state(copy);
+            }
             for &(soul, k) in &removed.souls {
                 for _ in 0..k {
                     self.inventory_mut(to).put_soul(item, soul);

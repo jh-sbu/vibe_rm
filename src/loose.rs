@@ -348,6 +348,15 @@ impl Engine {
             if let Some(c) = self.created_refs.refs.get_mut(&r) {
                 c.owner = owner;
             }
+            let copies: Vec<_> = removed
+                .copies
+                .iter()
+                .filter(|c| c.owner == owner)
+                .cloned()
+                .collect();
+            if !copies.is_empty() {
+                self.ref_state.item_copies.insert(r, copies);
+            }
             let mine: Vec<f32> = charges.by_ref().take(k as usize).collect();
             if !mine.is_empty() {
                 self.world_state.item_charges.insert(r, mine);

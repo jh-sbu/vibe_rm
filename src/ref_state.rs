@@ -11,6 +11,7 @@ use crate::engine::Engine;
 
 #[derive(Default)]
 pub struct RefState {
+    pub(crate) item_copies: HashMap<FormId, Vec<crate::item_copies::ItemCopy>>,
     /// The scale scripts gave a reference, in place of its placed one (`XSCL`).
     pub(crate) scales: HashMap<FormId, f32>,
     /// References followers refuse to do favors on.
