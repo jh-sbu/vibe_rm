@@ -55,6 +55,7 @@ pub enum Location {
 
 pub struct Engine {
     pub lo: LoadOrder,
+    pub(crate) recipes: crate::world::crafting::Recipes,
     pub vfs: std::sync::Arc<vfs::Vfs>,
     pub renderer: Renderer,
     pub models: ModelCache,
@@ -404,6 +405,7 @@ impl Engine {
         weather: Option<String>,
         radius: i32,
     ) -> Self {
+        let recipes = crate::world::crafting::Recipes::load(&lo);
         let mut models = ModelCache::default();
         if std::env::var_os("VRM_NO_ADDONS").is_none() {
             models.set_addons(loader::addon_models(&lo));
@@ -436,6 +438,7 @@ impl Engine {
             .collect();
         Engine {
             lo,
+            recipes,
             vfs: std::sync::Arc::new(vfs),
             renderer,
             models,

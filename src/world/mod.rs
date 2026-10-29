@@ -3,6 +3,7 @@ pub mod animated;
 pub mod animation;
 pub mod behavior;
 pub mod cell;
+pub mod crafting;
 pub mod decal;
 pub mod destruction;
 pub mod footik;

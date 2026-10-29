@@ -55,3 +55,8 @@ Prompt: sCraft is present and equals Craft; original-game prompt observation
 is still pending. No unknown-potion or new-recipe GMST was found by searching
 all GMST names/values; translation strings or other records may supply them.
 Keep those questions in the plan until resolved.
+
+Seven vanilla placeholder recipes have no CNAM output and are excluded from the
+usable recipe index: RecipeArmorSteelPlateShield, TemperArmorSteelPlateShield,
+TemperArmorDA03Masque, and four TemperArmorGildedElven* records. Thus usable
+forge/workbench counts are 241/313; the survey's raw counts are 242/319.

@@ -65,6 +65,17 @@ pub fn run(data: &str) -> Result<()> {
     let mut functions = BTreeMap::<u16, usize>::new();
     for &id in lo.ids_of_type(b"COBJ") {
         let Some(r) = lo.get(id) else { continue };
+        if r.get(b"CNAM").is_none()
+            || r.get(b"NAM1")
+                .is_none_or(|d| d.len() < 2 || d[..2] == [0, 0])
+        {
+            println!(
+                "incomplete recipe {id} {} CNAM={:?} NAM1={:?}",
+                label(id),
+                r.get(b"CNAM"),
+                r.get(b"NAM1")
+            );
+        }
         if let Some(b) = r.get(b"BNAM").and_then(|d| d.get(..4)) {
             let bench = r.fid(FormId(u32::from_le_bytes(b.try_into().unwrap())));
             *benches.entry(label(bench)).or_default() += 1;
