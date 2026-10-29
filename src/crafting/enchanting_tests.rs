@@ -504,3 +504,67 @@ fn crafting_enchantment_strength_souls_slider_and_perks() {
     drop(e);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn crafting_tempered_authored_charge_keeps_selected_copy_and_legacy_saves() {
+    for legacy in [false, true] {
+        let (dir, mut e) = fixture();
+        let state = crate::item_copies::CopyState {
+            name: Some("Tempered Fire Sword".into()),
+            ..crate::item_copies::CopyState::at_level(2)
+        };
+        e.inventory_mut(PLAYER_REF).replace_copy_state(
+            MAGIC_SWORD,
+            None,
+            &Default::default(),
+            state.clone(),
+        );
+        let row = e
+            .listed_inventory(PLAYER_REF)
+            .into_iter()
+            .find(|r| r.item == MAGIC_SWORD && r.copy == state)
+            .unwrap();
+        e.use_listed_item(&row, None);
+        assert!(e.inventories[&PLAYER_REF].is_equipped(MAGIC_SWORD));
+        if legacy {
+            // Simulate an older snapshot with charge outside the selected metadata.
+            e.inventory_mut(PLAYER_REF)
+                .charges
+                .push((MAGIC_SWORD, 950.));
+            let saved = crate::save::state::Snapshot::capture(&e).write();
+            crate::save::state::Snapshot::read(&saved)
+                .unwrap()
+                .apply(&mut e)
+                .unwrap();
+        }
+        e.spend_weapon_charge(PLAYER_REF, MAGIC_SWORD, 100.);
+        let expected = if legacy { 850. } else { 900. };
+        let rows = e.listed_inventory(PLAYER_REF);
+        let charged = rows
+            .iter()
+            .find(|r| r.item == MAGIC_SWORD && r.copy.level() == 2)
+            .unwrap();
+        let mut expected_state = state.clone();
+        expected_state.capacity = 1000.;
+        expected_state.charge = expected;
+        assert_eq!(charged.copy, expected_state);
+        assert_eq!(e.equipped_copy(PLAYER_REF, MAGIC_SWORD), expected_state);
+        assert!(e.inventories[&PLAYER_REF].charges.is_empty());
+        assert_eq!(
+            e.inventories[&PLAYER_REF].plain_copies(MAGIC_SWORD, None),
+            1
+        );
+        e.spend_weapon_charge(PLAYER_REF, MAGIC_SWORD, 100.);
+        expected_state.charge -= 100.;
+        assert_eq!(e.equipped_copy(PLAYER_REF, MAGIC_SWORD), expected_state);
+        let saved = crate::save::state::Snapshot::capture(&e).write();
+        crate::save::state::Snapshot::read(&saved)
+            .unwrap()
+            .apply(&mut e)
+            .unwrap();
+        assert_eq!(e.equipped_copy(PLAYER_REF, MAGIC_SWORD), expected_state);
+        drop(e);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}

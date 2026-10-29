@@ -609,11 +609,14 @@ impl Inventory {
     }
 
     /// Update the selected carried copy's charge, leaving other copies alone.
-    /// A fully recharged copy needs no sparse entry; the next depleted copy
-    /// becomes selected until inventory rows can identify individual copies.
+    /// A copy already carrying metadata keeps its identity even on its first
+    /// depletion. Plain copies can still use the legacy sparse charge list.
     pub fn set_charge(&mut self, weapon: FormId, left: f32, full: f32) {
-        if self.copy_state(weapon).capacity > 0.
-            && self.change_equipped_copy(weapon, |s| s.charge = left.clamp(0.0, full))
+        if self.copy_state(weapon) != Default::default()
+            && self.change_equipped_copy(weapon, |s| {
+                s.capacity = full;
+                s.charge = left.clamp(0.0, full);
+            })
         {
             return;
         }

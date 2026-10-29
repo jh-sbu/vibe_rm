@@ -68,6 +68,10 @@ impl Engine {
 
     /// Take `amount` of charge from one of an actor's `weapon`s.
     pub(crate) fn spend_weapon_charge(&mut self, actor: FormId, weapon: FormId, amount: f32) {
+        let selected = self.equipped_copy(actor, weapon);
+        if selected != Default::default() && selected.capacity == 0. {
+            self.materialize_copy_extras(actor);
+        }
         let full = self.weapon_capacity_for(actor, weapon);
         let left = self.weapon_charge(actor, weapon) - amount;
         if let Some(inv) = self.inventories.get_mut(&actor) {

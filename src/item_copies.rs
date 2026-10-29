@@ -281,6 +281,20 @@ impl Engine {
         for (item, charge) in charges {
             let capacity = self.weapon_capacity(item).max(charge);
             let inv = self.inventory_mut(actor);
+            // Older saves can combine an equipped tempered/named copy with
+            // a legacy charge entry. Attach its first charge to that selection
+            // before considering any plain copies of the same base form.
+            let selected = inv.copy_state(item);
+            if inv.is_equipped(item)
+                && selected != Default::default()
+                && selected.capacity == 0.
+                && inv.change_equipped_copy(item, |s| {
+                    s.capacity = capacity;
+                    s.charge = charge;
+                })
+            {
+                continue;
+            }
             let owner = std::iter::once(None)
                 .chain(
                     inv.owned

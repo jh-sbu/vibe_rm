@@ -204,6 +204,12 @@ materialize immediately. Exact row selection is honored in SWF and egui
 movement/quantity paths; a poisoned copy carries its remaining doses through
 transfers, drops, pickup and saves. Reusable empty gems can capture again.
 
+An equipped copy with known metadata keeps its identity when charge is first
+spent: initialize capacity and charge on that copy. When an older save has both
+equipped metadata and a legacy charge entry, migrate the first charge onto that
+selection before assigning remaining entries to plain copies. Only entries
+without an existing copy association use the ownership fallback above.
+
 Choice: emit CRFT only for successful Create Object recipes. The permitted
 PEX survey found no OnStoryCraftItem override beyond Quest's native declaration;
 this supplies no concrete evidence for additional tempering/alchemy/enchanting
