@@ -172,9 +172,14 @@ imported automatically. Audio retains its separate AudioMenu file.
 ## Tree LOD discovery
 
 The local UESP index returned no BTT format matches. DynDOLOD's public
-[Tree LOD documentation](https://dyndolod.info/Help/Tree-LOD) establishes that
-vanilla tree billboards require separate LST/BTT data and a texture atlas;
-the existing host reads BTR/BTO only. No SKSE implementation was consulted.
+[Tree LOD documentation](https://dyndolod.info/Help/Tree-LOD) describes
+Skyrim's dedicated tree LOD system: separate LST/BTT data files and one texture
+atlas per worldspace (not NIF meshes like terrain or object LOD), with each
+tree's billboard "shown on 2 double sided planes intersecting each other at a
+90 degree angle". It also states that the system has no normal maps and
+can show only upright trees. This is third-party format documentation, not an
+observation made in Skyrim SE. The existing host reads BTR/BTO only. No SKSE
+implementation was consulted.
 
 Audio order: installed SkyrimPrefs.ini AudioMenu uID0–3 identify SFX, FST,
 VOCGeneral, MUS. Use Effects, Footsteps, Voice, Music in that order after
@@ -199,8 +204,9 @@ it alphabetically.
 ## Vanilla tree billboard format and validation
 
 The local UESP index has no BTT article. Public primary source
-[xEdit wbDataFormatMisc.pas](https://raw.githubusercontent.com/TES5Edit/TES5Edit/dev-4.1.6/Core/wbDataFormatMisc.pas)
-describes LST/BTT fields. Its MPL-2.0 license and this project's MIT license
+[xEdit wbDataFormatMisc.pas, lines 102–133](https://github.com/TES5Edit/TES5Edit/blob/f2a2533c25aea4aeae903af86893bc64e81ccf4a/Core/wbDataFormatMisc.pas#L102-L133)
+(dev-4.1.6 at f2a2533; `dfLODTreeLST` and `dfLODTreeBTT`) describes the LST/BTT
+fields. Its MPL-2.0 license and this project's MIT license
 were checked first: MPL permits a larger work under other terms while covered
 files keep MPL obligations. No implementation or source expressions were copied;
 the Rust parser independently reads the format facts and remains project code.
@@ -213,7 +219,8 @@ words/floats are little-endian. Installed Tamriel.lst is 1092 bytes for 34 types
 Tamriel.4.4.-12.btt parses to completion with positions inside that block's
 world coordinates. Asset files were extracted only under /tmp, never refs or
 tracked paths. Atlas path is textures/terrain/<world>/trees/<world>treelod.dds.
-The host uses the documented crossed-card approach, not an SKSE extension.
+The host draws each billboard on the two double-sided planes at 90 degrees
+that the DynDOLOD documentation above describes; this is not an SKSE extension.
 
 Installed Tamriel atlas UVs include tiny overshoots (for example approximately
 −0.00054 and 1.00098). The parser validates finite, ordered rectangles while

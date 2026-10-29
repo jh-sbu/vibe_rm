@@ -111,8 +111,10 @@ observation requested in the plan.
 ## Tree billboard presentation
 
 Public xEdit LST/BTT schemas and installed assets establish atlas UVs, sizes,
-world-space reference positions, rotation and scale. Draw two crossed vertical
-alpha-tested cards, as the xLODGen documentation describes. Choose alpha test
+world-space reference positions, rotation and scale. DynDOLOD's
+[Tree LOD documentation](https://dyndolod.info/Help/Tree-LOD) says Skyrim shows
+each billboard "on 2 double sided planes intersecting each other at a 90 degree
+angle", so draw two crossed, double-sided vertical cards. Choose alpha test
 0.5 and a complementary screen-door transition over the last 20 percent before
 fTreesMidLODSwitchDist. Full trees without a matching billboard stay visible.
 Four nearby BTT blocks stream per frame, within eight cells beyond the loaded
