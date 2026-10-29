@@ -106,6 +106,16 @@ impl Engine {
         count: i32,
         stack: Option<Option<FormId>>,
     ) -> bool {
+        self.try_pickpocket_copy(victim, item, count, stack, None)
+    }
+    pub fn try_pickpocket_copy(
+        &mut self,
+        victim: FormId,
+        item: FormId,
+        count: i32,
+        stack: Option<Option<FormId>>,
+        copy: Option<&crate::item_copies::CopyState>,
+    ) -> bool {
         let chance = self.pickpocket_chance(victim, item, count);
         let roll = (self.rand() % 100) as f32;
         log::info!(
@@ -114,7 +124,8 @@ impl Engine {
         if roll < chance {
             let owner = self.base_of(victim);
             let moved: i32 = self
-                .remove_stack(victim, item, count, stack, Some(PLAYER_REF), owner)
+                .remove_stack_with_copy(victim, item, count, stack, Some(PLAYER_REF), owner, copy)
+                .parts
                 .iter()
                 .map(|(_, n)| n)
                 .sum();
@@ -155,11 +166,21 @@ impl Engine {
         count: i32,
         stack: Option<Option<FormId>>,
     ) -> bool {
+        self.try_place_in_pocket_copy(victim, item, count, stack, None)
+    }
+    pub fn try_place_in_pocket_copy(
+        &mut self,
+        victim: FormId,
+        item: FormId,
+        count: i32,
+        stack: Option<Option<FormId>>,
+        copy: Option<&crate::item_copies::CopyState>,
+    ) -> bool {
         let chance = self.pickpocket_chance(victim, item, count);
         let roll = (self.rand() % 100) as f32;
         log::info!("placing {count} x {item} on {victim}: chance {chance:.0}, rolled {roll:.0}");
         if roll < chance {
-            let moved = self.transfer_item(PLAYER_REF, victim, item, count, stack);
+            let moved = self.transfer_item_copy(PLAYER_REF, victim, item, count, stack, copy);
             self.unequip_if_gone(PLAYER_REF, item);
             if moved > 0 {
                 self.take_up_if_better(victim, item);

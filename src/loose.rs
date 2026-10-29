@@ -317,6 +317,16 @@ impl Engine {
         count: i32,
         stack: Option<Option<FormId>>,
     ) -> Option<FormId> {
+        self.drop_item_copy(holder, item, count, stack, None)
+    }
+    pub fn drop_item_copy(
+        &mut self,
+        holder: FormId,
+        item: FormId,
+        count: i32,
+        stack: Option<Option<FormId>>,
+        copy: Option<&crate::item_copies::CopyState>,
+    ) -> Option<FormId> {
         if !crate::world::inventory::item_droppable(&self.lo, item) {
             return None;
         }
@@ -326,7 +336,8 @@ impl Engine {
         } else {
             self.ref_rotation(holder).z
         };
-        let removed = self.remove_stack_with_extras(holder, item, count.max(1), stack, None, None);
+        let removed =
+            self.remove_stack_with_copy(holder, item, count.max(1), stack, None, None, copy);
         let n: i32 = removed.parts.iter().map(|(_, n)| n).sum();
         if n <= 0 {
             return None;
@@ -342,20 +353,30 @@ impl Engine {
         // in order.
         let mut charges = removed.charges.into_iter();
         let mut first = None;
-        for (i, (owner, k)) in removed.parts.into_iter().enumerate() {
-            let spot = at + side * (i as f32 * DROP_SPREAD);
-            let r = self.create_object_at(item, place, spot, Vec3::new(0.0, 0.0, heading), k);
-            if let Some(c) = self.created_refs.refs.get_mut(&r) {
-                c.owner = owner;
-            }
+        let mut groups = Vec::new();
+        for (owner, n) in removed.parts {
             let copies: Vec<_> = removed
                 .copies
                 .iter()
                 .filter(|c| c.owner == owner)
                 .cloned()
                 .collect();
-            if !copies.is_empty() {
-                self.ref_state.item_copies.insert(r, copies);
+            let plain = n - copies.iter().map(|c| c.count).sum::<i32>();
+            if plain > 0 {
+                groups.push((owner, plain, None));
+            }
+            for c in copies {
+                groups.push((owner, c.count, Some(c)));
+            }
+        }
+        for (i, (owner, k, copy)) in groups.into_iter().enumerate() {
+            let spot = at + side * (i as f32 * DROP_SPREAD);
+            let r = self.create_object_at(item, place, spot, Vec3::new(0.0, 0.0, heading), k);
+            if let Some(c) = self.created_refs.refs.get_mut(&r) {
+                c.owner = owner;
+            }
+            if let Some(copy) = copy {
+                self.ref_state.item_copies.insert(r, vec![copy]);
             }
             let mine: Vec<f32> = charges.by_ref().take(k as usize).collect();
             if !mine.is_empty() {

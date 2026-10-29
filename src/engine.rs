@@ -3831,7 +3831,25 @@ impl Engine {
         to: Option<FormId>,
         mark: Option<FormId>,
     ) -> crate::world::inventory::RemovedItems {
-        let removed = self.inventory_mut(r).remove_with_extras(item, count, only);
+        self.remove_stack_with_copy(r, item, count, only, to, mark, None)
+    }
+
+    pub(crate) fn remove_stack_with_copy(
+        &mut self,
+        r: FormId,
+        item: FormId,
+        count: i32,
+        only: Option<Option<FormId>>,
+        to: Option<FormId>,
+        mark: Option<FormId>,
+        copy: Option<&crate::item_copies::CopyState>,
+    ) -> crate::world::inventory::RemovedItems {
+        let removed = match copy {
+            Some(state) => self
+                .inventory_mut(r)
+                .remove_copy(item, count, only.flatten(), state),
+            None => self.inventory_mut(r).remove_with_extras(item, count, only),
+        };
         let n: i32 = removed.parts.iter().map(|(_, n)| n).sum();
         self.inventory_event(r, false, item, n, to);
         if let Some(to) = to.filter(|_| n > 0) {

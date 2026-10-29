@@ -37,3 +37,12 @@ value multipliers do not depend on the unresolved external encoding.
 Unspecified removals use unmodified copies before modified ones within each
 ownership stack. Explicit row selection will select the copy state. Metadata
 keeps its ownership; it must not migrate between stolen and owned stacks.
+
+## Display value of player enchantments (step 3c)
+
+[ARMO revision 2308925](https://en.uesp.net/w/index.php?oldid=2308925),
+lines 91–93 documents base value plus rounded enchantment cost for armor.
+Use the created enchantment's stored cost as the additive value for now, also
+for weapons: the consulted ENCH/WEAP pages did not establish the player-created
+weapon value rule. Weapon value remains a provisional choice to compare in the
+manual enchanting test.

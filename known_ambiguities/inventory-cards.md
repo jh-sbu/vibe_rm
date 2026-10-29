@@ -132,3 +132,10 @@ changing or closing the parent menu clears it. Pickpocket chance is refreshed
 for the chosen amount. Unlike the SWF's weightless-taking shortcut, egui also
 offers a chooser for those stacks. The original menu's modal appearance,
 default slider position and exact keyboard focus behavior are not established.
+
+Crafting adds separate rows for quality, player enchantment, remaining custom
+charge, name and ownership. SWF transfer, gift, barter, drop and pickpocket paths
+carry the selected copy state. Armor cards use the row's quality; weapon cards
+include its exact quality bonus before rounding. Legacy soul/charge/poison
+metadata still has the older grouping limits described above; see the remaining
+work in plans/crafting.md rather than treating that migration as complete.

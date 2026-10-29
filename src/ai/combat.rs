@@ -3032,6 +3032,14 @@ impl Engine {
     /// What `worn` would protect an actor with, with its skills, perks and magic
     /// armor.
     pub fn protection_of(&self, actor: FormId, worn: &[FormId]) -> Protection {
+        self.protection_with_copy(actor, worn, None)
+    }
+    pub(crate) fn protection_with_copy(
+        &self,
+        actor: FormId,
+        worn: &[FormId],
+        copy: Option<(FormId, &crate::item_copies::CopyState)>,
+    ) -> Protection {
         let set = self.combat_settings();
         let skills = if actor == PLAYER_REF {
             [
@@ -3060,7 +3068,16 @@ impl Engine {
             skills,
             actor == PLAYER_REF,
             &perk,
-            &|f| self.tempering_bonus(actor, f),
+            &|f| match copy {
+                Some((item, state)) if f == item => {
+                    let chest = self
+                        .lo
+                        .get(f)
+                        .is_some_and(|r| crate::world::inventory::armor_slots(&r) & (1 << 2) != 0);
+                    state.rating_bonus(chest)
+                }
+                _ => self.tempering_bonus(actor, f),
+            },
         );
         // Magic armor (Oakflesh..., the full set bonuses) adds to the rating.
         let magic = self.actor_value(actor, esp::actor_value::DAMAGE_RESIST);

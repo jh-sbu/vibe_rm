@@ -163,6 +163,18 @@ impl Engine {
         price: i32,
         buying: bool,
     ) -> Result<(), String> {
+        self.barter_copy(vendor, item, owner, count, price, buying, None)
+    }
+    pub fn barter_copy(
+        &mut self,
+        vendor: FormId,
+        item: FormId,
+        owner: Option<FormId>,
+        count: i32,
+        price: i32,
+        buying: bool,
+        copy: Option<&crate::item_copies::CopyState>,
+    ) -> Result<(), String> {
         let stock = self.vendor_stock(vendor);
         let total = price.max(0) * count.max(1);
         let (from, to) = if buying {
@@ -176,7 +188,8 @@ impl Engine {
             (PLAYER_REF, stock)
         };
         let moved: i32 = self
-            .remove_stack(from, item, count, Some(owner), Some(to), None)
+            .remove_stack_with_copy(from, item, count, Some(owner), Some(to), None, copy)
+            .parts
             .iter()
             .map(|(_, n)| n)
             .sum();

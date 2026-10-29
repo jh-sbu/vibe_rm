@@ -216,7 +216,13 @@ struct Row {
 /// the soul shown on each gem's card, the poison icon on each weapon's and
 /// the best-in-class star.
 type Listed = (
-    Vec<(bool, FormId, Option<FormId>, i32)>,
+    Vec<(
+        bool,
+        FormId,
+        Option<FormId>,
+        i32,
+        crate::item_copies::CopyState,
+    )>,
     Vec<FormId>,
     [Option<FormId>; 3],
     Vec<FormId>,
@@ -526,7 +532,13 @@ impl ItemMenu {
         let favorite = !r.theirs && engine.favorites.contains(&item.item);
         let equip = match r.theirs {
             true => 0.0,
-            false => equip_state(engine, inv, item.item),
+            false => {
+                if inv.copy_state(item.item) == item.copy {
+                    equip_state(engine, inv, item.item)
+                } else {
+                    0.0
+                }
+            }
         };
         let mut flags = category(engine, item) | if favorite { FAVORITES } else { 0 };
         if r.theirs {
@@ -585,6 +597,10 @@ impl ItemMenu {
     fn charge(&self, engine: &Engine, r: &Row) -> Option<f32> {
         if r.item.info.kind != ItemKind::Weapon {
             return None;
+        }
+        if r.item.copy.enchantment.is_some() {
+            return (r.item.copy.capacity > 0.)
+                .then(|| r.item.copy.charge / r.item.copy.capacity * 100.);
         }
         engine.charge_percent(self.kind.source(r.theirs), r.item.item)
     }
@@ -694,7 +710,15 @@ impl ItemMenu {
                     let price = number(1).unwrap_or(0.0).round() as i32;
                     let buying = matches!(call.args.get(2), Some(Value::Bool(true)));
                     let (item, owner) = (row.item.item, row.item.owner);
-                    if let Err(e) = engine.barter(vendor, item, owner, amount(), price, buying) {
+                    if let Err(e) = engine.barter_copy(
+                        vendor,
+                        item,
+                        owner,
+                        amount(),
+                        price,
+                        buying,
+                        Some(&row.item.copy),
+                    ) {
                         engine.scripts.notify(e);
                     }
                     engine.unequip_if_gone(PLAYER_REF, item);
@@ -728,7 +752,13 @@ impl ItemMenu {
             }
             "ItemDrop" => {
                 if let Some(row) = self.selected() {
-                    engine.drop_item(PLAYER_REF, row.item.item, amount());
+                    engine.drop_item_copy(
+                        PLAYER_REF,
+                        row.item.item,
+                        amount(),
+                        Some(row.item.owner),
+                        Some(&row.item.copy),
+                    );
                     engine.unequip_if_gone(PLAYER_REF, row.item.item);
                 }
             }
@@ -788,16 +818,30 @@ impl ItemMenu {
         let (item, owner) = (row.item.item, Some(row.item.owner));
         match (&self.kind, row.theirs) {
             (Kind::Pickpocket { victim }, true) => {
-                engine.try_pickpocket(*victim, item, count, owner);
+                engine.try_pickpocket_copy(*victim, item, count, owner, Some(&row.item.copy));
             }
             (Kind::Pickpocket { victim }, false) => {
-                engine.try_place_in_pocket(*victim, item, count, owner);
+                engine.try_place_in_pocket_copy(*victim, item, count, owner, Some(&row.item.copy));
             }
             (_, true) => {
-                engine.transfer_item(other, PLAYER_REF, item, count, owner);
+                engine.transfer_item_copy(
+                    other,
+                    PLAYER_REF,
+                    item,
+                    count,
+                    owner,
+                    Some(&row.item.copy),
+                );
             }
             (_, false) => {
-                engine.transfer_item(PLAYER_REF, other, item, count, owner);
+                engine.transfer_item_copy(
+                    PLAYER_REF,
+                    other,
+                    item,
+                    count,
+                    owner,
+                    Some(&row.item.copy),
+                );
                 engine.unequip_if_gone(PLAYER_REF, item);
                 engine.take_up_if_better(other, item);
             }
@@ -941,7 +985,7 @@ fn item_card(engine: &Engine, row: &ListedItem, soul: Option<u8>, poisoned: bool
     let worn = engine
         .inventories
         .get(&PLAYER_REF)
-        .is_some_and(|i| i.equipped().contains(&item));
+        .is_some_and(|i| i.equipped().contains(&item) && i.copy_state(item) == row.copy);
     let kind = match row.info.kind {
         ItemKind::Scroll => {
             let magic = engine.magic_item(item);
@@ -971,7 +1015,10 @@ fn item_card(engine: &Engine, row: &ListedItem, soul: Option<u8>, poisoned: bool
         ItemKind::SoulGem => soul_fields(&mut f, soul, |name| engine.gmst_string(name)),
         ItemKind::Armor => {
             let none = engine.protection_of(PLAYER_REF, &[]).rating;
-            let rating = engine.protection_of(PLAYER_REF, &[item]).rating - none;
+            let rating = engine
+                .protection_with_copy(PLAYER_REF, &[item], Some((item, &row.copy)))
+                .rating
+                - none;
             f.push(("armor", num(rating.round())));
             if !worn {
                 let now = engine.protection(PLAYER_REF).rating;
@@ -980,23 +1027,33 @@ fn item_card(engine: &Engine, row: &ListedItem, soul: Option<u8>, poisoned: bool
                     .rating;
                 f.push(("armorChange", num(with - now)));
             }
-            f.push(("effects", text(&engine.effects_text(item))));
+            f.push((
+                "effects",
+                text(&engine.effects_text(row.copy.enchantment.unwrap_or(item))),
+            ));
             f.push(("skillText", text("")));
             card::ARMOR
         }
         ItemKind::Weapon | ItemKind::Ammo => {
-            let damage = crate::ai::combat::weapon_damage(&engine.lo, item);
+            let damage =
+                crate::ai::combat::weapon_damage(&engine.lo, item) + row.copy.rating_bonus(false);
             f.push(("damage", num(damage.round())));
             if row.info.kind == ItemKind::Weapon && !worn {
                 let now = held_weapon(engine)
                     .map_or(0.0, |w| crate::ai::combat::weapon_damage(&engine.lo, w));
                 f.push(("damageChange", num(damage - now)));
             }
-            f.push(("effects", text(&engine.effects_text(item))));
+            f.push((
+                "effects",
+                text(&engine.effects_text(row.copy.enchantment.unwrap_or(item))),
+            ));
             card::WEAPON
         }
         ItemKind::Potion => {
-            f.push(("effects", text(&engine.effects_text(item))));
+            f.push((
+                "effects",
+                text(&engine.effects_text(row.copy.enchantment.unwrap_or(item))),
+            ));
             // Which meter the bottom bar shows: the first effect's (health 0,
             // magicka 1, stamina 2), else health's.
             let restores = engine
@@ -1147,7 +1204,15 @@ fn listed_state(
 ) -> Listed {
     (
         rows.iter()
-            .map(|r| (r.theirs, r.item.item, r.item.owner, r.item.count))
+            .map(|r| {
+                (
+                    r.theirs,
+                    r.item.item,
+                    r.item.owner,
+                    r.item.count,
+                    r.item.copy.clone(),
+                )
+            })
             .collect(),
         inv.equipped().to_vec(),
         inv.held_all(),
@@ -1264,6 +1329,7 @@ mod tests {
         Row {
             item: ListedItem {
                 item: GEM,
+                copy: Default::default(),
                 owner: Some(ACTOR),
                 count: 2,
                 info: ItemInfo {

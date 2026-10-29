@@ -108,6 +108,7 @@ pub fn book_pages(text: &str) -> Vec<String> {
 /// someone else's (stolen).
 #[derive(Debug, Clone)]
 pub struct ListedItem {
+    pub copy: crate::item_copies::CopyState,
     pub item: FormId,
     pub owner: Option<FormId>,
     pub count: i32,
@@ -371,6 +372,17 @@ impl Engine {
         n: i32,
         stack: Option<Option<FormId>>,
     ) -> i32 {
+        self.transfer_item_copy(from, to, item, n, stack, None)
+    }
+    pub fn transfer_item_copy(
+        &mut self,
+        from: FormId,
+        to: FormId,
+        item: FormId,
+        n: i32,
+        stack: Option<Option<FormId>>,
+        copy: Option<&crate::item_copies::CopyState>,
+    ) -> i32 {
         if !crate::world::inventory::item_playable(&self.lo, item) {
             return 0;
         }
@@ -400,7 +412,8 @@ impl Engine {
             None
         };
         let moved: i32 = self
-            .remove_stack(from, item, n, stack, Some(to), mark)
+            .remove_stack_with_copy(from, item, n, stack, Some(to), mark, copy)
+            .parts
             .iter()
             .map(|(_, n)| n)
             .sum();
@@ -474,13 +487,18 @@ impl Engine {
         // A weapon or scroll by the hand asked for, the rest wherever they are.
         let hand_of_weapon =
             hand.filter(|_| matches!(row.info.kind, ItemKind::Weapon | ItemKind::Scroll));
-        let worn = self
-            .inventories
-            .get(&PLAYER_REF)
-            .is_some_and(|i| match hand_of_weapon {
-                Some(h) => i.held(h) == Some(row.item),
-                None => i.is_equipped(row.item),
-            });
+        let worn = self.inventories.get(&PLAYER_REF).is_some_and(|i| {
+            i.copy_state(row.item) == row.copy
+                && match hand_of_weapon {
+                    Some(h) => i.held(h) == Some(row.item),
+                    None => i.is_equipped(row.item),
+                }
+        });
+        if !worn {
+            self.inventory_mut(PLAYER_REF)
+                .equipped_copies
+                .insert(row.item, row.copy.clone());
+        }
         let result = match row.info.kind {
             ItemKind::Weapon | ItemKind::Ammo | ItemKind::Armor | ItemKind::Scroll if worn => {
                 match hand_of_weapon {
@@ -717,22 +735,68 @@ impl Engine {
             let Some(info) = item_info(&self.lo, item) else {
                 continue;
             };
-            let free = inv.count_owned(item, None);
-            if free > 0 {
-                out.push(ListedItem {
-                    item,
-                    owner: None,
-                    count: free,
-                    info: info.clone(),
-                });
-            }
-            for &(_, owner, count) in inv.owned.iter().filter(|(f, _, n)| *f == item && *n > 0) {
-                out.push(ListedItem {
-                    item,
-                    owner: Some(owner),
-                    count,
-                    info: info.clone(),
-                });
+            let owners = std::iter::once(None).chain(
+                inv.owned
+                    .iter()
+                    .filter(|(f, _, _)| *f == item)
+                    .map(|(_, o, _)| Some(*o)),
+            );
+            for owner in owners {
+                let plain = inv.plain_copies(item, owner);
+                if plain > 0 {
+                    out.push(ListedItem {
+                        item,
+                        owner,
+                        count: plain,
+                        info: info.clone(),
+                        copy: Default::default(),
+                    });
+                }
+                for c in inv
+                    .copies
+                    .iter()
+                    .filter(|c| c.item == item && c.owner == owner && c.count > 0)
+                {
+                    let mut display = info.clone();
+                    if let Some(name) = &c.state.name {
+                        display.name = name.clone();
+                    }
+                    let level = c.state.level();
+                    if level > 0 {
+                        let stem = if info.kind == ItemKind::Weapon {
+                            "Weap"
+                        } else {
+                            "Armo"
+                        };
+                        let fallback = [
+                            "Fine",
+                            "Superior",
+                            "Exquisite",
+                            "Flawless",
+                            "Epic",
+                            "Legendary",
+                        ][(level.min(6) - 1) as usize];
+                        let quality = self
+                            .gmst_string(&format!("sHealthDataPrefix{stem}{}", level.min(6)))
+                            .unwrap_or_else(|| fallback.into());
+                        display.name = format!("{} ({quality})", display.name);
+                        display.value = (display.value as f32 * c.state.quality).floor() as i32;
+                    }
+                    if let Some(enchantment) = c.state.enchantment {
+                        let cost = self
+                            .magic_item(enchantment)
+                            .and_then(|m| m.enchantment)
+                            .map_or(0, |e| e.cost);
+                        display.value = display.value.saturating_add(cost as i32);
+                    }
+                    out.push(ListedItem {
+                        item,
+                        owner,
+                        count: c.count,
+                        info: display,
+                        copy: c.state.clone(),
+                    });
+                }
             }
         }
         out.sort_by(|a, b| {

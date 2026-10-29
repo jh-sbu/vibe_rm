@@ -52,7 +52,23 @@ pub struct ItemCopy {
 
 impl Inventory {
     pub fn copy_state(&self, item: FormId) -> CopyState {
-        self.equipped_copies.get(&item).cloned().unwrap_or_default()
+        self.equipped_copies.get(&item).cloned().unwrap_or_else(|| {
+            let modified = self
+                .copies
+                .iter()
+                .filter(|c| c.item == item)
+                .map(|c| c.count)
+                .sum::<i32>();
+            if modified >= self.count(item) {
+                self.copies
+                    .iter()
+                    .find(|c| c.item == item)
+                    .map(|c| c.state.clone())
+                    .unwrap_or_default()
+            } else {
+                CopyState::default()
+            }
+        })
     }
     pub fn add_copy_state(&mut self, copy: ItemCopy) {
         if copy.count <= 0 || copy.state == CopyState::default() {
@@ -91,6 +107,48 @@ impl Inventory {
         self.add_copy_state(c);
         true
     }
+    /// Exact metadata selection, used by rows that distinguish copies.
+    pub fn remove_copy(
+        &mut self,
+        item: FormId,
+        n: i32,
+        owner: Option<FormId>,
+        state: &CopyState,
+    ) -> crate::world::inventory::RemovedItems {
+        let available = if *state == CopyState::default() {
+            self.plain_copies(item, owner)
+        } else {
+            self.copies
+                .iter()
+                .filter(|c| c.item == item && c.owner == owner && c.state == *state)
+                .map(|c| c.count)
+                .sum()
+        };
+        let n = n.max(0).min(available);
+        let mut extra = Vec::new();
+        if *state != CopyState::default() {
+            let mut left = n;
+            for c in self
+                .copies
+                .iter_mut()
+                .filter(|c| c.item == item && c.owner == owner && c.state == *state)
+            {
+                let take = left.min(c.count);
+                if take > 0 {
+                    let mut part = c.clone();
+                    part.count = take;
+                    extra.push(part);
+                    c.count -= take;
+                    left -= take;
+                }
+            }
+            self.copies.retain(|c| c.count > 0);
+        }
+        let mut removed = self.remove_with_extras(item, n, Some(owner));
+        removed.copies.extend(extra);
+        removed
+    }
+
     pub fn plain_copies(&self, item: FormId, owner: Option<FormId>) -> i32 {
         self.count_owned(item, owner)
             - self
@@ -220,6 +278,26 @@ mod tests {
                 .sum::<f32>(),
             350.
         );
+    }
+    #[test]
+    fn explicit_row_removal_never_substitutes_a_plain_or_other_modified_copy() {
+        let f = FormId(1);
+        let mut inv = Inventory::default();
+        inv.add(f, 3);
+        for level in [1, 3] {
+            inv.add_copy_state(ItemCopy {
+                item: f,
+                owner: None,
+                state: CopyState::at_level(level),
+                count: 1,
+            });
+        }
+        let removed = inv.remove_copy(f, 5, None, &CopyState::at_level(3));
+        assert_eq!(removed.parts, vec![(None, 1)]);
+        assert_eq!(removed.copies[0].state.level(), 3);
+        assert_eq!(inv.count(f), 2);
+        assert_eq!(inv.plain_copies(f, None), 1);
+        assert_eq!(inv.copies[0].state.level(), 1);
     }
     #[test]
     fn quality_uses_exact_rating_and_value_increments() {

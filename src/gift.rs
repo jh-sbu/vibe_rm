@@ -96,7 +96,8 @@ impl Engine {
         } else {
             (gift.actor, PLAYER_REF)
         };
-        let moved = self.transfer_item(from, to, row.item, count, Some(row.owner));
+        let moved =
+            self.transfer_item_copy(from, to, row.item, count, Some(row.owner), Some(&row.copy));
         log::info!("gift: {moved} of {} from {from} to {to}", row.item);
         if gift.giving {
             self.unequip_if_gone(PLAYER_REF, row.item);
