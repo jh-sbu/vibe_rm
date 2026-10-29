@@ -90,6 +90,7 @@ fn pending(
     amount: i32,
 ) -> PendingQuantity {
     PendingQuantity {
+        copy_key: None,
         menu,
         source,
         destination,

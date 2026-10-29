@@ -13,6 +13,7 @@ struct PendingQuantity {
     destination: Option<FormId>,
     item: FormId,
     owner: Option<FormId>,
+    copy_key: Option<u64>,
     available: i32,
     amount: i32,
 }
@@ -60,7 +61,12 @@ fn apply_quantity(
     let Some(row) = engine
         .listed_inventory(pending.source)
         .into_iter()
-        .find(|row| row.item == pending.item && row.owner == pending.owner && row.count > 0)
+        .find(|row| {
+            row.item == pending.item
+                && row.owner == pending.owner
+                && pending.copy_key.is_none_or(|k| row.copy.fingerprint() == k)
+                && row.count > 0
+        })
     else {
         return QuantityResult::Stale;
     };
@@ -74,38 +80,46 @@ fn apply_quantity(
             if !engine.can_pickpocket_item(victim, pending.item) {
                 return QuantityResult::Stale;
             }
-            return QuantityResult::PickpocketAttempt(engine.try_pickpocket(
+            return QuantityResult::PickpocketAttempt(engine.try_pickpocket_copy(
                 victim,
                 pending.item,
                 count,
                 Some(pending.owner),
+                Some(&row.copy),
             ));
         }
         if pending.source == PLAYER_REF && pending.destination == Some(victim) {
-            return QuantityResult::PickpocketAttempt(engine.try_place_in_pocket(
+            return QuantityResult::PickpocketAttempt(engine.try_place_in_pocket_copy(
                 victim,
                 pending.item,
                 count,
                 Some(pending.owner),
+                Some(&row.copy),
             ));
         }
     }
 
     if let Some(destination) = pending.destination {
-        let moved = engine.transfer_item(
+        let moved = engine.transfer_item_copy(
             pending.source,
             destination,
             pending.item,
             count,
             Some(pending.owner),
+            Some(&row.copy),
         );
         if moved > 0 && pending.source == PLAYER_REF {
             engine.unequip_if_gone(PLAYER_REF, pending.item);
         }
         QuantityResult::Moved(moved)
     } else if pending.source == PLAYER_REF {
-        let dropped =
-            engine.drop_item_from_stack(PLAYER_REF, pending.item, count, Some(pending.owner));
+        let dropped = engine.drop_item_copy(
+            PLAYER_REF,
+            pending.item,
+            count,
+            Some(pending.owner),
+            Some(&row.copy),
+        );
         if dropped.is_some() {
             engine.unequip_if_gone(PLAYER_REF, pending.item);
         }
@@ -136,6 +150,7 @@ fn choose_quantity(
             destination,
             item,
             owner,
+            copy_key: None,
             available: count,
             amount: 1,
         })
@@ -801,130 +816,154 @@ impl Ui {
             }
             self.quantity.cancel();
         }
-        let mut moves: Vec<(FormId, FormId, FormId, i32, Option<FormId>)> = Vec::new();
+        let mut moves: Vec<(
+            FormId,
+            FormId,
+            FormId,
+            i32,
+            Option<FormId>,
+            crate::item_copies::CopyState,
+        )> = Vec::new();
         let mut close = self.menu_shown
             && ctx.input(|i| i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::Tab));
         let all = ctx.input(|i| i.modifiers.shift);
         let rect = ctx.content_rect();
         let mut reading: Option<FormId> = None;
-        let mut drops: Vec<(FormId, i32, Option<FormId>)> = Vec::new();
+        let mut drops: Vec<(FormId, i32, Option<FormId>, crate::item_copies::CopyState)> =
+            Vec::new();
         // Picking a pocket: what isn't worn or wielded (but for perks), each
         // with its chance.
         let victim = match menu {
             Menu::Pickpocket(v) => Some(v),
             _ => None,
         };
-        let list = |ui: &mut egui::Ui,
-                    engine: &mut Engine,
-                    owner: FormId,
-                    to: Option<FormId>,
-                    menu: Menu,
-                    moves: &mut Vec<(FormId, FormId, FormId, i32, Option<FormId>)>,
-                    read: &mut Option<FormId>,
-                    drops: &mut Vec<(FormId, i32, Option<FormId>)>,
-                    quantity: &mut QuantitySelection| {
-            let mut items = engine.listed_inventory(owner);
-            if Some(owner) == victim {
-                items.retain(|x| engine.can_pickpocket_item(owner, x.item));
-            }
-            let weight: f32 = items.iter().map(|x| x.info.weight * x.count as f32).sum();
-            ui.set_min_width(420.0);
-            egui::ScrollArea::vertical()
-                .max_height(rect.height() * 0.6)
-                .auto_shrink([false, true])
-                .id_salt(owner.0)
-                .show(ui, |ui| {
-                    egui::Grid::new(("items", owner.0))
-                        .striped(true)
-                        .num_columns(4)
-                        .show(ui, |ui| {
-                            ui.label(egui::RichText::new("Item").strong());
-                            ui.label(egui::RichText::new("Count").strong());
-                            ui.label(egui::RichText::new("Weight").strong());
-                            ui.label(egui::RichText::new("Value").strong());
-                            ui.end_row();
-                            for row in &items {
-                                let (f, n, info) = (&row.item, &row.count, &row.info);
-                                // Red: stolen goods the player carries, and what taking would be stealing.
-                                let red = if owner == PLAYER_REF {
-                                    row.owner.is_some()
-                                } else {
-                                    to == Some(PLAYER_REF)
-                                        && engine.stolen_from(*f, owner, true).is_some()
-                                };
-                                let red = red || Some(owner) == victim;
-                                let mut text =
-                                    egui::RichText::new(match victim.filter(|&v| v == owner) {
-                                        Some(v) => format!(
-                                            "{} ({:.0}%)",
-                                            info.name,
-                                            engine.pickpocket_chance(
-                                                v,
-                                                *f,
-                                                if all { *n } else { 1 }
-                                            )
-                                        ),
-                                        None => info.name.clone(),
-                                    });
-                                if red {
-                                    text = text.color(Color32::from_rgb(230, 70, 60));
-                                }
-                                let r = ui.add(egui::Label::new(text).sense(egui::Sense::click()));
-                                match to {
-                                    Some(to) if r.clicked() => {
-                                        match choose_quantity(
-                                            menu,
-                                            owner,
-                                            Some(to),
-                                            *f,
-                                            row.owner,
-                                            *n,
-                                            all,
-                                        ) {
-                                            QuantityChoice::Immediate(n) => {
-                                                moves.push((owner, to, *f, n, row.owner))
-                                            }
-                                            QuantityChoice::Choose(pending) => {
-                                                quantity.open(pending)
-                                            }
-                                        }
-                                    }
-                                    None if r.secondary_clicked() => {
-                                        match choose_quantity(
-                                            menu, owner, None, *f, row.owner, *n, all,
-                                        ) {
-                                            QuantityChoice::Immediate(n) => {
-                                                drops.push((*f, n, row.owner))
-                                            }
-                                            QuantityChoice::Choose(pending) => {
-                                                quantity.open(pending)
-                                            }
-                                        }
-                                    }
-                                    // Books in one's own inventory are read; potions,
-                                    // food and ingredients used.
-                                    None if r.clicked()
-                                        && matches!(
-                                            info.kind,
-                                            crate::world::inventory::ItemKind::Book
-                                                | crate::world::inventory::ItemKind::Potion
-                                                | crate::world::inventory::ItemKind::Ingredient
-                                        ) =>
-                                    {
-                                        *read = Some(*f);
-                                    }
-                                    _ => {}
-                                }
-                                ui.label(n.to_string());
-                                ui.label(format!("{:.1}", info.weight));
-                                ui.label(info.value.to_string());
+        let list =
+            |ui: &mut egui::Ui,
+             engine: &mut Engine,
+             owner: FormId,
+             to: Option<FormId>,
+             menu: Menu,
+             moves: &mut Vec<(
+                FormId,
+                FormId,
+                FormId,
+                i32,
+                Option<FormId>,
+                crate::item_copies::CopyState,
+            )>,
+             read: &mut Option<FormId>,
+             drops: &mut Vec<(FormId, i32, Option<FormId>, crate::item_copies::CopyState)>,
+             quantity: &mut QuantitySelection| {
+                let mut items = engine.listed_inventory(owner);
+                if Some(owner) == victim {
+                    items.retain(|x| engine.can_pickpocket_item(owner, x.item));
+                }
+                let weight: f32 = items.iter().map(|x| x.info.weight * x.count as f32).sum();
+                ui.set_min_width(420.0);
+                egui::ScrollArea::vertical()
+                    .max_height(rect.height() * 0.6)
+                    .auto_shrink([false, true])
+                    .id_salt(owner.0)
+                    .show(ui, |ui| {
+                        egui::Grid::new(("items", owner.0))
+                            .striped(true)
+                            .num_columns(4)
+                            .show(ui, |ui| {
+                                ui.label(egui::RichText::new("Item").strong());
+                                ui.label(egui::RichText::new("Count").strong());
+                                ui.label(egui::RichText::new("Weight").strong());
+                                ui.label(egui::RichText::new("Value").strong());
                                 ui.end_row();
-                            }
-                        });
-                });
-            ui.separator();
-            ui.label(format!("{} items, weight {weight:.1}", items.len()));
-        };
+                                for row in &items {
+                                    let (f, n, info) = (&row.item, &row.count, &row.info);
+                                    // Red: stolen goods the player carries, and what taking would be stealing.
+                                    let red = if owner == PLAYER_REF {
+                                        row.owner.is_some()
+                                    } else {
+                                        to == Some(PLAYER_REF)
+                                            && engine.stolen_from(*f, owner, true).is_some()
+                                    };
+                                    let red = red || Some(owner) == victim;
+                                    let mut text =
+                                        egui::RichText::new(match victim.filter(|&v| v == owner) {
+                                            Some(v) => format!(
+                                                "{} ({:.0}%)",
+                                                info.name,
+                                                engine.pickpocket_chance(
+                                                    v,
+                                                    *f,
+                                                    if all { *n } else { 1 }
+                                                )
+                                            ),
+                                            None => info.name.clone(),
+                                        });
+                                    if red {
+                                        text = text.color(Color32::from_rgb(230, 70, 60));
+                                    }
+                                    let r =
+                                        ui.add(egui::Label::new(text).sense(egui::Sense::click()));
+                                    match to {
+                                        Some(to) if r.clicked() => {
+                                            match choose_quantity(
+                                                menu,
+                                                owner,
+                                                Some(to),
+                                                *f,
+                                                row.owner,
+                                                *n,
+                                                all,
+                                            ) {
+                                                QuantityChoice::Immediate(n) => moves.push((
+                                                    owner,
+                                                    to,
+                                                    *f,
+                                                    n,
+                                                    row.owner,
+                                                    row.copy.clone(),
+                                                )),
+                                                QuantityChoice::Choose(mut pending) => {
+                                                    pending.copy_key = Some(row.copy.fingerprint());
+                                                    quantity.open(pending)
+                                                }
+                                            }
+                                        }
+                                        None if r.secondary_clicked() => {
+                                            match choose_quantity(
+                                                menu, owner, None, *f, row.owner, *n, all,
+                                            ) {
+                                                QuantityChoice::Immediate(n) => {
+                                                    drops.push((*f, n, row.owner, row.copy.clone()))
+                                                }
+                                                QuantityChoice::Choose(mut pending) => {
+                                                    pending.copy_key = Some(row.copy.fingerprint());
+                                                    quantity.open(pending)
+                                                }
+                                            }
+                                        }
+                                        // Books in one's own inventory are read; potions,
+                                        // food and ingredients used.
+                                        None if r.clicked()
+                                            && matches!(
+                                                info.kind,
+                                                crate::world::inventory::ItemKind::Book
+                                                    | crate::world::inventory::ItemKind::Potion
+                                                    | crate::world::inventory::ItemKind::Ingredient
+                                            ) =>
+                                        {
+                                            *read = Some(*f);
+                                        }
+                                        _ => {}
+                                    }
+                                    ui.label(n.to_string());
+                                    ui.label(format!("{:.1}", info.weight));
+                                    ui.label(info.value.to_string());
+                                    ui.end_row();
+                                }
+                            });
+                    });
+                ui.separator();
+                ui.label(format!("{} items, weight {weight:.1}", items.len()));
+            };
         let container = match menu {
             // Only the game's menus have the gift, skills, magic, favorites, tween and
             // sleep / wait menus: they close at once.
@@ -1089,7 +1128,9 @@ impl Ui {
                     ui.horizontal(|ui| {
                         if victim.is_none() && ui.button("Take all").clicked() {
                             for row in engine.listed_inventory(c) {
-                                moves.push((c, PLAYER_REF, row.item, row.count, row.owner));
+                                moves.push((
+                                    c, PLAYER_REF, row.item, row.count, row.owner, row.copy,
+                                ));
                             }
                         }
                         close |= ui.button("Close").clicked();
@@ -1100,25 +1141,25 @@ impl Ui {
         if self.quantity.pending.is_some() {
             return;
         }
-        for (from, to, item, n, stack) in moves {
+        for (from, to, item, n, stack, copy) in moves {
             if let Some(v) = victim {
                 if engine.menu.is_none() {
                     break;
                 }
                 if from == v {
-                    engine.try_pickpocket(v, item, n, Some(stack));
+                    engine.try_pickpocket_copy(v, item, n, Some(stack), Some(&copy));
                 } else {
-                    engine.try_place_in_pocket(v, item, n, Some(stack));
+                    engine.try_place_in_pocket_copy(v, item, n, Some(stack), Some(&copy));
                 }
                 continue;
             }
-            let moved = engine.transfer_item(from, to, item, n, Some(stack));
+            let moved = engine.transfer_item_copy(from, to, item, n, Some(stack), Some(&copy));
             if moved > 0 && from == PLAYER_REF {
                 engine.unequip_if_gone(PLAYER_REF, item);
             }
         }
-        for (item, n, owner) in drops {
-            engine.drop_item_from_stack(PLAYER_REF, item, n, Some(owner));
+        for (item, n, owner, copy) in drops {
+            engine.drop_item_copy(PLAYER_REF, item, n, Some(owner), Some(&copy));
         }
         if close {
             engine.menu = None;
@@ -1150,7 +1191,13 @@ impl Ui {
         let current = engine
             .listed_inventory(snapshot.source)
             .into_iter()
-            .find(|row| row.item == snapshot.item && row.owner == snapshot.owner);
+            .find(|row| {
+                row.item == snapshot.item
+                    && row.owner == snapshot.owner
+                    && snapshot
+                        .copy_key
+                        .is_none_or(|k| row.copy.fingerprint() == k)
+            });
         let available = current.as_ref().map(|row| row.count).unwrap_or(0);
         let item_name = current
             .as_ref()
