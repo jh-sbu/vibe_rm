@@ -101,3 +101,14 @@ BYOHWorkbenchScript (OnActivate), BlacksmithForge01 (OnTriggerEnter, onActivate)
 DLC1LD_AetheriumForge (OnActivate), defaultBlockFollowerActivation (OnLoad).
 None defines OnSit/OnGetUp. Papyrus inheritance may add handlers, so this survey
 is evidence about directly attached scripts, not proof about every event path.
+
+## Activation events (step 4c)
+
+The station survey found no directly attached OnSit or OnGetUp handlers.
+Use the normal activation dispatcher, which sends OnActivate to reference and
+alias scripts and checks BlockActivation before opening the crafting menu.
+Scripted Activate as the player reaches the same station-opening helper after
+activation-parent dispatch. No synthetic sit/get-up events are introduced here:
+there is no physical player furniture transition in this implementation.
+Inherited or quest-driven sit/get-up behavior remains a test-plugin question;
+add dispatch only when authored scripts or original-game evidence require it.
