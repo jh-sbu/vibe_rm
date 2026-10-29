@@ -115,10 +115,45 @@ mod tests {
             .field(b"NAM1", &3u16.to_le_bytes());
         std::fs::write(
             dir.join("Test.esp"),
-            write_plugin(0, &[], "", "", 0x900, &[Node::top(b"COBJ", vec![r])]),
+            write_plugin(
+                0,
+                &[],
+                "",
+                "",
+                0x900,
+                &[
+                    Node::top(b"COBJ", vec![r]),
+                    Node::top(
+                        b"FURN",
+                        vec![
+                            RecordBuilder::new(b"FURN", FormId(0x801))
+                                .field(b"WBDT", &[1, 17])
+                                .form(b"KWDA", FormId(0x33)),
+                            RecordBuilder::new(b"FURN", FormId(0x802)).field(b"WBDT", &[4, 255]),
+                            RecordBuilder::new(b"FURN", FormId(0x803)).field(b"WBDT", &[0, 255]),
+                            RecordBuilder::new(b"FURN", FormId(0x804)).field(b"WBDT", &[1]),
+                        ],
+                    ),
+                ],
+            ),
         )
         .unwrap();
         let lo = LoadOrder::load(&dir, &["Test.esp".into()]).unwrap();
+        let station =
+            super::super::records::Workbench::parse(&lo.get(FormId(0x801)).unwrap()).unwrap();
+        assert_eq!(station.kind, 1);
+        assert_eq!(station.skill, Some(17));
+        assert_eq!(station.keywords, vec![FormId(0x33)]);
+        assert_eq!(station.frame(), Some("ConstructibleObject"));
+        let experiment =
+            super::super::records::Workbench::parse(&lo.get(FormId(0x802)).unwrap()).unwrap();
+        assert_eq!(experiment.skill, None);
+        assert_eq!(experiment.frame(), None);
+        for id in [0x803, 0x804] {
+            assert!(
+                super::super::records::Workbench::parse(&lo.get(FormId(id)).unwrap()).is_none()
+            );
+        }
         let index = Recipes::load(&lo);
         let r = &index.by_bench[&FormId(0x33)][0];
         assert_eq!(r.inputs, vec![(FormId(0x11), 4)]);

@@ -3,6 +3,47 @@
 use esp::{FormId, LoadOrder, LoadedRecord};
 use glam::{EulerRot, Mat4, Quat, Vec3};
 
+/// A crafting station's authored `WBDT` and recipe keywords. Unknown and
+/// experiment types remain distinguishable rather than becoming a chair.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Workbench {
+    pub kind: u8,
+    pub skill: Option<u32>,
+    pub keywords: Vec<FormId>,
+}
+
+impl Workbench {
+    pub fn parse(r: &LoadedRecord<'_>) -> Option<Self> {
+        if r.tag().0 != *b"FURN" {
+            return None;
+        }
+        let d = r.get(b"WBDT")?.get(..2)?;
+        if d[0] == 0 {
+            return None;
+        }
+        Some(Self {
+            kind: d[0],
+            skill: (d[1] != 0xFF).then_some(d[1] as u32),
+            keywords: r
+                .get(b"KWDA")
+                .unwrap_or(&[])
+                .chunks_exact(4)
+                .map(|b| r.fid(FormId(u32::from_le_bytes(b.try_into().unwrap()))))
+                .collect(),
+        })
+    }
+
+    pub fn frame(&self) -> Option<&'static str> {
+        match self.kind {
+            1 => Some("ConstructibleObject"),
+            2 | 7 => Some("Smithing"),
+            3 => Some("EnchantConstruct"),
+            5 => Some("Alchemy"),
+            _ => None,
+        }
+    }
+}
+
 pub fn rgb(b: &[u8], o: usize) -> Vec3 {
     if o + 3 > b.len() {
         return Vec3::ZERO;
