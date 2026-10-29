@@ -478,3 +478,10 @@ HEAD-only saves have no stored player name; their journal metadata is unknown
 and they share one legacy “?” character group rather than inventing a name.
 Write timestamps format as UTC; screenshots are host img:// images, not SWFs
 or other game assets stored in the repository.
+
+## Crafting base forms
+
+Optional `FORM` stores complete owned ALCH/ENCH record bytes in global ID order.
+Absent means no created base forms. Fields and IDs are validated before applying;
+forms are inserted before inventories are restored. Runtime forms are excluded
+from HEAD plugin dependencies. References and base forms share the FF allocator.

@@ -17,6 +17,39 @@ use crate::world::inventory::{Inventory, LEFT, RIGHT};
 use crate::world_state::{Moved, Wounds};
 
 const SWORD: FormId = FormId(0x800);
+
+#[test]
+fn crafting_forms_round_trip_and_legacy_saves_have_none() {
+    let id = FormId(0xFF00_0800);
+    let record = RecordBuilder::new(b"ALCH", id)
+        .zstring(b"FULL", "Potion of Testing")
+        .to_bytes();
+    let s = Snapshot {
+        forms: vec![record.clone()],
+        ..Default::default()
+    };
+    let file = s.write();
+    let loaded = Snapshot::read(&file).unwrap();
+    assert_eq!(loaded.forms, vec![record]);
+    let mut lo = esp::LoadOrder::load(std::env::temp_dir(), &[]).unwrap();
+    lo.insert_runtime_record(&loaded.forms[0]).unwrap();
+    assert_eq!(
+        crate::world::inventory::item_info(&lo, id).unwrap().name,
+        "Potion of Testing"
+    );
+    let mut legacy = file.clone();
+    legacy.sections.retain(|(t, _)| t != b"FORM");
+    assert!(Snapshot::read(&legacy).unwrap().forms.is_empty());
+    let mut duplicate = file;
+    duplicate.add(b"FORM", vec![0; 4]);
+    assert!(Snapshot::read(&duplicate).is_err());
+    let bad = Snapshot {
+        forms: vec![vec![0; 24]],
+        ..Default::default()
+    }
+    .write();
+    assert!(Snapshot::read(&bad).is_err());
+}
 const SHIELD: FormId = FormId(0x801);
 const GEM: FormId = FormId(0x802);
 const WEATHER: FormId = FormId(0x890);

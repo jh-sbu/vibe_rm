@@ -21,6 +21,10 @@ pub type Result<T> = std::result::Result<T, Corrupt>;
 pub struct Writer(pub Vec<u8>);
 
 impl Writer {
+    pub fn bytes(&mut self, bytes: &[u8]) {
+        self.len(bytes.len());
+        self.0.extend_from_slice(bytes);
+    }
     pub fn u8(&mut self, v: u8) {
         self.0.push(v);
     }
@@ -84,6 +88,10 @@ pub struct Reader<'a> {
 }
 
 impl<'a> Reader<'a> {
+    pub fn bytes(&mut self) -> Result<&'a [u8]> {
+        let n = self.count(1)?;
+        self.take(n)
+    }
     pub fn new(data: &'a [u8]) -> Self {
         Reader { data, pos: 0 }
     }

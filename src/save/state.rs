@@ -61,6 +61,23 @@ use crate::world::destruction::DestructionState;
 use crate::world::inventory::Inventory;
 use crate::world_state::{Moved, Wounds};
 
+/// Validate even snapshots built directly by tests/callers before mutating an Engine.
+fn validate_forms(forms: &[Vec<u8>]) -> Result<()> {
+    let mut lo =
+        esp::LoadOrder::load(std::env::temp_dir(), &[]).map_err(|e| Corrupt(e.to_string()))?;
+    let mut previous = None;
+    for bytes in forms {
+        let id = lo
+            .insert_runtime_record(bytes)
+            .map_err(|e| Corrupt(e.to_string()))?;
+        if previous.is_some_and(|p| p >= id) {
+            return Err(Corrupt("FORM IDs are not ordered".into()));
+        }
+        previous = Some(id);
+    }
+    Ok(())
+}
+
 /// Where the player stood.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Spot {
@@ -71,6 +88,8 @@ pub struct Spot {
 
 #[derive(Default)]
 pub struct Snapshot {
+    /// Owned runtime base records, in global form-ID order (optional FORM).
+    pub forms: Vec<Vec<u8>>,
     pub metadata: Option<super::metadata::Metadata>,
     pub(crate) continuity: super::continuity::Continuity,
     pub plugins: Vec<String>,
@@ -484,6 +503,7 @@ impl Snapshot {
         let mut continuity = super::continuity::Continuity::capture(e);
         continuity.executions = executions;
         Snapshot {
+            forms: e.lo.runtime_records(),
             metadata: Some(super::metadata::Metadata::capture(e)),
             continuity,
             plugins: e
@@ -595,6 +615,12 @@ impl Snapshot {
 
     pub fn write(&self) -> SaveFile {
         let mut file = SaveFile::default();
+        let mut forms = Writer::default();
+        forms.len(self.forms.len());
+        for record in &self.forms {
+            forms.bytes(record);
+        }
+        file.add(b"FORM", forms.0);
         if let Some(meta) = &self.metadata {
             file.add(b"META", meta.encode());
             if let Some(image) = &meta.thumbnail {
@@ -1172,6 +1198,17 @@ impl Snapshot {
     /// Read every section; nothing is applied until all of them read.
     pub fn read(file: &SaveFile) -> Result<Snapshot> {
         let mut s = Snapshot::default();
+        if file.sections.iter().filter(|(t, _)| t == b"FORM").count() > 1 {
+            return Err(Corrupt("duplicate FORM section".into()));
+        }
+        if let Some(data) = file.section(b"FORM") {
+            let mut r = Reader::new(data);
+            for _ in 0..r.count(4)? {
+                s.forms.push(r.bytes()?.to_vec());
+            }
+            r.finish()?;
+            validate_forms(&s.forms)?;
+        }
         s.continuity = super::continuity::Continuity::read(file)?;
 
         if file
@@ -2053,6 +2090,13 @@ impl Snapshot {
     /// Put this state into the engine, in place of its own, and go where the
     /// player stood. The engine must have the plugins the save was made with.
     pub fn apply(self, e: &mut Engine) -> anyhow::Result<()> {
+        validate_forms(&self.forms)?;
+        anyhow::ensure!(
+            self.forms.iter().all(|b| !self
+                .created
+                .contains_key(&esp::RecordHeader::parse(b).form_id)),
+            "save reuses a runtime ID for a reference and a base form"
+        );
         let have: Vec<String> =
             e.lo.plugins()
                 .iter()
@@ -2175,6 +2219,10 @@ impl Snapshot {
         e.relationships.restore_ranks(self.relationship_ranks);
         e.day = self.day;
         e.hour = self.hour;
+        e.lo.clear_runtime_records();
+        for bytes in &self.forms {
+            e.lo.insert_runtime_record(bytes)?;
+        }
         let s = &mut e.scripts;
         s.character_id = self
             .metadata
@@ -2263,8 +2311,15 @@ impl Snapshot {
         ws.graph_open.clear();
         ws.learned_effects = self.learned_effects;
         e.detection.restore_stealth_points(self.stealth_points);
+        e.created_refs.next = self.created_next.max(
+            self.forms
+                .iter()
+                .map(|b| esp::RecordHeader::parse(b).form_id.0.saturating_add(1))
+                .chain(self.created.keys().map(|f| f.0.saturating_add(1)))
+                .max()
+                .unwrap_or(0),
+        );
         e.created_refs.refs = self.created;
-        e.created_refs.next = self.created_next;
         e.player_health = self.health;
         e.player_stamina = self.stamina;
         e.skills = self.skills.unwrap_or_default();
