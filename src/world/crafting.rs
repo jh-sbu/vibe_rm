@@ -93,6 +93,31 @@ impl Recipes {
     }
 }
 
+/// Item enchantments inherit through WEAP CNAM / ARMO TNAM templates.
+/// Cycles and missing templates stop at the record already examined.
+pub fn authored_enchantment(lo: &LoadOrder, mut item: FormId) -> Option<(FormId, u16)> {
+    let mut seen = std::collections::HashSet::new();
+    while seen.insert(item) {
+        let r = lo.get(item)?;
+        if let Some(enchantment) = form(&r, b"EITM") {
+            let amount = r
+                .get(b"EAMT")
+                .and_then(|d| d.get(..2))
+                .map_or(0, |d| u16::from_le_bytes(d.try_into().unwrap()));
+            return Some((enchantment, amount));
+        }
+        item = form(
+            &r,
+            match &r.tag().0 {
+                b"WEAP" => b"CNAM",
+                b"ARMO" => b"TNAM",
+                _ => return None,
+            },
+        )?;
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,6 +189,57 @@ mod tests {
         assert!(!r.affordable(&inv));
         inv.add(FormId(0x11), 1);
         assert!(r.affordable(&inv));
+        drop(lo);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn enchantment_metadata_and_template_inheritance() {
+        let dir =
+            std::env::temp_dir().join(format!("vrm-enchantment-records-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut enit = [0u8; 36];
+        for (o, v) in [(0, 12u32), (12, 250), (28, 0x900), (32, 0x901)] {
+            enit[o..o + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        let nodes = [
+            Node::top(
+                b"ENCH",
+                vec![RecordBuilder::new(b"ENCH", FormId(0x800)).field(b"ENIT", &enit)],
+            ),
+            Node::top(
+                b"WEAP",
+                vec![
+                    RecordBuilder::new(b"WEAP", FormId(0x801))
+                        .form(b"EITM", FormId(0x800))
+                        .field(b"EAMT", &250u16.to_le_bytes()),
+                    RecordBuilder::new(b"WEAP", FormId(0x802)).form(b"CNAM", FormId(0x801)),
+                    RecordBuilder::new(b"WEAP", FormId(0x803)).form(b"CNAM", FormId(0x803)),
+                ],
+            ),
+            Node::top(
+                b"ARMO",
+                vec![RecordBuilder::new(b"ARMO", FormId(0x804)).form(b"TNAM", FormId(0x801))],
+            ),
+        ];
+        std::fs::write(
+            dir.join("Test.esp"),
+            write_plugin(0, &[], "", "", 0x902, &nodes),
+        )
+        .unwrap();
+        let lo = LoadOrder::load(&dir, &["Test.esp".into()]).unwrap();
+        let e = crate::magic::EnchantmentData::parse(&lo.get(FormId(0x800)).unwrap()).unwrap();
+        assert_eq!(
+            (e.cost, e.charge, e.base, e.restrictions),
+            (12, 250, FormId(0x900), FormId(0x901))
+        );
+        for id in [0x801, 0x802, 0x804] {
+            assert_eq!(
+                authored_enchantment(&lo, FormId(id)),
+                Some((FormId(0x800), 250))
+            );
+        }
+        assert_eq!(authored_enchantment(&lo, FormId(0x803)), None);
         drop(lo);
         std::fs::remove_dir_all(dir).unwrap();
     }

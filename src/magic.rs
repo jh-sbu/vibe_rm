@@ -91,6 +91,8 @@ pub mod flags {
     pub const RECOVER: u32 = 0x2;
     pub const DETRIMENTAL: u32 = 0x4;
     pub const NO_DURATION: u32 = 0x200;
+    pub const NO_MAGNITUDE: u32 = 0x400;
+    pub const POWER_AFFECTS_MAGNITUDE: u32 = 1 << 21;
     pub const HIDE_IN_UI: u32 = 0x8000;
     pub const FX_PERSIST: u32 = 1 << 12;
     pub const NO_HIT_EFFECT: u32 = 1 << 27;
@@ -265,11 +267,40 @@ pub struct MagicItem {
     pub flags: u32,
     pub cost: Option<f32>,
     pub charge_time: f32,
+    /// ENCH's authored cost, capacity, base enchantment and restriction FLST.
+    pub enchantment: Option<EnchantmentData>,
     /// How far a target actor spell reaches (`SPIT` range).
     pub range: f32,
     /// The item's own keywords (`KWDA`).
     pub keywords: Vec<FormId>,
     pub effects: Vec<EffectItem>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct EnchantmentData {
+    pub cost: u32,
+    pub charge: u32,
+    pub base: FormId,
+    pub restrictions: FormId,
+}
+
+impl EnchantmentData {
+    pub(crate) fn parse(rec: &esp::LoadedRecord<'_>) -> Option<Self> {
+        let d = rec.get(b"ENIT")?.get(..32)?;
+        let u = |o| u32::from_le_bytes(d[o..o + 4].try_into().unwrap());
+        let restrictions = rec
+            .get(b"ENIT")
+            .and_then(|d| d.get(32..36))
+            .map_or(FormId::NULL, |b| {
+                rec.fid(FormId(u32::from_le_bytes(b.try_into().unwrap())))
+            });
+        Some(Self {
+            cost: u(0),
+            charge: u(12),
+            base: rec.fid(FormId(u(28))),
+            restrictions,
+        })
+    }
 }
 
 impl MagicItem {
@@ -304,6 +335,7 @@ impl MagicItem {
                 m.range = f32::from_bits(u(d, 0x1C));
             }
             b"ENCH" => {
+                m.enchantment = EnchantmentData::parse(&rec);
                 let d = rec.get(b"ENIT").unwrap_or_default();
                 m.flags = u(d, 4);
                 m.cast_type = u(d, 8);
@@ -1638,10 +1670,7 @@ impl Engine {
 
     /// An item's enchantment (`EITM`).
     pub fn item_enchantment(&self, item: FormId) -> Option<FormId> {
-        let rec = self.lo.get(item)?;
-        let d = rec.get(b"EITM").filter(|d| d.len() >= 4)?;
-        Some(rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))))
-            .filter(|f| !f.is_null())
+        crate::world::crafting::authored_enchantment(&self.lo, item).map(|e| e.0)
     }
 
     /// The active effects' script objects on an actor (they hear its events).
