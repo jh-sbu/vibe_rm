@@ -104,3 +104,14 @@ Creating foundation 03003014 called the real building-item script, advanced
 BYOHHouseFalkreath through stages 120/130, completed its foundation objective
 and hid that recipe. This verifies event delivery through the project's VM;
 it is not observation in Skyrim SE. The house-purchase path was bypassed.
+
+## Shared enchantments and worn effects
+
+[Fortify Health revision 3494104](https://en.uesp.net/w/index.php?oldid=3494104),
+line 58, describes multiple enchanted pieces contributing to total health
+(with additional NPC combat behavior outside this correction). ENCH sharing
+is base-form identity; it must not merge the active contributions from different
+worn pieces. The engine now keys constant enchantment applications by both ENCH
+and equipment base form, and saves that source with each effect. Unequipping
+one piece removes its contribution while the other continues. This is the
+project's internal representation, not a claim about original-engine storage.

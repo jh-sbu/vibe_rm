@@ -434,6 +434,7 @@ fn lifecycle_hit(id: u64, target: FormId, persistent: bool) -> crate::magic::Act
         target,
         caster: Some(PLAYER_REF),
         item: FormId::NULL,
+        equipment: None,
         index: 0,
         effect: FormId(if persistent { 0x802 } else { 0x803 }),
         magnitude: 1.0,

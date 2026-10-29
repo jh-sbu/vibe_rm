@@ -61,6 +61,7 @@ mod effect_perk_sources_tests {
             target,
             caster: None,
             item: FormId(1),
+            equipment: None,
             index: 0,
             effect: FormId(2),
             magnitude: 0.0,

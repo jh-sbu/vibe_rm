@@ -7,6 +7,7 @@ const SWORD: FormId = FormId(0x830);
 const MAGIC_SWORD: FormId = FormId(0x831);
 const FORBIDDEN: FormId = FormId(0x832);
 const ARMOR: FormId = FormId(0x833);
+const BOOTS: FormId = FormId(0x834);
 const GEM: FormId = FormId(0x840);
 const STAR: FormId = FormId(0x842);
 const STATION: FormId = FormId(0x871);
@@ -119,6 +120,14 @@ fn fixture() -> (std::path::PathBuf, Engine) {
                     .field(b"DATA", &data[..8])
                     .form(b"KWDA", FormId(0x861))
                     .field(b"BOD2", &[4u32.to_le_bytes(), 1u32.to_le_bytes()].concat()),
+                RecordBuilder::new(b"ARMO", BOOTS)
+                    .zstring(b"FULL", "Boots")
+                    .field(b"DATA", &data[..8])
+                    .form(b"KWDA", FormId(0x861))
+                    .field(
+                        b"BOD2",
+                        &[128u32.to_le_bytes(), 1u32.to_le_bytes()].concat(),
+                    ),
             ],
         ),
         Node::top(
@@ -567,4 +576,113 @@ fn crafting_tempered_authored_charge_keeps_selected_copy_and_legacy_saves() {
         drop(e);
         std::fs::remove_dir_all(dir).unwrap();
     }
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn crafting_shared_armor_enchantments_stack_and_resume_independently() {
+    let (dir, mut e) = fixture();
+    e.knowledge.enchantments.insert(ARMOR_ENCH);
+    e.set_actor_value(PLAYER_REF, esp::actor_value::ENCHANTING, 100.);
+    e.inventory_mut(PLAYER_REF).add(BOOTS, 1);
+    let health = e.av_max(PLAYER_REF, esp::actor_value::HEALTH);
+    let mut enchantments = Vec::new();
+    for (i, item) in [ARMOR, BOOTS].into_iter().enumerate() {
+        e.equip_armor(PLAYER_REF, item, true).unwrap();
+        e.enchant_item(EnchantRequest {
+            station: STATION,
+            item,
+            owner: None,
+            copy: Default::default(),
+            effects: vec![ARMOR_ENCH],
+            gem: GEM,
+            soul: 5,
+            name: None,
+            slider: 1.,
+        })
+        .unwrap();
+        enchantments.push(e.equipped_copy(PLAYER_REF, item).enchantment.unwrap());
+        assert_eq!(
+            e.av_max(PLAYER_REF, esp::actor_value::HEALTH),
+            health + 25. * (i + 1) as f32
+        );
+    }
+    assert_eq!(enchantments[0], enchantments[1]);
+    let saved_effects = e.saved_active_effects();
+    assert_eq!(saved_effects.0.len(), 2);
+    let sources = saved_effects
+        .0
+        .iter()
+        .map(|x| x.equipment.unwrap())
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(sources, [ARMOR, BOOTS].into_iter().collect());
+    let file = crate::save::state::Snapshot::capture(&e).write();
+    let mut invalid = crate::save::state::Snapshot::read(&file).unwrap();
+    invalid.continuity.active_effects.0[0].equipment = Some(GEM);
+    assert!(invalid.apply(&mut e).is_err());
+    assert_eq!(e.saved_active_effects(), saved_effects);
+    crate::save::state::Snapshot::read(&file)
+        .unwrap()
+        .apply(&mut e)
+        .unwrap();
+    assert_eq!(e.saved_active_effects(), saved_effects);
+    e.update_magic(1.1);
+    assert_eq!(e.saved_active_effects(), {
+        let mut expected = saved_effects.clone();
+        for x in &mut expected.0 {
+            x.elapsed += 1.1;
+        }
+        expected
+    });
+    assert_eq!(e.av_max(PLAYER_REF, esp::actor_value::HEALTH), health + 50.);
+
+    // Removing and replacing either source keeps the other effect alive.
+    for (off, kept) in [(ARMOR, BOOTS), (BOOTS, ARMOR)] {
+        let kept_id = e
+            .saved_active_effects()
+            .0
+            .iter()
+            .find(|x| x.equipment == Some(kept))
+            .unwrap()
+            .id;
+        e.equip_armor(PLAYER_REF, off, false).unwrap();
+        e.refresh_crafting_effects();
+        assert_eq!(e.av_max(PLAYER_REF, esp::actor_value::HEALTH), health + 25.);
+        assert!(!e.active_effect(kept_id).unwrap().done);
+        e.equip_armor(PLAYER_REF, off, true).unwrap();
+        e.refresh_crafting_effects();
+        e.refresh_crafting_effects();
+        assert_eq!(e.av_max(PLAYER_REF, esp::actor_value::HEALTH), health + 50.);
+        assert!(!e.active_effect(kept_id).unwrap().done);
+    }
+    for item in [ARMOR, BOOTS] {
+        e.equip_armor(PLAYER_REF, item, false).unwrap();
+    }
+    e.refresh_crafting_effects();
+    assert_eq!(e.av_max(PLAYER_REF, esp::actor_value::HEALTH), health);
+
+    // Old AEFF records have no equipment flag. Preserve their existing effect
+    // when assigning the worn source on load, then allow a second piece to stack.
+    crate::save::state::Snapshot::read(&file)
+        .unwrap()
+        .apply(&mut e)
+        .unwrap();
+    e.equip_armor(PLAYER_REF, BOOTS, false).unwrap();
+    e.update_magic(1.1);
+    let mut legacy = crate::save::state::Snapshot::capture(&e);
+    for effect in &mut legacy.continuity.active_effects.0 {
+        effect.equipment = None;
+    }
+    let original_id = legacy.continuity.active_effects.0[0].id;
+    crate::save::state::Snapshot::read(&legacy.write())
+        .unwrap()
+        .apply(&mut e)
+        .unwrap();
+    assert_eq!(e.active_effect(original_id).unwrap().equipment, Some(ARMOR));
+    e.equip_armor(PLAYER_REF, BOOTS, true).unwrap();
+    e.update_magic(1.1);
+    assert_eq!(e.av_max(PLAYER_REF, esp::actor_value::HEALTH), health + 50.);
+    assert!(!e.active_effect(original_id).unwrap().done);
+    drop(e);
+    std::fs::remove_dir_all(dir).unwrap();
 }

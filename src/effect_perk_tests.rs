@@ -59,6 +59,7 @@ fn effect(id: u64, target: FormId) -> ActiveEffect {
         target,
         caster: None,
         item: FormId(0x900 + id as u32),
+        equipment: None,
         index: 0,
         effect: EFFECT,
         magnitude: 0.0,

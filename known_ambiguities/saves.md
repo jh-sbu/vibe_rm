@@ -337,6 +337,13 @@ Optional `AEFF` keeps every unfinished active effect: its id, target, caster,
 item and effect index, magnitude, duration, elapsed time, whether it is doing
 its work, what it holds on its actor values, its landing point, its summon and
 its quiet / dual / channelled / scripted flags, with the next effect id.
+Flag bit 5 additionally carries an equipment base form for worn constant
+enchantments. This keeps two pieces sharing one ENCH independent across saves;
+records without the bit retain the old byte layout. On load, an old unassociated
+constant enchantment is attached to the first matching worn piece without
+restarting its effect or changing its held values. The next synchronization
+supplies any additional worn pieces that the older engine failed to apply.
+This source identity is an internal save format, not a claim about SE's layout.
 Telekinesis is left out because the object it holds isn't saved; the grab ends
 on load. The scripts of already-finished effects are not kept. Optional
 `TAPR` keeps value changes still tapering off (the effect as it landed, the

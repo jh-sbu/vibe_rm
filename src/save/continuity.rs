@@ -371,7 +371,8 @@ fn put_effect(w: &mut Writer, x: &crate::magic::ActiveEffect) {
         | (x.scripted as u8) << 1
         | (x.quiet as u8) << 2
         | (x.dual as u8) << 3
-        | (x.channelled as u8) << 4);
+        | (x.channelled as u8) << 4
+        | (x.equipment.is_some() as u8) << 5);
     w.f32(x.held[0]);
     w.f32(x.held[1]);
     w.bool(x.at.is_some());
@@ -379,6 +380,9 @@ fn put_effect(w: &mut Writer, x: &crate::magic::ActiveEffect) {
         w.vec3(at);
     }
     w.opt_form(x.summoned);
+    if let Some(equipment) = x.equipment {
+        w.form(equipment);
+    }
 }
 
 fn get_effect(r: &mut Reader) -> Result<crate::magic::ActiveEffect> {
@@ -390,16 +394,23 @@ fn get_effect(r: &mut Reader) -> Result<crate::magic::ActiveEffect> {
     let effect = r.form()?;
     let (magnitude, duration, elapsed) = (r.f32()?, r.f32()?, r.f32()?);
     let bits = r.u8()?;
-    if bits >= 1 << 5 {
+    if bits >= 1 << 6 {
         return Err(Corrupt("unknown active effect flags".into()));
     }
     let held = [r.f32()?, r.f32()?];
     let at = if r.bool()? { Some(r.vec3()?) } else { None };
+    let summoned = r.opt_form()?;
+    let equipment = if bits & 32 != 0 {
+        Some(r.form()?)
+    } else {
+        None
+    };
     Ok(crate::magic::ActiveEffect {
         id,
         target,
         caster,
         item,
+        equipment,
         index,
         effect,
         magnitude,
@@ -411,7 +422,7 @@ fn get_effect(r: &mut Reader) -> Result<crate::magic::ActiveEffect> {
         done: false,
         quiet: bits & 4 != 0,
         at,
-        summoned: r.opt_form()?,
+        summoned,
         dual: bits & 8 != 0,
         channelled: bits & 16 != 0,
     })
@@ -427,7 +438,12 @@ fn valid_effect(x: &crate::magic::ActiveEffect) -> Result<()> {
         && x.at.is_none_or(|at| at.is_finite());
     // Constant effects last forever; the rest have a finite duration.
     let duration = x.duration >= 0.0 && !x.duration.is_nan();
-    if !finite || !duration || x.caster.is_some_and(|c| c.is_null()) {
+    if !finite
+        || !duration
+        || x.caster.is_some_and(|c| c.is_null())
+        || x.equipment
+            .is_some_and(|f| f.is_null() || !x.duration.is_infinite())
+    {
         return Err(Corrupt("invalid active magic effect".into()));
     }
     time(x.elapsed as f64)

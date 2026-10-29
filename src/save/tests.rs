@@ -5240,6 +5240,7 @@ fn active_effects_payload_is_validated() {
         target: PLAYER_REF,
         caster: Some(PLAYER_REF),
         item: FORTIFY_CARRY_SPELL,
+        equipment: None,
         index: 0,
         effect: FORTIFY_CARRY,
         magnitude: 25.0,
@@ -5265,13 +5266,29 @@ fn active_effects_payload_is_validated() {
     );
     assert_eq!(restored.write().to_bytes(), file.to_bytes());
     check_continuity_payload(&file, b"AEFF");
-    let broken: [fn(&mut crate::magic::ActiveEffect); 6] = [
+    let mut equipped = effect.clone();
+    equipped.equipment = Some(FormId(0x833));
+    s.continuity.active_effects = (vec![equipped], 4);
+    let equipped_file = s.write();
+    let restored = Snapshot::read(&equipped_file).unwrap();
+    assert_eq!(
+        restored.continuity.active_effects,
+        s.continuity.active_effects
+    );
+    assert_eq!(restored.write().to_bytes(), equipped_file.to_bytes());
+    check_continuity_payload(&equipped_file, b"AEFF");
+    let broken: [fn(&mut crate::magic::ActiveEffect); 8] = [
         |x| x.id = 9,
         |x| x.magnitude = f32::NAN,
         |x| x.duration = -1.0,
         |x| x.elapsed = f32::INFINITY,
         |x| x.held[1] = f32::NAN,
         |x| x.target = FormId::NULL,
+        |x| x.equipment = Some(FormId::NULL),
+        |x| {
+            x.equipment = Some(FormId(0x833));
+            x.duration = 1.;
+        },
     ];
     for b in broken {
         let mut x = effect.clone();

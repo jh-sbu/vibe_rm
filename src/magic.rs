@@ -424,6 +424,9 @@ pub struct ActiveEffect {
     pub target: FormId,
     pub caster: Option<FormId>,
     pub item: FormId,
+    /// The worn item's base form, when it supplies this constant enchantment.
+    /// Different pieces can share an ENCH without sharing an active effect.
+    pub equipment: Option<FormId>,
     /// Which of the item's effects.
     pub index: usize,
     pub effect: FormId,
@@ -622,6 +625,14 @@ impl Engine {
                 x.index,
                 x.item
             );
+            anyhow::ensure!(
+                x.equipment.is_none_or(|f| self
+                    .lo
+                    .tag_of(f)
+                    .is_some_and(|t| matches!(&t.0, b"ARMO" | b"WEAP"))),
+                "save has active effect {} with invalid equipment source",
+                x.id
+            );
         }
         Ok(())
     }
@@ -652,7 +663,19 @@ impl Engine {
     /// values is already in the saved modifiers, so nothing is started or
     /// given back: the old game's effects go without releasing into the new
     /// values, and the restored ones carry on. Summons command again.
-    pub(crate) fn restore_active_effects(&mut self, saved: Vec<ActiveEffect>, next_id: u64) {
+    pub(crate) fn restore_active_effects(&mut self, mut saved: Vec<ActiveEffect>, next_id: u64) {
+        // Legacy effects did not identify the worn piece. Associate the old
+        // effect with the first matching piece without restarting its scripts
+        // or held values; synchronization adds any other worn sources.
+        for x in &mut saved {
+            if x.equipment.is_none() && x.duration.is_infinite() {
+                x.equipment = self
+                    .worn_enchantment_sources(x.target)
+                    .into_iter()
+                    .find(|(enchantment, _)| *enchantment == x.item)
+                    .map(|(_, equipment)| equipment);
+            }
+        }
         let m = &mut self.magic;
         m.next_id = saved.iter().map(|x| x.id).fold(next_id, u64::max);
         m.commanded = saved
@@ -796,7 +819,7 @@ impl Engine {
     /// Apply an item's effects to `target` (no aiming or projectile: it lands).
     /// The same item's effects already on the target are replaced.
     pub fn apply_item(&mut self, item: FormId, caster: Option<FormId>, target: FormId) -> bool {
-        self.apply_item_as(item, caster, target, false, None, false, ALL_EFFECTS)
+        self.apply_item_as(item, caster, target, false, None, false, ALL_EFFECTS, None)
     }
 
     /// Apply a spell cast by `caster` as `apply_item`, landing at `at` (a
@@ -810,7 +833,16 @@ impl Engine {
         at: Option<glam::Vec3>,
         dual: bool,
     ) -> bool {
-        self.apply_item_as(item, Some(caster), target, false, at, dual, ALL_EFFECTS)
+        self.apply_item_as(
+            item,
+            Some(caster),
+            target,
+            false,
+            at,
+            dual,
+            ALL_EFFECTS,
+            None,
+        )
     }
 
     /// Apply some of a spell's effects (bit `i` of `effects` for its `i`th)
@@ -824,14 +856,23 @@ impl Engine {
         dual: bool,
         effects: u64,
     ) -> bool {
-        self.apply_item_as(item, Some(caster), target, false, None, dual, effects)
+        self.apply_item_as(item, Some(caster), target, false, None, dual, effects, None)
     }
 
     /// Apply an item's effects as `apply_item`, but unnoticed: hostile effects
     /// landing aren't a blow that starts a fight (a poison slipped into
     /// someone's pockets).
     pub fn apply_item_quietly(&mut self, item: FormId, caster: FormId, target: FormId) -> bool {
-        self.apply_item_as(item, Some(caster), target, true, None, false, ALL_EFFECTS)
+        self.apply_item_as(
+            item,
+            Some(caster),
+            target,
+            true,
+            None,
+            false,
+            ALL_EFFECTS,
+            None,
+        )
     }
 
     fn apply_item_as(
@@ -843,6 +884,7 @@ impl Engine {
         at: Option<glam::Vec3>,
         dual: bool,
         effects: u64,
+        equipment: Option<FormId>,
     ) -> bool {
         let Some(m) = self.magic_item(item) else {
             return false;
@@ -879,6 +921,7 @@ impl Engine {
                 && !x.done
                 && x.channelled
                 && x.item == item
+                && x.equipment == equipment
                 && x.caster == caster
                 && x.dual == dual
                 && x.index < 64
@@ -888,7 +931,9 @@ impl Engine {
             kept |= 1 << x.index;
         }
         let applies = |index: usize| applies(index) && (index >= 64 || kept & (1 << index) == 0);
-        self.dispel(target, |x| x.item == item && applies(x.index));
+        self.dispel(target, |x| {
+            x.item == item && x.equipment == equipment && applies(x.index)
+        });
         // One cloak at a time: a new one ends the last (UESP).
         let cloak = m.effects.iter().enumerate().any(|(i, e)| {
             applies(i)
@@ -960,6 +1005,7 @@ impl Engine {
                 target,
                 caster,
                 item,
+                equipment,
                 index,
                 effect: ei.effect,
                 magnitude,
@@ -1379,6 +1425,7 @@ impl Engine {
                 pick(&EffectView {
                     id: x.id,
                     item: x.item,
+                    equipment: x.equipment,
                     index: x.index,
                     effect_archetype: self
                         .magic_effect(x.effect)
@@ -1645,45 +1692,59 @@ impl Engine {
                 .map(|a| a.ref_id),
         );
         for actor in actors {
-            let mut wanted: Vec<FormId> = self
+            let mut wanted: Vec<(FormId, Option<FormId>)> = self
                 .actor_spells(actor)
                 .into_iter()
                 .filter(|&s| self.magic_item(s).is_some_and(|m| m.is_constant()))
+                .map(|s| (s, None))
                 .collect();
             // Worn things' constant enchantments (rings, armor).
             wanted.extend(
-                self.worn_enchantments(actor)
+                self.worn_enchantment_sources(actor)
                     .into_iter()
-                    .filter(|&s| self.magic_item(s).is_some_and(|m| m.is_constant())),
+                    .filter(|&(s, _)| self.magic_item(s).is_some_and(|m| m.is_constant()))
+                    .map(|(s, equipment)| (s, Some(equipment))),
             );
-            let on: HashSet<FormId> = self
+            let on: HashSet<(FormId, Option<FormId>)> = self
                 .magic
                 .effects
                 .iter()
                 .filter(|x| x.target == actor && x.duration.is_infinite() && !x.done)
-                .map(|x| x.item)
+                .map(|x| (x.item, x.equipment))
                 .collect();
-            for s in &wanted {
-                if !on.contains(s) {
-                    self.apply_item(*s, Some(actor), actor);
+            for &(item, equipment) in &wanted {
+                if !on.contains(&(item, equipment)) {
+                    self.apply_item_as(
+                        item,
+                        Some(actor),
+                        actor,
+                        false,
+                        None,
+                        false,
+                        ALL_EFFECTS,
+                        equipment,
+                    );
                 }
             }
-            for s in on {
-                if !wanted.contains(&s) {
-                    self.dispel(actor, |x| x.item == s);
+            for source in on {
+                if !wanted.contains(&source) {
+                    self.dispel(actor, |x| (x.item, x.equipment) == source);
                 }
             }
         }
     }
 
-    /// The enchantments (`EITM`) of what an actor wears and wields.
-    pub fn worn_enchantments(&self, actor: FormId) -> Vec<FormId> {
+    /// Enchantment and equipment base form for each worn or wielded item.
+    fn worn_enchantment_sources(&self, actor: FormId) -> Vec<(FormId, FormId)> {
         let Some(inv) = self.inventories.get(&actor) else {
             return Vec::new();
         };
         inv.equipped()
             .iter()
-            .filter_map(|&f| self.item_enchantment_for(actor, f))
+            .filter_map(|&f| {
+                self.item_enchantment_for(actor, f)
+                    .map(|enchantment| (enchantment, f))
+            })
             .collect()
     }
 
@@ -1927,6 +1988,7 @@ impl Engine {
 pub struct EffectView {
     pub id: u64,
     pub item: FormId,
+    pub equipment: Option<FormId>,
     /// Which of the item's effects.
     pub index: usize,
     pub effect_archetype: u32,
