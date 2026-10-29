@@ -2257,7 +2257,7 @@ impl Engine {
         // An enchanted weapon's (a bow's, for a shot) enchantment lands with
         // the blow, paid from its charge.
         if let Some(w) = weapon
-            && let Some(ench) = self.item_enchantment(w)
+            && let Some(ench) = self.item_enchantment_for(attacker, w)
             && self.pay_weapon_charge(attacker, w, ench)
         {
             self.apply_item(ench, Some(attacker), target);

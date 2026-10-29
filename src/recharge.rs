@@ -62,15 +62,15 @@ impl Engine {
     /// One of `actor`'s weapons' charge as a percent of its most, if it
     /// holds one.
     pub(crate) fn charge_percent(&self, actor: FormId, weapon: FormId) -> Option<f32> {
-        let full = self.weapon_capacity(weapon);
-        self.item_enchantment(weapon)?;
+        let full = self.weapon_capacity_for(actor, weapon);
+        self.item_enchantment_for(actor, weapon)?;
         (full > 0.0).then(|| self.weapon_charge(actor, weapon) / full * 100.0)
     }
 
     /// What charging `weapon` with a soul of `soul` would add, as a percent
     /// of its most.
     pub(crate) fn charge_added_percent(&self, actor: FormId, weapon: FormId, soul: u8) -> f32 {
-        let full = self.weapon_capacity(weapon);
+        let full = self.weapon_capacity_for(actor, weapon);
         if full <= 0.0 {
             return 0.0;
         }
@@ -86,9 +86,9 @@ impl Engine {
         gem: FormId,
         soul: u8,
     ) -> bool {
-        let full = self.weapon_capacity(weapon);
+        let full = self.weapon_capacity_for(actor, weapon);
         let left = self.weapon_charge(actor, weapon);
-        if full <= 0.0 || left >= full || self.item_enchantment(weapon).is_none() {
+        if full <= 0.0 || left >= full || self.item_enchantment_for(actor, weapon).is_none() {
             return false;
         }
         let Some(record) = self.soul_gem(gem).map(|g| g.soul) else {

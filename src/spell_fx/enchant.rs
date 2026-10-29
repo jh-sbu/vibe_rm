@@ -27,7 +27,7 @@ impl Engine {
                     continue;
                 };
                 let Some(enchantment) = self
-                    .item_enchantment(weapon)
+                    .item_enchantment_for(actor, weapon)
                     .and_then(|e| self.magic_item(e))
                 else {
                     continue;

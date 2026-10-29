@@ -589,6 +589,12 @@ impl Inventory {
     /// A fully recharged copy needs no sparse entry; the next depleted copy
     /// becomes selected until inventory rows can identify individual copies.
     pub fn set_charge(&mut self, weapon: FormId, left: f32, full: f32) {
+        if self.copy_state(weapon).enchantment.is_some()
+            && self.change_equipped_copy(weapon, |s| s.charge = left.clamp(0.0, full))
+        {
+            return;
+        }
+
         if let Some(i) = self.charges.iter().position(|(w, _)| *w == weapon) {
             if left < full {
                 self.charges[i].1 = left.max(0.0);

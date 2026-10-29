@@ -1664,7 +1664,7 @@ impl Engine {
         };
         inv.equipped()
             .iter()
-            .filter_map(|&f| self.item_enchantment(f))
+            .filter_map(|&f| self.item_enchantment_for(actor, f))
             .collect()
     }
 

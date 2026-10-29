@@ -31,7 +31,7 @@ impl Engine {
             return None;
         }
         let staff = inv.held(hand)?;
-        let ench = self.item_enchantment(staff)?;
+        let ench = self.item_enchantment_for(actor, staff)?;
         self.magic_item(ench)
             .filter(|m| m.spell_type == spell_type::STAFF_ENCHANTMENT)
             .map(|_| (staff, ench))
@@ -54,7 +54,12 @@ impl Engine {
 
     /// The charge left on one of an actor's `weapon`s.
     pub(crate) fn weapon_charge(&self, actor: FormId, weapon: FormId) -> f32 {
-        let full = self.weapon_capacity(weapon);
+        let copy = self.equipped_copy(actor, weapon);
+        if copy.enchantment.is_some() {
+            return copy.charge.min(copy.capacity);
+        }
+
+        let full = self.weapon_capacity_for(actor, weapon);
         self.inventories
             .get(&actor)
             .and_then(|inv| inv.charge_left(weapon))
@@ -63,7 +68,7 @@ impl Engine {
 
     /// Take `amount` of charge from one of an actor's `weapon`s.
     pub(crate) fn spend_weapon_charge(&mut self, actor: FormId, weapon: FormId, amount: f32) {
-        let full = self.weapon_capacity(weapon);
+        let full = self.weapon_capacity_for(actor, weapon);
         let left = self.weapon_charge(actor, weapon) - amount;
         if let Some(inv) = self.inventories.get_mut(&actor) {
             inv.set_charge(weapon, left, full);
@@ -79,7 +84,7 @@ impl Engine {
         weapon: FormId,
         ench: FormId,
     ) -> bool {
-        if self.weapon_capacity(weapon) <= 0.0 {
+        if self.weapon_capacity_for(attacker, weapon) <= 0.0 {
             return true;
         }
         let cost = self.staff_cost(attacker, ench);
@@ -119,7 +124,7 @@ impl Engine {
             _ => return None,
         };
         let weapon = self.inventories.get(&actor)?.held(hand)?;
-        let full = self.weapon_capacity(weapon);
+        let full = self.weapon_capacity_for(actor, weapon);
         (full > 0.0).then(|| (self.weapon_charge(actor, weapon), full))
     }
 }

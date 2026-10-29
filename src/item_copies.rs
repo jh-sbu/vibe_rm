@@ -7,10 +7,20 @@ use esp::FormId;
 pub struct CopyState {
     /// Internal health/value multiplier. One is untouched; each quality adds 1/6.
     pub quality: f32,
+    pub enchantment: Option<FormId>,
+    pub capacity: f32,
+    pub charge: f32,
+    pub name: Option<String>,
 }
 impl Default for CopyState {
     fn default() -> Self {
-        Self { quality: 1.0 }
+        Self {
+            quality: 1.0,
+            enchantment: None,
+            capacity: 0.0,
+            charge: 0.0,
+            name: None,
+        }
     }
 }
 impl CopyState {
@@ -20,6 +30,7 @@ impl CopyState {
     pub fn at_level(level: u32) -> Self {
         Self {
             quality: 1.0 + level as f32 / 6.0,
+            ..Default::default()
         }
     }
     pub fn rating_bonus(&self, chest: bool) -> f32 {
@@ -56,6 +67,29 @@ impl Inventory {
         } else {
             self.copies.push(copy);
         }
+    }
+    /// Changes one selected equipped copy, splitting a repeated state when needed.
+    pub fn change_equipped_copy(
+        &mut self,
+        item: FormId,
+        change: impl FnOnce(&mut CopyState),
+    ) -> bool {
+        let old = self.copy_state(item);
+        let Some(i) = self
+            .copies
+            .iter()
+            .position(|c| c.item == item && c.state == old && c.count > 0)
+        else {
+            return false;
+        };
+        let mut c = self.copies[i].clone();
+        c.count = 1;
+        self.copies[i].count -= 1;
+        self.copies.retain(|c| c.count > 0);
+        change(&mut c.state);
+        self.equipped_copies.insert(item, c.state.clone());
+        self.add_copy_state(c);
+        true
     }
     pub fn plain_copies(&self, item: FormId, owner: Option<FormId>) -> i32 {
         self.count_owned(item, owner)
@@ -111,6 +145,19 @@ impl Engine {
             .get(&actor)
             .map_or_else(CopyState::default, |i| i.copy_state(item))
     }
+    pub(crate) fn item_enchantment_for(&self, actor: FormId, item: FormId) -> Option<FormId> {
+        self.equipped_copy(actor, item)
+            .enchantment
+            .or_else(|| self.item_enchantment(item))
+    }
+    pub(crate) fn weapon_capacity_for(&self, actor: FormId, item: FormId) -> f32 {
+        let copy = self.equipped_copy(actor, item);
+        if copy.enchantment.is_some() {
+            copy.capacity
+        } else {
+            self.weapon_capacity(item)
+        }
+    }
     pub fn item_health_percent(&self, reference: FormId) -> f32 {
         self.ref_state
             .item_copies
@@ -130,6 +177,50 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn player_enchantment_name_and_charge_stay_with_the_selected_copy() {
+        let f = FormId(1);
+        let state = CopyState {
+            enchantment: Some(FormId(0xFF000800)),
+            capacity: 250.,
+            charge: 250.,
+            name: Some("Sparks".into()),
+            ..CopyState::at_level(2)
+        };
+        let mut inv = Inventory::default();
+        inv.add(f, 2);
+        inv.add_copy_state(ItemCopy {
+            item: f,
+            owner: None,
+            state: state.clone(),
+            count: 2,
+        });
+        inv.equipped_copies.insert(f, state);
+        inv.set_charge(f, 100., 250.);
+        assert_eq!(inv.copy_state(f).charge, 100.);
+        assert_eq!(inv.copies.len(), 2);
+        let removed = inv.remove_with_extras(f, 2, None);
+        let mut destination = Inventory::default();
+        destination.add(f, 2);
+        for copy in removed.copies {
+            destination.add_copy_state(copy);
+        }
+        assert_eq!(destination.copies.len(), 2);
+        assert!(
+            destination
+                .copies
+                .iter()
+                .all(|c| c.state.name.as_deref() == Some("Sparks") && c.state.level() == 2)
+        );
+        assert_eq!(
+            destination
+                .copies
+                .iter()
+                .map(|c| c.state.charge)
+                .sum::<f32>(),
+            350.
+        );
+    }
     #[test]
     fn quality_uses_exact_rating_and_value_increments() {
         for (level, chest, other) in [
