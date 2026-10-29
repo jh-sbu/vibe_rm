@@ -37,6 +37,18 @@ def capture(name, keys, *, console=(), extra=()):
     return (out / (name + '.log')).read_text()
 
 system = ['Escape', 'click:900,70']
+# A malformed known value must neither discard unrelated preferences nor cause
+# an unchanged journal close to rewrite either INI (including unknown keys).
+original_settings = '[GamePlay]\niDifficulty=broken\n[Controls]\nbInvertYValues=1\n[Future]\nexample=kept\n'
+original_audio = '[AudioMenu]\nfAudioMasterVolume=.7\n[Future]\nexample=kept\n'
+(out / 'unchanged.ini').write_text(original_settings)
+(out / 'audio.ini').write_text(original_audio)
+log = capture('unchanged', system + ['Escape', 'pause', 'pause', 'pause'])
+assert 'menu calls CloseMenu(' in log
+assert (out / 'unchanged.ini').read_text() == original_settings
+assert (out / 'audio.ini').read_text() == original_audio
+assert not (out / 'unchanged-controls.txt').exists()
+
 capture('main', system, console=['save one', 'save two'])
 log = capture('load', system + ['click:380,417', 'pause', 'pause', 'pause'])
 assert 'PrepSaveGameScreenshot' in log

@@ -54,6 +54,11 @@ pub const SPECS: &[Spec] = &[
 pub fn spec(key: &str) -> Option<&'static Spec> {
     SPECS.iter().find(|s| s.key.eq_ignore_ascii_case(key))
 }
+fn valid(s: &Spec, value: f32) -> bool {
+    value.is_finite()
+        && (s.min..=s.max).contains(&value)
+        && (!(s.key.starts_with('b') || s.key.starts_with('i')) || value.fract() == 0.)
+}
 #[derive(Clone, Debug, Default)]
 pub struct Settings {
     values: BTreeMap<(String, String), String>,
@@ -76,18 +81,18 @@ impl Settings {
             };
             let key = key.trim();
             let value = value.split([';', '#']).next().unwrap_or("").trim();
-            if let Some(s) = spec(key).filter(|s| s.section.eq_ignore_ascii_case(&section)) {
-                result.set(
-                    s.key,
-                    value.parse().map_err(|_| {
-                        io::Error::new(io::ErrorKind::InvalidData, format!("invalid {}", s.key))
-                    })?,
-                )?;
-            } else {
-                result
-                    .values
-                    .insert((section.clone(), key.into()), value.into());
-            }
+            let (section, key) =
+                if let Some(s) = spec(key).filter(|s| s.section.eq_ignore_ascii_case(&section)) {
+                    // Retain malformed values too. Only this setting falls back at
+                    // read time, and unrelated edits must not erase the user's data.
+                    if !value.parse::<f32>().is_ok_and(|v| valid(s, v)) {
+                        log::warn!("settings: invalid {}; using its default", s.key);
+                    }
+                    (s.section.to_string(), s.key.to_string())
+                } else {
+                    (section.clone(), key.to_string())
+                };
+            result.values.insert((section, key), value.into());
         }
         result.dirty = false;
         Ok(result)
@@ -97,6 +102,7 @@ impl Settings {
         self.values
             .get(&(s.section.into(), s.key.into()))
             .and_then(|v| v.parse().ok())
+            .filter(|v| valid(s, *v))
             .unwrap_or(s.default)
     }
     pub fn enabled(&self, key: &str) -> bool {
@@ -105,18 +111,21 @@ impl Settings {
     pub fn set(&mut self, key: &str, value: f32) -> io::Result<()> {
         let s = spec(key)
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "unknown setting"))?;
-        if !value.is_finite()
-            || !(s.min..=s.max).contains(&value)
-            || ((s.key.starts_with('b') || s.key.starts_with('i')) && value.fract() != 0.)
-        {
+        if !valid(s, value) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 format!("{} must be in {}..{}", s.key, s.min, s.max),
             ));
         }
-        self.values
-            .insert((s.section.into(), s.key.into()), value.to_string());
-        self.dirty = true;
+        let invalid = self
+            .values
+            .get(&(s.section.into(), s.key.into()))
+            .is_some_and(|raw| !raw.parse::<f32>().is_ok_and(|v| valid(s, v)));
+        if self.get(key) != value || invalid {
+            self.values
+                .insert((s.section.into(), s.key.into()), value.to_string());
+            self.dirty = true;
+        }
         Ok(())
     }
     pub fn encode(&self) -> String {
@@ -151,6 +160,9 @@ impl Settings {
         }
     }
     pub fn write(&mut self, path: &Path) -> io::Result<()> {
+        if !self.dirty {
+            return Ok(());
+        }
         if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
             std::fs::create_dir_all(parent)?;
         }
@@ -206,10 +218,10 @@ impl crate::engine::Engine {
         Ok(())
     }
     pub fn save_settings(&mut self) -> io::Result<()> {
-        if let Some(path) = &self.audio_settings_path {
-            self.audio_settings.write(path)?;
-        }
-        if let Some(path) = path() {
+        // Audio preferences are persisted by set_audio_volume when changed.
+        if self.settings.dirty
+            && let Some(path) = path()
+        {
             self.settings.write(&path)?;
         }
         Ok(())
@@ -218,6 +230,44 @@ impl crate::engine::Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn malformed_values_are_preserved_and_clean_settings_do_not_write() {
+        let dir = std::env::temp_dir().join(format!("vrm-settings-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.ini");
+        let original = "[GamePlay]\niDifficulty=broken\n[Display]\nfGamma=NaN\n[Controls]\nbInvertYValues=1\n[Future]\nexample=kept\n";
+        std::fs::write(&path, original).unwrap();
+        let mut s = Settings::parse(original).unwrap();
+        assert_eq!(s.get("iDifficulty"), 2.);
+        assert_eq!(s.get("fGamma"), 1.);
+        assert!(s.enabled("bInvertYValues"));
+        assert!(!s.dirty);
+        s.write(&path).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+        s.set("bInvertYValues", 1.).unwrap();
+        assert!(!s.dirty);
+        s.set("bCrosshairEnabled", 0.).unwrap();
+        s.write(&path).unwrap();
+        let saved = std::fs::read_to_string(&path).unwrap();
+        for value in ["iDifficulty=broken", "fGamma=NaN", "example=kept"] {
+            assert!(saved.contains(value));
+        }
+        assert!(!s.dirty);
+        // Explicitly selecting the default repairs the invalid value too.
+        s.set("iDifficulty", 2.).unwrap();
+        assert!(s.dirty);
+        s.write(&path).unwrap();
+        assert!(
+            std::fs::read_to_string(&path)
+                .unwrap()
+                .contains("iDifficulty=2")
+        );
+        let absent = dir.join("untouched.ini");
+        Settings::default().write(&absent).unwrap();
+        assert!(!absent.exists());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     #[test]
     fn round_trip_unknown_keys_and_validation() {
         let mut s =
