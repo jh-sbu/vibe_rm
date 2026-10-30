@@ -8,7 +8,7 @@ use glam::Vec3;
 use crate::engine::{Engine, PLAYER_REF};
 use crate::spells::{LEFT, RIGHT, VOICE};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Condition {
     pub op: u8,
     pub or: bool,

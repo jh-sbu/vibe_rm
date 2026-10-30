@@ -187,6 +187,10 @@ pub struct Engine {
     pub(crate) pending_load: Option<crate::loading::LoadRequest>,
     /// The loading state, while a load's screen is up.
     pub(crate) loading: Option<crate::loading::Loading>,
+    /// The load order's loading screens, read on first use.
+    pub(crate) load_screen_cache: std::cell::OnceCell<Vec<crate::load_screens::LoadScreen>>,
+    /// The loading screens' own random stream (never saved).
+    pub(crate) load_screen_rng: u64,
     pub(crate) last_save: std::cell::Cell<std::time::Instant>,
     pub(crate) last_pause_menu: Option<crate::items::Menu>,
     pub subtitle_override: Option<bool>,
@@ -591,6 +595,10 @@ impl Engine {
             pending_save_load: None,
             pending_load: None,
             loading: None,
+            load_screen_cache: Default::default(),
+            load_screen_rng: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(1, |d| d.as_nanos() as u64 | 1),
             save_directory: crate::save::save_dir(),
             advancing_skill: Default::default(),
             critically_hit: Default::default(),

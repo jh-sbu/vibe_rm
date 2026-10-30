@@ -48,6 +48,11 @@ pub struct Loading {
     pub t: f32,
     /// Seconds the screen has been up (from its fade in).
     pub shown: f32,
+    /// The loading screens chosen as the load started.
+    pub screens: crate::load_screens::Choice,
+    /// The screen whose text was given last, and whether any was.
+    pub last_text: Option<usize>,
+    pub texts_given: u32,
 }
 
 /// Where a load takes the player.
@@ -117,6 +122,10 @@ impl Engine {
             return;
         };
         log::info!("loading: {request:?}");
+        let screens = self.choose_load_screens();
+        if let Some(i) = screens.first {
+            log::info!("loading screen {}", self.load_screens()[i].id);
+        }
         self.menu = None;
         let phase = if self.no_game {
             Phase::ScreenIn
@@ -129,6 +138,9 @@ impl Engine {
             phase,
             t: 0.0,
             shown: 0.0,
+            screens,
+            last_text: None,
+            texts_given: 0,
         });
     }
 
@@ -138,9 +150,20 @@ impl Engine {
         !self.no_game
     }
 
-    /// The loading menu's next hint text (none: a blank).
+    /// The loading menu's next hint text (none: a blank): the chosen
+    /// screen's first, then others from its pool.
     pub fn next_loading_text(&mut self) -> Option<String> {
-        None
+        let mut l = self.loading.take()?;
+        let next = if l.texts_given == 0 {
+            l.screens.first
+        } else {
+            self.later_load_screen(&l.screens.pool, l.last_text)
+        };
+        l.texts_given += 1;
+        l.last_text = next;
+        self.loading = Some(l);
+        let text = next.map(|i| self.load_screens()[i].text.clone())?;
+        Some(self.replace_text_tags_preserving_controls(&text, None))
     }
 
     /// Whether the loading state is up (the game paused behind it).
