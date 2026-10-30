@@ -1986,7 +1986,8 @@ game each piece unlocks.
      spells get it through `PerkSkillBoosts`, `staff_cost` doesn't;
      `plans/school-cost-enchantments.md`); individual staff copies
      selectable in the menus and hands (`known_ambiguities/staffs.md`); scrolls
-     holding the player in place while cast (UESP Skyrim:Scrolls), NPCs casting
+     holding the player in place while cast (UESP Skyrim:Scrolls;
+     `plans/scroll-casting-hold.md`), NPCs casting
      scrolls; charges interrupted by blows or shouts (spells and scrolls)
    - Pickpocket retry resets beyond the two-day gate (see Done): guards sent
      off by bribes, Thanes or guild payment, and Harmony
