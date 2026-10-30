@@ -95,6 +95,26 @@ impl ExternalInterfaceProvider for Game {
         Value::Undefined
     }
 
+    fn call_host(&self, context: &mut UpdateContext<'_>, name: &str, args: &[Value]) -> Value {
+        log::trace!("menu calls host {name}({args:?})");
+        let call = GameCall {
+            name: name.to_string(),
+            id: None,
+            args: args.to_vec(),
+        };
+        let answer = (|| {
+            let mut responder = self.responder.lock().unwrap();
+            responder.as_mut()?(&call, &mut Movie { context })
+        })();
+        match answer {
+            Some(values) => values.into_iter().next().unwrap_or(Value::Undefined),
+            None => {
+                self.calls.lock().unwrap().push(call);
+                Value::Undefined
+            }
+        }
+    }
+
     fn on_callback_available(&self, _name: &str) {}
 
     fn get_id(&self) -> Option<String> {
@@ -295,6 +315,18 @@ impl Menu {
 
     pub fn set(&self, path: &str, value: Value) {
         self.player.lock().unwrap().set_avm1_variable(path, value);
+    }
+
+    /// Installs a code object at `path` (`_root.CodeObj`): the movie's calls
+    /// to its methods reach the responder, or the queue, as calls named
+    /// `<path>.<method>`; the responder's first value is the method's result.
+    pub fn install_host_object(&self, path: &str, methods: &[&str]) -> bool {
+        self.player
+            .lock()
+            .unwrap()
+            .mutate_with_update_context(|context| {
+                ruffle_core::external::install_avm1_host_object(context, path, methods)
+            })
     }
 
     /// Rebind a live movie object/function after changing a timeline frame.
@@ -500,5 +532,49 @@ mod host_image_tests {
             p.get_avm1_variable("_root.target._height"),
             Value::Number(54.)
         );
+    }
+
+    #[test]
+    fn host_object_methods_reach_the_responder() {
+        let mut data = Vec::new();
+        swf::write_swf(
+            &swf::Header::default_with_swf_version(8),
+            &[swf::Tag::ShowFrame],
+            &mut data,
+        )
+        .unwrap();
+        let movie = SwfMovie::from_data(&data, "file:///synthetic.swf".into(), None, None).unwrap();
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let responder: Arc<Mutex<Option<Responder>>> = Arc::new(Mutex::new(Some(Box::new(
+            |call: &GameCall, _: &mut Movie<'_, '_>| {
+                (call.name == "_root.CodeObj.getScrollSpeed").then(|| vec![Value::Number(2.)])
+            },
+        ))));
+        let player = PlayerBuilder::new()
+            .with_external_interface(Box::new(Game {
+                calls: calls.clone(),
+                responder,
+            }))
+            .with_movie(movie)
+            .with_autoplay(true)
+            .build();
+        let mut p = player.lock().unwrap();
+        p.run_frame();
+        assert!(p.mutate_with_update_context(|context| {
+            ruffle_core::external::install_avm1_host_object(
+                context,
+                "_root.CodeObj",
+                &["getScrollSpeed", "closeMenu"],
+            )
+        }));
+        assert_eq!(
+            p.invoke_avm1("_root.CodeObj.getScrollSpeed", []),
+            Value::Number(2.)
+        );
+        p.invoke_avm1("_root.CodeObj.closeMenu", [Value::String("now".into())]);
+        let queued = calls.lock().unwrap();
+        assert_eq!(queued.len(), 1);
+        assert_eq!(queued[0].name, "_root.CodeObj.closeMenu");
+        assert_eq!(queued[0].args, vec![Value::String("now".into())]);
     }
 }
