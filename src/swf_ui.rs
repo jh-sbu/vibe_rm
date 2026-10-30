@@ -1307,9 +1307,10 @@ impl SwfUi {
         menu.handle_event(PlayerEvent::MouseUp { x, y, button });
     }
 
-    /// Whether the HUD shows: not while a menu is up, as in the game.
+    /// Whether the HUD shows: not while a menu is up, as in the game, nor
+    /// while the screen fades out for Quit to Main Menu.
     pub fn visible(engine: &Engine) -> bool {
-        engine.menu.is_none()
+        engine.menu.is_none() && !engine.quit_to_main_menu
     }
 
     /// Track the pointer even while the console handles input, so closing it

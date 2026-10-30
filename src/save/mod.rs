@@ -210,6 +210,7 @@ impl Engine {
                 // A load from the main menu that fails goes back to it.
                 if self.no_game {
                     self.menu = Some(crate::items::Menu::Main);
+                    self.start_main_menu_music();
                 }
             }
         }

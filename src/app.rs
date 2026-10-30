@@ -398,7 +398,7 @@ pub fn run(opts: Options) -> Result<()> {
                     engine.update(MoveInput::default(), 1.0 / 60.0, 20.0);
                     engine.apply_pending_save_load();
                     swf.update(&mut engine, 1.0 / 60.0);
-                    if engine.quit_to_main_menu {
+                    if engine.main_menu_ready() {
                         engine = quit_to_main_menu(engine, Some(&mut *swf), &opts);
                     }
                 }
@@ -483,7 +483,7 @@ fn blank_scene() -> Scene {
     scene
 }
 
-/// The session's end, after the journal's Quit to Main Menu: a fresh engine
+/// The session's end, after the journal's Quit to Main Menu and its fade: a fresh engine
 /// at the main menu, and the game's menus without the old session's.
 fn quit_to_main_menu(
     engine: Engine,
@@ -997,7 +997,7 @@ impl ApplicationHandler for App {
         if self
             .state
             .as_ref()
-            .is_some_and(|s| s.engine.quit_to_main_menu)
+            .is_some_and(|s| s.engine.main_menu_ready())
             && let Some(mut s) = self.state.take()
         {
             let engine = s.engine;

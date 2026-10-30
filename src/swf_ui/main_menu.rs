@@ -7,7 +7,7 @@
 //! journal's save list (`journal_system`). Continue and New are two-step:
 //! the menu's `CONTINUE` / `NEW` are answered with a confirmation, and its
 //! fade then calls `ContinueLastSavedGame` / `StartNewGame`. A new game
-//! isn't there yet: New says so. The choices without a source are in
+//! isn't there yet: confirming New says so. The choices without a source are in
 //! `known_ambiguities/main-menu.md`.
 
 use std::sync::{Arc, Mutex};
@@ -30,7 +30,8 @@ pub(super) struct MainMenu {
 
 /// `sendMenuProperties`' arguments on PC (`research/ui/main-menu.md`): Quit,
 /// whether there are saves (Continue, Load), the version, and no press-start
-/// state, upsell, add-ons, help, mods or Creations; logged in, so no login.
+/// state, upsell, add-ons, help or mods, as SE shows; no Creations either
+/// (`deviations/main-menu.md`); logged in, so no login.
 fn properties(has_saves: bool) -> Vec<Value> {
     let mut args = vec![
         Value::Bool(true),
@@ -91,8 +92,16 @@ impl MainMenu {
                     self.menu.callback("FadeInMenu", &[]);
                 }
             }
-            "NEW" | "StartNewGame" => {
+            "NEW" => {
+                let text_ = engine
+                    .gmst_string("sConfirmNew")
+                    .unwrap_or_else(|| "Start a new game?".into());
+                self.menu.callback("ConfirmNewGame", &[text(&text_)]);
+            }
+            // Confirmed and faded out: there is no new game to start yet.
+            "StartNewGame" => {
                 engine.debug_message_box("Starting a new game isn't available yet.".into());
+                self.menu.callback("FadeInMenu", &[]);
             }
             "OpenCreditsMenu" => engine.menu = Some(crate::items::Menu::Credits),
             "QuitToDesktop" => engine.quit_requested = true,

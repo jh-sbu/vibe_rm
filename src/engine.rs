@@ -225,8 +225,11 @@ pub struct Engine {
     pub journal_last_tab: bool,
     /// The journal's Quit to Desktop: the app exits.
     pub quit_requested: bool,
-    /// Quit to Main Menu: the app tears the session down after this frame.
+    /// Quit to Main Menu was confirmed: the screen fades to black, then the
+    /// app tears the session down (`Engine::main_menu_ready`).
     pub quit_to_main_menu: bool,
+    /// The main menu's title track while it plays.
+    pub(crate) main_menu_music: Option<crate::audio::VoiceId>,
     /// No game is running: the main menu is up, or a load from it failed.
     pub no_game: bool,
     /// The player's stamina, seconds before it comes back after being spent,
@@ -597,6 +600,7 @@ impl Engine {
             journal_last_tab: false,
             quit_requested: false,
             quit_to_main_menu: false,
+            main_menu_music: None,
             no_game: false,
             // Full: clamped to their most on the first update.
             player_stamina: f32::INFINITY,
