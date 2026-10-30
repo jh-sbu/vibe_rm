@@ -69,8 +69,18 @@ Unfinished work and open research questions without a decision should be noted i
 
 Do NOT commit anything in `refs/`; the references found there are external and not
 for committing. Anything that needs to be committed should be done elsewhere:
-research notes in `research/`, decisions in `known_ambiguities/`, and plans in
-`plans/`.
+research notes in `research/`, decisions in `known_ambiguities/`, deliberate
+deviations in `deviations/`, and plans in `plans/`.
+
+# Deliberate deviations
+
+`deviations/` records ONLY behavior the user has explicitly stated is a deliberate
+deviation from Skyrim SE (for example, a feature the user has declared out of
+scope). Each entry names the original behavior, what this engine does instead,
+and that the user decided it. An agent must NEVER decide on its own that
+something is a deviation. Do NOT put choices made because of ambiguity,
+inconclusive research, missing tests or unfinished work in `deviations/`: those
+belong in `known_ambiguities/` (decisions) or `plans/` (open work).
 
 # Test plugins
 
