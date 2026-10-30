@@ -251,6 +251,7 @@ pub fn run(opts: Options) -> Result<()> {
                 }
                 if i >= opts.burst_from && opts.burst.is_some_and(|n| n > 0 && i % n == 0) {
                     let (scene, camera) = frame_parts(
+                        &engine.loading_view,
                         &engine.map_view,
                         &engine.stats_view,
                         engine.menu,
@@ -422,6 +423,7 @@ pub fn run(opts: Options) -> Result<()> {
         let size = [opts.width, opts.height];
         let hud_visible = crate::swf_ui::SwfUi::visible(&engine);
         let (scene, camera) = frame_parts(
+            &engine.loading_view,
             &engine.map_view,
             &engine.stats_view,
             engine.menu,
@@ -465,13 +467,15 @@ pub fn run(opts: Options) -> Result<()> {
 /// camera of a menu that has its own (the world map, the skills menu's sky),
 /// by parts: the renderer is borrowed too.
 fn frame_parts<'a>(
+    loading: &'a Option<crate::loading_view::LoadingView>,
     map: &'a Option<crate::map_view::MapView>,
     stats: &'a Option<crate::stats_view::StatsView>,
     menu: Option<crate::items::Menu>,
     scene: &'a Scene,
     camera: Camera,
 ) -> (&'a Scene, Camera) {
-    crate::map_view::frame_parts(map, menu)
+    crate::loading_view::frame_parts(loading)
+        .or_else(|| crate::map_view::frame_parts(map, menu))
         .or_else(|| crate::stats_view::frame_parts(stats, menu))
         .unwrap_or((scene, camera))
 }
@@ -742,6 +746,14 @@ impl ApplicationHandler for App {
         event: DeviceEvent,
     ) {
         let Some(s) = &mut self.state else { return };
+        // A mouse button held turns the loading screen's model.
+        if let DeviceEvent::MouseMotion { delta } = event
+            && !s.mouse_buttons.is_empty()
+            && let Some(view) = &mut s.engine.loading_view
+        {
+            view.turn(delta.0 as f32);
+            return;
+        }
         if let DeviceEvent::MouseMotion { delta } = event
             && s.grabbed
             && !s.menu_takes_mouse()
@@ -923,6 +935,7 @@ impl ApplicationHandler for App {
                 };
                 let view = frame.texture.create_view(&Default::default());
                 let (scene, camera) = frame_parts(
+                    &s.engine.loading_view,
                     &s.engine.map_view,
                     &s.engine.stats_view,
                     s.engine.menu,

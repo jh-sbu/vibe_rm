@@ -43,6 +43,7 @@ mod knowledge;
 mod leveled;
 mod load_screens;
 mod loading;
+mod loading_view;
 mod locations;
 mod locks;
 mod loose;

@@ -187,6 +187,8 @@ pub struct Engine {
     pub(crate) pending_load: Option<crate::loading::LoadRequest>,
     /// The loading state, while a load's screen is up.
     pub(crate) loading: Option<crate::loading::Loading>,
+    /// The loading screen's scene, while its screen is up.
+    pub loading_view: Option<crate::loading_view::LoadingView>,
     /// The load order's loading screens, read on first use.
     pub(crate) load_screen_cache: std::cell::OnceCell<Vec<crate::load_screens::LoadScreen>>,
     /// The loading screens' own random stream (never saved).
@@ -595,6 +597,7 @@ impl Engine {
             pending_save_load: None,
             pending_load: None,
             loading: None,
+            loading_view: None,
             load_screen_cache: Default::default(),
             load_screen_rng: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

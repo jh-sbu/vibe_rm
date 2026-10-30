@@ -432,6 +432,11 @@ impl Engine {
         m
     }
 
+    /// An image space record's values, read once.
+    pub(crate) fn imgs_of(&mut self, f: FormId) -> Option<Imgs> {
+        self.imgs(f)
+    }
+
     fn imgs(&mut self, f: FormId) -> Option<Imgs> {
         if let Some(m) = self.imagespace.image_spaces.get(&f) {
             return *m;

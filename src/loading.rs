@@ -128,6 +128,7 @@ impl Engine {
         }
         self.menu = None;
         let phase = if self.no_game {
+            self.open_chosen_view(&screens);
             Phase::ScreenIn
         } else {
             self.imagespace.start_sleep_fade_out();
@@ -142,6 +143,12 @@ impl Engine {
             last_text: None,
             texts_given: 0,
         });
+    }
+
+    /// The scene of the screen chosen.
+    fn open_chosen_view(&mut self, screens: &crate::load_screens::Choice) {
+        let screen = screens.first.map(|i| self.load_screens()[i].clone());
+        self.open_loading_view(screen.as_ref());
     }
 
     /// Whether the loading menu shows the player's level: not from the main
@@ -183,24 +190,38 @@ impl Engine {
         let Some(mut l) = self.loading.take() else {
             return;
         };
+        if let Some(view) = &mut self.loading_view {
+            view.update(dt);
+            view.set_shown(match l.phase {
+                Phase::FadeOut => 0.0,
+                Phase::ScreenIn => l.t / SCREEN_IN_SECONDS,
+                Phase::Load | Phase::Hold => 1.0,
+                Phase::ScreenOut => 1.0 - l.t / SCREEN_OUT_SECONDS,
+            });
+        }
         l.t += dt;
         if l.phase != Phase::FadeOut {
             l.shown += dt;
         }
         let next = match l.phase {
-            Phase::FadeOut if self.imagespace.sleep_fade_is_black() => Some(Phase::ScreenIn),
+            Phase::FadeOut if self.imagespace.sleep_fade_is_black() => {
+                self.open_chosen_view(&l.screens);
+                Some(Phase::ScreenIn)
+            }
             Phase::ScreenIn if l.t >= SCREEN_IN_SECONDS => Some(Phase::Load),
             Phase::Load => {
                 self.run_load(l.request.clone());
                 // A failed load from the main menu has its menu back; one
                 // that failed half way ends the session for it.
                 if self.menu.is_some() || self.quit_to_main_menu {
+                    self.close_loading_view();
                     return;
                 }
                 Some(Phase::Hold)
             }
             Phase::Hold if l.shown >= MIN_SCREEN_SECONDS => Some(Phase::ScreenOut),
             Phase::ScreenOut if l.t >= SCREEN_OUT_SECONDS => {
+                self.close_loading_view();
                 // The world fades back in, running again.
                 self.imagespace.set_sleep_fade_black();
                 self.imagespace.start_sleep_fade_in();

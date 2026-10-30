@@ -56,3 +56,33 @@ details open (`research/ui/loading-screen.md`). Chosen, until
 - The draws come from a stream of the engine's own, seeded from the clock
   and never saved; GetRandomPercent in a screen's conditions draws from it,
   so choosing a screen never moves the streams a save restores.
+
+## The scene
+
+CommonLibSSE's Mist Menu names the parts (a mist model, the screen's model,
+a camera path with its sequence, an image space, mouse buttons held); the
+data gives the rest (`research/ui/loading-screen.md`). Chosen:
+
+- **The mist** is `INTMenuFogParticles` (the only interface fog model, used by
+  no record), at the origin, playing its `AutoPlay` sequence's emission,
+  warmed up 3 s before the screen shows. Its colour comes out reddish here;
+  SE's mist hasn't been compared.
+- **The model** is the screen's `NNAM` `STAT` model at the origin: scaled by
+  `SNAM`, turned by `RNAM` (degrees, applied as a reference's rotation) and
+  moved by `XNAM`.
+- **The camera** rides `CameraPathNode` along the `MOD2` model's `CameraPath`
+  sequence, looping over its 60 s, facing +Y (toward the model; the node is
+  unrotated and its `NiCamera` isn't read). A screen without a path uses
+  `LSCameraPanZoomInSmall`. The field of view (50°) isn't in the data.
+- **Light**: the three lights of the developer cell `LoadScreenTesting`
+  (`LoadScreenLightMain`, `Back`, `Fill`, at their positions, radii and
+  colours), a dim ambient (0.05), and `LoadScreenIS`'s saturation,
+  brightness, contrast and tint. The test cell is a lead, not a source for
+  what the game uses.
+- **The fade**: the scene fades in and out with the movie (0.63 s / 0.33 s).
+- **Turning**: with any mouse button held, horizontal mouse movement turns the
+  model about Z, 0.4° a pixel, within `ONAM` (read as degrees). The header's
+  held-button flags and the talk page's "spinning" are the evidence; the
+  axis, rate and keys are guesses.
+- No logo is drawn on its own: every installed screen has a model, and when
+  the "default logo only" property applies is unknown.
