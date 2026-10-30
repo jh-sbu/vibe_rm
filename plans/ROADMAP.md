@@ -1903,7 +1903,8 @@ game each piece unlocks.
    shouting, the push throwing actors, "Spend Soul?"), perks (see Done: the entry points
    waiting on casting, barter, attack types;
    `known_ambiguities/perks.md`), inventory (player's, armor from
-   inventory, ammo / quivers (the weakest arrows equipped with a bow, UESP);
+   inventory, ammo / quivers (the weakest arrows equipped with a bow, UESP;
+   `plans/bow-ammunition.md`);
    torches in dark interiors, burning out), crime
    (escape routes, yielding, skill loss in jail; witnesses running to the
    guards; fences; see Done)
