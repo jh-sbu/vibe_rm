@@ -358,6 +358,17 @@ impl ImageSpace {
         }
     }
 
+    /// Fully black at once (the loading screen's end, which a load may have
+    /// cleared).
+    pub(crate) fn set_sleep_fade_black(&mut self) {
+        self.sleep_fade = Some(SleepFade {
+            from: 1.0,
+            to: 1.0,
+            elapsed: 0.0,
+            duration: 0.0,
+        });
+    }
+
     pub(crate) fn clear_sleep_fade(&mut self) {
         self.sleep_fade = None;
     }

@@ -210,6 +210,7 @@ mod tests {
         engine.menu = None;
         engine.pending_save_load = Some("Missing".into());
         engine.apply_pending_save_load();
+        engine.complete_load();
         assert_eq!(engine.menu, Some(Menu::Main));
         assert!(engine.no_game);
         assert_eq!(engine.messages.boxes.len(), 1);

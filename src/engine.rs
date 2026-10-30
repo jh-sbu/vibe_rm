@@ -185,6 +185,8 @@ pub struct Engine {
     pub pending_save_load: Option<String>,
     /// A cell change or save load waiting for the next frame (`loading`).
     pub(crate) pending_load: Option<crate::loading::LoadRequest>,
+    /// The loading state, while a load's screen is up.
+    pub(crate) loading: Option<crate::loading::Loading>,
     pub(crate) last_save: std::cell::Cell<std::time::Instant>,
     pub(crate) last_pause_menu: Option<crate::items::Menu>,
     pub subtitle_override: Option<bool>,
@@ -586,6 +588,7 @@ impl Engine {
             save_thumbnail: None,
             pending_save_load: None,
             pending_load: None,
+            loading: None,
             save_directory: crate::save::save_dir(),
             advancing_skill: Default::default(),
             critically_hit: Default::default(),
@@ -3003,6 +3006,10 @@ impl Engine {
         self.scripts.wall_time += dt as f64;
         self.frame_seconds = dt;
         self.apply_pending_load();
+        if self.loading.is_some() {
+            self.update_loading(dt);
+            return;
+        }
         self.check_pause_autosave();
         self.flush_save_requests();
         // The gift menu went: its script carries on.

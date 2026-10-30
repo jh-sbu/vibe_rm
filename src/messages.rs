@@ -579,7 +579,7 @@ impl Engine {
 
     /// A menu or message box is up (the game's controls wait).
     pub fn menu_up(&self) -> bool {
-        self.menu.is_some() || !self.messages.boxes.is_empty()
+        self.menu.is_some() || !self.messages.boxes.is_empty() || self.loading.is_some()
     }
 
     /// Menu mode: a menu that pauses the game is open (every one but dialogue's:
