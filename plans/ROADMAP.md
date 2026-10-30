@@ -2160,7 +2160,8 @@ game each piece unlocks.
    - Main menu (`plans/main-menu.md`: Continue, Load, Credits, Quit and Quit
      to Main Menu done with `--main-menu`; New, the menu's backdrop, the
      credits' logos and the prompts for saves made with other plugins
-     remain). Loading screens are done (see Done); their SE observation
+     remain; the save list's keyboard selection and the logos:
+     `plans/main-menu-leftovers.md`). Loading screens are done (see Done); their SE observation
      batch is pending (`plans/loading-screen.md`)
    - A new game separate from the developer launch, which drops the player at
      Tamriel (4, -12) outside Riverwood with only start-game-enabled quests running
