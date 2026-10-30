@@ -1,8 +1,9 @@
 # Follow-on: the main menu
 
-**Status: in progress** (drafted 2026-10-28, expanded 2026-10-30). Step 0's
-research is in `research/ui/main-menu.md`; its questions for SE are listed
-there. Separate from the
+**Status: implemented** (2026-10-30) except New, which waits on ROADMAP item
+11's new-game research; see "Where it stands" at the end. Drafted 2026-10-28,
+expanded 2026-10-30. Step 0's research is in `research/ui/main-menu.md`, with
+its questions for SE. Separate from the
 journal System page; ROADMAP Next item 11 (New game and the opening).
 
 This plan builds the game's own main menu (`startmenu.swf`, menu name "Main
@@ -227,3 +228,28 @@ the text between the two fields, is open.
 ## Open questions
 
 - Everything step 0 lists, until it's settled.
+
+## Where it stands (2026-10-30)
+
+Done: steps 0 to 4 and 6, and step 5's fallback. `--main-menu` launches to the
+main menu (the developer launch stays the default). Continue, Load (character
+list, saves, screenshots, delete, the last-save check), Credits, Quit to
+Desktop and the journal's Quit to Main Menu work. Choices are in
+`known_ambiguities/main-menu.md`. Verified with GPU-gated engine tests
+(`main_menu::tests`: three teardown cycles, Continue's save, a failed load) and
+offscreen runs: Continue and Load into a save, the credits scrolling and
+closing, deleting the last save, New's message, and two
+game → main menu → game cycles.
+
+Remaining:
+
+- New: a new game, with ROADMAP item 11.
+- What is behind the menu: the main menu cell, the logo model, the smoke and
+  the music, once their placement is known (`research/ui/main-menu.md`).
+- The credits' logos: Ruffle lays out the lines after an inline `<img>` over
+  one another, so the three logo images are left out of the text.
+- A loading screen for loads from the main menu (`plans/loading-screen.md`).
+- The SE observations listed in the research note.
+- Keyboard: the save panel's character list starts with nothing selected, so
+  Enter needs an arrow key first (as in the journal's Load).
+

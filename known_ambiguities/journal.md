@@ -135,10 +135,7 @@ its data isn't public; the choices below are what the movie's code allows.
   Skyrim SE gameplay.
 - **The System page** connects saving/loading, settings, PC controls and Help.
   Creations is left out (`ShouldShowMod` false); Installed Content is disabled.
-  Until startmenu.swf exists, no Main Menu option is shown. Asset inspection
-  found desktop dispatch hard-coded to index 1, so replacing the quit list
-  with a single entry would call QuitToMainMenu and show the wrong confirmation.
-  Keep an unselectable blank at index 0 and Desktop at index 1 instead, selecting
-  Desktop before the PC callback. QuitToMainMenu remains logged and unanswered.
-  This inert index is a host compatibility choice, not claimed native behavior.
+  The quit list is Main Menu (index 0, the movie's `QuitToMainMenu`) and
+  Desktop (index 1), with Main Menu selected first; which one SE selects first
+  is unobserved. Quit to Main Menu's teardown: `known_ambiguities/main-menu.md`.
   Other System choices: `known_ambiguities/system-page.md`.

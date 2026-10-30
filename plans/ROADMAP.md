@@ -5,6 +5,11 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Main menu (`plans/main-menu.md`): `--main-menu` launches to startmenu.swf;
+  Continue, Load (the shared save panel, deleting), Credits (creditsmenu.swf
+  through Ruffle code objects), Quit, and the journal's Quit to Main Menu,
+  which rebuilds the engine for a new session. New waits on item 11. Research
+  and choices: `research/ui/main-menu.md`, `known_ambiguities/main-menu.md`.
 - Crafting (`plans/crafting.md`): station activation and authored menus, COBJ
   recipes and transactions, tempering, alchemy discovery/mixing, disenchanting,
   enchantment strength/charge/rename, vanilla/DLC perk hooks, skill XP and
@@ -2076,8 +2081,7 @@ game each piece unlocks.
      display or refresh already-expanded tutorial messages and journal/objective
      text after a rebind or reset. Input dispatch and button art already remap.
    - The journal's rest: Show on Map; gamepad input and its Controller/Vibration
-     options; DDOF's option once depth of field renders; Main Menu quitting once
-     `plans/main-menu.md` is implemented. Creations/Installed Content remain
+     options; DDOF's option once depth of field renders. Creations/Installed Content remain
      excluded from the vanilla runtime. The statistics
      whose systems aren't there yet (dragon souls collected, horses
      stolen)
@@ -2135,7 +2139,9 @@ game each piece unlocks.
    research question.
 10. **Performance**: async loading, GPU-driven culling
 11. **New game and the opening** (an eventual goal; it needs most of the items above)
-   - Main menu and Continue/Load/Credits (`plans/main-menu.md`); loading screens
+   - Main menu (`plans/main-menu.md`: Continue, Load, Credits, Quit and Quit
+     to Main Menu done with `--main-menu`; New, the menu's backdrop and music,
+     and the credits' logos remain); loading screens
      for saves and doors, including audio PDLC reporting (`plans/loading-screen.md`)
    - A new game separate from the developer launch, which drops the player at
      Tamriel (4, -12) outside Riverwood with only start-game-enabled quests running
