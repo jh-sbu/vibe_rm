@@ -1,6 +1,8 @@
 # Follow-on: the main menu
 
-**Status: planned** (drafted 2026-10-28, expanded 2026-10-30). Separate from the
+**Status: in progress** (drafted 2026-10-28, expanded 2026-10-30). Step 0's
+research is in `research/ui/main-menu.md`; its questions for SE are listed
+there. Separate from the
 journal System page; ROADMAP Next item 11 (New game and the opening).
 
 This plan builds the game's own main menu (`startmenu.swf`, menu name "Main
