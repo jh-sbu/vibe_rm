@@ -232,6 +232,8 @@ pub struct Engine {
     /// Quit to Main Menu was confirmed: the screen fades to black, then the
     /// app tears the session down (`Engine::main_menu_ready`).
     pub quit_to_main_menu: bool,
+    /// A message the main menu shows when this session gives way to it.
+    pub(crate) main_menu_notice: Option<String>,
     /// The main menu's title track while it plays.
     pub(crate) main_menu_music: Option<crate::audio::VoiceId>,
     /// No game is running: the main menu is up, or a load from it failed.
@@ -606,6 +608,7 @@ impl Engine {
             journal_last_tab: false,
             quit_requested: false,
             quit_to_main_menu: false,
+            main_menu_notice: None,
             main_menu_music: None,
             no_game: false,
             // Full: clamped to their most on the first update.

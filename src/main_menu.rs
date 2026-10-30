@@ -75,6 +75,7 @@ impl Engine {
     /// everything of the game itself starts over.
     pub fn into_main_menu(mut self, options: SessionOptions) -> Engine {
         self.flush_save_requests();
+        let notice = self.main_menu_notice.take();
         self.discard_conversation_for_load();
         self.unload_all();
         let Engine {
@@ -106,6 +107,9 @@ impl Engine {
         engine.refresh_audio_settings();
         engine.sync_settings();
         engine.enter_main_menu();
+        if let Some(text) = notice {
+            engine.debug_message_box(text);
+        }
         engine
     }
 }

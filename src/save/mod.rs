@@ -210,16 +210,36 @@ impl Engine {
         self.apply_pending_load();
     }
 
-    /// A native save load, from the queued request: a failure shows the
-    /// error, and one from the main menu goes back to it.
+    /// A native save load, from the queued request. A save that can't be
+    /// read or applied leaves the game as it was, with the game's message
+    /// (`sSaveGameIsCorrupt`, or `sSaveGameCorruptMenuMessage` at the main
+    /// menu, which comes back). One that failed half way leaves no game to
+    /// return to: the session ends for the main menu, which shows the
+    /// message.
     pub(crate) fn finish_save_load(&mut self, name: String) {
-        if let Err(error) = self.load_game(&name) {
-            self.debug_message_box(format!("Could not load: {error:#}"));
-            // A load from the main menu that fails goes back to it.
-            if self.no_game {
-                self.menu = Some(crate::items::Menu::Main);
-                self.start_main_menu_music();
+        let Err(error) = self.load_game(&name) else {
+            return;
+        };
+        log::warn!("loading {name}: {error:#}");
+        let half = error.downcast_ref::<state::HalfApplied>().is_some();
+        if self.no_game || half {
+            let text = self
+                .gmst_string("sSaveGameCorruptMenuMessage")
+                .unwrap_or_else(|| "The save game is corrupt and cannot be loaded.".into());
+            if half && !self.no_game {
+                self.main_menu_notice = Some(text);
+                self.quit_to_main_menu = true;
+                self.imagespace.set_sleep_fade_black();
+                return;
             }
+            self.debug_message_box(text);
+            self.menu = Some(crate::items::Menu::Main);
+            self.start_main_menu_music();
+        } else {
+            let text = self
+                .gmst_string("sSaveGameIsCorrupt")
+                .unwrap_or_else(|| "The save game is corrupt.  Returning to game.".into());
+            self.debug_message_box(text);
         }
     }
 

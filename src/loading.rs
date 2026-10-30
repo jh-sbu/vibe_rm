@@ -158,8 +158,9 @@ impl Engine {
             Phase::ScreenIn if l.t >= SCREEN_IN_SECONDS => Some(Phase::Load),
             Phase::Load => {
                 self.run_load(l.request.clone());
-                // A failed load from the main menu has its menu back.
-                if self.menu.is_some() {
+                // A failed load from the main menu has its menu back; one
+                // that failed half way ends the session for it.
+                if self.menu.is_some() || self.quit_to_main_menu {
                     return;
                 }
                 Some(Phase::Hold)
@@ -329,5 +330,44 @@ mod tests {
             LoadTarget::Save("First".into())
         );
         assert!(e.pending_load.is_none());
+    }
+
+    /// A save standing in a cell this load order hasn't, in `dir`'s saves.
+    fn write_save_in_missing_cell(e: &Engine, name: &str) {
+        let mut snapshot = crate::save::state::Snapshot::capture(e);
+        snapshot.spot = Some(crate::save::state::Spot {
+            location: crate::engine::Location::Interior(FormId(0x00AB_CDEF)),
+            feet: Vec3::ZERO,
+            yaw: 0.0,
+        });
+        let path = e.save_directory.join(format!("{name}.vrs"));
+        std::fs::write(path, snapshot.write().to_bytes()).unwrap();
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+    fn a_save_that_cant_load_leaves_the_game_as_it_was() {
+        let (fixture, mut e) = fixture();
+        e.save_directory = fixture.0.join("saves");
+        e.no_game = false;
+        e.day = 12;
+        write_save_in_missing_cell(&e, "Broken");
+        e.day = 30;
+        e.pending_save_load = Some("Broken".into());
+        e.apply_pending_save_load();
+        e.complete_load();
+        assert_eq!(e.day, 30, "nothing of the save was applied");
+        assert!(!e.no_game && !e.quit_to_main_menu);
+        assert_eq!(e.messages.boxes.len(), 1);
+        assert!(e.messages.boxes[0].text.contains("Returning to game"));
+
+        // From the main menu, the menu comes back with the menu's message.
+        e.messages.boxes.clear();
+        e.enter_main_menu();
+        e.pending_save_load = Some("Broken".into());
+        e.apply_pending_save_load();
+        e.complete_load();
+        assert_eq!(e.menu, Some(crate::items::Menu::Main));
+        assert!(e.messages.boxes[0].text.contains("cannot be loaded"));
     }
 }

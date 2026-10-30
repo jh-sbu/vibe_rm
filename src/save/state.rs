@@ -86,6 +86,17 @@ pub struct Spot {
     pub yaw: f32,
 }
 
+/// The context of a load error raised after `Snapshot::apply` began
+/// changing the engine: the old game is gone and the new one incomplete.
+#[derive(Debug, Clone, Copy)]
+pub struct HalfApplied;
+
+impl std::fmt::Display for HalfApplied {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("the save was only partly applied")
+    }
+}
+
 #[derive(Default)]
 pub struct Snapshot {
     /// Owned runtime base records, in global form-ID order (optional FORM).
@@ -2286,6 +2297,19 @@ impl Snapshot {
             .random_streams
             .unwrap_or((1, 0x9E37_79B9_7F4A_7C15));
         let magic_usage = crate::stats::MagicUsage::restore(&self.continuity.magic_usage)?;
+        // Where the save stands must load, before anything changes.
+        match self.spot.as_ref().map(|s| s.location) {
+            Some(Location::Interior(cell)) => anyhow::ensure!(
+                e.lo.cell(cell).is_some_and(|c| c.world.is_none())
+                    && crate::world::records::cell_info(&e.lo, cell).is_some(),
+                "save stands in {cell}, which isn't an interior cell"
+            ),
+            Some(Location::Exterior { world, .. }) => anyhow::ensure!(
+                e.lo.world(world).is_some(),
+                "save stands in {world}, which isn't a worldspace"
+            ),
+            _ => {}
+        }
         // Leave the old game's cells before the world state is replaced: their
         // unloading writes into it.
         e.discard_conversation_for_load();
@@ -2306,7 +2330,8 @@ impl Snapshot {
         e.lo.clear_runtime_records();
         e.clear_runtime_magic_cache();
         for bytes in &self.forms {
-            e.lo.insert_runtime_record(bytes)?;
+            e.lo.insert_runtime_record(bytes)
+                .map_err(|err| anyhow::Error::from(err).context(HalfApplied))?;
         }
         let s = &mut e.scripts;
         s.character_id = self
@@ -2451,12 +2476,16 @@ impl Snapshot {
                 location: Location::Interior(cell),
                 feet,
                 yaw,
-            }) => e.enter_interior(cell, Some((feet, yaw)))?,
+            }) => e
+                .enter_interior(cell, Some((feet, yaw)))
+                .map_err(|err| err.context(HalfApplied))?,
             Some(Spot {
                 location: Location::Exterior { world, .. },
                 feet,
                 yaw,
-            }) => e.enter_exterior(world, feet, yaw)?,
+            }) => e
+                .enter_exterior(world, feet, yaw)
+                .map_err(|err| err.context(HalfApplied))?,
             _ => {}
         }
         // Rebuilding loaded actors may draw random numbers. Those draws must
