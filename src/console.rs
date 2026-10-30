@@ -859,10 +859,10 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             if args.is_empty() {
                 return vec!["usage: load <save name> (saves lists them)".into()];
             }
-            match engine.load_game(&args.join(" ")) {
-                Ok(()) => vec![format!("loaded {}", args.join(" "))],
-                Err(e) => vec![format!("error: {e:#}")],
-            }
+            // A native load: behind the loading screen, next frame.
+            let name = args.join(" ");
+            engine.request_load(crate::loading::LoadRequest::save(name.clone()));
+            vec![format!("loading {name}")]
         }
         "setting" => engine.setting_command(&args),
         "saves" => {

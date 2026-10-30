@@ -372,6 +372,7 @@ mod tests {
         assert_eq!(e.scripts.real_time, real);
         // The failure is reported, and the world fades back in.
         assert_eq!(e.messages.boxes.len(), 1);
+        assert!(e.messages.boxes[0].text.contains("no longer available"));
         assert!(e.imagespace.sleep_fade_amount() > 0.9);
         e.update(Default::default(), 0.05, 20.0);
         assert!(!e.audio_director.inputs.loading);
@@ -419,7 +420,7 @@ mod tests {
         assert_eq!(e.day, 30, "nothing of the save was applied");
         assert!(!e.no_game && !e.quit_to_main_menu);
         assert_eq!(e.messages.boxes.len(), 1);
-        assert!(e.messages.boxes[0].text.contains("Returning to game"));
+        assert!(e.messages.boxes[0].text.contains("is corrupt"));
 
         // From the main menu, the menu comes back with the menu's message.
         e.messages.boxes.clear();

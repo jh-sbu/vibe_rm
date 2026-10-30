@@ -212,8 +212,9 @@ impl Engine {
 
     /// A native save load, from the queued request. A save that can't be
     /// read or applied leaves the game as it was, with the game's message
-    /// (`sSaveGameIsCorrupt`, or `sSaveGameCorruptMenuMessage` at the main
-    /// menu, which comes back). One that failed half way leaves no game to
+    /// (`sSaveGameNoLongerAvailable` for a file gone, else
+    /// `sSaveGameIsCorrupt`; `sSaveGameCorruptMenuMessage` at the main menu,
+    /// which comes back). One that failed half way leaves no game to
     /// return to: the session ends for the main menu, which shows the
     /// message.
     pub(crate) fn finish_save_load(&mut self, name: String) {
@@ -236,9 +237,19 @@ impl Engine {
             self.menu = Some(crate::items::Menu::Main);
             self.start_main_menu_music();
         } else {
-            let text = self
-                .gmst_string("sSaveGameIsCorrupt")
-                .unwrap_or_else(|| "The save game is corrupt.  Returning to game.".into());
+            let gone = error.chain().any(|e| {
+                e.downcast_ref::<std::io::Error>()
+                    .is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+            });
+            let text = if gone {
+                self.gmst_string("sSaveGameNoLongerAvailable")
+                    .unwrap_or_else(|| {
+                        "The save game is no longer available.  Returning to game.".into()
+                    })
+            } else {
+                self.gmst_string("sSaveGameIsCorrupt")
+                    .unwrap_or_else(|| "The save game is corrupt.  Returning to game.".into())
+            };
             self.debug_message_box(text);
         }
     }
