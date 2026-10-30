@@ -2094,6 +2094,7 @@ game each piece unlocks.
      keyboard/mouse bindings, chords and unbound controls; preserve tags until
      display or refresh already-expanded tutorial messages and journal/objective
      text after a rebind or reset. Input dispatch and button art already remap.
+     Plan: `plans/control-text-tags.md`.
    - The journal's rest: Show on Map; gamepad input and its Controller/Vibration
      options; DDOF's option once depth of field renders. Creations/Installed Content remain
      excluded from the vanilla runtime. The statistics
