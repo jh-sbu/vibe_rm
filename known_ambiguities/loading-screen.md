@@ -86,3 +86,14 @@ data gives the rest (`research/ui/loading-screen.md`). Chosen:
   axis, rate and keys are guesses.
 - No logo is drawn on its own: every installed screen has a model, and when
   the "default logo only" property applies is unknown.
+
+## Sound
+
+While the loading state lasts, the audio director's `loading` input is set:
+`AudioCategoryPausedDuringMenuLoad` (`PDLC`) pauses, as its name says. The
+state also counts as menu mode (the Loading Menu pauses the game), so the
+`PausedDuringMenu` categories pause too; whether SE treats the Loading Menu
+as a menu for those isn't known. Music isn't paused or restarted by the
+state itself: it plays on, and the new cell's music type takes over once the
+load is done, as after any cell change. SE's behaviour is in the observation
+batch.

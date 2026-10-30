@@ -343,6 +343,9 @@ mod tests {
         let mut seconds = 0.0;
         while e.is_loading() {
             e.update(Default::default(), 0.05, 20.0);
+            // The audio director hears of it while the state lasts (the
+            // frame that ends it, it still does).
+            assert!(e.audio_director.inputs.loading);
             seconds += 0.05;
             let phase = e.loading.as_ref().map(|l| l.phase);
             if let Some(p) = phase
@@ -370,6 +373,8 @@ mod tests {
         // The failure is reported, and the world fades back in.
         assert_eq!(e.messages.boxes.len(), 1);
         assert!(e.imagespace.sleep_fade_amount() > 0.9);
+        e.update(Default::default(), 0.05, 20.0);
+        assert!(!e.audio_director.inputs.loading);
     }
 
     #[test]

@@ -206,7 +206,7 @@ impl crate::engine::Engine {
             space,
             reverb,
             menu: self.in_menu_mode(),
-            loading: false,
+            loading: self.loading.is_some(),
             dialogue: self.conversation.is_some(),
             stats: self.menu == Some(crate::items::Menu::Skills),
             combat: self.cells.values().flat_map(|rt| &rt.actors).any(|a| {
