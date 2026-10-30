@@ -79,6 +79,14 @@ formula are implementation choices, not documented Havok behavior. The survey
 and public member names establish the gain's existence, not its algorithm.
 A synthetic chain verifies a foot stays put after moving the body, then lifts.
 
+A pin may lag the animated (placed) ankle by at most 5% of hip-to-ankle reach
+(about 3 units for humanoids); beyond that it is dragged along with the foot.
+Without this limit, an idle NPC turning in place to face the player never lifts
+a foot, so its feet stayed where they were in the world and the legs crossed
+(Angrenor in Windhelm, 2026-10-30: feet on opposite sides after a half turn).
+15% left a visibly narrow stance, since an idle never releases the lag. The
+limit is an implementation choice; how Havok bounds a locked foot isn't public.
+
 ## Align world-from-model
 
 Chosen policy: fit a support plane to the ankles' ground hits, falling back

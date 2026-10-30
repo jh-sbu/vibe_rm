@@ -25,6 +25,9 @@ pub struct FootIkState {
     alignment: Quat,
 }
 
+/// How far (a share of hip-to-ankle reach) a pinned foot may lag the animated one.
+const PIN_SLIP: f32 = 0.05;
+
 /// Fraction to close per update for a per-frame (30 Hz) gain.
 fn step(gain: f32, dt: f32) -> f32 {
     1.0 - (1.0 - gain.clamp(0.0, 1.0)).powf(dt.max(0.0) * 30.0)
@@ -233,7 +236,14 @@ pub fn apply(
                 state.pins[i] = None;
             }
             if let Some(pin) = state.pins[i] {
-                let pinned = world_from_model.inverse().transform_point3(pin);
+                // The pin trails the animated foot by at most a slip, so a body
+                // turning in place on still feet doesn't cross its legs.
+                let mut pinned = world_from_model.inverse().transform_point3(pin);
+                let slip = (a - h).length() * PIN_SLIP;
+                if pinned.distance(target) > slip {
+                    pinned = target + (pinned - target).normalize() * slip;
+                    state.pins[i] = Some(world_from_model.transform_point3(pinned));
+                }
                 target = target.lerp(pinned, state.locks[i] * w);
             }
         } else {
@@ -381,7 +391,7 @@ mod tests {
             1.0 / 30.0,
         );
         let first = skeleton.model_space(&locals)[2].w_axis.truncate();
-        let moved = Mat4::from_translation(Vec3::X * 10.0);
+        let moved = Mat4::from_translation(Vec3::X * 3.0);
         locals = bind.clone();
         apply(
             &mut state,
@@ -411,8 +421,38 @@ mod tests {
         );
         assert!(state.pins[0].is_none());
         let foot = moved.transform_point3(skeleton.model_space(&locals)[2].w_axis.truncate());
-        assert!((foot.x - 10.0).abs() < 0.05);
+        assert!((foot.x - 3.0).abs() < 0.05);
     }
+    #[test]
+    fn pinned_foot_trails_a_body_turning_in_place() {
+        let (skeleton, ik, gains, mut bind) = fixture();
+        bind[0].translation.x = 12.0;
+        let mut state = FootIkState::default();
+        let map = [Some(0), Some(1), Some(2)];
+        let ground = [Some((0.0, Vec3::Z))];
+        let slip = 80.0 * PIN_SLIP;
+        for step in 0..=18 {
+            let turn = Mat4::from_rotation_z((step as f32 * 10.0).to_radians());
+            let mut locals = bind.clone();
+            apply(
+                &mut state,
+                &ik,
+                Some(&gains),
+                &map,
+                &skeleton,
+                &mut locals,
+                &ground,
+                turn,
+                1.0 / 30.0,
+            );
+            let foot = skeleton.model_space(&locals)[2].w_axis.truncate();
+            assert!(
+                foot.distance(Vec3::new(12.0, 0.0, 0.0)) <= slip + 0.05,
+                "step {step}: {foot:?}"
+            );
+        }
+    }
+
     #[test]
     fn support_plane_handles_a_step_and_degenerate_contacts() {
         let ankles = [
