@@ -1982,7 +1982,8 @@ game each piece unlocks.
      `WardDeflectSound`) and visuals; NPCs' self-cast and summoning staffs and
      recharging; staff charge reduced by the school's cost reduction (UESP:
      items reducing a school's magicka cost reduce its weapons' charge use;
-     `spell_cost` doesn't read the schools' `...Mod`); individual staff copies
+     spells get it through `PerkSkillBoosts`, `staff_cost` doesn't;
+     `plans/school-cost-enchantments.md`); individual staff copies
      selectable in the menus and hands (`known_ambiguities/staffs.md`); scrolls
      holding the player in place while cast (UESP Skyrim:Scrolls), NPCs casting
      scrolls; charges interrupted by blows or shouts (spells and scrolls)
