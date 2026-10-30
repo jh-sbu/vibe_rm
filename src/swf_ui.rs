@@ -21,6 +21,7 @@ mod favorites_menu;
 mod item_menu;
 mod journal_menu;
 mod journal_system;
+mod loading_menu;
 mod magic_menu;
 mod main_menu;
 mod map_menu;
@@ -89,6 +90,8 @@ pub struct SwfUi {
     /// The main menu, while no game runs, and the credits it opens.
     main: Option<main_menu::MainMenu>,
     credits: Option<main_menu::Credits>,
+    /// The loading menu, while a load's screen is up.
+    loading: Option<loading_menu::LoadingMenu>,
     buttons: Arc<Buttons>,
     size: (u32, u32),
     /// The keyboard's modifiers and the cursor, for the menus' input.
@@ -159,6 +162,7 @@ impl SwfUi {
             journal_saved: Default::default(),
             main: None,
             credits: None,
+            loading: None,
             buttons,
             size,
             modifiers: Default::default(),
@@ -196,6 +200,7 @@ impl SwfUi {
         self.journal_saved = Default::default();
         self.main = None;
         self.credits = None;
+        self.loading = None;
         match (
             Hud::open(&self.ui, self.size, &self.buttons),
             MessageBoxMenu::open(&self.ui, self.size),
@@ -242,6 +247,9 @@ impl SwfUi {
         if let Some(sleep_wait) = &mut self.sleep_wait {
             sleep_wait.menu.resize(width, height);
         }
+        if let Some(loading) = &mut self.loading {
+            loading.menu.resize(width, height);
+        }
         if let Some(crafting) = &mut self.crafting {
             crafting.menu.resize(width, height);
         }
@@ -284,6 +292,7 @@ impl SwfUi {
         self.stats_menu(engine, dt);
         self.map_menu(engine, dt);
         self.dialogue_menu(engine, dt);
+        self.loading_menu(engine, dt);
         self.message_box.update(engine);
         self.message_box.menu.advance(dt);
         for call in self.message_box.menu.take_calls() {
@@ -346,6 +355,39 @@ impl SwfUi {
         for call in main.menu.take_calls() {
             if !main.answer(engine, &call) {
                 answer(&main.menu, engine, &call);
+            }
+        }
+    }
+
+    /// Opens the loading menu while a load's screen is up, closes it once
+    /// the screen has gone.
+    fn loading_menu(&mut self, engine: &mut Engine, dt: Duration) {
+        let up = engine
+            .loading
+            .as_ref()
+            .is_some_and(|l| l.phase != crate::loading::Phase::FadeOut);
+        if !up {
+            self.loading = None;
+            return;
+        }
+        if self.loading.is_none() {
+            match loading_menu::LoadingMenu::open(&self.ui, self.size, engine) {
+                Ok(m) => self.loading = Some(m),
+                Err(e) => {
+                    // The load goes on behind a black screen.
+                    log::error!("loading menu: {e:#}");
+                    return;
+                }
+            }
+        }
+        let Some(loading) = &mut self.loading else {
+            return;
+        };
+        loading.update(engine);
+        loading.menu.advance(dt);
+        for call in loading.menu.take_calls() {
+            if !loading.answer(engine, &call) {
+                answer(&loading.menu, engine, &call);
             }
         }
     }
@@ -1408,6 +1450,10 @@ impl SwfUi {
             if let Some(level_up) = &stats.level_up {
                 menus.push(level_up);
             }
+        }
+        if let Some(loading) = &mut self.loading {
+            loading.menu.render();
+            menus.push(&loading.menu);
         }
         if self.message_box.shown.is_some() {
             self.message_box.menu.render();

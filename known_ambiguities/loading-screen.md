@@ -21,3 +21,14 @@ frames, out over 10, at 30 fps). The rest is chosen:
   back in.
 - The load blocks the frame (asynchronous loading is ROADMAP item 10), so the
   screen and the movie stand still while it runs.
+
+## The movie's answers
+
+- `RequestPlayerInfo` is answered with the player's level and progress at the
+  time the screen comes up, which for a save load is the game being left.
+  From the main menu, with no player, the meter and level are hidden
+  (`showMeter` false). The save's own level is in its header, but nothing
+  says SE shows it there, and the progress isn't.
+- The fades around the screen use the engine's image-space fade, not
+  `fadermenu.swf`: the Fader Menu's `InitFade` fits a fade to black, but
+  nothing in the assets or public sources ties it to loading.

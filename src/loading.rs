@@ -132,6 +132,17 @@ impl Engine {
         });
     }
 
+    /// Whether the loading menu shows the player's level: not from the main
+    /// menu, with no player yet.
+    pub fn loading_shows_level(&self) -> bool {
+        !self.no_game
+    }
+
+    /// The loading menu's next hint text (none: a blank).
+    pub fn next_loading_text(&mut self) -> Option<String> {
+        None
+    }
+
     /// Whether the loading state is up (the game paused behind it).
     pub fn is_loading(&self) -> bool {
         self.loading.is_some()
