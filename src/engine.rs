@@ -1019,6 +1019,11 @@ impl Engine {
         }
     }
     pub(crate) fn update_music(&mut self) {
+        // With no game (the main menu, and loading from it) only the title
+        // track plays: no location, so no default music type behind it.
+        if self.no_game {
+            return;
+        }
         let now = self.scripts.wall_time;
         let location = self
             .location_music()

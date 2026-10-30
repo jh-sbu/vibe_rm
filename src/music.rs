@@ -364,6 +364,46 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
     #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn no_music_type_plays_without_a_game() {
+        use esp::writer::{Node, RecordBuilder, write_plugin};
+        let dir = std::env::temp_dir().join(format!("vrm-music-no-game-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let records = [
+            Node::top(
+                b"MUST",
+                vec![
+                    RecordBuilder::new(b"MUST", FormId(0x810))
+                        .u32(b"CNAM", crate::world::sound::MUST_SILENT)
+                        .field(b"FLTV", &30f32.to_le_bytes()),
+                ],
+            ),
+            Node::top(
+                b"MUSC",
+                vec![
+                    RecordBuilder::new(b"MUSC", A)
+                        .field(b"PNAM", &[60, 0, 0, 0])
+                        .u32(b"TNAM", 0x810),
+                ],
+            ),
+        ];
+        std::fs::write(
+            dir.join("Music.esp"),
+            write_plugin(0, &[], "test", "no game", 0x900, &records),
+        )
+        .unwrap();
+        let mut e = crate::stats::action_tests::headless_engine(&dir, "Music.esp");
+        e.enter_main_menu();
+        e.add_music(A);
+        e.update_music();
+        assert!(e.music.music_type.is_none());
+        assert!(e.music.playback.until.is_none());
+        e.no_game = false;
+        e.update_music();
+        assert_eq!(e.music.music_type, Some(A));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
     fn silent_playback_uses_its_duration_and_cues_choose_the_next_boundary() {
         let p = Playback {
             until: Some(15.0),
