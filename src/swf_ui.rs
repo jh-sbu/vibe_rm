@@ -166,6 +166,52 @@ impl SwfUi {
         })
     }
 
+    /// A new session (Quit to Main Menu): the menus and what they kept of
+    /// the old one go, the HUD and message box start over.
+    pub fn new_session(&mut self, engine: &mut Engine) {
+        self.items = None;
+        self.item_indices.clear();
+        self.favorite = false;
+        self.unlock = false;
+        self.equip = None;
+        self.magic = None;
+        self.magic_indices.clear();
+        self.favorites = None;
+        self.favorites_last = None;
+        self.hotkey = None;
+        self.tween = None;
+        self.sleep_wait = None;
+        self.training = None;
+        self.crafting = None;
+        if self.stats.take().is_some() {
+            engine.close_stats_view();
+        }
+        self.stats_act = None;
+        if self.map.take().is_some() {
+            engine.close_map_view();
+        }
+        self.dialogue = None;
+        self.menu_up = false;
+        self.journal = None;
+        self.journal_saved = Default::default();
+        self.main = None;
+        self.credits = None;
+        match (
+            Hud::open(&self.ui, self.size, &self.buttons),
+            MessageBoxMenu::open(&self.ui, self.size),
+        ) {
+            (Ok(hud), Ok(message_box)) => {
+                for menu in [&hud.menu, &message_box.menu] {
+                    let buttons = self.buttons.clone();
+                    menu.set_responder(move |call, _| respond(&buttons, call));
+                }
+                self.hud = hud;
+                self.message_box = message_box;
+            }
+            (Err(e), _) | (_, Err(e)) => log::error!("HUD for the new session: {e:#}"),
+        }
+    }
+
     pub fn resize(&mut self, width: u32, height: u32) {
         self.hud.menu.resize(width, height);
         if let Some(main) = &mut self.main {

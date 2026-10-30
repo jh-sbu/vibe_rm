@@ -404,7 +404,10 @@ impl JournalMenu {
             _ if super::journal_system::answer_load(&self.system, &self.menu, engine, call) => {}
             // CloseMenu keeps the tab; Show on Map awaits map integration.
             "RememberCurrentTabIndex" | "ShowTargetOnMap" => {}
-            "QuitToMainMenu" => log::warn!("QuitToMainMenu requires startmenu.swf support"),
+            "QuitToMainMenu" => {
+                engine.menu = None;
+                engine.quit_to_main_menu = true;
+            }
             "QuitToDesktop" => engine.quit_requested = true,
             _ => return false,
         }

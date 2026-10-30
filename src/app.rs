@@ -398,6 +398,9 @@ pub fn run(opts: Options) -> Result<()> {
                     engine.update(MoveInput::default(), 1.0 / 60.0, 20.0);
                     engine.apply_pending_save_load();
                     swf.update(&mut engine, 1.0 / 60.0);
+                    if engine.quit_to_main_menu {
+                        engine = quit_to_main_menu(engine, Some(&mut *swf), &opts);
+                    }
                 }
             }
         }
@@ -478,6 +481,26 @@ fn blank_scene() -> Scene {
     let mut scene = Scene::default();
     scene.env.clear_color = Vec3::ZERO;
     scene
+}
+
+/// The session's end, after the journal's Quit to Main Menu: a fresh engine
+/// at the main menu, and the game's menus without the old session's.
+fn quit_to_main_menu(
+    engine: Engine,
+    swf: Option<&mut crate::swf_ui::SwfUi>,
+    opts: &Options,
+) -> Engine {
+    let t = Instant::now();
+    let mut fresh = engine.into_main_menu(crate::main_menu::SessionOptions {
+        hour: opts.hour,
+        weather: opts.weather.clone(),
+        radius: opts.radius,
+    });
+    if let Some(swf) = swf {
+        swf.new_session(&mut fresh);
+    }
+    log::info!("quit to the main menu in {:?}", t.elapsed());
+    fresh
 }
 
 /// The game's own menus over the frame, unless `--egui-hud` or they can't be
@@ -971,6 +994,18 @@ impl ApplicationHandler for App {
     }
 
     fn about_to_wait(&mut self, _el: &ActiveEventLoop) {
+        if self
+            .state
+            .as_ref()
+            .is_some_and(|s| s.engine.quit_to_main_menu)
+            && let Some(mut s) = self.state.take()
+        {
+            let engine = s.engine;
+            s.engine = quit_to_main_menu(engine, s.swf.as_mut(), &self.opts);
+            s.keys.clear();
+            s.mouse_buttons.clear();
+            self.state = Some(s);
+        }
         if let Some(s) = &self.state {
             s.window.request_redraw();
         }

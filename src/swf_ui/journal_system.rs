@@ -83,16 +83,19 @@ impl System {
                 );
             }
             "RequestIsOnPC" => {
-                // The movie hard-codes desktop to list index 1 in both its
-                // confirmation and dispatch. Keep index 0 as an inert blank.
+                // The movie dispatches index 0 as Quit to Main Menu and 1 as
+                // Quit to Desktop, in its confirmation as well.
                 movie.set(
                     &format!("{S}.PCQuitList.entryList"),
                     Value::List(vec![
-                        object([("text", text("")), ("disabled", Value::Bool(true))]),
+                        object([
+                            ("text", text("$Main Menu")),
+                            ("disabled", Value::Bool(false)),
+                        ]),
                         object([("text", text("$Desktop")), ("disabled", Value::Bool(false))]),
                     ]),
                 );
-                movie.set(&format!("{S}.PCQuitList.selectedIndex"), num(1.));
+                movie.set(&format!("{S}.PCQuitList.selectedIndex"), num(0.));
                 movie.invoke(&format!("{S}.PCQuitList.UpdateList"), &[]);
                 return Some(vec![Value::Bool(true)]);
             }

@@ -225,6 +225,8 @@ pub struct Engine {
     pub journal_last_tab: bool,
     /// The journal's Quit to Desktop: the app exits.
     pub quit_requested: bool,
+    /// Quit to Main Menu: the app tears the session down after this frame.
+    pub quit_to_main_menu: bool,
     /// No game is running: the main menu is up, or a load from it failed.
     pub no_game: bool,
     /// The player's stamina, seconds before it comes back after being spent,
@@ -402,12 +404,13 @@ fn clear_of(nav: &crate::ai::nav::NavWorld, spot: Vec3, taken: &[Vec3]) -> Vec3 
 impl Engine {
     pub fn new(
         lo: LoadOrder,
-        vfs: vfs::Vfs,
+        vfs: impl Into<std::sync::Arc<vfs::Vfs>>,
         renderer: Renderer,
         hour: f32,
         weather: Option<String>,
         radius: i32,
     ) -> Self {
+        let vfs = vfs.into();
         let recipes = crate::world::crafting::Recipes::load(&lo);
         let mut models = ModelCache::default();
         if std::env::var_os("VRM_NO_ADDONS").is_none() {
@@ -443,7 +446,7 @@ impl Engine {
             lo,
             recipes,
             crafting: Default::default(),
-            vfs: std::sync::Arc::new(vfs),
+            vfs,
             renderer,
             models,
             grass: Default::default(),
@@ -593,6 +596,7 @@ impl Engine {
             hud_cart_mode: false,
             journal_last_tab: false,
             quit_requested: false,
+            quit_to_main_menu: false,
             no_game: false,
             // Full: clamped to their most on the first update.
             player_stamina: f32::INFINITY,
