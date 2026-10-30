@@ -9,8 +9,8 @@ ambient sounds (`RDSA`). The items this plan leaves out, and why:
 - **The Audio menu's sliders, the UI: completed** by `plans/system-page.md`,
   step 7. They use step 8's shared gain/persistence API. No slider UI work
   remains in this plan.
-- **Pausing in the loading menu** (`PDLC`). The engine has no loading menu
-  yet. Step 2 wires the category so that menu only has to report itself.
+- **Pausing in the loading menu** (`PDLC`): done by `plans/loading-screen.md`,
+  step 5; the director's `loading` input follows the loading state.
 - **Kill-move sounds** (`TSSC`, "Time Sensitive Sound Category" ->
   `AudioCategoryNPCKillMove`). These wait on killmoves (ROADMAP item 5).
 
@@ -426,8 +426,8 @@ sounds, and lip sync if 9a stalls. Answer open questions in the
 
 - Resolve LIP packing/key semantics and phoneme mapping; map TRI vertices onto
   FaceGen heads and handle nine remaining TRI variants before 9b/9c.
-- Loading menu reporting and kill-move
-  category state remain dependent on their respective systems.
+- Kill-move category state remains dependent on killmoves (loading menu
+  reporting is done: `plans/loading-screen.md`, step 5).
 - Listening comparisons can refine choices recorded in known_ambiguities;
   none is claimed as verified by running Skyrim SE.
 

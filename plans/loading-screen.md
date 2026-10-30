@@ -1,8 +1,12 @@
 # Follow-on: loading screens
 
-**Status: in progress.** Drafted 2026-10-28 as a sketch; audited and expanded
-2026-10-30. Step 0 done the same day (`research/ui/loading-screen.md`); its
-SE observation batch waits on the user (below). Separate from the completed journal System page (its step 11).
+**Status: implemented; the SE observation batch is pending.** Drafted
+2026-10-28 as a sketch; audited and expanded 2026-10-30, and steps 0–6 done
+the same day (`research/ui/loading-screen.md`,
+`known_ambiguities/loading-screen.md`, `src/loading.rs`,
+`src/load_screens.rs`, `src/loading_view.rs`,
+`src/swf_ui/loading_menu.rs`). What remains is under "After the
+observations" at the end. Separate from the completed journal System page (its step 11).
 ROADMAP Next item 11 (New game and the opening) lists it; it also closes
 `plans/audio-unblocked.md`'s "loading-menu pause reporting" item and the
 "loading-screen presentation" part of `known_ambiguities/fast-travel.md`.
@@ -252,3 +256,28 @@ reading predicts. By eye, during the same run:
 
 Out of scope here: asynchronous streaming (ROADMAP item 10), the new-game
 loading screen (item 11's new game), and SKSE or mod behaviour.
+
+## After the observations (2026-10-30)
+
+Verified here: the selection, state, failure and director tests
+(`cargo test --bin vibe_rm -- --include-ignored`), and offscreen captures (kept
+under ignored `tests/captures/loading/`) of an interior door, an exterior door,
+a script `MoveTo` into an interior, a save load in game, a save load from the
+main menu and a failed load. Fast travel and the quick-load key are covered by
+the tests only (fast travel has no console path; the quick-load key queues the
+same request as the journal). Still open:
+
+- Settle the selection rules, the fades, the minimum time, quick-load and
+  death-reload presentation, model turning and music with the observation
+  batch above, then update `known_ambiguities/loading-screen.md` and the code.
+- The half-applied save path (`HalfApplied`) has no test: after the early
+  destination check nothing known reaches it.
+- The mist's colour against SE's, and the camera's field of view.
+- `loadwaitspinner.swf` and `fadermenu.swf` stay unused (no source ties them
+  to loads); the "default logo only" case isn't drawn.
+- The launch (`--cell`, `--load`) and the console's `coc` still change cells
+  without the screen.
+- A load fails after `enter_*` has unloaded the old cells (a door or travel
+  target that can't load) leaves the player in no cell, as before; only save
+  loads check their destination first.
+

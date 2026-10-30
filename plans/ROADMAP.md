@@ -5,6 +5,18 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- Loading screens (`plans/loading-screen.md`): load doors, fast travel,
+  arrests, script moves into another interior and every native save load
+  (journal, main menu, quick load, console) queue one request and run behind
+  a paused loading state: a fade to black, the game's `loadingmenu.swf` (hint
+  text, level meter) over the chosen `LSCR`'s model in the interface fog on
+  its camera path, the load, a minimum time, and a fade back. Screens are
+  chosen by their conditions on a random stream of their own; a save that
+  can't load leaves the game as it was (or, half applied, ends the session
+  for the main menu); the audio director's `PDLC` pauses. Research and
+  choices: `research/ui/loading-screen.md`,
+  `known_ambiguities/loading-screen.md`; the SE observation batch
+  (`test-mod loadscreens`) is pending.
 - Main menu (`plans/main-menu.md`): `--main-menu` launches to startmenu.swf
   with the title track; Continue, Load (the shared save panel, deleting),
   Credits (creditsmenu.swf through Ruffle code objects), Quit, and the
@@ -2059,8 +2071,8 @@ game each piece unlocks.
      `src/map_view.rs`), in order: the map's clouds, lighting, sea and fog
      (research-gated); the local map for interiors and nearby cells
      (`SetLocalMapExtents`, the movie's `img://Local_Map`); fast travel: unloaded-follower continuity, exact SE timing and cross-space
-     time, mounted/Survival restrictions, loading-screen presentation and
-     autosave timing (`known_ambiguities/fast-travel.md`); then custom markers on the
+     time, mounted/Survival restrictions and autosave timing (the loading
+     screen is done: `plans/loading-screen.md`) (`known_ambiguities/fast-travel.md`); then custom markers on the
      map and the journal's Show on Map; quest targets updating while the map
      stays open; distant LOD around the loaded cells on by default (the
      blocks are now placed right: `VRM_LOD=1`)
@@ -2144,8 +2156,8 @@ game each piece unlocks.
    - Main menu (`plans/main-menu.md`: Continue, Load, Credits, Quit and Quit
      to Main Menu done with `--main-menu`; New, the menu's backdrop, the
      credits' logos and the prompts for saves made with other plugins
-     remain); loading screens
-     for saves and doors, including audio PDLC reporting (`plans/loading-screen.md`)
+     remain). Loading screens are done (see Done); their SE observation
+     batch is pending (`plans/loading-screen.md`)
    - A new game separate from the developer launch, which drops the player at
      Tamriel (4, -12) outside Riverwood with only start-game-enabled quests running
    - How the game starts `MQ101` (not start-game-enabled) and where it places

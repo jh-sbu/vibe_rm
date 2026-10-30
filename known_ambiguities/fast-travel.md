@@ -67,8 +67,11 @@ ragdoll behavior remain unverified.
 
 Accepted map travel uses the existing exterior/interior loaders, including feet
 clearance, ground correction, heading, weather setup, streaming and party hooks.
-All known refusals and destination validation happen before unloading. The map
-closes only on successful arrival.
+All known refusals and destination validation happen before unloading. The
+autosave and the time advance happen as the travel is accepted; the map closes
+then and the cell change runs behind the loading screen
+(`known_ambiguities/loading-screen.md`). A destination that still fails to load
+there shows the invalid-destination message.
 
 ## Elapsed time and catch-up (native approximation)
 
