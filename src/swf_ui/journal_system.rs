@@ -32,10 +32,17 @@ pub struct System {
     pub help: Vec<crate::system_help::Topic>,
     labels: (String, String),
     filter: Filter,
+    /// The save list's `entryList` in the movie.
+    list: &'static str,
     pub callbacks: Vec<(String, Vec<Value>)>,
 }
 impl System {
     pub fn new(engine: &mut Engine) -> Arc<Mutex<Self>> {
+        Self::with_list(engine, LIST)
+    }
+
+    /// The save list at `list` (the main menu's own `SaveLoadPanel`).
+    pub fn with_list(engine: &mut Engine, list: &'static str) -> Arc<Mutex<Self>> {
         let help = engine.help_topics();
         Arc::new(Mutex::new(Self {
             all: engine.save_list(),
@@ -56,6 +63,7 @@ impl System {
                     .unwrap_or_else(|| "[Autosave]".into()),
             ),
             filter: Filter::All,
+            list,
             callbacks: Vec::new(),
         }))
     }
@@ -198,7 +206,7 @@ impl System {
                     .cloned()
                     .collect();
                 let rows = self.visible.iter().map(|s| row(s, &self.labels)).collect();
-                movie.set(LIST, Value::List(rows));
+                movie.set(self.list, Value::List(rows));
                 let n = num(self.visible.len() as f32);
                 self.callbacks.push((
                     "onSaveLoadBatchComplete".into(),
@@ -218,7 +226,7 @@ impl System {
                         ("flags", num(0.)),
                     ])
                 }));
-                movie.set(LIST, Value::List(rows));
+                movie.set(self.list, Value::List(rows));
                 self.callbacks.push((
                     "onFillCharacterListComplete".into(),
                     vec![Value::Bool(true)],
@@ -366,4 +374,87 @@ pub fn mapping_rows(map: &crate::input_map::InputMap) -> Vec<Value> {
             ])
         })
         .collect()
+}
+
+/// A save's picture for the save list (`img://BGSSaveLoadHeader_Screenshot`),
+/// then `ScreenshotReady`. Without one, a blank image clears the previous
+/// highlighted save's.
+pub fn show_screenshot(menu: &ui_swf::Menu, image: Option<&crate::save::metadata::Thumbnail>) {
+    let fallback = crate::save::metadata::Thumbnail {
+        width: 1,
+        height: 1,
+        rgba: vec![0, 0, 0, 255],
+    };
+    let image = image.unwrap_or(&fallback);
+    menu.set_host_image(
+        "BGSSaveLoadHeader_Screenshot",
+        image.width,
+        image.height,
+        &image.rgba,
+    );
+    menu.callback("ScreenshotReady", &[]);
+}
+
+/// The save list's calls for loading, the journal's and the main menu's:
+/// deleting, checking and loading a save and showing its picture. False for
+/// other calls.
+pub fn answer_load(
+    system: &Mutex<System>,
+    menu: &ui_swf::Menu,
+    engine: &mut Engine,
+    call: &GameCall,
+) -> bool {
+    match call.name.as_str() {
+        "DeleteSave" => {
+            if let Some(i) = index(call) {
+                let listing = system.lock().unwrap().visible.get(i).cloned();
+                if let Some(save) = listing {
+                    match engine.delete_save(&save.name) {
+                        Ok(()) => {
+                            let mut system = system.lock().unwrap();
+                            system.visible.remove(i);
+                            system.all.retain(|s| s.name != save.name);
+                        }
+                        Err(e) => engine.debug_message_box(format!("Could not delete save: {e:#}")),
+                    }
+                }
+            }
+        }
+        "IsOKtoLoad" => {
+            let listing = index(call).and_then(|i| system.lock().unwrap().visible.get(i).cloned());
+            match listing {
+                Some(s) if !s.corrupt && !s.obsolete => {
+                    menu.callback("ConfirmOKToLoad", &[]);
+                }
+                Some(s) => engine.debug_message_box(if s.corrupt {
+                    engine
+                        .gmst_string("sSaveGameCorrupt")
+                        .unwrap_or_else(|| "This save is corrupt.".into())
+                } else {
+                    engine
+                        .gmst_string("sLoadingObsoleteSave")
+                        .unwrap_or_else(|| {
+                            "This save was made with a different plugin list.".into()
+                        })
+                }),
+                None => engine.debug_message_box("This save is no longer available.".into()),
+            }
+        }
+        "LoadGame" => {
+            if let Some(save) = index(call)
+                .and_then(|i| system.lock().unwrap().visible.get(i).cloned())
+                .filter(|s| !s.corrupt && !s.obsolete)
+            {
+                engine.pending_save_load = Some(save.name);
+                engine.menu = None;
+            }
+        }
+        "PrepSaveGameScreenshot" => {
+            let save = index(call).and_then(|i| system.lock().unwrap().visible.get(i).cloned());
+            let image = save.and_then(|s| engine.save_preview(&s.name));
+            show_screenshot(menu, image.as_ref());
+        }
+        _ => return false,
+    }
+    true
 }

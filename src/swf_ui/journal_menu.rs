@@ -350,53 +350,6 @@ impl JournalMenu {
                     engine.debug_message_box(format!("Could not save settings: {error}"));
                 }
             }
-            "DeleteSave" => {
-                if let Some(i) = super::journal_system::index(call) {
-                    let listing = self.system.lock().unwrap().visible.get(i).cloned();
-                    if let Some(save) = listing {
-                        match engine.delete_save(&save.name) {
-                            Ok(()) => {
-                                let mut system = self.system.lock().unwrap();
-                                system.visible.remove(i);
-                                system.all.retain(|s| s.name != save.name);
-                            }
-                            Err(e) => {
-                                engine.debug_message_box(format!("Could not delete save: {e:#}"))
-                            }
-                        }
-                    }
-                }
-            }
-            "IsOKtoLoad" => {
-                let listing = super::journal_system::index(call)
-                    .and_then(|i| self.system.lock().unwrap().visible.get(i).cloned());
-                match listing {
-                    Some(s) if !s.corrupt && !s.obsolete => {
-                        self.menu.callback("ConfirmOKToLoad", &[]);
-                    }
-                    Some(s) => engine.debug_message_box(if s.corrupt {
-                        engine
-                            .gmst_string("sSaveGameCorrupt")
-                            .unwrap_or_else(|| "This save is corrupt.".into())
-                    } else {
-                        engine
-                            .gmst_string("sLoadingObsoleteSave")
-                            .unwrap_or_else(|| {
-                                "This save was made with a different plugin list.".into()
-                            })
-                    }),
-                    None => engine.debug_message_box("This save is no longer available.".into()),
-                }
-            }
-            "LoadGame" => {
-                if let Some(save) = super::journal_system::index(call)
-                    .and_then(|i| self.system.lock().unwrap().visible.get(i).cloned())
-                    .filter(|s| !s.corrupt && !s.obsolete)
-                {
-                    engine.pending_save_load = Some(save.name);
-                    engine.menu = None;
-                }
-            }
             "SaveGame" => {
                 self.capture_screenshot(engine);
                 let index = super::journal_system::index(call).unwrap_or(0);
@@ -422,38 +375,11 @@ impl JournalMenu {
                 engine.flush_save_requests();
                 self.system.lock().unwrap().all = engine.save_list();
             }
-            "PrepSaveGameScreenshot" => {
-                let index = match call.args.first() {
-                    Some(Value::Number(n)) => *n as i32,
-                    _ => -1,
-                };
-                let thumbnail = if index < 0 {
-                    self.capture_screenshot(engine);
-                    engine.save_thumbnail.clone()
-                } else {
-                    let save = self
-                        .system
-                        .lock()
-                        .unwrap()
-                        .visible
-                        .get(index as usize)
-                        .cloned();
-                    save.and_then(|s| engine.save_preview(&s.name))
-                };
-                // A blank fallback clears an image from the previous highlighted save.
-                let fallback = crate::save::metadata::Thumbnail {
-                    width: 1,
-                    height: 1,
-                    rgba: vec![0, 0, 0, 255],
-                };
-                let image = thumbnail.as_ref().unwrap_or(&fallback);
-                self.menu.set_host_image(
-                    "BGSSaveLoadHeader_Screenshot",
-                    image.width,
-                    image.height,
-                    &image.rgba,
-                );
-                self.menu.callback("ScreenshotReady", &[]);
+            // Saving: the world as it is, for the new save's picture.
+            "PrepSaveGameScreenshot" if matches!(call.args.first(), Some(Value::Number(n)) if *n < 0.) =>
+            {
+                self.capture_screenshot(engine);
+                super::journal_system::show_screenshot(&self.menu, engine.save_thumbnail.as_ref());
             }
             "CloseMenu" => {
                 let arg = |i: usize| call.args.get(i).cloned().unwrap_or(Value::Undefined);
@@ -475,6 +401,7 @@ impl JournalMenu {
                     engine.menu = None;
                 }
             }
+            _ if super::journal_system::answer_load(&self.system, &self.menu, engine, call) => {}
             // CloseMenu keeps the tab; Show on Map awaits map integration.
             "RememberCurrentTabIndex" | "ShowTargetOnMap" => {}
             "QuitToMainMenu" => log::warn!("QuitToMainMenu requires startmenu.swf support"),
