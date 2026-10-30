@@ -273,7 +273,14 @@ commit of its own on top (`git log -- vendor/ruffle`):
      (`loop` isn't done);
    - `Selection.numFocusGroups` and `System.capabilities.numControllers` (1).
      CLIK's `focused` setter loops over them, so without them nothing it
-     focuses (the name field) got the focus.
+     focuses (the name field) got the focus;
+   - `Selection.disableFocusKeys`: while it's true, Tab and the arrows don't
+     move the focus. CLIK's FocusHandler sets it and moves the focus itself
+     (`findFocus`), and it adopts whatever gets the focus (its
+     `Selection` listener). Tab is the menus' Cancel, so Ruffle's tab
+     cycling sent the main menu's keys to the hidden save list once Load
+     was backed out of. The flag's meaning is inferred from its name and
+     that use; no Scaleform documentation was at hand.
 8. Enter / Space press the focused clip even without Flash's yellow focus
    highlight, unless it's a text field, where they're text. CLIK hides the
    highlight; the message box empties its buttons' keyboard `handlePress` and

@@ -1370,8 +1370,17 @@ impl Player {
                 }
             }
 
+            // Scaleform's `Selection.disableFocusKeys`: Tab and the arrows
+            // leave the focus alone (CLIK's FocusHandler moves it itself).
+            let focus_keys = !key_press_handled
+                && matches!(event, InputEvent::KeyDown { .. })
+                && !matches!(
+                    crate::external::get_avm1_variable(context, "Selection.disableFocusKeys"),
+                    ExternalValue::Bool(true)
+                );
+
             // KeyPress events also take precedence over tabbing.
-            if !key_press_handled
+            if focus_keys
                 && let InputEvent::KeyDown {
                     key_code: KeyCode::TAB,
                     ..
@@ -1415,7 +1424,8 @@ impl Player {
                     );
                 }
 
-                if let InputEvent::KeyDown { key_code, .. } = &event
+                if focus_keys
+                    && let InputEvent::KeyDown { key_code, .. } = &event
                     && context.focus_tracker.highlight().is_visible()
                     && let Some(direction) = NavigationDirection::from_key_code(*key_code)
                 {

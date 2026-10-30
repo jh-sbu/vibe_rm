@@ -577,4 +577,60 @@ mod host_image_tests {
         assert_eq!(queued[0].name, "_root.CodeObj.closeMenu");
         assert_eq!(queued[0].args, vec![Value::String("now".into())]);
     }
+
+    /// Tab with two tabbable clips, `_root.a` focused: where the focus ends.
+    fn focus_after_tab(disable_focus_keys: bool) -> Value {
+        let mut data = Vec::new();
+        swf::write_swf(
+            &swf::Header::default_with_swf_version(8),
+            &[swf::Tag::ShowFrame],
+            &mut data,
+        )
+        .unwrap();
+        let movie = SwfMovie::from_data(&data, "file:///synthetic.swf".into(), None, None).unwrap();
+        let player = PlayerBuilder::new()
+            .with_movie(movie)
+            .with_autoplay(true)
+            .build();
+        let mut p = player.lock().unwrap();
+        p.run_frame();
+        for (name, depth) in [("a", 1.), ("b", 2.)] {
+            p.invoke_avm1(
+                "_root.createEmptyMovieClip",
+                [Value::String(name.into()), Value::Number(depth)],
+            );
+            let clip = format!("_root.{name}");
+            p.invoke_avm1(&format!("{clip}.beginFill"), [Value::Number(0.)]);
+            for (i, (x, y)) in [(0., 0.), (10., 0.), (10., 10.), (0., 10.)]
+                .into_iter()
+                .enumerate()
+            {
+                let to = if i == 0 { "moveTo" } else { "lineTo" };
+                p.invoke_avm1(
+                    &format!("{clip}.{to}"),
+                    [Value::Number(x + depth * 20.), Value::Number(y)],
+                );
+            }
+            for property in ["tabEnabled", "focusEnabled"] {
+                p.set_avm1_variable(&format!("_root.{name}.{property}"), Value::Bool(true));
+            }
+        }
+        p.set_avm1_variable(
+            "Selection.disableFocusKeys",
+            Value::Bool(disable_focus_keys),
+        );
+        p.invoke_avm1("Selection.setFocus", [Value::String("_root.a".into())]);
+        let tab = crate::input::text_mode_key(winit::keyboard::KeyCode::Tab).unwrap();
+        p.handle_event(PlayerEvent::KeyDown { key: tab });
+        p.handle_event(PlayerEvent::KeyUp { key: tab });
+        p.invoke_avm1("Selection.getFocus", [])
+    }
+
+    /// Scaleform's `Selection.disableFocusKeys` (CLIK's FocusHandler sets it):
+    /// Tab, the menus' Cancel, leaves the focus where the menu put it.
+    #[test]
+    fn disable_focus_keys_stops_tab_moving_the_focus() {
+        assert_eq!(focus_after_tab(true), Value::String("_level0.a".into()));
+        assert_ne!(focus_after_tab(false), Value::String("_level0.a".into()));
+    }
 }
