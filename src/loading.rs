@@ -15,8 +15,6 @@ use glam::Vec3;
 
 use crate::engine::Engine;
 
-/// The fade to black before the screen and the fade back after it.
-pub const FADE_SECONDS: f32 = crate::imagespace::SLEEP_FADE_SECONDS;
 /// `loadingmenu.swf`'s `fadeIn`: 19 frames at 30 fps.
 pub const SCREEN_IN_SECONDS: f32 = 19.0 / 30.0;
 /// `loadingmenu.swf`'s `fadeOut`: 10 frames at 30 fps.
@@ -366,7 +364,7 @@ mod tests {
             ]
         );
         // The fade out, the minimum time up and the screen's fade out.
-        let least = FADE_SECONDS + MIN_SCREEN_SECONDS + SCREEN_OUT_SECONDS;
+        let least = crate::imagespace::SLEEP_FADE_SECONDS + MIN_SCREEN_SECONDS + SCREEN_OUT_SECONDS;
         assert!(seconds >= least - 0.1, "{seconds} s");
         assert_eq!(e.hour, hour);
         assert_eq!(e.scripts.real_time, real);

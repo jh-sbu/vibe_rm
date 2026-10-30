@@ -277,7 +277,7 @@ same request as the journal). Still open:
   to loads); the "default logo only" case isn't drawn.
 - The launch (`--cell`, `--load`) and the console's `coc` still change cells
   without the screen.
-- A load fails after `enter_*` has unloaded the old cells (a door or travel
-  target that can't load) leaves the player in no cell, as before; only save
-  loads check their destination first.
+- A door or travel target that fails to load after `enter_*` has unloaded
+  the old cells leaves the player in no cell, as before; only save loads
+  check their destination first.
 
