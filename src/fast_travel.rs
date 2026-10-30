@@ -2,6 +2,7 @@
 
 use crate::ai::schedule::Place;
 use crate::engine::{Engine, Location, PLAYER_REF};
+use crate::loading::{LoadCause, LoadRequest, LoadTarget};
 use esp::FormId;
 use glam::Vec3;
 
@@ -147,18 +148,18 @@ impl Engine {
             self.flush_save_requests();
         }
         self.advance_travel_time(hours, seconds);
-        let result = match destination.place {
-            Place::Exterior(world, _) => {
-                self.enter_exterior(world, destination.pos, destination.yaw)
-            }
-            Place::Interior(cell) => {
-                self.enter_interior(cell, Some((destination.pos, destination.yaw)))
-            }
+        let target = match destination.place {
+            Place::Exterior(world, _) => LoadTarget::Exterior {
+                world,
+                feet: destination.pos,
+                yaw: destination.yaw,
+            },
+            Place::Interior(cell) => LoadTarget::Interior {
+                cell,
+                spawn: Some((destination.pos, destination.yaw)),
+            },
         };
-        if let Err(err) = result {
-            log::warn!("fast travel to {marker} failed: {err:#}");
-            return Err(Refusal::InvalidDestination);
-        }
+        self.request_load(LoadRequest::new(target, LoadCause::FastTravel));
         self.menu = None;
         self.close_map_view();
         Ok(())
@@ -492,6 +493,7 @@ mod tests {
             }
         );
         e.travel_to_map_marker(FormId(0x930)).unwrap();
+        e.apply_pending_load();
         assert_eq!(
             e.location,
             Location::Exterior {
@@ -503,6 +505,7 @@ mod tests {
         assert_eq!(e.camera.yaw, 1.25);
         e.player.grounded = true;
         e.travel_to_map_marker(FormId(0x936)).unwrap();
+        e.apply_pending_load();
         assert_eq!(e.location, Location::Interior(FormId(0x940)));
         assert!((e.player_feet() - Vec3::new(100.0, 200.0, 32.0)).length() < 0.001);
         assert_eq!(e.camera.yaw, 2.0);
@@ -549,6 +552,7 @@ mod tests {
         );
         let expected = super::travel_time(6000.0f32.hypot(7000.0), 1.0, 20.0).unwrap();
         e.travel_to_map_marker(FormId(0x930)).unwrap();
+        e.apply_pending_load();
         assert_eq!(e.day, 5);
         assert!((e.hour - (23.9 + expected.0 - 24.0)).abs() < 0.001);
         assert_eq!(e.scripts.wall_time, wall);
@@ -604,6 +608,7 @@ mod tests {
         e.fast_travel_disabled = false;
         e.request_map_travel(FormId(0x930));
         e.choose_message_button(0);
+        e.apply_pending_load();
         assert_eq!(
             e.location,
             Location::Exterior {
@@ -662,6 +667,7 @@ mod tests {
         e.magic.commanded.insert(FormId(0x954), PLAYER_REF);
         assert_eq!(e.player_party(), vec![FormId(0x950), FormId(0x954)]);
         e.travel_to_map_marker(FormId(0x930)).unwrap();
+        e.apply_pending_load();
         for id in [0x950, 0x954] {
             let moved = e.world_state.moved[&FormId(id)];
             assert!(moved.pos.distance(e.player_feet()) < 400.0);

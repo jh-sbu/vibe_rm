@@ -519,8 +519,12 @@ impl Engine {
             log::warn!("{door} leads nowhere");
             return;
         };
-        if let Err(e) = self.teleport_through(dest, pos, rot.z) {
-            log::warn!("can't send the player through {door}: {e}");
+        match self.door_target(dest, pos, rot.z) {
+            Ok(target) => self.request_load(crate::loading::LoadRequest::new(
+                target,
+                crate::loading::LoadCause::Arrest,
+            )),
+            Err(e) => log::warn!("can't send the player through {door}: {e}"),
         }
     }
 

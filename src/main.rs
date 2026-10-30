@@ -41,6 +41,7 @@ mod items;
 mod journal;
 mod knowledge;
 mod leveled;
+mod loading;
 mod locations;
 mod locks;
 mod loose;

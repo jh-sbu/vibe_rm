@@ -183,6 +183,8 @@ pub struct Engine {
     /// name, and whether it is an autosave.
     pub save_directory: std::path::PathBuf,
     pub pending_save_load: Option<String>,
+    /// A cell change or save load waiting for the next frame (`loading`).
+    pub(crate) pending_load: Option<crate::loading::LoadRequest>,
     pub(crate) last_save: std::cell::Cell<std::time::Instant>,
     pub(crate) last_pause_menu: Option<crate::items::Menu>,
     pub subtitle_override: Option<bool>,
@@ -583,6 +585,7 @@ impl Engine {
             autosave: Default::default(),
             save_thumbnail: None,
             pending_save_load: None,
+            pending_load: None,
             save_directory: crate::save::save_dir(),
             advancing_skill: Default::default(),
             critically_hit: Default::default(),
@@ -2999,6 +3002,7 @@ impl Engine {
     pub fn update(&mut self, mut input: crate::player::MoveInput, dt: f32, time_scale: f32) {
         self.scripts.wall_time += dt as f64;
         self.frame_seconds = dt;
+        self.apply_pending_load();
         self.check_pause_autosave();
         self.flush_save_requests();
         // The gift menu went: its script carries on.
@@ -3444,7 +3448,13 @@ impl Engine {
                 return Ok(());
             }
             match rf.teleport {
-                Some((dest, pos, rot)) => self.teleport_through(dest, pos, rot.z)?,
+                Some((dest, pos, rot)) => {
+                    let target = self.door_target(dest, pos, rot.z)?;
+                    self.request_load(crate::loading::LoadRequest::new(
+                        target,
+                        crate::loading::LoadCause::Door,
+                    ));
+                }
                 None => {
                     self.toggle_door(owner, false);
                 }
@@ -3455,15 +3465,8 @@ impl Engine {
 
     /// Move the player to a door destination (as stored in XTEL).
     pub fn teleport_through(&mut self, dest_door: FormId, pos: Vec3, yaw: f32) -> Result<()> {
-        let cell_id = self
-            .lo
-            .cell_of_ref(dest_door)
-            .context("destination door has no cell")?;
-        let idx = self.lo.cell(cell_id).cloned().unwrap_or_default();
-        match idx.world {
-            Some(world) => self.enter_exterior(world, pos, yaw),
-            None => self.enter_interior(cell_id, Some((pos, yaw))),
-        }
+        let target = self.door_target(dest_door, pos, yaw)?;
+        self.enter(&target)
     }
 
     /// Doors with teleport destinations in the loaded cells.
@@ -4347,17 +4350,17 @@ impl Engine {
             let interior = cell
                 .and_then(|c| self.lo.cell(c))
                 .is_some_and(|c| c.world.is_none());
-            let res = match (interior, cell) {
+            match (interior, cell) {
                 (true, Some(c)) if self.location != Location::Interior(c) => {
-                    self.enter_interior(c, Some((p, 0.0)))
+                    self.request_load(crate::loading::LoadRequest::new(
+                        crate::loading::LoadTarget::Interior {
+                            cell: c,
+                            spawn: Some((p, 0.0)),
+                        },
+                        crate::loading::LoadCause::Script,
+                    ));
                 }
-                _ => {
-                    self.place_player(p, self.camera.yaw);
-                    Ok(())
-                }
-            };
-            if let Err(e) = res {
-                log::warn!("moveto failed: {e:#}");
+                _ => self.place_player(p, self.camera.yaw),
             }
         }
         // MESG notifications keep their authored display time.

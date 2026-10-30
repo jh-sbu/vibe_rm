@@ -205,13 +205,20 @@ impl Engine {
     /// and its movie stack have returned.
     pub fn apply_pending_save_load(&mut self) {
         if let Some(name) = self.pending_save_load.take() {
-            if let Err(error) = self.load_game(&name) {
-                self.debug_message_box(format!("Could not load: {error:#}"));
-                // A load from the main menu that fails goes back to it.
-                if self.no_game {
-                    self.menu = Some(crate::items::Menu::Main);
-                    self.start_main_menu_music();
-                }
+            self.request_load(crate::loading::LoadRequest::save(name));
+        }
+        self.apply_pending_load();
+    }
+
+    /// A native save load, from the queued request: a failure shows the
+    /// error, and one from the main menu goes back to it.
+    pub(crate) fn finish_save_load(&mut self, name: String) {
+        if let Err(error) = self.load_game(&name) {
+            self.debug_message_box(format!("Could not load: {error:#}"));
+            // A load from the main menu that fails goes back to it.
+            if self.no_game {
+                self.menu = Some(crate::items::Menu::Main);
+                self.start_main_menu_music();
             }
         }
     }
