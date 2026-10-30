@@ -22,6 +22,7 @@ mod item_menu;
 mod journal_menu;
 mod journal_system;
 mod magic_menu;
+mod main_menu;
 mod map_menu;
 mod sleep_wait_menu;
 mod stats_menu;
@@ -85,6 +86,9 @@ pub struct SwfUi {
     /// The journal, while open, and where it was left.
     journal: Option<journal_menu::JournalMenu>,
     journal_saved: journal_menu::Saved,
+    /// The main menu, while no game runs, and the credits it opens.
+    main: Option<main_menu::MainMenu>,
+    credits: Option<main_menu::Credits>,
     buttons: Arc<Buttons>,
     size: (u32, u32),
     /// The keyboard's modifiers and the cursor, for the menus' input.
@@ -153,6 +157,8 @@ impl SwfUi {
             menu_up: false,
             journal: None,
             journal_saved: Default::default(),
+            main: None,
+            credits: None,
             buttons,
             size,
             modifiers: Default::default(),
@@ -162,6 +168,12 @@ impl SwfUi {
 
     pub fn resize(&mut self, width: u32, height: u32) {
         self.hud.menu.resize(width, height);
+        if let Some(main) = &mut self.main {
+            main.menu.resize(width, height);
+        }
+        if let Some(credits) = &mut self.credits {
+            credits.menu.resize(width, height);
+        }
         self.message_box.menu.resize(width, height);
         if let Some(cursor) = &mut self.cursor_menu {
             cursor.menu.resize(width, height);
@@ -214,6 +226,7 @@ impl SwfUi {
         for call in self.hud.menu.take_calls() {
             answer(&self.hud.menu, engine, &call);
         }
+        self.main_menu(engine, dt);
         self.item_menu(engine, dt);
         self.journal_menu(engine, dt);
         self.magic_menu(engine, dt);
@@ -234,6 +247,60 @@ impl SwfUi {
         }
         if let Some(cursor) = &mut self.cursor_menu {
             cursor.menu.advance(dt);
+        }
+    }
+
+    /// Opens the main menu while no game runs (and the credits over it),
+    /// closes it when a game starts, and answers their calls.
+    fn main_menu(&mut self, engine: &mut Engine, dt: Duration) {
+        use crate::items::Menu as M;
+        let shown = matches!(engine.menu, Some(M::Main | M::Credits));
+        if !shown {
+            self.main = None;
+            self.credits = None;
+            return;
+        }
+        if self.main.is_none() {
+            match main_menu::MainMenu::open(&self.ui, self.size, engine, self.buttons.clone()) {
+                Ok(m) => self.main = Some(m),
+                Err(e) => {
+                    log::error!("main menu: {e:#}");
+                    engine.quit_requested = true;
+                    return;
+                }
+            }
+        }
+        let credits_up = engine.menu == Some(M::Credits);
+        if credits_up && self.credits.is_none() {
+            match main_menu::Credits::open(&self.ui, self.size, engine) {
+                Ok(c) => self.credits = Some(c),
+                Err(e) => {
+                    log::error!("credits: {e:#}");
+                    engine.menu = Some(M::Main);
+                }
+            }
+        }
+        if let Some(credits) = &mut self.credits {
+            credits.menu.advance(dt);
+            let mut close = !credits_up;
+            for call in credits.menu.take_calls() {
+                close |= credits.answer(&call);
+            }
+            if close {
+                self.credits = None;
+                engine.menu = Some(M::Main);
+                if let Some(main) = &self.main {
+                    main.fade_in();
+                }
+            }
+        }
+        let Some(main) = &mut self.main else { return };
+        main.update();
+        main.menu.advance(dt);
+        for call in main.menu.take_calls() {
+            if !main.answer(engine, &call) {
+                answer(&main.menu, engine, &call);
+            }
         }
     }
 
@@ -684,12 +751,15 @@ impl SwfUi {
                     | crate::items::Menu::Crafting { .. }
                     | crate::items::Menu::Skills
                     | crate::items::Menu::Map
+                    | crate::items::Menu::Main
+                    | crate::items::Menu::Credits
             )
     }
 
     /// Whether a menu over the world takes the keyboard and mouse.
     pub fn wants_input(&self) -> bool {
         self.message_box.shown.is_some()
+            || self.main.is_some()
             || self.items.is_some()
             || self.journal.is_some()
             || self.magic.is_some()
@@ -941,6 +1011,12 @@ impl SwfUi {
     fn top(&self) -> &Menu {
         if self.message_box.shown.is_some() {
             return &self.message_box.menu;
+        }
+        if let Some(credits) = &self.credits {
+            return &credits.menu;
+        }
+        if let Some(main) = &self.main {
+            return &main.menu;
         }
         if let Some(items) = &self.items {
             &items.menu
@@ -1217,6 +1293,18 @@ impl SwfUi {
         if visible {
             self.hud.menu.render();
             menus.push(&self.hud.menu);
+        }
+        if let Some(main) = &mut self.main {
+            main.menu.render();
+        }
+        if let Some(credits) = &mut self.credits {
+            credits.menu.render();
+        }
+        // The credits replace the faded-out main menu.
+        if let Some(credits) = &self.credits {
+            menus.push(&credits.menu);
+        } else if let Some(main) = &self.main {
+            menus.push(&main.menu);
         }
         if let Some(items) = &mut self.items {
             items.menu.render();

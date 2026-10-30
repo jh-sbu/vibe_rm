@@ -52,6 +52,10 @@ pub enum Menu {
     Training(FormId),
     /// The world map.
     Map,
+    /// The main menu (`startmenu.swf`), with no game running behind it.
+    Main,
+    /// The credits, opened from the main menu.
+    Credits,
 }
 
 /// A book's text as pages of plain text: Skyrim's HTML-like markup (`<p>`, `<br>`,

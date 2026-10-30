@@ -45,6 +45,7 @@ mod locations;
 mod locks;
 mod loose;
 mod magic;
+mod main_menu;
 mod map_markers;
 mod map_view;
 mod messages;
@@ -144,6 +145,8 @@ pub struct Options {
     pub hold_boxes: bool,
     /// Draw the HUD with egui rather than the game's hudmenu.swf.
     pub egui_hud: bool,
+    /// Start at the main menu instead of in the world (the developer launch).
+    pub main_menu: bool,
 }
 
 fn parse_args() -> Result<Options> {
@@ -205,6 +208,7 @@ fn parse_args() -> Result<Options> {
             "--player-at-camera" => o.player_at_camera = true,
             "--hold-boxes" => o.hold_boxes = true,
             "--egui-hud" => o.egui_hud = true,
+            "--main-menu" => o.main_menu = true,
             "--pick" => {
                 let v = val()?;
                 let (x, y) = v
@@ -215,7 +219,7 @@ fn parse_args() -> Result<Options> {
             "-h" | "--help" => {
                 println!(
                     "VibeRM - a Creation Engine (Skyrim SE) compatible engine\n\n\
-                     Options:\n  --load <name>       Resume a native save\n  --data <dir>        Skyrim Data directory (default: $SKYRIM_DATA or Steam)\n  \
+                     Options:\n  --main-menu         Start at the main menu\n  --load <name>       Resume a native save\n  --data <dir>        Skyrim Data directory (default: $SKYRIM_DATA or Steam)\n  \
                      --plugins <txt>     Load the enabled (*) plugins of a plugins.txt\n  \
                      --plugin <file>     Load a plugin from Data (repeatable)\n  \
                      --cell <edid|formid> Interior cell to load\n  --world <edid>      Worldspace (default Tamriel)\n  \

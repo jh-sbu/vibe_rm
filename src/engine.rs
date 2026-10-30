@@ -225,6 +225,8 @@ pub struct Engine {
     pub journal_last_tab: bool,
     /// The journal's Quit to Desktop: the app exits.
     pub quit_requested: bool,
+    /// No game is running: the main menu is up, or a load from it failed.
+    pub no_game: bool,
     /// The player's stamina, seconds before it comes back after being spent,
     /// the attack buttons they hold and how long (a power attack when long
     /// enough), and their stats (race, NPC record), read on first use.
@@ -591,6 +593,7 @@ impl Engine {
             hud_cart_mode: false,
             journal_last_tab: false,
             quit_requested: false,
+            no_game: false,
             // Full: clamped to their most on the first update.
             player_stamina: f32::INFINITY,
             player_stamina_wait: 0.0,

@@ -103,6 +103,8 @@ fn setup_engine(
     engine.refresh_audio_settings();
     if let Some(name) = &opts.load {
         engine.load_game(name)?;
+    } else if opts.main_menu {
+        engine.enter_main_menu();
     } else {
         if !opts.no_scripts {
             let t = Instant::now();
@@ -162,6 +164,8 @@ pub fn run(opts: Options) -> Result<()> {
         // VRM_AUDIO=1 plays (or at least tracks) sounds offscreen too.
         let audio = std::env::var_os("VRM_AUDIO").map(|_| crate::audio::Audio::new());
         let mut engine = setup_engine(&opts, renderer, lo, vfs, audio)?;
+        // What is drawn behind the main menu, with no game running.
+        let blank = blank_scene();
         if let Some(n) = opts.use_door {
             let doors = engine.load_doors();
             for d in &doors {
@@ -250,7 +254,11 @@ pub fn run(opts: Options) -> Result<()> {
                         &engine.map_view,
                         &engine.stats_view,
                         engine.menu,
-                        &engine.scene,
+                        if engine.no_game {
+                            &blank
+                        } else {
+                            &engine.scene
+                        },
                         engine.view_camera(),
                     );
                     let pixels = engine.renderer.render_to_image(scene, &camera, |_, _| {});
@@ -414,7 +422,11 @@ pub fn run(opts: Options) -> Result<()> {
             &engine.map_view,
             &engine.stats_view,
             engine.menu,
-            &engine.scene,
+            if engine.no_game {
+                &blank
+            } else {
+                &engine.scene
+            },
             engine.view_camera(),
         );
         let pixels = engine.renderer.render_to_image(scene, &camera, |r, view| {
@@ -459,6 +471,13 @@ fn frame_parts<'a>(
     crate::map_view::frame_parts(map, menu)
         .or_else(|| crate::stats_view::frame_parts(stats, menu))
         .unwrap_or((scene, camera))
+}
+
+/// Nothing but black, behind the main menu (`known_ambiguities/main-menu.md`).
+fn blank_scene() -> Scene {
+    let mut scene = Scene::default();
+    scene.env.clear_color = Vec3::ZERO;
+    scene
 }
 
 /// The game's own menus over the frame, unless `--egui-hud` or they can't be
@@ -529,6 +548,8 @@ struct WindowState {
     config: wgpu::SurfaceConfiguration,
     engine: Engine,
     keys: HashSet<KeyCode>,
+    /// What is drawn behind the main menu, with no game running.
+    blank: Scene,
     grabbed: bool,
     /// Restore gameplay capture after the last menu closes.
     resume_capture: bool,
@@ -663,6 +684,7 @@ impl App {
             config,
             engine,
             keys: HashSet::new(),
+            blank: blank_scene(),
             grabbed: false,
             resume_capture: false,
             mouse_buttons: HashSet::new(),
@@ -881,7 +903,11 @@ impl ApplicationHandler for App {
                     &s.engine.map_view,
                     &s.engine.stats_view,
                     s.engine.menu,
-                    &s.engine.scene,
+                    if s.engine.no_game {
+                        &s.blank
+                    } else {
+                        &s.engine.scene
+                    },
                     s.engine.view_camera(),
                 );
                 s.engine.renderer.render(scene, &camera, &view);

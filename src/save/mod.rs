@@ -207,6 +207,10 @@ impl Engine {
         if let Some(name) = self.pending_save_load.take() {
             if let Err(error) = self.load_game(&name) {
                 self.debug_message_box(format!("Could not load: {error:#}"));
+                // A load from the main menu that fails goes back to it.
+                if self.no_game {
+                    self.menu = Some(crate::items::Menu::Main);
+                }
             }
         }
     }
@@ -284,6 +288,7 @@ impl Engine {
         let bytes = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
         let snapshot = Snapshot::read(&SaveFile::from_bytes(&bytes)?)?;
         snapshot.apply(self)?;
+        self.no_game = false;
         self.last_save.set(std::time::Instant::now());
         log::info!("loaded {}", path.display());
         Ok(())
