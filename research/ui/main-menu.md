@@ -133,16 +133,37 @@ marker is the only reference), what draws the smoke, and what music plays.
 `TESLoadScreen` has a "displays in main menu" flag (bit 10). That belongs to
 `plans/loading-screen.md`.
 
-## Open after this research
+## Observed in Skyrim SE (2026-10-30)
 
-For an observation in SE (the main menu can't be scripted):
+The user answered the open questions by watching the game:
 
-1. Do the PC SE main menu's entries include Help and/or Add-Ons? What does
-   Help do?
-2. Does Continue ask "Continue from your last saved game?" before loading,
-   always, never, or only in some cases (after Quit to Main Menu)?
-3. Does New ask anything before starting?
-4. Which save does Continue load when the newest one is from a different
-   plugin list?
-5. What does quitting to the main menu show (a fade, a loading screen)?
-6. What music plays at the main menu?
+1. Entries: Continue, New, Load, Creations, Credits, Quit. With no saves: New,
+   Load (greyed out, can't be clicked), Creations, Credits, Quit. There's no
+   Help or Add-Ons. Creations tries to log in to a Bethesda service.
+2. Continue always asks for confirmation when it is shown.
+3. New asks "Start a new game?" (the GMST `sConfirmNew` text). When add-ons that
+   disable achievements are loaded, it also explains that (`sConfirmNewMods`).
+4. Loading a save that uses a plugin that isn't enabled asks "This save relies
+   on Creations you have already downloaded but are currently inactive: <list
+   of missing plugins> Activate now?". If the plugin isn't present, it asks
+   "This save relies on missing content. The following item(s) are missing:
+   <list> Would you like to search for your unidentified content in the
+   Creations menu?". A save made without a plugin that is now loaded loads
+   with no warning beyond Continue's usual question.
+5. Quit to Main Menu: the screen quickly fades to black, then the main menu is
+   back with no visible loading screen.
+6. A title track plays. External sources call it "Dragonborn". UESP
+   [Skyrim:Music](https://en.uesp.net/w/index.php?oldid=3483123) lists track
+   1, "Dragonborn", as file `mus_maintheme` with an unknown form ID; the
+   Sounds archive has `music/special/mus_maintheme.xwm`, and no `MUSC` or
+   `MUST` record names it.
+
+The user made the Creations entry, the achievements note and the Creations
+wording of item 4 deliberate deviations: `deviations/main-menu.md`.
+
+## Still open
+
+- Whether the title track loops, and its category and volume.
+- How long the fade before the main menu takes.
+- The main menu's backdrop: how the logo and camera are placed in
+  `MainMenuCell`, and what draws the smoke.

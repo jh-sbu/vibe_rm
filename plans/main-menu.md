@@ -231,25 +231,36 @@ the text between the two fields, is open.
 
 ## Where it stands (2026-10-30)
 
-Done: steps 0 to 4 and 6, and step 5's fallback. `--main-menu` launches to the
-main menu (the developer launch stays the default). Continue, Load (character
-list, saves, screenshots, delete, the last-save check), Credits, Quit to
-Desktop and the journal's Quit to Main Menu work. Choices are in
-`known_ambiguities/main-menu.md`. Verified with GPU-gated engine tests
-(`main_menu::tests`: three teardown cycles, Continue's save, a failed load) and
-offscreen runs: Continue and Load into a save, the credits scrolling and
-closing, deleting the last save, New's message, and two
+Done: steps 0 to 4 and 6, and step 5's fallback. The user's SE observations
+(research note) are applied: SE's entries apart from Creations (a deliberate
+deviation), Continue and New confirming, the title track, and the fade before
+Quit to Main Menu. `--main-menu` launches to the main menu (the developer
+launch stays the default). Continue, Load (character list, saves,
+screenshots, delete, the last-save check), Credits, Quit to Desktop and the
+journal's Quit to Main Menu work. Choices are in
+`known_ambiguities/main-menu.md`, deviations in `deviations/main-menu.md`.
+Verified with GPU-gated engine tests (`main_menu::tests`: three teardown
+cycles with their fade, Continue's save, a failed load) and offscreen runs:
+Continue and Load into a save, the credits scrolling and closing, deleting
+the last save, New's confirmation and message, the fade, and two
 game → main menu → game cycles.
 
 Remaining:
 
+- Saves made with other plugins (SE, observed). A save made without a
+  plugin that is now loaded loads without a warning. A save that needs an
+  inactive plugin asks to activate it; one that needs a missing plugin asks
+  whether to continue without it. Both prompts are worded in terms of plugins
+  (`deviations/main-menu.md`). All three cases need loading a save into a
+  different load order (form IDs remapped, missing plugins' forms dropped),
+  which is ROADMAP item 9's "load orders that changed since the save". Activating
+  a plugin also needs the engine rebuilt with another plugin list. Until then,
+  such saves are refused as obsolete.
 - New: a new game, with ROADMAP item 11.
-- What is behind the menu: the main menu cell, the logo model, the smoke and
-  the music, once their placement is known (`research/ui/main-menu.md`).
+- What is behind the menu: the main menu cell, the logo model and the smoke,
+  once their placement is known (`research/ui/main-menu.md`).
 - The credits' logos: Ruffle lays out the lines after an inline `<img>` over
   one another, so the three logo images are left out of the text.
 - A loading screen for loads from the main menu (`plans/loading-screen.md`).
-- The SE observations listed in the research note.
 - Keyboard: the save panel's character list starts with nothing selected, so
   Enter needs an arrow key first (as in the journal's Load).
-
