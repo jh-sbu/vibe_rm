@@ -35,6 +35,7 @@ mod autotest8;
 mod autotest9;
 mod crafting1;
 mod dualcast;
+mod loadscreens;
 mod pex;
 mod places;
 mod records;
@@ -71,6 +72,7 @@ pub const NAMES: &[&str] = &[
     "taper",
     "venv",
     "spell-visuals",
+    "loadscreens",
 ];
 
 /// A test mod's files: the plugin, and its compiled scripts by name.
@@ -109,6 +111,10 @@ pub fn build(name: &str, lo: &LoadOrder) -> Result<TestMod> {
         "autotest18" => autotest18::build(lo),
         "autotest19" => autotest19::build(lo),
         "dualcast" => dualcast::build(lo),
+        "loadscreens" => Ok(TestMod {
+            plugin: loadscreens::build(lo)?,
+            scripts: Vec::new(),
+        }),
         "pex" => pex::build(),
         "taper" => taper::build(lo),
         "spell-visuals" => spell_visuals::build(lo),

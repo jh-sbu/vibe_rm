@@ -1,7 +1,8 @@
 # Follow-on: loading screens
 
-**Status: planned.** Drafted 2026-10-28 as a sketch; audited and expanded
-2026-10-30. Separate from the completed journal System page (its step 11).
+**Status: in progress.** Drafted 2026-10-28 as a sketch; audited and expanded
+2026-10-30. Step 0 done the same day (`research/ui/loading-screen.md`); its
+SE observation batch waits on the user (below). Separate from the completed journal System page (its step 11).
 ROADMAP Next item 11 (New game and the opening) lists it; it also closes
 `plans/audio-unblocked.md`'s "loading-menu pause reporting" item and the
 "loading-screen presentation" part of `known_ambiguities/fast-travel.md`.
@@ -82,7 +83,7 @@ the safe rect.
   flag bit 10 is "Displays In Main Menu".
 - The load order has 371. Condition functions by use (`ctda-stats`):
   GetInCurrentLoc 191, GetRandomPercent 133, GetStage 16, GetGlobalValue 14,
-  GetStageDone 11, GetQuestCompleted 8, function 629 6 (to be named), HasKeyword 3
+  GetStageDone 11, GetQuestCompleted 8, GetVMQuestVariable (629) 6, HasKeyword 3
   and GetDead 1 on a reference, GetQuestRunning 1.
 - Camera paths: `meshes/cameras/lscamera*.nif` (pan, zoom) and
   `testloadscreencamerapan.nif`. Models include `meshes/dlc01/loadscreenart/`.
@@ -127,7 +128,9 @@ a notification) is open.
 
 ## Steps
 
-0. **Research** (`research/ui/loading-screen.md`, no code). Finish the
+0. **Research** (`research/ui/loading-screen.md`, no code). *Done
+   2026-10-30; the observation batch is below under "SE observation
+   request".* Finish the
    section above, then settle what the assets and public sources can:
    - the text fader's and the menu's fade timelines (frames, fps), and which
      frame label `FadeInMenu` and `FadeOutMenu` play;
@@ -205,6 +208,31 @@ a notification) is open.
    `tests/assets/`, and results under `tests/results/`. Update ROADMAP item 11,
    `plans/audio-unblocked.md`, `known_ambiguities/fast-travel.md` and this
    plan's status.
+
+## SE observation request (step 0's batch)
+
+Build the plugin with `cargo build -p vrm-tools` and
+`vrm-tool test-mod loadscreens "<Skyrim SE>/Data" tests/assets/VrmLoadScreens.esp`,
+enable it in SE, and note the **first** hint text of each loading screen:
+
+1. Through the Sleeping Giant Inn's front door, into the inn and out again,
+   five times each way.
+2. Through some door far from Riverwood, five times.
+3. Load a save made outside Riverwood once in game and once from the main
+   menu.
+
+The module doc (`crates/tools/src/test_mods/loadscreens.rs`) has what each
+reading predicts. By eye, during the same run:
+
+4. How long the fade to black before the screen and the fade back take
+   (roughly: under half a second, about a second, longer).
+5. Whether a very quick load (a small interior) still shows the screen for a
+   while, and roughly how long.
+6. A quick load (F9) and the death reload: is it the full loading screen?
+   Where do "Quickloading..." and "Reloading the most recent save game"
+   appear, if at all?
+7. Whether holding a mouse button and moving the mouse turns the model.
+8. Whether the music keeps playing across the loading screen.
 
 ## Open questions
 
