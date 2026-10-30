@@ -1,3 +1,4 @@
+use crate::avm1::FunctionObject as Avm1FunctionObject;
 use crate::avm1::NativeObject;
 use crate::avm1::Value as Avm1Value;
 use crate::avm1::{Activation as Avm1Activation, ActivationIdentifier as Avm1ActivationIdentifier};
@@ -10,8 +11,10 @@ use crate::avm2::object::{
 };
 use crate::avm2::{Avm2, FunctionArgs, Value as Avm2Value};
 use crate::context::UpdateContext;
+use crate::display_object::TDisplayObject;
 use crate::string::AvmString;
 use gc_arena::Collect;
+use ruffle_macros::istr;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -444,8 +447,87 @@ pub fn invoke_avm1(
         .unwrap_or(Value::Null)
 }
 
+/// Installs at a target path an object whose methods are the host's
+/// (Scaleform's code objects: a menu's `CodeObj`). Calling one reaches
+/// `ExternalInterfaceProvider::call_host` as `<path>.<method>`; display
+/// objects among its arguments go as their target paths.
+pub fn install_avm1_host_object(
+    context: &mut UpdateContext<'_>,
+    path: &str,
+    methods: &[&str],
+) -> bool {
+    let Some(root) = context.stage.root_clip() else {
+        return false;
+    };
+    let mut activation = Avm1Activation::from_nothing(
+        context,
+        Avm1ActivationIdentifier::root("[HostObject]"),
+        root,
+    );
+    let proto = activation.prototypes().object;
+    let object = Avm1Object::new(activation.strings(), Some(proto));
+    let fn_proto = activation.resolve_prototype([istr!(&activation, "Function")]);
+    let name = AvmString::new_utf8(activation.gc(), path);
+    let key = AvmString::new_utf8(activation.gc(), "__vrmHostName");
+    let _ = object.set(key, name, &mut activation);
+    for (i, method) in methods.iter().enumerate() {
+        let function = Avm1FunctionObject::table_native(host_call, i as u16).build(
+            activation.strings(),
+            fn_proto,
+            None,
+        );
+        let key = AvmString::new_utf8(activation.gc(), format!("__vrmHostMethod{i}"));
+        let method = AvmString::new_utf8(activation.gc(), *method);
+        let _ = object.set(key, method, &mut activation);
+        let _ = object.set(method, function, &mut activation);
+    }
+    activation
+        .set_variable(name, Avm1Value::Object(object))
+        .is_ok()
+}
+
+fn host_call<'gc>(
+    activation: &mut Avm1Activation<'_, 'gc>,
+    this: Avm1Object<'gc>,
+    args: &[Avm1Value<'gc>],
+    index: u16,
+) -> Result<Avm1Value<'gc>, Avm1Error<'gc>> {
+    let key = AvmString::new_utf8(activation.gc(), format!("__vrmHostMethod{index}"));
+    let method = this.get(key, activation)?.coerce_to_string(activation)?;
+    let object = this
+        .get(
+            AvmString::new_utf8(activation.gc(), "__vrmHostName"),
+            activation,
+        )?
+        .coerce_to_string(activation)?;
+    let mut values = Vec::with_capacity(args.len());
+    for arg in args {
+        values.push(match arg {
+            Avm1Value::MovieClip(clip) => Value::String(clip.path().to_string()),
+            Avm1Value::Object(o) if let Some(d) = o.as_display_object() => {
+                Value::String(d.path().to_string())
+            }
+            v => Value::from_avm1(activation, *v)?,
+        });
+    }
+    let provider = activation.context.external_interface.provider.clone();
+    let name = format!("{object}.{method}");
+    let result = match provider {
+        Some(provider) => provider.call_host(activation.context, &name, &values),
+        None => Value::Undefined,
+    };
+    Ok(result.into_avm1(activation))
+}
+
 pub trait ExternalInterfaceProvider {
     fn call_method(&self, context: &mut UpdateContext<'_>, name: &str, args: &[Value]) -> Value;
+
+    /// A method of a host object (`install_avm1_host_object`) called by the
+    /// movie, named `object.method`: its return value goes back to the movie.
+    fn call_host(&self, context: &mut UpdateContext<'_>, name: &str, args: &[Value]) -> Value {
+        let _ = (context, name, args);
+        Value::Undefined
+    }
 
     fn on_callback_available(&self, name: &str);
 
