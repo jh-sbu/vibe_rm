@@ -31,13 +31,27 @@ fn init_data(opts: &Options) -> Result<(LoadOrder, vfs::Vfs)> {
     }
     let mut names = LoadOrder::default_plugin_list(&data_dir, opts.plugins_txt.as_deref());
     for p in &opts.plugins {
-        anyhow::ensure!(
-            data_dir.join(p).is_file(),
-            "plugin {p} not found in {}",
-            data_dir.display()
-        );
-        if !names.iter().any(|n| n.eq_ignore_ascii_case(p)) {
-            names.push(p.clone());
+        // A name in Data, else a path to a plugin outside it (kept absolute:
+        // the load order joins names onto the Data directory). Either way the
+        // plugin is known by its file name.
+        let entry = if data_dir.join(p).is_file() {
+            p.clone()
+        } else {
+            let path = std::path::Path::new(p);
+            anyhow::ensure!(
+                path.is_file(),
+                "plugin {p} not found in {} or as a path",
+                data_dir.display()
+            );
+            std::fs::canonicalize(path)?.to_string_lossy().into_owned()
+        };
+        let file_name = |n: &str| {
+            std::path::Path::new(n)
+                .file_name()
+                .map(|f| f.to_string_lossy().to_ascii_lowercase())
+        };
+        if !names.iter().any(|n| file_name(n) == file_name(&entry)) {
+            names.push(entry);
         }
     }
     log::info!("plugins: {}", names.join(", "));
@@ -48,7 +62,11 @@ fn init_data(opts: &Options) -> Result<(LoadOrder, vfs::Vfs)> {
         lo.record_count(),
         t.elapsed()
     );
-    let vfs = vfs::Vfs::new(&data_dir, &names);
+    let mut vfs = vfs::Vfs::new(&data_dir, &names);
+    for dir in &opts.loose {
+        anyhow::ensure!(dir.is_dir(), "loose folder not found: {}", dir.display());
+        vfs.add_loose_root(dir);
+    }
     lo.load_strings("english", |p| vfs.read(p));
     Ok((lo, vfs))
 }

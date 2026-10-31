@@ -96,6 +96,27 @@ impl Vfs {
         }
     }
 
+    /// Loose files from `root`'s folders (`root/Scripts/x.pex` as
+    /// `scripts/x.pex`), over those already known.
+    pub fn add_loose_root(&mut self, root: impl AsRef<Path>) {
+        let root = root.as_ref();
+        let Ok(rd) = std::fs::read_dir(root) else {
+            return;
+        };
+        let before = self.loose.len();
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(&p, root, &mut self.loose);
+            }
+        }
+        log::info!(
+            "loose files from {}: {} new",
+            root.display(),
+            self.loose.len() - before
+        );
+    }
+
     pub fn data_dir(&self) -> &Path {
         &self.data_dir
     }
@@ -189,4 +210,30 @@ pub fn locate_data_dir() -> Option<PathBuf> {
         .iter()
         .map(|c| Path::new(&home).join(c))
         .find(|p| p.join("Skyrim.esm").is_file())
+}
+
+#[cfg(test)]
+mod loose_root_tests {
+    use super::Vfs;
+
+    #[test]
+    fn a_loose_root_adds_and_overrides_files() {
+        let base = std::env::temp_dir().join(format!("vrm-vfs-loose-{}", std::process::id()));
+        let data = base.join("Data");
+        let extra = base.join("extra");
+        for (dir, text) in [(&data, "data"), (&extra, "extra")] {
+            std::fs::create_dir_all(dir.join("Scripts")).unwrap();
+            std::fs::write(dir.join("Scripts/Shared.pex"), text).unwrap();
+        }
+        std::fs::write(extra.join("Scripts/Only.pex"), "only").unwrap();
+        // A file at the root isn't a resource.
+        std::fs::write(extra.join("Test.esp"), "plugin").unwrap();
+        let mut vfs = Vfs::new(&data, &[]);
+        assert_eq!(vfs.read("scripts/shared.pex").unwrap(), b"data");
+        vfs.add_loose_root(&extra);
+        assert_eq!(vfs.read("scripts/shared.pex").unwrap(), b"extra");
+        assert_eq!(vfs.read("Scripts\\Only.pex").unwrap(), b"only");
+        assert!(!vfs.exists("test.esp"));
+        std::fs::remove_dir_all(&base).unwrap();
+    }
 }

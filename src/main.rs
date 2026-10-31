@@ -104,8 +104,12 @@ pub struct Options {
     pub data_dir: Option<std::path::PathBuf>,
     /// `plugins.txt` whose `*`-enabled entries load after the base game.
     pub plugins_txt: Option<std::path::PathBuf>,
-    /// Extra plugins to load after those, in the order given.
+    /// Extra plugins to load after those, in the order given: names in the
+    /// Data directory, or paths to plugins elsewhere.
     pub plugins: Vec<String>,
+    /// Folders of loose files (`Scripts/`, `Meshes/`...) read over the Data
+    /// directory's, later ones winning.
+    pub loose: Vec<std::path::PathBuf>,
     pub cell: Option<String>,
     pub load: Option<String>,
     pub world: Option<String>,
@@ -167,6 +171,7 @@ fn parse_args() -> Result<Options> {
             "--data" => o.data_dir = Some(val()?.into()),
             "--plugins" => o.plugins_txt = Some(val()?.into()),
             "--plugin" => o.plugins.push(val()?),
+            "--loose" => o.loose.push(val()?.into()),
             "--cell" => o.cell = Some(val()?),
             "--world" => o.world = Some(val()?),
             "--grid" => {
@@ -224,7 +229,8 @@ fn parse_args() -> Result<Options> {
                     "VibeRM - a Creation Engine (Skyrim SE) compatible engine\n\n\
                      Options:\n  --main-menu         Start at the main menu\n  --load <name>       Resume a native save\n  --data <dir>        Skyrim Data directory (default: $SKYRIM_DATA or Steam)\n  \
                      --plugins <txt>     Load the enabled (*) plugins of a plugins.txt\n  \
-                     --plugin <file>     Load a plugin from Data (repeatable)\n  \
+                     --plugin <file>     Load a plugin: a name in Data, or a path (repeatable)\n  \
+                     --loose <dir>       Read loose files (Scripts/...) from dir over Data's (repeatable)\n  \
                      --cell <edid|formid> Interior cell to load\n  --world <edid>      Worldspace (default Tamriel)\n  \
                      --grid x,y          Exterior cell coordinates\n  --pos x,y,z         Camera position\n  \
                      --yaw/--pitch deg   Camera orientation\n  --radius n          Exterior cell load radius\n  --hour h            Time of day (0-24)\n  \
