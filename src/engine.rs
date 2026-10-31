@@ -1692,12 +1692,21 @@ impl Engine {
     /// Spawn actors (ACHR references) into a loaded cell, optionally away from their
     /// editor location (NaN: anywhere on the cell's navmesh).
     pub(crate) fn spawn_actors(&mut self, key: CellKey, refs: &[(FormId, Option<Vec3>)]) {
-        self.spawn_actors_with_headings(key, refs, &std::collections::HashMap::new());
+        self.spawn_actors_with_headings(key, refs, &std::collections::HashMap::new(), false);
     }
 
     /// Spawn actors where their schedule has them, applying the package marker
     /// heading policy computed with the same package/location resolution.
     pub(crate) fn spawn_scheduled_actors(&mut self, key: CellKey, refs: &[(FormId, Option<Vec3>)]) {
+        self.spawn_scheduled_actors_inner(key, refs, false);
+    }
+
+    fn spawn_scheduled_actors_inner(
+        &mut self,
+        key: CellKey,
+        refs: &[(FormId, Option<Vec3>)],
+        cell_load: bool,
+    ) {
         let headings: std::collections::HashMap<_, _> = refs
             .iter()
             .filter_map(|(r, _)| {
@@ -1708,7 +1717,7 @@ impl Engine {
                     .map(|heading| (*r, heading))
             })
             .collect();
-        self.spawn_actors_with_headings(key, refs, &headings);
+        self.spawn_actors_with_headings(key, refs, &headings, cell_load);
     }
 
     fn spawn_actors_with_headings(
@@ -1716,6 +1725,7 @@ impl Engine {
         key: CellKey,
         refs: &[(FormId, Option<Vec3>)],
         headings: &std::collections::HashMap<FormId, crate::ai::schedule::PlacementHeading>,
+        cell_load: bool,
     ) {
         let mut descs = Vec::new();
         let cell_meshes = self
@@ -1885,6 +1895,21 @@ impl Engine {
                 .and_then(|i| rt.exec.packages.get(i))
                 .map(|p| p.behaviour);
             rt.fresh &= crate::ai::exec::Stage::starts_fresh(*resume, behaves);
+            if cell_load
+                && resume.is_none()
+                && !self.world_state.dead.contains_key(&d.ref_id)
+                && !self.world_state.moved.contains_key(&d.ref_id)
+                && matches!(key, CellKey::Interior(_))
+            {
+                rt.load_cell = Some(key);
+            }
+            log::debug!(
+                "{} cell spawn {key:?}: pending={:?} resume={resume:?} fresh={} load_cell={:?}",
+                d.ref_id,
+                rt.exec.pos,
+                rt.fresh,
+                rt.load_cell
+            );
             rt.exec.health = self.returning_health(d.ref_id, stats.max_health);
             rt.exec.stamina = stats.max_stamina;
             rt.power_cost = self.power_attack_cost(d.ref_id, d.inventory.weapon(&self.lo));
@@ -2408,7 +2433,7 @@ impl Engine {
         self.load_navmeshes(key, cell_id);
         self.load_furniture(key, &refs);
         let actors = self.actors_for_cell(key, &refs);
-        self.spawn_scheduled_actors(key, &actors);
+        self.spawn_scheduled_actors_inner(key, &actors, true);
         self.load_triggers(key, &refs);
         self.load_hazards(key, &refs);
         self.load_decals(key, &refs);
@@ -2666,7 +2691,7 @@ impl Engine {
         }
         self.load_furniture(key, &refs);
         let actors = self.actors_for_cell(key, &refs);
-        self.spawn_scheduled_actors(key, &actors);
+        self.spawn_scheduled_actors_inner(key, &actors, true);
         self.load_triggers(key, &refs);
         self.load_hazards(key, &refs);
         self.load_activate_parents(&refs);

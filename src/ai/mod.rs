@@ -21,6 +21,8 @@ pub mod threat;
 
 #[cfg(test)]
 mod movement_tests;
+#[cfg(test)]
+mod sandbox_load_tests;
 
 use std::sync::Arc;
 
@@ -376,6 +378,8 @@ pub struct ActorRuntime {
     pub seat: Option<Seat>,
     /// Just spawned with the cell: may start out already in furniture.
     pub fresh: bool,
+    /// Interior cell for which this actor was spawned during cell loading.
+    pub(crate) load_cell: Option<crate::render::CellKey>,
     /// Idle being played in the furniture, if any.
     sub: Option<SubIdle>,
     /// Seconds until the next seated idle is picked; set `wants_idle` when due.
@@ -538,6 +542,7 @@ impl ActorRuntime {
             child: false,
             seat: None,
             fresh: true,
+            load_cell: None,
             sub: None,
             next_idle: 0.0,
             wants_idle: false,
@@ -1467,6 +1472,7 @@ impl ActorRuntime {
         }
         // VRM_AI_NO_SNAP: walk into furniture even on cell load (to watch enter animations).
         let fresh = std::mem::take(&mut self.fresh) && std::env::var_os("VRM_AI_NO_SNAP").is_none();
+        let load_cell = self.load_cell.take();
         self.give_up_seat(w.furniture);
         self.hurry = false;
         let face = self.face.take();
@@ -1490,7 +1496,15 @@ impl ActorRuntime {
         };
         // Activating starts beside the target, not in it.
         let snap = fresh && goal.behaviour != Behaviour::Activate;
-        if self.seek_furniture(&goal, snap, w) {
+        let whole_cell = load_cell.filter(|cell| {
+            fresh && !self.dead && goal.behaviour == Behaviour::Sandbox
+                && !self.exec.run.as_ref().is_some_and(|run| run.scene)
+                && self.exec.current.and_then(|i| self.exec.packages.get(i)).is_some_and(|p| {
+                    p.greet.is_none() && matches!((cell, p.location),
+                        (crate::render::CellKey::Interior(id), Some(package::Location { kind: package::LocationKind::InCell(target), .. })) if *id == target)
+                })
+        });
+        if self.seek_furniture_in(&goal, snap, whole_cell, w) {
             return;
         }
         // At what an Activate package names, that isn't furniture: activate it.
@@ -1704,6 +1718,16 @@ impl ActorRuntime {
     /// Look for furniture the goal wants used; reserve it and head there (or, when
     /// `fresh`, start out in it). Returns true if the actor is now on its way.
     fn seek_furniture(&mut self, goal: &Goal, fresh: bool, w: &mut World) -> bool {
+        self.seek_furniture_in(goal, fresh, None, w)
+    }
+
+    fn seek_furniture_in(
+        &mut self,
+        goal: &Goal,
+        fresh: bool,
+        whole_cell: Option<crate::render::CellKey>,
+        w: &mut World,
+    ) -> bool {
         // Creatures only use the furniture their package names (ambushers' coffins,
         // thrones and alcoves), through their own graphs' furniture idles.
         if !self.skeleton_path.contains("actors/character/") && goal.furniture.is_none() {
@@ -1761,7 +1785,7 @@ impl ActorRuntime {
                 } else {
                     0.9
                 };
-                if uniform(w.rand, 0.0, 1.0) > chance {
+                if whole_cell.is_none() && uniform(w.rand, 0.0, 1.0) > chance {
                     return false;
                 }
                 let secs = (150.0 - goal.energy * 1.2) * uniform(w.rand, 0.6, 1.4);
@@ -1792,12 +1816,22 @@ impl ActorRuntime {
         let mut options = Vec::new();
         for &kind in &kinds {
             let me = self.ref_id;
-            options.extend(w.furniture.free_near(kind, centre, radius, |f, kind| {
+            let may_use = |f: &furniture::Furniture, kind| {
                 goal.furniture.is_none_or(|r| r == f.ref_id)
                     && w.claimed.get(&f.ref_id).is_none_or(|&a| a == me)
                     && (w.may_use)(npc, kind, f.owner)
-            }));
+            };
+            options.extend(if let Some(cell) = whole_cell {
+                w.furniture.free_in_cell(kind, cell, may_use)
+            } else {
+                w.furniture.free_near(kind, centre, radius, may_use)
+            });
         }
+        log::debug!(
+            "{} furniture search: whole_cell={whole_cell:?} options={}",
+            self.ref_id,
+            options.len()
+        );
         if options.is_empty() {
             log::debug!(
                 "{} no free {kinds:?} within {radius:.0} of {centre:?}",

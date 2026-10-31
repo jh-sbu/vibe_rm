@@ -162,6 +162,11 @@ impl PartialOrd for Open {
 }
 
 impl NavWorld {
+    #[cfg(test)]
+    pub(crate) fn insert_fixture(&mut self, id: FormId, mesh: NavMesh) {
+        self.meshes.insert(id, Mesh::new(mesh).unwrap());
+    }
+
     pub fn clear(&mut self) {
         self.meshes.clear();
         self.obstacles.clear();
