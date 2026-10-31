@@ -12,6 +12,10 @@ All research and implementation work is subject to these constraints:
 - Game assets, including binary asset formats, may be examined, but must not be
   included in this repository, including under `refs/`. Interface `.swf` files
   (including their ActionScript bytecode) and `.pex` scripts are game assets.
+- Symlinks to third-party assets or directories containing them are forbidden
+  anywhere in the repository, including ignored or untracked directories such as
+  `tests/assets/` and `refs/`. Reference assets at their external paths instead;
+  do not recreate the `tests/assets/overlay` workaround.
 - Do not examine the game engine's binary data at all: do not inspect engine
   executables, libraries, or engine code/data in memory. This prohibition does not
   extend to binary game assets.
