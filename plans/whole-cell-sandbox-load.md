@@ -1,13 +1,14 @@
 # Plan: whole-cell sandboxers as their cell loads
 
-**Status: drafted** (2026-10-30). ROADMAP Next item 4 (AI depth),
-"Whole-cell sandboxers as their cell loads". Each numbered step is one
-commit; run `cargo fmt` before each.
+**Status: implemented** (2026-10-31). The cell-wide search, load-only
+placement, regression fixtures and offscreen autotest7 verification are complete.
+The remaining SE questions are listed below and in
+`known_ambiguities/unloaded-placement.md`.
 
 The goal is a sandboxer whose package covers a whole interior cell
 (`LocationKind::InCell`). In Skyrim SE, when its cell loads, it's at
-something to use somewhere in the cell. Here it starts where it stood and
-only takes up furniture near that spot.
+something to use somewhere in the cell. Previously it started where it stood and
+only took up furniture near that spot.
 
 ## The evidence
 
@@ -117,3 +118,53 @@ back from being away, came back standing.
 - Whether an actor away for a long time (not new to the save) is also put at
   something to use, or comes back standing as autotest16's Sitter did. Until
   that's observed, resumed actors keep the resume rule.
+
+## Implementation and verification (2026-10-31)
+
+- `load_cell` is set only by interior cell loading for non-resumed, living,
+  unmoved spawns. Ordinary scheduled spawns (including arrivals) do not set it.
+  The first plan consumes it and verifies the current package is a matching
+  InCell Sandbox, without a scene or force-greet. Existing animation, ownership,
+  claims, disabled-marker, shuffle, six-candidate and reservation paths apply.
+- The two-floor regression uses synthetic navmesh geometry and package state,
+  with an installed vanilla actor and idle animation from the trader. This uses
+  real animation acceptance rather than mocking successful seating. It reproduces
+  the former local search failing across a 600-unit floor gap, then verifies the
+  cell-wide search succeeds despite a random value that rejects ordinary
+  sandbox furniture. The upstairs chair is disallowed; the downstairs idle is
+  reserved, and a second actor cannot take it. The other fixture reloads a
+  standing away execution through Engine and checks it retains its position,
+  is not fresh and has no load placement flag.
+- Rebuilt `vrm-tools` and generated autotest7 into ignored `tests/assets/`.
+  Offscreen runs use an absolute plugin path and `VRM_SEED=7` with debug logs.
+  The initial spawn logs for InCellUp/Down show pending positions
+  (-244, -13, 240.756) and (100, -40, 0), resume=None, fresh=true and the
+  trader load-cell flag. Their first package evaluation selects
+  VrmAutoTest7InCell; searches find 7 and 5 candidates, respectively, and
+  they start in distinct idle markers 0006410A and 0006410B.
+  A separate front-door run (`activate 0001341F`, allowing 480 frames for
+  the loading transition) finds 8 and 7 candidates and starts them in
+  0006410A and 00084285. At frame 450 their positions are
+  (-385.8, -288.4, 0.3) and (-75.1, -298.9, 0.3), both on the ground floor.
+  The prior local-search failure is reproduced in the regression fixture;
+  the offscreen run checks the implemented path, not a historical binary.
+- Full binary suite including ignored tests: 962 passed. The final reload
+  fixture was also rerun after strengthening it to exercise Engine re-entry.
+  `cargo fmt --check` and `git diff --check` pass.
+
+Reproduction command (requires GPU access and installed vanilla assets):
+
+```sh
+VRM_SEED=7 RUST_LOG=vibe_rm=debug WGPU_BACKEND=vulkan \
+  target/debug/vibe_rm --cell Riverwood --radius 0 \
+  --plugin "$PWD/tests/assets/VrmAutoTest7.esp" \
+  --console 'unlock 0001341F' --console 'activate 0001341F' \
+  --console '@450 getpos 07000847' --console '@450 getpos 07000848' \
+  --wait 480 --watch 07000847 --screenshot /tmp/whole-cell-door.png
+```
+
+The plugin slot above is from this local load order; resolve the actors by their
+plugin slot when reproducing elsewhere. Door 0001341F is the exterior front-door
+reference, confirmed by the interior door 000133E9's XTEL game-asset subrecord.
+The wait allows the loading-screen transition to finish before AI verification.
+Generated plugins, scripts, captures and raw logs remain uncommitted.

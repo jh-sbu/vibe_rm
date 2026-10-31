@@ -58,8 +58,12 @@ markers on the ground floor, the trader unloaded.
   package's actor arriving from elsewhere is put on a random navmesh
   triangle of the cell.
 - **The whole-cell sandbox at load.** The game puts it at something to use
-  in the cell; the engine leaves it where it stood and its sandboxing
-  takes it from there (seating it at once only in furniture near it).
+  in the cell. For a fresh cell-load spawn the engine searches all permitted,
+  free markers in that cell and shuffles them uniformly before trying them.
+  Two autotest7 observations cannot establish whether the game weights its
+  selection by distance, type, or package preference. Actors resuming an away
+  execution keep their previous position; whether the game places actors away
+  for longer at furniture is unobserved (autotest16's Sitter returned standing).
 - **Which of two actors moves apart, and which way.** The engine steps the
   one spawned later 38.25 away from the other.
 - **Time passing.** Waiting and sleeping (`jump_to_schedules`) put loaded

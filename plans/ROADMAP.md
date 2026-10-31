@@ -5,6 +5,13 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- **Whole-cell sandboxers at interior load**: fresh InCell Sandbox actors choose
+  permitted free furniture or idle markers throughout the cell, without a chance,
+  distance or floor-height limit. Reservations prevent sharing; resumed actors,
+  arrivals, script moves, dead actors, scenes and force-greets retain their rules.
+  Two-floor and reload fixtures plus offscreen autotest7 verification are recorded
+  in `plans/whole-cell-sandbox-load.md`; selection weighting and long-away SE
+  behavior remain documented ambiguities.
 - Loading screens (`plans/loading-screen.md`): load doors, fast travel,
   arrests, script moves into another interior and every native save load
   (journal, main menu, quick load, console) queue one request and run behind
@@ -1847,9 +1854,6 @@ game each piece unlocks.
      Built and run: `test-mod autotest13`, `autotest14` and `autotest15`
      (scenes with unloaded actors), and `autotest16` for step 9 (unloaded
      travellers walk, applied).
-   - Whole-cell sandboxers as their cell loads: the game has them at
-     something to use anywhere in the cell (`test-mod autotest7`); ours start
-     where they stood. Plan: `plans/whole-cell-sandbox-load.md`
    - Alias fills: created actors cleaned up; "from alias" locations
      followed through travel, not only at refresh; packages for "from event"
      aliases, and package targets by object id / type and interrupt data;
