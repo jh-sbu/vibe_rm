@@ -1323,12 +1323,23 @@ pub fn compile_sources(
     sources: &[&str],
     natives: &dyn Signatures,
 ) -> std::result::Result<Vec<(String, Vec<u8>)>, String> {
+    // An error with the line it names quoted.
+    let quoted = |e: CompileError| {
+        let line = sources
+            .iter()
+            .find(|s| {
+                parse(s).is_ok_and(|p| p.name.eq_ignore_ascii_case(&e.script)) || e.script == "?"
+            })
+            .and_then(|s| s.lines().nth(e.line.saturating_sub(1)))
+            .unwrap_or("");
+        format!("{e}\n    {}", line.trim())
+    };
     let scripts: Vec<Script> = sources
         .iter()
         .map(|s| parse(s))
         .collect::<R<_>>()
-        .map_err(|e| e.to_string())?;
-    let built = compile(&scripts, natives).map_err(|e| e.to_string())?;
+        .map_err(quoted)?;
+    let built = compile(&scripts, natives).map_err(quoted)?;
     built
         .into_iter()
         .zip(&scripts)
