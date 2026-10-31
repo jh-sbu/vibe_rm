@@ -466,6 +466,12 @@ pub fn shout(object_id: u32, edid: &str, words: &[(FormId, FormId, f32)]) -> Rec
 /// A copy of a Skyrim.esm record under our object id and editor id (its
 /// localized names left out: our plugin isn't localized), `script` attached,
 /// each subrecord passed through `patch` (left out if `patch` empties it).
+/// The copy keeps the original's header flags (but compression) and form
+/// version. The version matters: a byte-for-byte copy of
+/// `FXspiderWebKitDestructible` (an activator with destruction data, form
+/// version 39) marked version 44 crashed Skyrim SE while it loaded plugins,
+/// and loaded marked 39; its flag 0x02000000 made no difference (autotest21's
+/// bisect in the game, 2026-10-31).
 pub fn copy(
     lo: &LoadOrder,
     from: &str,
@@ -493,7 +499,10 @@ pub fn copy_inserting(
         .with_context(|| format!("{from} not found"))?;
     anyhow::ensure!(id.0 >> 24 == 0, "{from} isn't Skyrim.esm's");
     let rec = lo.get(id).context("record")?;
-    let mut out = RecordBuilder::new(&rec.tag().0, own(object_id)).zstring(b"EDID", edid);
+    let mut out = RecordBuilder::new(&rec.tag().0, own(object_id))
+        .flags(rec.flags() & !esp::record_flags::COMPRESSED)
+        .version(rec.version())
+        .zstring(b"EDID", edid);
     if let Some(script) = script {
         out = out.field(b"VMAD", &vmad(&[script]));
     }

@@ -1,7 +1,7 @@
 //! Writing small TES4-format plugins (test mods): records built field by
 //! field, nested in groups, behind a `TES4` header. Records are written
-//! uncompressed with the Special Edition form version. [`vmad`] attaches
-//! scripts.
+//! uncompressed, with the Special Edition form version unless a record
+//! asks for another. [`vmad`] attaches scripts.
 
 use crate::plugin::GROUP_HEADER_SIZE;
 use crate::record::RECORD_HEADER_SIZE;
@@ -18,6 +18,8 @@ pub struct RecordBuilder {
     pub tag: Tag,
     pub flags: u32,
     pub form_id: FormId,
+    /// The form version in the header ([`FORM_VERSION`] unless set).
+    pub version: u16,
     data: Vec<u8>,
 }
 
@@ -34,12 +36,18 @@ impl RecordBuilder {
             tag: Tag(*tag),
             flags: 0,
             form_id,
+            version: FORM_VERSION,
             data: Vec::new(),
         }
     }
 
     pub fn flags(mut self, flags: u32) -> Self {
         self.flags = flags;
+        self
+    }
+
+    pub fn version(mut self, version: u16) -> Self {
+        self.version = version;
         self
     }
 
@@ -89,7 +97,7 @@ impl RecordBuilder {
         out.extend_from_slice(&self.flags.to_le_bytes());
         out.extend_from_slice(&self.form_id.0.to_le_bytes());
         out.extend_from_slice(&0u32.to_le_bytes()); // version control info
-        out.extend_from_slice(&FORM_VERSION.to_le_bytes());
+        out.extend_from_slice(&self.version.to_le_bytes());
         out.extend_from_slice(&0u16.to_le_bytes());
         out.extend_from_slice(&self.data);
     }

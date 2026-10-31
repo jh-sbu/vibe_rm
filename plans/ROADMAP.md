@@ -2166,6 +2166,11 @@ game each piece unlocks.
    preserve live plugin/cache state. Original collection timing is still an open
    research question.
 10. **Performance**: async loading, GPU-driven culling
+   - Plugin loading: record form versions. A copy of `FXspiderWebKitDestructible`
+     (activator with destruction data, form version 39) crashed Skyrim SE while it
+     loaded plugins when marked version 44, and loaded marked 39 (autotest21's
+     bisect, 2026-10-31). Our reader ignores the form version; which fields read
+     differently by version (destruction data?) is open.
 11. **New game and the opening** (an eventual goal; it needs most of the items above)
    - Main menu (`plans/main-menu.md`: Continue, Load, Credits with their
      logos, Quit and Quit to Main Menu done with `--main-menu`; New, the

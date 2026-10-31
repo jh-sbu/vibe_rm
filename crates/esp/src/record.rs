@@ -86,6 +86,10 @@ impl<'a> Record<'a> {
     pub fn flags(&self) -> u32 {
         self.header.flags
     }
+    /// The form version the record was saved with.
+    pub fn version(&self) -> u16 {
+        self.header.version
+    }
     pub fn subrecords(&self) -> SubRecords<'_> {
         SubRecords {
             data: &self.data,
