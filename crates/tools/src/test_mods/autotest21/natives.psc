@@ -560,3 +560,61 @@ String Function TestInfamy()
     Player.RemoveItem(Gold, Player.GetItemCount(Gold) - had, true, None)
     return r
 EndFunction
+
+; relationships.md: vanilla parents and children placed here (the RELA
+; records name their bases).
+String Function TestRelationships()
+    Actor g = Spawn(GerdurBase, 0.0, 300.0)
+    Actor f = Spawn(FrodnarBase, 200.0, 300.0)
+    Actor h = Spawn(HodBase, -200.0, 300.0)
+    Actor a = Spawn(AlvorBase, 0.0, 500.0)
+    Actor d = Spawn(DortheBase, 200.0, 500.0)
+    g.SetDontMove(true)
+    f.SetDontMove(true)
+    h.SetDontMove(true)
+    a.SetDontMove(true)
+    d.SetDontMove(true)
+    Utility.Wait(1.0)
+    String r = "Gerdur-Frodnar (mother, son): HasParentRelationship " + g.HasParentRelationship(f) + "/" + f.HasParentRelationship(g)
+    r += ", HasFamilyRelationship " + g.HasFamilyRelationship(f) + "/" + f.HasFamilyRelationship(g)
+    r += ", HasAssociation(ParentChild) " + g.HasAssociation(ParentChildType, f) + "/" + f.HasAssociation(ParentChildType, g)
+    r += ", rank " + g.GetRelationshipRank(f) + "/" + f.GetRelationshipRank(g) + "\n"
+    r += "Gerdur-Hod (spouses): HasParentRelationship " + g.HasParentRelationship(h) + ", HasFamilyRelationship " + g.HasFamilyRelationship(h) + ", Spouse " + g.HasAssociation(SpouseType, h) + "/" + h.HasAssociation(SpouseType, g) + ", rank " + g.GetRelationshipRank(h) + "\n"
+    r += "Hod-Frodnar (father, son): HasParentRelationship " + h.HasParentRelationship(f) + "/" + f.HasParentRelationship(h) + "\n"
+    r += "Alvor-Dorthe: HasParentRelationship " + a.HasParentRelationship(d) + "/" + d.HasParentRelationship(a) + "; Alvor-Gerdur (no RELA): family " + a.HasFamilyRelationship(g) + ", rank " + a.GetRelationshipRank(g) + "\n"
+    f.Kill(None)
+    Utility.Wait(1.0)
+    r += "Frodnar killed: Gerdur HasFamilyRelationship " + g.HasFamilyRelationship(f) + ", HasParentRelationship " + g.HasParentRelationship(f) + "\n"
+    Gone(g)
+    Gone(f)
+    Gone(h)
+    Gone(a)
+    Gone(d)
+    return r
+EndFunction
+
+; npc-templates.md: an actor's HasKeyword and what it wears.
+String Function TestActorKeywords()
+    Actor a = Spawn(NakedBase, 0.0, 300.0)
+    a.AddItem(IronCuirass, 1, true)
+    a.EquipItem(IronCuirass, false, true)
+    Utility.Wait(1.0)
+    String r = "wearing an iron cuirass (ArmorHeavy): HasKeyword(ArmorHeavy) " + a.HasKeyword(ArmorHeavyKw) + ", WornHasKeyword " + a.WornHasKeyword(ArmorHeavyKw)
+    r += "; HasKeyword(ActorTypeNPC) " + a.HasKeyword(ActorTypeNPC)
+    FlameCloakSpell.Cast(a, a)
+    Utility.Wait(1.0)
+    r += "; under Flame Cloak: HasMagicEffectWithKeyword(MagicCloak) " + a.HasMagicEffectWithKeyword(MagicCloakKw) + ", HasKeyword(MagicCloak) " + a.HasKeyword(MagicCloakKw) + "\n"
+    a.DispelSpell(FlameCloakSpell)
+    Gone(a)
+    return r
+EndFunction
+
+; loose-objects: where a moved object is after the cell unloads (checked by
+; TestRememberAfter, after the warehouse).
+String Function TestRememberBefore()
+    RememberBowl.MoveTo(CellCenter, 500.0, 500.0, 0.0, false)
+    Utility.Wait(1.0)
+    RememberBowl.ApplyHavokImpulse(1.0, 0.0, 0.0, 20.0)
+    Utility.Wait(3.0)
+    return "the plugin bowl moved and knocked: x " + Num(RememberBowl.GetPositionX() - CellCenter.GetPositionX()) + ", y " + Num(RememberBowl.GetPositionY() - CellCenter.GetPositionY()) + ", z " + Num(RememberBowl.GetPositionZ() - CellCenter.GetPositionZ()) + "\n"
+EndFunction

@@ -45,6 +45,13 @@ const SOURCES: &[(&str, &str)] = &[
     ("base", include_str!("autotest21/base.psc")),
     ("natives", include_str!("autotest21/natives.psc")),
     ("conditions", include_str!("autotest21/conditions.psc")),
+    ("magic", include_str!("autotest21/magic.psc")),
+    ("items", include_str!("autotest21/items.psc")),
+    ("detect", include_str!("autotest21/detect.psc")),
+    ("combat", include_str!("autotest21/combat.psc")),
+    ("combat2", include_str!("autotest21/combat2.psc")),
+    ("leave", include_str!("autotest21/leave.psc")),
+    ("outdoors", include_str!("autotest21/outdoors.psc")),
 ];
 
 /// The other scripts: attached to our records.
@@ -72,6 +79,7 @@ const KILLER_REFS: u32 = 0x823;
 const LINK_KEYWORD: u32 = 0x824;
 const OUTFIT_A: u32 = 0x825;
 const OUTFIT_B: u32 = 0x826;
+const REMOTE_MARKERS: u32 = 0x827;
 
 const NAKED: u32 = 0x830;
 const LOGGED: u32 = 0x831;
@@ -92,12 +100,29 @@ const ALPHA_NPC: u32 = 0x83F;
 const BETA_NPC: u32 = 0x840;
 const GAMMA_NPC: u32 = 0x841;
 const VICTIM_NPC: u32 = 0x842;
+const LOW_NPC: u32 = 0x843;
+const LEVEL8_NPC: u32 = 0x844;
+const TEAL_HELPER: u32 = 0x845;
+const RED_FIGHTER: u32 = 0x846;
+const HELPER: u32 = 0x847;
+const AVERAGE: u32 = 0x848;
+const COWARD: u32 = 0x849;
+const BRUTE: u32 = 0x84A;
+const GREEN_FIGHTER: u32 = 0x84B;
+const MAGE: u32 = 0x84C;
+const HEALER: u32 = 0x84D;
+const STAFF_NPC: u32 = 0x84E;
+const PC_MULT_DREMORA: u32 = 0x84F;
+const CRIME_GUARD: u32 = 0x8A0;
 
 const DOOR: u32 = 0x850;
 const WEB: u32 = 0x851;
 const RESET_CHEST: u32 = 0x852;
 const FIRE_EFFECT: u32 = 0x853;
 const FIRE_SPELL: u32 = 0x854;
+const ABSORB_EFFECT: u32 = 0x855;
+const ABSORB_SPELL: u32 = 0x856;
+const HEALTH_RING: u32 = 0x857;
 
 const CELL: u32 = 0x860;
 // References in our cell.
@@ -116,6 +141,8 @@ const LINK_A: u32 = 0x86C;
 const LINK_B: u32 = 0x86D;
 const LINK_C: u32 = 0x86E;
 const LINK_K: u32 = 0x86F;
+const FLOATING_BOWL: u32 = 0x87B;
+const REMEMBER_BOWL: u32 = 0x87C;
 const FLOORS: u32 = 0x870; // 9 floor pieces
 // In WarehouseFurniture.
 const WH_CENTER: u32 = 0x880;
@@ -430,6 +457,15 @@ const PROBE_LIST: &[Probe] = &[
         on: Some(VICTIM),
         ..probe("TimeDead", "GetTimeDead", P::None, P::None, GE, V::Probe)
     },
+    // Health is actor value 24.
+    probe(
+        "HealthHigh",
+        "GetActorValuePercent",
+        P::Int(24),
+        P::None,
+        GE,
+        V::Value(0.9),
+    ),
 ];
 
 /// Vanilla forms the scripts name: property, type, editor id.
@@ -461,6 +497,70 @@ const VANILLA: &[(&str, &str, &str)] = &[
     ("WolfBase", "ActorBase", "EncWolf"),
     ("EmptyChest", "Container", "BarrelEmpty01"),
     ("Barrel", "Container", "BarrelEmpty01"),
+    ("CalmSpell", "Spell", "Calm"),
+    ("FurySpell", "Spell", "Fury"),
+    ("FearSpell", "Spell", "Fear"),
+    ("FlameCloakSpell", "Spell", "flameCloak"),
+    ("EtherealSpell", "Spell", "VoiceBecomeEthereal1"),
+    ("EtherealEffect", "MagicEffect", "VoiceMakeEthereal"),
+    ("SlowTimeSpell", "Spell", "VoiceSlowTime1"),
+    ("SlowTimeEffect", "MagicEffect", "VoiceSlowTimeEffect"),
+    ("Bowl", "MiscObject", "BasicWoodenBowl01"),
+    ("SoulGemPetty", "SoulGem", "SoulGemPetty"),
+    ("SoulGemPettyFilled", "SoulGem", "SoulGemPettyFilled"),
+    ("SoulGemGrand", "SoulGem", "SoulGemGrand"),
+    ("SoulGemGrandFilled", "SoulGem", "SoulGemGrandFilled"),
+    ("SoulGemBlack", "SoulGem", "SoulGemBlack"),
+    ("SoulGemBlackFilled", "SoulGem", "SoulGemBlackFilled"),
+    ("KhaylaBase", "ActorBase", "Khayla"),
+    ("DerveninBase", "ActorBase", "Dervenin"),
+    ("DeerBase", "ActorBase", "EncDeer"),
+    ("ArnielSummonBase", "ActorBase", "MGArnielSummon"),
+    ("HareBase", "ActorBase", "EncHare"),
+    ("MudcrabBase", "ActorBase", "EncMudcrabMedium"),
+    ("SkeletonBase", "ActorBase", "EncSkeleton01Melee1H"),
+    ("AtronachBase", "ActorBase", "EncAtronachFlame"),
+    ("SpiderBase", "ActorBase", "EncDwarvenSpider01"),
+    ("VampireBase", "ActorBase", "EncVampire00BretonF"),
+    ("Wheat", "Ingredient", "Wheat"),
+    ("BoundSwordSpell", "Spell", "BoundSword"),
+    ("BoundSword", "Weapon", "BoundWeaponSword"),
+    ("DisarmSpell", "Spell", "VoiceDisarm1"),
+    ("FireboltSpell", "Spell", "Firebolt"),
+    ("VigilantBase", "ActorBase", "EncVigilantOfStendarr01NordF"),
+    ("WarlockBase", "ActorBase", "EncWarlockFire03BretonM"),
+    ("SparksStaff", "Weapon", "StaffSparks"),
+    ("GerdurBase", "ActorBase", "Gerdur"),
+    ("FrodnarBase", "ActorBase", "Frodnar"),
+    ("HodBase", "ActorBase", "Hod"),
+    ("AlvorBase", "ActorBase", "Alvor"),
+    ("DortheBase", "ActorBase", "Dorthe"),
+    ("ParentChildType", "AssociationType", "ParentChild"),
+    ("SpouseType", "AssociationType", "Spouse"),
+    ("ArmorHeavyKw", "Keyword", "ArmorHeavy"),
+    ("ActorTypeNPC", "Keyword", "ActorTypeNPC"),
+    ("MagicCloakKw", "Keyword", "MagicCloak"),
+    ("InvisibilitySpell", "Spell", "Invisibility"),
+    ("FireSword", "Weapon", "EnchIronSwordFire01"),
+    ("TimeScale", "GlobalVariable", "TimeScale"),
+    ("WeatherA", "Weather", WEATHERS[0]),
+    ("WeatherB", "Weather", WEATHERS[1]),
+    ("WeatherC", "Weather", WEATHERS[2]),
+    ("WhiterunMarker", "ObjectReference", "WhiterunMapMarkerREF"),
+    ("SolitudeMarker", "ObjectReference", "SolitudeMapmarkerRef"),
+];
+
+/// The weathers whose transitions are timed.
+const WEATHERS: [&str; 3] = ["SkyrimClear", "SkyrimCloudy", "SkyrimFog"];
+
+/// Map markers far from Riverwood, the first not yet on the map tried.
+const REMOTE: &[&str] = &[
+    "AlftandMapMarker",
+    "LoreiusMapMarker",
+    "SaarthalMapMarker",
+    "EboncrestMapMarker",
+    "MerryFairMapMarker",
+    "AngasMillMapMarker",
 ];
 
 /// Our forms the scripts name: property, type, object id.
@@ -510,6 +610,25 @@ const OWN: &[(&str, &str, u32)] = &[
     ("LinkB", "ObjectReference", LINK_B),
     ("LinkC", "ObjectReference", LINK_C),
     ("LinkK", "ObjectReference", LINK_K),
+    ("AbsorbMagickaSpell", "Spell", ABSORB_SPELL),
+    ("HealthRing", "Armor", HEALTH_RING),
+    ("LowBase", "ActorBase", LOW_NPC),
+    ("Level8Base", "ActorBase", LEVEL8_NPC),
+    ("PCMultDremora", "ActorBase", PC_MULT_DREMORA),
+    ("FloatingBowl", "ObjectReference", FLOATING_BOWL),
+    ("TealHelperBase", "ActorBase", TEAL_HELPER),
+    ("RedFighterBase", "ActorBase", RED_FIGHTER),
+    ("HelperBase", "ActorBase", HELPER),
+    ("AverageBase", "ActorBase", AVERAGE),
+    ("CowardBase", "ActorBase", COWARD),
+    ("BruteBase", "ActorBase", BRUTE),
+    ("GreenFighterBase", "ActorBase", GREEN_FIGHTER),
+    ("MageBase", "ActorBase", MAGE),
+    ("HealerBase", "ActorBase", HEALER),
+    ("StaffBase", "ActorBase", STAFF_NPC),
+    ("RememberBowl", "ObjectReference", REMEMBER_BOWL),
+    ("CrimeGuardBase", "ActorBase", CRIME_GUARD),
+    ("RemoteMarkers", "FormList", REMOTE_MARKERS),
 ];
 
 /// The tests, in running order: every `String Function TestName()` of the
@@ -543,7 +662,11 @@ fn header() -> String {
         s += &format!("Spell Property PS_{} Auto\n", p.name);
         s += &format!("MagicEffect Property PE_{} Auto\n", p.name);
     }
+    for name in ["DeltaA", "DeltaB", "DeltaC"] {
+        s += &format!("Float Property {name} Auto\n");
+    }
     s += "Bool Ran = false\n";
+    s += "ObjectReference StartMarker\nWeather CellWeather\nInt CellSkyMode\n";
     let tests = tests();
     for t in &tests {
         s += &format!("String Result{t}\n");
@@ -554,7 +677,9 @@ fn header() -> String {
         "    Debug.Notification(\"vibe_rm autotest21 running: {} tests, about an hour. Leave the game be.\")\n",
         tests.len()
     );
+    s += "    StartMarker = Player.PlaceAtMe(XMarker, 1, true, false)\n";
     s += "    GoCell()\n    Float t = 0.0\n";
+    s += "    CellWeather = Weather.GetCurrentWeather()\n    CellSkyMode = Weather.GetSkyMode()\n";
     for (i, t) in tests.iter().enumerate() {
         s += &format!("    t = Now()\n    Result{t} = Test{t}()\n");
         s += &format!("    Result{t} += \"(took \" + Num(Now() - t) + \" s)\"\n");
@@ -601,9 +726,18 @@ struct Vanilla<'a> {
 
 impl Vanilla<'_> {
     fn id(&self, edid: &str) -> Result<FormId> {
+        // References aren't indexed by editor id: those are looked for.
         let id = self
             .lo
             .find_editor_id(edid)
+            .or_else(|| {
+                self.lo.ids_of_type(b"REFR").iter().copied().find(|&r| {
+                    self.lo
+                        .get(r)
+                        .and_then(|rec| rec.editor_id().map(|e| e.eq_ignore_ascii_case(edid)))
+                        .unwrap_or(false)
+                })
+            })
             .with_context(|| format!("{edid} not found"))?;
         anyhow::ensure!(id.0 >> 24 == 0, "{edid} ({id}) isn't from Skyrim.esm");
         Ok(id)
@@ -668,6 +802,11 @@ struct Npc {
     temper: (u8, u8, u8),
     script: Option<&'static str>,
     outfit: Option<FormId>,
+    /// Inventory (`CNTO`): item, count.
+    items: Vec<(FormId, u32)>,
+    spells: Vec<FormId>,
+    combat_style: Option<FormId>,
+    crime_faction: Option<FormId>,
 }
 
 impl Npc {
@@ -715,16 +854,31 @@ impl Npc {
             let snam: [u8; 8] = bytes(&[&faction.0.to_le_bytes(), &[rank as u8, 0, 0, 0]]);
             rec = rec.field(b"SNAM", &snam);
         }
+        for sp in &self.spells {
+            rec = rec.form(b"SPLO", *sp);
+        }
         if self.template.is_some() {
             rec = rec.form(b"TPLT", tpl);
         }
+        if let Some(cf) = self.crime_faction {
+            rec = rec.form(b"CRIF", cf);
+        }
+        rec = rec.form(b"RNAM", self.race).field(b"AIDT", &aidt);
+        if !self.items.is_empty() {
+            rec = rec.u32(b"COCT", self.items.len() as u32);
+            for (item, count) in &self.items {
+                let cnto: [u8; 8] = bytes(&[&item.0.to_le_bytes(), &count.to_le_bytes()]);
+                rec = rec.field(b"CNTO", &cnto);
+            }
+        }
         rec = rec
-            .form(b"RNAM", self.race)
-            .field(b"AIDT", &aidt)
             .form(b"CNAM", self.class)
             .zstring(b"FULL", "vibe_rm Test NPC")
             .field(b"DATA", &[])
             .field(b"DNAM", &dnam);
+        if let Some(style) = self.combat_style {
+            rec = rec.form(b"ZNAM", style);
+        }
         if let Some(o) = self.outfit {
             rec = rec.form(b"DOFT", o);
         }
@@ -797,7 +951,9 @@ fn attached(name: &str) -> AttachedScript {
 
 /// A persistent reference of `base` in our cell.
 fn reference(object_id: u32, base: FormId, pos: [f32; 3], rot_z: f32) -> RecordBuilder {
-    let tag = if base.0 >> 24 == 1 && matches!(base.0 & 0xFFF, NAKED..=0x84F) {
+    let tag = if base.0 >> 24 == 1
+        && (matches!(base.0 & 0xFFF, NAKED..=PC_MULT_DREMORA) || base.0 & 0xFFF == CRIME_GUARD)
+    {
         b"ACHR"
     } else {
         b"REFR"
@@ -825,6 +981,14 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
     }
     for (name, _, id) in OWN {
         properties.push((name.to_string(), object(own(*id))));
+    }
+    for (name, edid) in ["DeltaA", "DeltaB", "DeltaC"].iter().zip(WEATHERS) {
+        // WTHR DATA byte 3: the trans delta.
+        let delta = lo
+            .get(v.id(edid)?)
+            .and_then(|r| r.get(b"DATA").and_then(|d| d.get(3).copied()))
+            .context("a weather's delta")?;
+        properties.push((name.to_string(), PropertyValue::Float(delta as f32)));
     }
     for (i, p) in PROBE_LIST.iter().enumerate() {
         let i = i as u32;
@@ -897,6 +1061,11 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
         form_list(CRIME_GROUP, "VrmAt21CrimeGroup", &[own(RED)]),
         form_list(KILLER_BASES, "VrmAt21KillerBases", &[own(VICTIM_NPC)]),
         form_list(KILLER_REFS, "VrmAt21KillerRefs", &[own(VICTIM)]),
+        form_list(
+            REMOTE_MARKERS,
+            "VrmAt21RemoteMarkers",
+            &REMOTE.iter().map(|e| v.id(e)).collect::<Result<Vec<_>>>()?,
+        ),
     ];
     let keywords = vec![records::keyword(LINK_KEYWORD, "VrmAt21LinkKeyword")];
     let outfits = vec![
@@ -926,8 +1095,13 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
         temper: (0, 3, 0),
         script: None,
         outfit: None,
+        items: Vec::new(),
+        spells: Vec::new(),
+        combat_style: None,
+        crime_faction: None,
     };
     let teal = own(TEAL);
+    let sword = v.id("IronSword")?;
     let npcs: Vec<RecordBuilder> = vec![
         npc(NAKED, "VrmAt21Naked").record(),
         Npc {
@@ -1011,6 +1185,111 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
         }
         .record(),
         npc(VICTIM_NPC, "VrmAt21VictimNpc").record(),
+        Npc {
+            level: 1,
+            ..npc(LOW_NPC, "VrmAt21LowNpc")
+        }
+        .record(),
+        Npc {
+            level: 8,
+            ..npc(LEVEL8_NPC, "VrmAt21Level8Npc")
+        }
+        .record(),
+        Npc {
+            factions: vec![(teal, 0)],
+            temper: (1, 3, 1),
+            items: vec![(sword, 1)],
+            ..npc(TEAL_HELPER, "VrmAt21TealHelper")
+        }
+        .record(),
+        Npc {
+            factions: vec![(own(RED), 0)],
+            temper: (1, 3, 0),
+            items: vec![(sword, 1)],
+            ..npc(RED_FIGHTER, "VrmAt21RedFighter")
+        }
+        .record(),
+        Npc {
+            temper: (1, 3, 2),
+            items: vec![(sword, 1)],
+            ..npc(HELPER, "VrmAt21Helper")
+        }
+        .record(),
+        Npc {
+            temper: (1, 2, 0),
+            items: vec![(sword, 1)],
+            ..npc(AVERAGE, "VrmAt21Average")
+        }
+        .record(),
+        Npc {
+            temper: (1, 0, 0),
+            items: vec![(sword, 1)],
+            ..npc(COWARD, "VrmAt21Coward")
+        }
+        .record(),
+        Npc {
+            level: 50,
+            temper: (2, 4, 0),
+            items: vec![(v.id("IronGreatsword")?, 1)],
+            ..npc(BRUTE, "VrmAt21Brute")
+        }
+        .record(),
+        Npc {
+            factions: vec![(own(GREEN), 0)],
+            temper: (1, 3, 0),
+            items: vec![(sword, 1)],
+            ..npc(GREEN_FIGHTER, "VrmAt21GreenFighter")
+        }
+        .record(),
+        Npc {
+            temper: (1, 3, 0),
+            script: Some("VrmAt21ActorLog"),
+            spells: vec![v.id("Firebolt")?],
+            combat_style: Some(v.id("csHumanMagic")?),
+            ..npc(MAGE, "VrmAt21Mage")
+        }
+        .record(),
+        Npc {
+            temper: (1, 3, 0),
+            script: Some("VrmAt21ActorLog"),
+            spells: vec![v.id("Healing")?],
+            items: vec![(sword, 1)],
+            ..npc(HEALER, "VrmAt21Healer")
+        }
+        .record(),
+        Npc {
+            temper: (1, 3, 0),
+            combat_style: Some(v.id("csDragonPriest")?),
+            ..npc(STAFF_NPC, "VrmAt21StaffNpc")
+        }
+        .record(),
+        Npc {
+            factions: vec![(own(CRIME), 0)],
+            crime_faction: Some(own(CRIME)),
+            class: v.id("GuardImperial")?,
+            temper: (1, 3, 0),
+            items: vec![(sword, 1)],
+            ..npc(CRIME_GUARD, "VrmAt21CrimeGuard")
+        }
+        .record(),
+        records::copy(
+            lo,
+            "EncDremoraMelee06",
+            PC_MULT_DREMORA,
+            "VrmAt21PCMultDremora",
+            None,
+            |tag, d| {
+                // ACBS: the PC level mult flag (0x80), level 1000 (x1.0), calc
+                // min 46, max 0.
+                if tag == b"ACBS" && d.len() >= 14 {
+                    let flags = u32::from_le_bytes(d[0..4].try_into().unwrap()) | 0x80;
+                    d[0..4].copy_from_slice(&flags.to_le_bytes());
+                    d[8..10].copy_from_slice(&1000u16.to_le_bytes());
+                    d[10..12].copy_from_slice(&46u16.to_le_bytes());
+                    d[12..14].copy_from_slice(&0u16.to_le_bytes());
+                }
+            },
+        )?,
     ];
 
     // Objects with a logger.
@@ -1064,16 +1343,41 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
             }
         },
     )?];
-    let mut spells = vec![records::spell(
-        FIRE_SPELL,
-        "VrmAt21FireSpell",
-        spell::SPELL,
-        spell::FIRE_AND_FORGET,
-        spell::TARGET_ACTOR,
-        0,
+    effects.push(records::copy(
+        lo,
+        "AbsorbMagickaConcAimed",
+        ABSORB_EFFECT,
+        "VrmAt21AbsorbMagickaEffect",
         None,
-        &[records::Effect::new(own(FIRE_EFFECT), 10.0, 0)],
-    )];
+        |tag, d| {
+            if tag == b"DATA" && d.len() >= 0x58 {
+                d[0x50..0x54].copy_from_slice(&spell::FIRE_AND_FORGET.to_le_bytes());
+                d[0x54..0x58].copy_from_slice(&spell::TARGET_ACTOR.to_le_bytes());
+            }
+        },
+    )?);
+    let mut spells = vec![
+        records::spell(
+            ABSORB_SPELL,
+            "VrmAt21AbsorbMagicka",
+            spell::SPELL,
+            spell::FIRE_AND_FORGET,
+            spell::TARGET_ACTOR,
+            0,
+            None,
+            &[records::Effect::new(own(ABSORB_EFFECT), 20.0, 0)],
+        ),
+        records::spell(
+            FIRE_SPELL,
+            "VrmAt21FireSpell",
+            spell::SPELL,
+            spell::FIRE_AND_FORGET,
+            spell::TARGET_ACTOR,
+            0,
+            None,
+            &[records::Effect::new(own(FIRE_EFFECT), 10.0, 0)],
+        ),
+    ];
 
     // Probes: a harmless constant +3 OneHanded on self, its condition the
     // probe's (autotest5 found this copy works as an ability's effect).
@@ -1127,6 +1431,22 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
         spells.push(rec);
     }
 
+    let enchantment = v.id("EnchArmorFortifyHealth01")?;
+    let armor = vec![records::copy_inserting(
+        lo,
+        "JewelryRingGold",
+        HEALTH_RING,
+        "VrmAt21HealthRing",
+        None,
+        |_, _| {},
+        |tag| {
+            if tag == b"OBND" {
+                vec![(*b"EITM", enchantment.0.to_le_bytes().to_vec())]
+            } else {
+                Vec::new()
+            }
+        },
+    )?];
     let globals = vec![records::global(PROBE_VALUE, "VrmAt21ProbeValue", 0.0)];
 
     // Our cell: nine floor pieces round the origin, lit.
@@ -1187,6 +1507,18 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
             own(LINK_C),
         ),
         reference(LINK_C, x_marker, [-700.0, -900.0, 0.0], 0.0),
+        reference(
+            REMEMBER_BOWL,
+            v.id("BasicWoodenBowl01")?,
+            [400.0, 400.0, 0.0],
+            0.0,
+        ),
+        reference(
+            FLOATING_BOWL,
+            v.id("BasicWoodenBowl01")?,
+            [-200.0, -300.0, 150.0],
+            0.0,
+        ),
         linked(
             reference(LINK_K, x_marker, [-600.0, -900.0, 0.0], 0.0),
             link_keyword,
@@ -1237,7 +1569,7 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
     let entry = *floors
         .iter()
         .min_by(|a, b| {
-            let d = |p: &[f32; 3]| ((p[0] - mid[0] + 500.0).powi(2) + (p[1] - mid[1]).powi(2));
+            let d = |p: &[f32; 3]| (p[0] - mid[0] + 500.0).powi(2) + (p[1] - mid[1]).powi(2);
             d(a).total_cmp(&d(b))
         })
         .context("the warehouse entry")?;
@@ -1295,6 +1627,7 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
             Node::top(b"MGEF", effects),
             Node::top(b"SPEL", spells),
             Node::top(b"ACTI", activators),
+            Node::top(b"ARMO", armor),
             Node::top(b"CONT", containers),
             Node::top(b"DOOR", doors),
             Node::top(b"NPC_", npcs),
@@ -1331,6 +1664,9 @@ mod tests {
         }
         for (name, ty, object_id) in OWN {
             properties.push((name.to_string(), form(own(*object_id).0, ty)));
+        }
+        for name in ["DeltaA", "DeltaB", "DeltaC"] {
+            properties.push((name.to_owned(), papyrus::Value::Float(125.0)));
         }
         for (i, p) in PROBE_LIST.iter().enumerate() {
             let i = i as u32;
