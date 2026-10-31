@@ -134,6 +134,14 @@ counterpart. The GMST `fCreditsScrollSpeed` is 2. Inference: the English
 credits fill `textField` (HTML) and the scroll speed is that GMST. How the
 game splits text into `textField2` is unknown; one field holds the whole file.
 
+The file's three `<img>` lines name bitmaps the movie exports: `SkyrimLogo`
+(194 × 366, shown at the file's `width="129" height="244"`, the same
+proportions), `MiddlewareLogos` (400 × 74) and `CreationEngineLogo`
+(176 × 100), both at their own size. Here they are drawn inline in the field
+(Scaleform-style library images, `vendor/ruffle` 1d11662), and the lines after
+an image start below it (`vendor/ruffle` 19fd2e2). Not compared with SE: how
+SE spaces the logos from the text around them.
+
 ## What is behind the menu
 
 - CommonLibSSE: the menu is "Main Menu", depth 0, flags pause game, disable
@@ -187,6 +195,8 @@ wording of item 4 deliberate deviations: `deviations/main-menu.md`.
 
 ## Still open
 
+- How SE places the credits' logos against the text (spacing above and
+  below); compare a screenshot of SE's credits with `tests/captures/credits/`.
 - Whether SE's character list in Load starts with a row selected on PC
   (open Load from the main menu, press Enter without an arrow key: does it
   move on to the saves?). The movie leaves it unselected.

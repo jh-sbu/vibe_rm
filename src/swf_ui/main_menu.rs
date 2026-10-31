@@ -185,15 +185,11 @@ impl Credits {
     }
 }
 
-/// `credits.txt` for the HTML field. Its logos (`<img src='SkyrimLogo'>` and
-/// two more, the movie's library symbols) are left out: Ruffle lays out the
-/// lines after an inline image over one another.
+/// `credits.txt` for the HTML field, with its line ends as `\n`. Its logos
+/// (`<img src='SkyrimLogo'>` and two more) name the movie's library bitmaps,
+/// which the field draws inline.
 fn credits_text(file: &str) -> String {
     file.replace("\r\n", "\n")
-        .lines()
-        .filter(|l| !l.trim_start().starts_with("<img"))
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 #[cfg(test)]
@@ -214,10 +210,13 @@ mod tests {
     }
 
     #[test]
-    fn credits_text_drops_the_logos() {
+    fn credits_text_keeps_the_logos() {
         let text = credits_text(
             "<img src='SkyrimLogo'>\r\n\r\nTITLE\r\nName\r\n<img src='X'>\r\nEnd</font>",
         );
-        assert_eq!(text, "\nTITLE\nName\nEnd</font>");
+        assert_eq!(
+            text,
+            "<img src='SkyrimLogo'>\n\nTITLE\nName\n<img src='X'>\nEnd</font>"
+        );
     }
 }
