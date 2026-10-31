@@ -243,7 +243,8 @@ Verified with GPU-gated engine tests (`main_menu::tests`: three teardown
 cycles with their fade, Continue's save, a failed load) and offscreen runs:
 Continue and Load into a save, the credits scrolling and closing, deleting
 the last save, New's confirmation and message, the fade, and two
-game → main menu → game cycles.
+game → main menu → game cycles. Loads from the main menu show the loading
+screen (`plans/loading-screen.md`, "After the observations").
 
 Remaining:
 
@@ -261,6 +262,5 @@ Remaining:
   once their placement is known (`research/ui/main-menu.md`).
 - The credits' logos: Ruffle lays out the lines after an inline `<img>` over
   one another, so the three logo images are left out of the text.
-- A loading screen for loads from the main menu (`plans/loading-screen.md`).
 - Keyboard: the save panel's character list starts with nothing selected, so
   Enter needs an arrow key first (as in the journal's Load).
