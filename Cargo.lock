@@ -4497,6 +4497,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-channel",
+ "flate2",
  "log",
  "png 0.17.16",
  "ruffle_core",

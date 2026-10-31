@@ -634,3 +634,212 @@ mod host_image_tests {
         assert_ne!(focus_after_tab(false), Value::String("_level0.a".into()));
     }
 }
+
+/// Inline `<img>` layout in HTML text (Scaleform draws a library bitmap in the
+/// line): the credits open with a logo taller than a line.
+#[cfg(test)]
+mod inline_image_tests {
+    use super::*;
+    use ruffle_core::backend::ui::FontDefinition;
+    use ruffle_core::font::{DefaultFont, FontFileData};
+    use std::io::{Read, Write};
+    use swf::avm1::types::{Action, DefineFunction, Push, Value as AValue};
+
+    const FONT: &[u8] = include_bytes!("../../../vendor/ruffle/core/assets/notosans.subset.ttf.gz");
+
+    fn string(s: &'static str) -> AValue<'static> {
+        AValue::Str(swf::SwfStr::from_utf8_str(s))
+    }
+    fn push(values: Vec<AValue<'static>>) -> Action<'static> {
+        Action::Push(Push { values })
+    }
+    fn bytecode(actions: &[Action<'_>]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        {
+            let mut w = swf::avm1::write::Writer::new(&mut bytes, 8);
+            for a in actions {
+                w.write_action(a).unwrap();
+            }
+        }
+        bytes.push(0);
+        bytes
+    }
+    /// `_root.<out> = t.<method>(<arg>).<member>`: the external interface
+    /// returns objects as null, so the probe keeps the number in the movie.
+    fn probe(
+        out: &'static str,
+        arg: &'static str,
+        method: &'static str,
+        member: &'static str,
+    ) -> Vec<Action<'static>> {
+        vec![
+            push(vec![string(out), string(arg)]),
+            Action::GetVariable,
+            push(vec![AValue::Int(1), string("t")]),
+            Action::GetVariable,
+            push(vec![string(method)]),
+            Action::CallMethod,
+            push(vec![string(member)]),
+            Action::GetMember,
+            Action::SetVariable,
+        ]
+    }
+
+    /// A movie exporting a `width` × `height` bitmap as "Logo", with a 400 px
+    /// wide multiline HTML field `_root.t` holding `html`. Returns the top of
+    /// each of `words` (first characters) and the height of each line.
+    fn layout(html: &str, words: &[&str], width: u16, height: u16) -> (Vec<f64>, Vec<f64>) {
+        let mut pixels = flate2::write::ZlibEncoder::new(Vec::new(), Default::default());
+        pixels
+            .write_all(&vec![255; width as usize * height as usize * 4])
+            .unwrap();
+        let pixels = pixels.finish().unwrap();
+        // probe(c, i): _root.top = the top of character c, _root.height = the
+        // height of line i.
+        let mut body = probe("top", "c", "getCharBoundaries", "y");
+        body.extend(probe("height", "i", "getLineMetrics", "height"));
+        let body = bytecode(&body);
+        // reformat(): t.setTextFormat(t.getTextFormat()), as the menus' SetText
+        // does after setting htmlText (keeping letter spacing and kerning).
+        let reformat = bytecode(&[
+            push(vec![AValue::Int(0), string("t")]),
+            Action::GetVariable,
+            push(vec![string("getTextFormat")]),
+            Action::CallMethod,
+            push(vec![AValue::Int(1), string("t")]),
+            Action::GetVariable,
+            push(vec![string("setTextFormat")]),
+            Action::CallMethod,
+            Action::Pop,
+        ]);
+        let script = bytecode(&[
+            Action::DefineFunction(DefineFunction {
+                name: swf::SwfStr::from_utf8_str("probe"),
+                params: vec![
+                    swf::SwfStr::from_utf8_str("c"),
+                    swf::SwfStr::from_utf8_str("i"),
+                ],
+                actions: &body,
+            }),
+            Action::DefineFunction(DefineFunction {
+                name: swf::SwfStr::from_utf8_str("reformat"),
+                params: vec![],
+                actions: &reformat,
+            }),
+            Action::Stop,
+        ]);
+        let mut data = Vec::new();
+        swf::write_swf(
+            &swf::Header::default_with_swf_version(8),
+            &[
+                swf::Tag::DefineBitsLossless(swf::DefineBitsLossless {
+                    version: 2,
+                    id: 1,
+                    format: swf::BitmapFormat::Rgb32,
+                    width,
+                    height,
+                    data: pixels.into(),
+                }),
+                swf::Tag::ExportAssets(vec![swf::ExportedAsset {
+                    id: 1,
+                    name: swf::SwfStr::from_utf8_str("Logo"),
+                }]),
+                swf::Tag::DoAction(&script),
+                swf::Tag::ShowFrame,
+            ],
+            &mut data,
+        )
+        .unwrap();
+        let movie = SwfMovie::from_data(&data, "file:///synthetic.swf".into(), None, None).unwrap();
+        let player = PlayerBuilder::new()
+            .with_movie(movie)
+            .with_autoplay(true)
+            .build();
+        let mut p = player.lock().unwrap();
+        let mut font = Vec::new();
+        flate2::read::DeflateDecoder::new(FONT)
+            .read_to_end(&mut font)
+            .unwrap();
+        p.register_device_font(FontDefinition::FontFile {
+            name: "Noto Sans".into(),
+            is_bold: false,
+            is_italic: false,
+            data: FontFileData::new(font),
+            index: 0,
+        });
+        for font in [
+            DefaultFont::Sans,
+            DefaultFont::Serif,
+            DefaultFont::Typewriter,
+        ] {
+            p.set_default_font(font, vec!["Noto Sans".into()]);
+        }
+        p.run_frame();
+        p.invoke_avm1(
+            "_root.createTextField",
+            [
+                Value::String("t".into()),
+                Value::Number(1.),
+                Value::Number(0.),
+                Value::Number(0.),
+                Value::Number(400.),
+                Value::Number(2000.),
+            ],
+        );
+        for property in ["html", "multiline", "wordWrap"] {
+            p.set_avm1_variable(&format!("_root.t.{property}"), Value::Bool(true));
+        }
+        p.set_avm1_variable("_root.t.htmlText", Value::String(html.into()));
+        p.invoke_avm1("_root.reformat", []);
+        let Value::String(text) = p.get_avm1_variable("_root.t.text") else {
+            panic!("no text");
+        };
+        let Value::Number(lines) = p.get_avm1_variable("_root.t.numLines") else {
+            panic!("no numLines");
+        };
+        let mut get = |c: usize, i: usize, out: &str| {
+            p.invoke_avm1(
+                "_root.probe",
+                [Value::Number(c as f64), Value::Number(i as f64)],
+            );
+            match p.get_avm1_variable(&format!("_root.{out}")) {
+                Value::Number(n) => n,
+                other => panic!("{out} of {c}, line {i}: {other:?}"),
+            }
+        };
+        let tops = words
+            .iter()
+            .map(|w| {
+                get(
+                    text.encode_utf16().count()
+                        - text[text.find(w).unwrap()..].encode_utf16().count(),
+                    0,
+                    "top",
+                )
+            })
+            .collect();
+        let heights = (0..lines as usize).map(|i| get(0, i, "height")).collect();
+        (tops, heights)
+    }
+
+    /// The credits' first lines: a logo taller than a line, then text.
+    #[test]
+    fn lines_after_a_tall_image_start_below_it_one_line_apart() {
+        let words = ["TITLE", "Name", "Other"];
+        let (plain, _) = layout("\n\nTITLE\nName\nOther", &words, 40, 120);
+        let (with_image, heights) =
+            layout("<img src='Logo'>\n\nTITLE\nName\nOther", &words, 40, 120);
+        assert!(plain[1] > plain[0], "tops without the image {plain:?}");
+        // The image's line is as tall as the image, the text starts below it,
+        // and the lines after keep the plain text's spacing.
+        assert!(heights[0] >= 120., "line heights {heights:?}");
+        assert!(with_image[0] >= 120., "tops {with_image:?}");
+        for i in 1..words.len() {
+            let (with, without) = (with_image[i] - with_image[i - 1], plain[i] - plain[i - 1]);
+            assert!(
+                (with - without).abs() < 0.01,
+                "tops {with_image:?}, without the image {plain:?}"
+            );
+        }
+    }
+}
