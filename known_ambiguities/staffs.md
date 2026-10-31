@@ -16,9 +16,32 @@ release clips for hand type 8: `StfMagicRight_Release`, `SpellFire` at
 - **The cost** is the enchantment's `ENIT` cost (by the second for
   concentration staffs) times the spells' skill factor
   (`1 - (fMagicCasterPCSkillCostBase x skill) ^ fMagicPCSkillCostScale`:
-  0.59 at 100, which gives UESP's 1.7 times the uses). Spell cost perks
-  (`ModSpellCost`, the school's Novice .. Master perks) aren't applied;
-  whether they are isn't published.
+  0.59 at 100, which gives UESP's 1.7 times the uses), times the caster's
+  reduction of the school's costs: `max(0, 1 - <School>Mod / 100)`
+  (`AlterationMod` .. `RestorationMod`, actor values 108 .. 112, which worn
+  `Fortify <School>` enchantments raise; `magic-menu.md`). The same applies
+  to enchanted weapons' blows, crafted copies' own use cost included.
+  UESP's [Skyrim:Enchanting](https://en.uesp.net/w/index.php?oldid=3538992)
+  says items reducing a school's magicka cost "also affect charge levels on
+  weapons associated with that school of magic" (four 25% pieces give
+  Chillrend unlimited uses), and
+  [Skyrim:Fortify Destruction](https://en.uesp.net/w/index.php?oldid=3429893)
+  that it lowers "the use cost of Destruction-based enchantments" and
+  "also works with staves". Neither says how: the reduction is applied as
+  for spells (UESP's Skyrim:Magic Overview, equipment multiplier 1 less the
+  sum of the reductions), from the actor value rather than through
+  `PerkSkillBoosts`' entries. The school is the costliest effect's, as for
+  the skill factor.
+- **Not the whole `ModSpellCost` entry point**: spell cost perks (the
+  school's Novice .. Master perks and the rest below) aren't applied to
+  enchantments; whether they are isn't published. Spells keep the school
+  reduction through `PerkSkillBoosts`, so it isn't counted twice. An SE
+  test could settle it (a plugin perk with an unconditioned `ModSpellCost`
+  entry, `RightItemCharge` read before and after one staff cast).
+- **NPCs** get the reduction too: it reads the caster's own actor value.
+  For spells the reduction comes from `PerkSkillBoosts`, which only the
+  player owns; whether NPCs' worn reductions lower their staffs' and
+  weapons' charge use in the game isn't published.
 - **Spell cost perks on enchantments**: `vrm-tool cost-entries <Data>`
   classifies the 43 vanilla `ModSpellCost` entries by whether their spell
   conditions could match an enchantment. 31 can't: the school perks'

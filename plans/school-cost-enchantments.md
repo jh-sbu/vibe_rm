@@ -1,6 +1,7 @@
 # Plan: school cost reduction for staffs and enchanted weapons
 
-**Status: drafted** (2026-10-30). ROADMAP Next item 5, "Magic, NPCs and
+**Status: done** (2026-10-31; steps 0..3 committed; the console check
+under Verification hasn't been run). ROADMAP Next item 5, "Magic, NPCs and
 items": "staff charge reduced by the school's cost reduction". Each numbered
 step is one commit; run `cargo fmt` before each.
 

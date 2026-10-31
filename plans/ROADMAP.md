@@ -5,6 +5,13 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- **School cost reduction for staffs and enchanted weapons**
+  (`plans/school-cost-enchantments.md`): `Fortify <School>`
+  (`AlterationMod` .. `RestorationMod`) lowers the charge staff casts and
+  enchanted weapons' blows use, crafted copies included, for the player and
+  NPCs; spells keep it through `PerkSkillBoosts`. `vrm-tool cost-entries`
+  surveys which `ModSpellCost` entries could match an enchantment; the
+  entry point isn't run for them (`known_ambiguities/staffs.md`).
 - **Whole-cell sandboxers at interior load**: fresh InCell Sandbox actors choose
   permitted free furniture or idle markers throughout the cell, without a chance,
   distance or floor-height limit. Reservations prevent sharing; resumed actors,
@@ -1985,10 +1992,9 @@ game each piece unlocks.
      powers or absorb spells (`known_ambiguities/npc-healing.md`); NPCs warding
      against blows; wards' sounds (`WardAbsorbSound`, `WardBreakSound`,
      `WardDeflectSound`) and visuals; NPCs' self-cast and summoning staffs and
-     recharging; staff charge reduced by the school's cost reduction (UESP:
-     items reducing a school's magicka cost reduce its weapons' charge use;
-     spells get it through `PerkSkillBoosts`, `staff_cost` doesn't;
-     `plans/school-cost-enchantments.md`); individual staff copies
+     recharging; whether spell cost perks (`ModSpellCost`) also lower staffs'
+     and enchanted weapons' charge use, and whether NPCs' worn school cost
+     reductions do (`known_ambiguities/staffs.md`); individual staff copies
      selectable in the menus and hands (`known_ambiguities/staffs.md`); scrolls
      holding the player in place while cast (UESP Skyrim:Scrolls;
      `plans/scroll-casting-hold.md`), NPCs casting
