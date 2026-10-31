@@ -180,8 +180,8 @@ Screenshots go in `tests/results/spell-visuals/`, named by step (for example
 caster did unexpectedly: it is new here and meant for later tests too.
 
 vibe_rm's reference captures of the same scenes come from the same plugin,
-loaded offscreen through a symlinked overlay of the game's Data directory
-(nothing is written to it):
+loaded offscreen from `tests/assets` with `--plugin <path>` and
+`--loose tests/assets` (nothing is written to the game's Data directory):
 
 ```sh
 scripts/spell-visuals-captures.sh   # into tests/captures/spell-visuals/

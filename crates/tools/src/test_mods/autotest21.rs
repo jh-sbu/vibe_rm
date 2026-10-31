@@ -33,10 +33,10 @@
 //! a marker or two discovered, the player's skills and statistics), so use
 //! a throwaway.
 //!
-//! A run in our own engine (the plugin linked into
-//! `tests/assets/overlay/Data`, `--cell Riverwood --screenshot --wait
-//! 220000`, traces at `RUST_LOG=vibe_rm::script::natives=debug`) runs every
-//! test to the end; its readings are ours, not the game's.
+//! A run in our own engine (`vibe_rm --plugin tests/assets/VrmAutoTest21.esp
+//! --loose tests/assets --cell Riverwood --screenshot <png> --wait 220000`,
+//! traces at `RUST_LOG=vibe_rm::script::natives=debug`) runs every test to
+//! the end; its readings are ours, not the game's.
 
 use std::collections::BTreeMap;
 
