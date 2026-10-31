@@ -961,16 +961,17 @@ impl Npc {
             let snam: [u8; 8] = bytes(&[&faction.0.to_le_bytes(), &[rank as u8, 0, 0, 0]]);
             rec = rec.field(b"SNAM", &snam);
         }
-        for sp in &self.spells {
-            rec = rec.form(b"SPLO", *sp);
-        }
         if self.template.is_some() {
             rec = rec.form(b"TPLT", tpl);
         }
-        if let Some(cf) = self.crime_faction {
-            rec = rec.form(b"CRIF", cf);
+        rec = rec.form(b"RNAM", self.race);
+        // The spell list is counted, like inventory, and follows the race.
+        if !self.spells.is_empty() {
+            rec = rec.u32(b"SPCT", self.spells.len() as u32);
+            for sp in &self.spells {
+                rec = rec.form(b"SPLO", *sp);
+            }
         }
-        rec = rec.form(b"RNAM", self.race).field(b"AIDT", &aidt);
         if !self.items.is_empty() {
             rec = rec.u32(b"COCT", self.items.len() as u32);
             for (item, count) in &self.items {
@@ -979,6 +980,7 @@ impl Npc {
             }
         }
         rec = rec
+            .field(b"AIDT", &aidt)
             .form(b"CNAM", self.class)
             .zstring(b"FULL", "vibe_rm Test NPC")
             .field(b"DATA", &[])
@@ -986,13 +988,18 @@ impl Npc {
         if let Some(style) = self.combat_style {
             rec = rec.form(b"ZNAM", style);
         }
+        rec = rec
+            .field(b"NAM5", &[0xFF, 0])
+            .f32(b"NAM6", 1.0)
+            .f32(b"NAM7", 50.0)
+            .u32(b"NAM8", 1);
         if let Some(o) = self.outfit {
             rec = rec.form(b"DOFT", o);
         }
-        rec.field(b"NAM5", &[0xFF, 0])
-            .f32(b"NAM6", 1.0)
-            .f32(b"NAM7", 50.0)
-            .u32(b"NAM8", 1)
+        if let Some(cf) = self.crime_faction {
+            rec = rec.form(b"CRIF", cf);
+        }
+        rec
     }
 }
 
