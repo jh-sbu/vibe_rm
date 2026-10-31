@@ -88,6 +88,30 @@ is the Switch's).
 
 `OnDisabledLoadPress` and `HELP` aren't otherwise described by the assets.
 
+### The save panel's first selection
+
+The save panel (`SaveLoadPanel`, the same class in `startmenu.swf` and
+`quest_journal.swf`) treats its two lists differently on PC (read
+2026-10-31):
+
+- `onFillCharacterListComplete` highlights and selects the remembered row
+  (`LastSelectedIndexMemory`, 0 at first) only when the panel's platform is
+  neither 0 (PC) nor 7 (Switch with mouse). On PC the character list opens
+  with `selectedIndex` −1.
+- `onSaveLoadBatchComplete` with `abDoInitialUpdate` true selects the
+  remembered row on every platform, so the save list opens with a row
+  selected.
+- With `selectedIndex` −1 the list's Enter dispatches `listPress`, not
+  `itemPress`, so nothing is chosen. Up or Down from −1 selects a row
+  (Down the first row, through the list's own bounds check), and the mouse
+  selects by rolling over a row.
+
+So on PC Enter does nothing in the character list until an arrow key or the
+mouse picks a row. Offscreen with `--main-menu` this is what happens here,
+and the save list then opens with its first save selected. Not settled by
+the movie: whether the game selects a character row itself after the
+callback, which the movie doesn't ask for.
+
 ## Credits (`creditsmenu.swf`)
 
 The `CreditsMenu` clip is `_root.Menu_mc`. The root timeline's
@@ -163,6 +187,9 @@ wording of item 4 deliberate deviations: `deviations/main-menu.md`.
 
 ## Still open
 
+- Whether SE's character list in Load starts with a row selected on PC
+  (open Load from the main menu, press Enter without an arrow key: does it
+  move on to the saves?). The movie leaves it unselected.
 - Whether the title track loops, and its category and volume.
 - How long the fade before the main menu takes.
 - The main menu's backdrop: how the logo and camera are placed in

@@ -263,4 +263,7 @@ Remaining:
 - The credits' logos: Ruffle lays out the lines after an inline `<img>` over
   one another, so the three logo images are left out of the text.
 - Keyboard: the save panel's character list starts with nothing selected, so
-  Enter needs an arrow key first (as in the journal's Load).
+  Enter needs an arrow key first (as in the journal's Load). This is the
+  movie's own PC behaviour (`research/ui/main-menu.md`, "The save panel's
+  first selection"); whether SE also does it is a question for a direct
+  observation.
