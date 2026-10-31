@@ -100,6 +100,11 @@ String Function TestMapMarkers()
         return "every candidate marker was already on the map\n"
     EndIf
     String r = "marker " + Id(m) + ": visible " + m.IsMapMarkerVisible() + ", can travel " + m.CanFastTravelToMarker() + ", Locations Discovered " + Game.QueryStat("Locations Discovered")
+    ; The offsets put the player in the air beside mountain markers: the fall
+    ; (or what lives there) killed them in Skyrim SE, and the reloaded save
+    ; ran into it again. Health enough for any fall while away.
+    Player.ModActorValue("Health", 100000.0)
+    Player.RestoreActorValue("Health", 100000.0)
     Float[] dist = new Float[6]
     dist[0] = 8000.0
     dist[1] = 4000.0
@@ -134,5 +139,7 @@ String Function TestMapMarkers()
         Player.MoveTo(StartMarker, 0.0, 0.0, 0.0, true)
         Utility.Wait(5.0)
     EndIf
+    Player.ModActorValue("Health", -100000.0)
+    Player.RestoreActorValue("Health", 100000.0)
     return r + "\n"
 EndFunction

@@ -27,7 +27,10 @@
 //! notification and leave the game alone until the "done" box (the reports
 //! say how long each took; expect 40 to 60 minutes, mostly the probes'
 //! waits). The player is moved to the cells and back, fast travels to
-//! Whiterun and Solitude and visits a far map marker. The game saves every
+//! Whiterun and Solitude and visits a far map marker (with 100000 extra
+//! health: run 1 fell to its death there and looped on the reloaded save).
+//! Early on (the first `SetPlayerTeammate`) the game shows its follower
+//! commands help, which waits to be dismissed by hand. The game saves every
 //! 20 tests, so a crash keeps what ran; `vrm-tool test-results` reads the
 //! newest save. The run changes that save for good (factions, crime gold,
 //! a marker or two discovered, the player's skills and statistics), so use
