@@ -48,6 +48,8 @@ const SOURCES: &[(&str, &str)] = &[
     ("magic", include_str!("autotest21/magic.psc")),
     ("items", include_str!("autotest21/items.psc")),
     ("detect", include_str!("autotest21/detect.psc")),
+    ("story", include_str!("autotest21/story.psc")),
+    ("extra", include_str!("autotest21/extra.psc")),
     ("combat", include_str!("autotest21/combat.psc")),
     ("combat2", include_str!("autotest21/combat2.psc")),
     ("leave", include_str!("autotest21/leave.psc")),
@@ -58,6 +60,12 @@ const SOURCES: &[(&str, &str)] = &[
 const LOGGERS: &[&str] = &[
     include_str!("autotest21/reflog.psc"),
     include_str!("autotest21/actorlog.psc"),
+    include_str!("autotest21/storylog.psc"),
+];
+
+/// Story Manager event types a quest node of ours listens to.
+const STORY_EVENTS: &[&str] = &[
+    "REMP", "AIPL", "KILL", "ASSU", "CAST", "ADCR", "SKIL", "CHRR",
 ];
 
 // Object ids, by kind.
@@ -80,6 +88,17 @@ const LINK_KEYWORD: u32 = 0x824;
 const OUTFIT_A: u32 = 0x825;
 const OUTFIT_B: u32 = 0x826;
 const REMOTE_MARKERS: u32 = 0x827;
+const MATCH_QUESTS: u32 = 0x828;
+const LEVEL_QUESTS: u32 = 0x829;
+const CREATE_QUEST: u32 = 0x82A;
+const MATCH_QUEST: u32 = 0x82B; // three
+const LEVEL_QUEST: u32 = 0x82E; // two
+const MATCH_NPC: u32 = 0x8A1;
+const MATCH_FAR: u32 = 0x87D;
+const MATCH_WH: u32 = 0x882;
+/// Story quests and nodes: a quest (`+ 2i`) and a node (`+ 2i + 1`) for
+/// each of `STORY_EVENTS`.
+const STORY: u32 = 0x8B0;
 
 const NAKED: u32 = 0x830;
 const LOGGED: u32 = 0x831;
@@ -466,6 +485,9 @@ const PROBE_LIST: &[Probe] = &[
         GE,
         V::Value(0.9),
     ),
+    probe("InCombat0", "IsInCombat", P::Int(0), P::None, EQ, ONE),
+    probe("InCombat1", "IsInCombat", P::Int(1), P::None, EQ, ONE),
+    probe("InCombat2", "IsInCombat", P::Int(2), P::None, EQ, ONE),
 ];
 
 /// Vanilla forms the scripts name: property, type, editor id.
@@ -542,16 +564,33 @@ const VANILLA: &[(&str, &str, &str)] = &[
     ("MagicCloakKw", "Keyword", "MagicCloak"),
     ("InvisibilitySpell", "Spell", "Invisibility"),
     ("FireSword", "Weapon", "EnchIronSwordFire01"),
+    ("Dagger", "Weapon", "IronDagger"),
     ("TimeScale", "GlobalVariable", "TimeScale"),
-    ("WeatherA", "Weather", WEATHERS[0]),
-    ("WeatherB", "Weather", WEATHERS[1]),
-    ("WeatherC", "Weather", WEATHERS[2]),
     ("WhiterunMarker", "ObjectReference", "WhiterunMapMarkerREF"),
     ("SolitudeMarker", "ObjectReference", "SolitudeMapmarkerRef"),
 ];
 
-/// The weathers whose transitions are timed.
-const WEATHERS: [&str; 3] = ["SkyrimClear", "SkyrimCloudy", "SkyrimFog"];
+/// The weathers whose transitions are timed, with their trans deltas: the
+/// game's are 125 but for a few (DA02's 82, the Blue Palace fogs' 61).
+fn weathers(lo: &LoadOrder) -> Result<Vec<(FormId, u8)>> {
+    [
+        "SkyrimClear",
+        "SkyrimDA02Weather",
+        "SolitudeBluePalaceFogNMARE",
+    ]
+    .iter()
+    .map(|e| {
+        let w = lo
+            .find_editor_id(e)
+            .with_context(|| format!("{e} not found"))?;
+        let d = lo
+            .get(w)
+            .and_then(|r| r.get(b"DATA").and_then(|d| d.get(3).copied()))
+            .context("a weather's delta")?;
+        Ok((w, d))
+    })
+    .collect()
+}
 
 /// Map markers far from Riverwood, the first not yet on the map tried.
 const REMOTE: &[&str] = &[
@@ -629,6 +668,12 @@ const OWN: &[(&str, &str, u32)] = &[
     ("RememberBowl", "ObjectReference", REMEMBER_BOWL),
     ("CrimeGuardBase", "ActorBase", CRIME_GUARD),
     ("RemoteMarkers", "FormList", REMOTE_MARKERS),
+    ("CreateQuest", "Quest", CREATE_QUEST),
+    ("MatchQuests", "FormList", MATCH_QUESTS),
+    ("LevelQuests", "FormList", LEVEL_QUESTS),
+    ("MatchBase", "ActorBase", MATCH_NPC),
+    ("MatchFar", "Actor", MATCH_FAR),
+    ("MatchWh", "Actor", MATCH_WH),
 ];
 
 /// The tests, in running order: every `String Function TestName()` of the
@@ -664,6 +709,9 @@ fn header() -> String {
     }
     for name in ["DeltaA", "DeltaB", "DeltaC"] {
         s += &format!("Float Property {name} Auto\n");
+    }
+    for name in ["WeatherA", "WeatherB", "WeatherC"] {
+        s += &format!("Weather Property {name} Auto\n");
     }
     s += "Bool Ran = false\n";
     s += "ObjectReference StartMarker\nWeather CellWeather\nInt CellSkyMode\n";
@@ -718,6 +766,48 @@ fn func_index(name: &str) -> u16 {
         .find(|f| f.1.eq_ignore_ascii_case(name))
         .unwrap_or_else(|| panic!("no condition function {name}"))
         .0
+}
+
+/// A plain condition on the subject: `func(p1, p2) <op> value`.
+fn ctda(func: u16, p1: u32, p2: u32, op: u8, value: f32) -> [u8; 32] {
+    bytes(&[
+        &[op << 5, 0, 0, 0],
+        &value.to_le_bytes(),
+        &func.to_le_bytes(),
+        &[0, 0],
+        &p1.to_le_bytes(),
+        &p2.to_le_bytes(),
+        &0u32.to_le_bytes(),
+        &0u32.to_le_bytes(),
+        &u32::MAX.to_le_bytes(),
+    ])
+}
+
+/// The game's event node for Story Manager event `code`, and its last
+/// child, after which a node of ours goes.
+fn event_root(lo: &LoadOrder, code: &str) -> Option<(FormId, FormId)> {
+    let code: [u8; 4] = code.as_bytes().try_into().ok()?;
+    let mut root = None;
+    let mut nodes: Vec<esp::story::Node> = Vec::new();
+    for tag in [b"SMEN", b"SMBN", b"SMQN"] {
+        for &id in lo.ids_of_type(tag) {
+            let Some(rec) = lo.get(id) else { continue };
+            let Some(node) = esp::story::parse(&rec, id) else {
+                continue;
+            };
+            if node.event() == Some(code) && id.0 >> 24 == 0 && tag == b"SMEN" {
+                root = Some(id);
+            }
+            nodes.push(node);
+        }
+    }
+    let root = root?;
+    let kids: Vec<&esp::story::Node> = nodes.iter().filter(|n| n.parent == root).collect();
+    let last = kids
+        .iter()
+        .find(|k| !kids.iter().any(|o| o.previous == k.id))
+        .map_or(FormId::NULL, |k| k.id);
+    Some((root, last))
 }
 
 struct Vanilla<'a> {
@@ -952,7 +1042,8 @@ fn attached(name: &str) -> AttachedScript {
 /// A persistent reference of `base` in our cell.
 fn reference(object_id: u32, base: FormId, pos: [f32; 3], rot_z: f32) -> RecordBuilder {
     let tag = if base.0 >> 24 == 1
-        && (matches!(base.0 & 0xFFF, NAKED..=PC_MULT_DREMORA) || base.0 & 0xFFF == CRIME_GUARD)
+        && (matches!(base.0 & 0xFFF, NAKED..=PC_MULT_DREMORA)
+            || matches!(base.0 & 0xFFF, CRIME_GUARD | MATCH_NPC))
     {
         b"ACHR"
     } else {
@@ -982,13 +1073,10 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
     for (name, _, id) in OWN {
         properties.push((name.to_string(), object(own(*id))));
     }
-    for (name, edid) in ["DeltaA", "DeltaB", "DeltaC"].iter().zip(WEATHERS) {
-        // WTHR DATA byte 3: the trans delta.
-        let delta = lo
-            .get(v.id(edid)?)
-            .and_then(|r| r.get(b"DATA").and_then(|d| d.get(3).copied()))
-            .context("a weather's delta")?;
-        properties.push((name.to_string(), PropertyValue::Float(delta as f32)));
+    for (k, (w, delta)) in weathers(lo)?.into_iter().enumerate() {
+        let letter = ["A", "B", "C"][k];
+        properties.push((format!("Weather{letter}"), object(w)));
+        properties.push((format!("Delta{letter}"), PropertyValue::Float(delta as f32)));
     }
     for (i, p) in PROBE_LIST.iter().enumerate() {
         let i = i as u32;
@@ -1042,6 +1130,120 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
         .record(),
     ];
 
+    let mut quests = quests;
+    let anchor = || records::Alias {
+        id: 0,
+        name: "Anchor",
+        flags: 0,
+        fill: records::Fill::Forced(own(CELL_CENTER)),
+        packages: Vec::new(),
+    };
+    let create = |object: FormId, level: u32, id: u32, name: &'static str| records::Alias {
+        id,
+        name,
+        flags: 0,
+        fill: records::Fill::Create {
+            object,
+            at: 0,
+            level,
+        },
+        packages: Vec::new(),
+    };
+    let quest = |object_id, edid, aliases| {
+        records::Quest {
+            object_id,
+            edid,
+            flags: 0,
+            priority: 0,
+            kind: 0,
+            script: None,
+            stages: &[],
+            aliases,
+        }
+        .record()
+    };
+    quests.push(quest(
+        CREATE_QUEST,
+        "VrmAt21CreateQuest",
+        vec![
+            anchor(),
+            create(own(NAKED), 4, 1, "Made"),
+            create(v.id("IronSword")?, 4, 2, "Item"),
+        ],
+    ));
+    let is_match = ctda(func_index("GetIsID"), own(MATCH_NPC).0, 0, EQ, 1.0);
+    for (i, (edid, flags)) in [
+        ("VrmAt21MatchQuest", 0),
+        (
+            "VrmAt21MatchLoadedQuest",
+            records::alias_flags::IN_LOADED_AREA,
+        ),
+        (
+            "VrmAt21MatchClosestQuest",
+            records::alias_flags::IN_LOADED_AREA | records::alias_flags::CLOSEST,
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        quests.push(quest(
+            MATCH_QUEST + i as u32,
+            edid,
+            vec![records::Alias {
+                id: 0,
+                name: "Match",
+                flags: flags | records::alias_flags::OPTIONAL,
+                fill: records::Fill::Matching(vec![is_match]),
+                packages: Vec::new(),
+            }],
+        ));
+    }
+    let bandit = v.id("LCharBanditMelee1H")?;
+    for (i, (edid, level)) in [("VrmAt21LevelEasyQuest", 0), ("VrmAt21LevelHardQuest", 3)]
+        .into_iter()
+        .enumerate()
+    {
+        quests.push(quest(
+            LEVEL_QUEST + i as u32,
+            edid,
+            vec![anchor(), create(bandit, level, 1, "Made")],
+        ));
+    }
+    // Story quests: each the handler script, its main quest the runner's.
+    let mut story_nodes = Vec::new();
+    for (i, code) in STORY_EVENTS.iter().enumerate() {
+        let i = i as u32;
+        let edid = format!("VrmAt21Story{code}");
+        quests.push(
+            records::Quest {
+                object_id: STORY + 2 * i,
+                edid: &edid,
+                flags: 0,
+                priority: 0,
+                kind: 0,
+                script: Some(AttachedScript {
+                    name: "VrmAt21StoryLog".into(),
+                    properties: vec![("Main".to_owned(), PropertyValue::Object(own(QUEST)))],
+                }),
+                stages: &[],
+                aliases: Vec::new(),
+            }
+            .record(),
+        );
+        match event_root(lo, code) {
+            Some((root, last)) => story_nodes.push(records::story_node(
+                STORY + 2 * i + 1,
+                &format!("VrmAt21StoryNode{code}"),
+                root,
+                last,
+                &[],
+                0,
+                Some(&[(own(STORY + 2 * i), 0, 0.0)]),
+            )),
+            None => eprintln!("autotest21: no {code} event node; its events go unheard"),
+        }
+    }
+
     let factions = vec![
         faction(RED, "VrmAt21Red", 0, &[(GREEN, 1)], None),
         faction(GREEN, "VrmAt21Green", 0, &[], None),
@@ -1061,6 +1263,16 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
         form_list(CRIME_GROUP, "VrmAt21CrimeGroup", &[own(RED)]),
         form_list(KILLER_BASES, "VrmAt21KillerBases", &[own(VICTIM_NPC)]),
         form_list(KILLER_REFS, "VrmAt21KillerRefs", &[own(VICTIM)]),
+        form_list(
+            MATCH_QUESTS,
+            "VrmAt21MatchQuests",
+            &[own(MATCH_QUEST), own(MATCH_QUEST + 1), own(MATCH_QUEST + 2)],
+        ),
+        form_list(
+            LEVEL_QUESTS,
+            "VrmAt21LevelQuests",
+            &[own(LEVEL_QUEST), own(LEVEL_QUEST + 1)],
+        ),
         form_list(
             REMOTE_MARKERS,
             "VrmAt21RemoteMarkers",
@@ -1263,6 +1475,7 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
             ..npc(STAFF_NPC, "VrmAt21StaffNpc")
         }
         .record(),
+        npc(MATCH_NPC, "VrmAt21MatchNpc").record(),
         Npc {
             factions: vec![(own(CRIME), 0)],
             crime_faction: Some(own(CRIME)),
@@ -1507,6 +1720,7 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
             own(LINK_C),
         ),
         reference(LINK_C, x_marker, [-700.0, -900.0, 0.0], 0.0),
+        reference(MATCH_FAR, own(MATCH_NPC), [900.0, 900.0, 0.0], 0.0),
         reference(
             REMEMBER_BOWL,
             v.id("BasicWoodenBowl01")?,
@@ -1581,6 +1795,7 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
             persistent: vec![
                 reference(WH_CENTER, heading, mid, 0.0),
                 reference(WH_ENTRY, heading, entry, std::f32::consts::FRAC_PI_2),
+                reference(MATCH_WH, own(MATCH_NPC), mid, 0.0),
             ],
             temporary: Vec::new(),
         }],
@@ -1636,6 +1851,7 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
             Node::top(b"GLOB", globals),
             Node::top(b"QUST", quests),
             cells,
+            Node::top(b"SMQN", story_nodes),
         ],
     );
     Ok(TestMod {
@@ -1667,6 +1883,9 @@ mod tests {
         }
         for name in ["DeltaA", "DeltaB", "DeltaC"] {
             properties.push((name.to_owned(), papyrus::Value::Float(125.0)));
+        }
+        for (i, name) in ["WeatherA", "WeatherB", "WeatherC"].iter().enumerate() {
+            properties.push((name.to_string(), form(0x81A + i as u32, "Weather")));
         }
         for (i, p) in PROBE_LIST.iter().enumerate() {
             let i = i as u32;

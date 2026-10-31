@@ -151,3 +151,22 @@ String Function TestStopCombat()
     Gone(c)
     return r
 EndFunction
+
+; combat-state.md: IsInCombat's integer parameter, during a fight.
+String Function TestInCombatParam()
+    Actor a = SpawnWh(RedFighterBase, 0.0, 0.0)
+    Actor b = SpawnWh(GreenFighterBase, 300.0, 0.0)
+    a.ForceActorValue("Health", 5000.0)
+    b.ForceActorValue("Health", 5000.0)
+    Utility.Wait(1.0)
+    a.StartCombat(b)
+    Utility.Wait(2.0)
+    String r = "fighting (state " + a.GetCombatState() + "): IsInCombat(0) " + Probe(a, PS_InCombat0, PE_InCombat0) + ", (1) " + Probe(a, PS_InCombat1, PE_InCombat1) + ", (2) " + Probe(a, PS_InCombat2, PE_InCombat2) + "\n"
+    a.StopCombat()
+    b.StopCombat()
+    Utility.Wait(1.0)
+    r += "after StopCombat (state " + a.GetCombatState() + "): (0) " + Probe(a, PS_InCombat0, PE_InCombat0) + ", (1) " + Probe(a, PS_InCombat1, PE_InCombat1) + "\n"
+    Gone(a)
+    Gone(b)
+    return r
+EndFunction
