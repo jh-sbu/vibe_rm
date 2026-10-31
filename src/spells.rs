@@ -42,6 +42,16 @@ pub(crate) fn skill_cost_factor(lo: &esp::LoadOrder, skill: f32) -> f32 {
 }
 
 impl Engine {
+    /// What an actor's own cost reduction in a school (`AlterationMod` ..
+    /// `RestorationMod`: worn `Fortify <School>` enchantments) leaves of the
+    /// charge an enchantment of that school costs: 1 less a hundredth of the
+    /// value, at least 0 (a negative value raises it). Spells get the
+    /// reduction through `PerkSkillBoosts`' `ModSpellCost` entries instead.
+    pub(crate) fn school_cost_mult(&self, actor: FormId, school: u32) -> f32 {
+        let mod_av = school - av::FIRST_SKILL + av::FIRST_SKILL_MOD;
+        (1.0 - self.actor_value(actor, mod_av) / 100.0).max(0.0)
+    }
+
     /// The spell, power, shout or scroll `actor` holds in a slot (`RIGHT`,
     /// `LEFT`, `VOICE`). A scroll is an item carried and held in a hand to
     /// cast its spell once.

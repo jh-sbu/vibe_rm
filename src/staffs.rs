@@ -2,7 +2,8 @@
 //! enchantment) as the hand would a spell, paid for from the staff's charge
 //! rather than magicka. A staff holds its `EAMT` of charge; each cast takes
 //! the enchantment's cost (`ENIT`; by the second for concentration ones),
-//! less for skill in its school as spells' costs are. With too little
+//! less for skill in its school as spells' costs are and for the caster's
+//! reduction of the school's costs (`Fortify <School>`). With too little
 //! charge left nothing is cast ("Your item has insufficient charge").
 //! Casting a staff trains no skill. The charge left is the equipped
 //! weapon's `RightItemCharge` / `LeftItemCharge`.
@@ -10,6 +11,8 @@
 //! Sources: UESP's Skyrim:Staves (no magicka, the charge depleted and the
 //! staff unusable when empty, the cost lower with the school's skill: about
 //! 1.7 times the uses at 100, no skill gained, one-handed and dual-wielded),
+//! Skyrim:Enchanting and Skyrim:Fortify Destruction (school cost reductions
+//! lower staffs' and enchanted weapons' charge use),
 //! the records (`WEAP` `EITM` / `EAMT`, `DNAM` animation type 8; `ENCH`
 //! `ENIT`), `sMagicCastInsufficientItemCharge`, CommonLibSSE's
 //! `ActorValue::kRightItemCharge` / `kLeftItemCharge`. Choices:
@@ -92,13 +95,7 @@ impl Engine {
             return true;
         }
         let cost = if let Some(cost) = self.equipped_copy(attacker, weapon).use_cost {
-            let school = self.spell_school(ench);
-            cost * school.map_or(1., |skill| {
-                crate::spells::skill_cost_factor(
-                    &self.lo,
-                    self.actor_value(attacker, skill).clamp(0., 100.),
-                )
-            })
+            cost * self.enchantment_cost_factor(attacker, ench)
         } else {
             self.staff_cost(attacker, ench)
         };
@@ -111,7 +108,9 @@ impl Engine {
 
     /// What a cast of a staff enchantment, or a blow of an enchanted weapon,
     /// costs `caster` in charge (a second of a concentration staff's): its
-    /// `ENIT` cost, less for skill in its school as a spell's (`spell_cost`).
+    /// `ENIT` cost, less for skill in its school as a spell's (`spell_cost`)
+    /// and for the caster's reduction of the school's costs (Fortify
+    /// Destruction lowers a Destruction staff's).
     pub(crate) fn staff_cost(&self, caster: FormId, ench: FormId) -> f32 {
         let base = self
             .lo
@@ -121,12 +120,16 @@ impl Engine {
                 Some(u32::from_le_bytes(d.try_into().unwrap()) as f32)
             })
             .unwrap_or(0.0);
-        let mut cost = base;
-        if let Some(school) = self.spell_school(ench) {
-            let skill = self.actor_value(caster, school).clamp(0.0, 100.0);
-            cost *= crate::spells::skill_cost_factor(&self.lo, skill);
-        }
-        cost.max(0.0)
+        (base * self.enchantment_cost_factor(caster, ench)).max(0.0)
+    }
+
+    /// What `actor`'s skill in an enchantment's school and their reduction
+    /// of the school's costs (`school_cost_mult`) leave of its cost.
+    fn enchantment_cost_factor(&self, actor: FormId, ench: FormId) -> f32 {
+        self.spell_school(ench).map_or(1.0, |school| {
+            let skill = self.actor_value(actor, school).clamp(0.0, 100.0);
+            crate::spells::skill_cost_factor(&self.lo, skill) * self.school_cost_mult(actor, school)
+        })
     }
 
     /// The equipped weapon's charge in a hand: (left, most), for
@@ -154,6 +157,16 @@ mod tests {
 
     /// A staff of 50 charge whose enchantment (a self-cast heal) costs 20.
     fn staff_engine() -> (std::path::PathBuf, Engine) {
+        staff_engine_of(u32::MAX)
+    }
+
+    const SWORD: FormId = FormId(0x821);
+    const SPELL: FormId = FormId(0x830);
+
+    /// `staff_engine` with the enchantment's effect in a school (an actor
+    /// value, or `u32::MAX` for none), a sword of 100 charge with the same
+    /// enchantment, and a spell (`SPIT` cost 40) of the same effect.
+    fn staff_engine_of(school: u32) -> (std::path::PathBuf, Engine) {
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -161,7 +174,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("vrm-staffs-{}-{stamp}", std::process::id()));
         std::fs::create_dir(&dir).unwrap();
         let mut data = [0; 0x6c];
-        data[0x0c..0x10].copy_from_slice(&u32::MAX.to_le_bytes());
+        data[0x0c..0x10].copy_from_slice(&school.to_le_bytes());
         data[0x10..0x14].copy_from_slice(&u32::MAX.to_le_bytes());
         data[0x44..0x48].copy_from_slice(&av::HEALTH.to_le_bytes());
         let mut enit = [0; 36];
@@ -172,6 +185,11 @@ mod tests {
         efit[0..4].copy_from_slice(&5.0f32.to_le_bytes());
         let mut dnam = [0; 100];
         dnam[0] = 8; // staff
+        let mut sword_dnam = [0; 100];
+        sword_dnam[0] = 1; // one-handed sword
+        let mut spit = [0; 36];
+        spit[0..4].copy_from_slice(&40u32.to_le_bytes());
+        spit[0x10..0x14].copy_from_slice(&1u32.to_le_bytes()); // fire and forget
         let records = [
             Node::top(
                 b"MGEF",
@@ -195,6 +213,21 @@ mod tests {
                         .field(b"EAMT", &50u16.to_le_bytes())
                         .field(b"DATA", &[0; 10])
                         .field(b"DNAM", &dnam),
+                    RecordBuilder::new(b"WEAP", SWORD)
+                        .zstring(b"FULL", "Test Sword")
+                        .u32(b"EITM", ENCH.0)
+                        .field(b"EAMT", &100u16.to_le_bytes())
+                        .field(b"DATA", &[0; 10])
+                        .field(b"DNAM", &sword_dnam),
+                ],
+            ),
+            Node::top(
+                b"SPEL",
+                vec![
+                    RecordBuilder::new(b"SPEL", SPELL)
+                        .field(b"SPIT", &spit)
+                        .u32(b"EFID", 0x800)
+                        .field(b"EFIT", &efit),
                 ],
             ),
         ];
@@ -300,6 +333,104 @@ mod tests {
             e.inventories[&PLAYER_REF].charges,
             vec![(STAFF, 10.0), (STAFF, 0.0), (STAFF, 25.0)]
         );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// The Destruction staff engine with no skill to lower costs (the
+    /// skill factor 1), and the player's `DestructionMod` at `reduction`.
+    fn destruction_engine(reduction: f32) -> (std::path::PathBuf, Engine) {
+        let (dir, mut e) = staff_engine_of(DESTRUCTION);
+        e.set_actor_value(PLAYER_REF, DESTRUCTION, 0.0);
+        e.set_actor_value(PLAYER_REF, DESTRUCTION_MOD, reduction);
+        (dir, e)
+    }
+    const DESTRUCTION: u32 = 20;
+    const RESTORATION: u32 = 22;
+    const DESTRUCTION_MOD: u32 = DESTRUCTION - av::FIRST_SKILL + av::FIRST_SKILL_MOD;
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+    fn fortify_destruction_lowers_a_destruction_staffs_cost() {
+        let (dir, mut e) = destruction_engine(0.0);
+        assert_eq!(e.staff_cost(PLAYER_REF, ENCH), 20.0);
+        e.set_actor_value(PLAYER_REF, DESTRUCTION_MOD, 25.0);
+        assert_eq!(e.staff_cost(PLAYER_REF, ENCH), 15.0);
+        e.add_item(PLAYER_REF, STAFF, 1);
+        e.equip_item(PLAYER_REF, STAFF, true).unwrap();
+        cast(&mut e);
+        assert_eq!(e.actor_value(PLAYER_REF, av::RIGHT_ITEM_CHARGE), 35.0);
+        // A negative reduction raises it.
+        e.set_actor_value(PLAYER_REF, DESTRUCTION_MOD, -50.0);
+        assert_eq!(e.staff_cost(PLAYER_REF, ENCH), 30.0);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+    fn a_full_reduction_casts_from_an_empty_staff() {
+        let (dir, mut e) = destruction_engine(100.0);
+        assert_eq!(e.staff_cost(PLAYER_REF, ENCH), 0.0);
+        e.set_actor_value(PLAYER_REF, DESTRUCTION_MOD, 120.0);
+        assert_eq!(e.staff_cost(PLAYER_REF, ENCH), 0.0);
+        e.add_item(PLAYER_REF, STAFF, 1);
+        e.equip_item(PLAYER_REF, STAFF, true).unwrap();
+        e.inventory_mut(PLAYER_REF).set_charge(STAFF, 0.0, 50.0);
+        e.scripts.notifications.clear();
+        cast(&mut e);
+        assert!(e.scripts.notifications.is_empty());
+        assert_eq!(e.actor_value(PLAYER_REF, av::RIGHT_ITEM_CHARGE), 0.0);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+    fn an_enchanted_swords_blows_spend_less_with_the_reduction() {
+        let (dir, mut e) = destruction_engine(50.0);
+        e.add_item(PLAYER_REF, SWORD, 1);
+        assert!(e.pay_weapon_charge(PLAYER_REF, SWORD, ENCH));
+        assert_eq!(e.weapon_charge(PLAYER_REF, SWORD), 90.0);
+        // A crafted copy pays its own cost, reduced as well.
+        e.remove_item(PLAYER_REF, SWORD, 1, None);
+        e.add_item(PLAYER_REF, SWORD, 1);
+        let state = crate::item_copies::CopyState {
+            enchantment: Some(ENCH),
+            capacity: 100.0,
+            charge: 100.0,
+            use_cost: Some(8.0),
+            ..Default::default()
+        };
+        e.inventory_mut(PLAYER_REF)
+            .add_copy_state(crate::item_copies::ItemCopy {
+                item: SWORD,
+                owner: None,
+                state,
+                count: 1,
+            });
+        assert!(e.pay_weapon_charge(PLAYER_REF, SWORD, ENCH));
+        assert_eq!(e.weapon_charge(PLAYER_REF, SWORD), 96.0);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+    fn another_schools_reduction_leaves_the_cost_alone() {
+        let (dir, mut e) = staff_engine_of(RESTORATION);
+        e.set_actor_value(PLAYER_REF, RESTORATION, 0.0);
+        e.set_actor_value(PLAYER_REF, DESTRUCTION_MOD, 50.0);
+        assert_eq!(e.staff_cost(PLAYER_REF, ENCH), 20.0);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+    fn spells_keep_their_own_reduction_path() {
+        // Spells get the reduction from `PerkSkillBoosts` (absent here), not
+        // from the actor value directly, so it isn't counted twice.
+        let (dir, mut e) = destruction_engine(0.0);
+        let before = e.spell_cost(PLAYER_REF, SPELL);
+        assert_eq!(before, 40.0);
+        e.set_actor_value(PLAYER_REF, DESTRUCTION_MOD, 25.0);
+        assert_eq!(e.spell_cost(PLAYER_REF, SPELL), before);
         let _ = std::fs::remove_dir_all(dir);
     }
 }
