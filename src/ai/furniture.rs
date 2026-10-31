@@ -473,6 +473,28 @@ impl FurnitureWorld {
         }
         out
     }
+
+    /// Free markers of a kind throughout one loaded cell.
+    pub fn free_in_cell(
+        &self,
+        kind: Use,
+        cell: CellKey,
+        may_use: impl Fn(&Furniture, Use) -> bool,
+    ) -> Vec<(FormId, u8, Marker)> {
+        let mut out = Vec::new();
+        for f in self
+            .items
+            .iter()
+            .filter(|f| f.cell == cell && !self.disabled.contains(&f.ref_id) && may_use(f, kind))
+        {
+            for (i, m) in f.markers.iter().enumerate() {
+                if m.kind == kind && !self.users.contains_key(&(f.ref_id, i as u8)) {
+                    out.push((f.ref_id, i as u8, *m));
+                }
+            }
+        }
+        out
+    }
 }
 
 /// Ways to use `m` of furniture `f` (entry side and clips), for an actor whose
@@ -557,6 +579,39 @@ pub fn ways_to_use(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn whole_cell_search_respects_cell_and_availability() {
+        let cell = CellKey::Interior(FormId(1));
+        let marker = Marker {
+            pos: Vec3::new(0.0, 0.0, -600.0),
+            heading: 0.0,
+            kind: Use::Idle,
+            entries: 0,
+            anim_type: 0,
+        };
+        let item = |id, cell| Furniture {
+            ref_id: FormId(id),
+            cell,
+            owner: None,
+            markers: vec![marker],
+            events: vec![],
+            idle_time: 0.0,
+            ways: vec![],
+        };
+        let mut world = FurnitureWorld::default();
+        world.items.push(item(2, cell));
+        world.items.push(item(3, CellKey::Interior(FormId(4))));
+        assert!(
+            world
+                .free_near(Use::Idle, Vec3::ZERO, 1000.0, |_, _| true)
+                .is_empty()
+        );
+        assert_eq!(world.free_in_cell(Use::Idle, cell, |_, _| true).len(), 1);
+        assert!(world.free_in_cell(Use::Idle, cell, |_, _| false).is_empty());
+        assert!(world.reserve(FormId(2), 0, FormId(5)));
+        assert!(world.free_in_cell(Use::Idle, cell, |_, _| true).is_empty());
+    }
 
     #[test]
     fn owners_come_with_the_rank_their_faction_asks() {
