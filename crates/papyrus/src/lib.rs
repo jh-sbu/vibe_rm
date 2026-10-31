@@ -1,6 +1,7 @@
 //! Papyrus scripting: PEX loading and writing, and a virtual machine.
 
 pub mod build;
+pub mod compile;
 pub mod pex;
 pub mod value;
 pub mod vm;
