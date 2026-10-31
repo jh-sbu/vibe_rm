@@ -1,6 +1,7 @@
 # Plan: the main menu's self-contained leftovers
 
-**Status: drafted** (2026-10-30). Follows `plans/main-menu.md` ("Where it
+**Status: done** (drafted 2026-10-30, finished 2026-10-31; see "Outcome"
+at the end). Follows `plans/main-menu.md` ("Where it
 stands", Remaining). Covers the leftovers that don't wait on other ROADMAP
 items: the save list's keyboard selection, the credits' logos and a stale
 entry. New (item 11), saves made with other plugins (item 9's changed load
@@ -94,8 +95,28 @@ inline image on top of one another. The inline-image support is
   tests.
 - The offscreen runs in 2b and 3c.
 
+## Outcome (2026-10-31)
+
+- Step 1: done (4a16645).
+- Step 2a: the movie, not Ruffle, leaves the character list unselected. On
+  PC (platform 0, also 7) `onFillCharacterListComplete` skips its selection,
+  while `onSaveLoadBatchComplete` selects the first save on every platform.
+  Same code in `quest_journal.swf`. Written up in `research/ui/main-menu.md`
+  ("The save panel's first selection", a8989fd). Step 2b wasn't needed: the
+  engine does what the movie asks.
+- Step 3a/3b: the fault was `newline` keeping the metrics of the span the
+  line started in. An `<img>` placeholder span has font size 2, so the lines
+  after the logo were about 3 px apart. Fixed in `vendor/ruffle` (19fd2e2),
+  with a synthetic layout test in `crates/ui-swf` (ba95cd5). The attributes
+  aren't swapped: `SkyrimLogo` is 194 × 366, and 129 × 244 keeps that shape.
+- Step 3c: the credits keep their logos (60b0bc5). Captures of the credits'
+  start and end and of the HUD's button art are under ignored
+  `tests/captures/credits/`.
+
 ## Open questions
 
-- Whether SE selects the first row of the save lists on PC (2a may settle it
-  from the movie; otherwise a direct observation).
-- How SE sizes the Skyrim logo from those attributes.
+Both need the running game, so they're for a direct SE observation:
+
+- Whether SE's Load selects a character row on PC (open Load from the main
+  menu and press Enter without an arrow key). The movie leaves it unselected.
+- How SE spaces the credits' logos against the text.
