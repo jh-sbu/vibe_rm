@@ -10,212 +10,100 @@ use std::sync::OnceLock;
 use papyrus::build::{Arg, FunctionBuilder, NativeDecl, auto_var, discard, id, string};
 use papyrus::pex::op;
 
-/// The vanilla natives the scripts call, as the game's scripts declare them
-/// (`vrm-tool pex-dump`): a class (`Class : Parent`), then its functions,
-/// `global` for those called on the class. Calls are checked against these
-/// when built, and the dry runs in the tests declare them to the VM.
-const NATIVE_TABLE: &str = "\
-Form
-    Int GetGoldValue()
-    Int GetFormID()
-    None RegisterForSingleUpdate(Float afInterval)
-    Bool RegisterForAnimationEvent(ObjectReference akSender, String asEventName)
-    None UnregisterForAnimationEvent(ObjectReference akSender, String asEventName)
-Quest : Form
-    Bool Start()
-    None Stop()
-    Bool IsRunning()
-    None CompleteQuest()
-    None SetObjectiveDisplayed(Int aiObjective, Bool abDisplayed, Bool abForce)
-    None SetObjectiveCompleted(Int aiObjective, Bool abCompleted)
-    Alias GetAlias(Int aiAliasID)
-    Int GetStage()
-    Bool SetStage(Int aiStage)
-    Bool IsStageDone(Int aiStage)
-Alias
-ReferenceAlias : Alias
-    ObjectReference GetReference()
-    Actor GetActorReference()
-    None ForceRefTo(ObjectReference akNewRef)
-    None Clear()
-Scene : Form
-    None Start()
-    None Stop()
-    None ForceStart()
-    Bool IsPlaying()
-    Bool IsActionComplete(Int aiActionID)
-Keyword : Form
-    None SendStoryEvent(Location akLoc, ObjectReference akRef1, ObjectReference akRef2, Int aiValue1, Int aiValue2)
-    Bool SendStoryEventAndWait(Location akLoc, ObjectReference akRef1, ObjectReference akRef2, Int aiValue1, Int aiValue2)
-MagicEffect : Form
-EffectShader : Form
-    None Play(ObjectReference akObject, Float afDuration)
-    None Stop(ObjectReference akObject)
-VisualEffect : Form
-    None Play(ObjectReference akObject, Float afDuration, ObjectReference akFacingObject)
-    None Stop(ObjectReference akObject)
-Perk : Form
-Shout : Form
-WordOfPower : Form
-Package : Form
-ActorBase : Form
-EncounterZone : Form
-Location : Form
-    None SetCleared(Bool abCleared)
-    Bool IsCleared()
-GlobalVariable : Form
-    Float GetValue()
-    None SetValue(Float afNewValue)
-Faction : Form
-    Int GetCrimeGold()
-    Int GetCrimeGoldViolent()
-    None SetCrimeGold(Int aiGold)
-    None SetCrimeGoldViolent(Int aiGold)
-    None PlayerPayCrimeGold(Bool abRemoveStolenItems, Bool abGoToJail)
-Spell : Form
-    None Cast(ObjectReference akSource, ObjectReference akTarget)
-Weapon : Form
-Armor : Form
-Ammo : Form
-Light : Form
-Potion : Form
-MiscObject : Form
-Projectile : Form
-ObjectReference : Form
-    ObjectReference DropObject(Form akObject, Int aiCount)
-    Float GetItemHealthPercent()
-    actor PlaceActorAtMe(ActorBase akActorToPlace, Int aiLevelMod, EncounterZone akZone)
-    ObjectReference PlaceAtMe(Form akFormToPlace, Int aiCount, Bool abForcePersist, Bool abInitiallyDisabled)
-    None Disable(Bool abFadeOut)
-    None Enable(Bool abFadeIn)
-    None Delete()
-    Bool IsLocked()
-    Int GetLockLevel()
-    None Lock(Bool abLock, Bool abAsOwner)
-    Bool IsInInterior()
-    None MoveTo(ObjectReference akTarget, Float afXOffset, Float afYOffset, Float afZOffset, Bool abMatchRotation)
-    None AddItem(Form akItemToAdd, Int aiCount, Bool abSilent)
-    None RemoveItem(Form akItemToRemove, Int aiCount, Bool abSilent, ObjectReference akOtherContainer)
-    Int GetItemCount(Form akItem)
-    Bool IsMapMarkerVisible()
-    Bool CanFastTravelToMarker()
-    None AddToMap(Bool abAllowFastTravel)
-    Bool GetAnimationVariableBool(String arVariableName)
-    Int GetAnimationVariableInt(String arVariableName)
-    Float GetAnimationVariableFloat(String arVariableName)
-    Float GetDistance(ObjectReference akOther)
-    Int GetTriggerObjectCount()
-    None ApplyHavokImpulse(Float afX, Float afY, Float afZ, Float afMagnitude)
-    Float GetPositionX()
-    Float GetPositionY()
-    Float GetPositionZ()
-    None SetMotionType(Int aeMotionType, Bool abAllowActivate)
-    Bool IsDisabled()
-    Float GetAngleZ()
-    Bool Is3DLoaded()
-    Cell GetParentCell()
-Cell : Form
-Actor : ObjectReference
-    Int GetLevel()
-    Float GetBaseActorValue(String asValueName)
-    Float GetActorValue(String asValueName)
-    Float GetActorValuePercentage(String asValueName)
-    None SetActorValue(String asValueName, Float afValue)
-    None ModActorValue(String asValueName, Float afAmount)
-    None ForceActorValue(String asValueName, Float afNewValue)
-    None DamageActorValue(String asValueName, Float afDamage)
-    None RestoreActorValue(String asValueName, Float afAmount)
-    Bool IsWeaponDrawn()
-    Bool IsSprinting()
-    Bool IsRunning()
-    Bool IsAlerted()
-    None SetAlert(Bool abAlerted)
-    Bool IsGuard()
-    None DrawWeapon()
-    Float GetLightLevel()
-    Bool IsEquipped(Form akItem)
-    None EquipItem(Form akItem, Bool abPreventRemoval, Bool abSilent)
-    None UnequipItem(Form akItem, Bool abPreventEquip, Bool abSilent)
-    None EquipSpell(Spell akSpell, Int aiSource)
-    None UnequipSpell(Spell akSpell, Int aiSource)
-    Weapon GetEquippedWeapon(Bool abLeftHand)
-    Armor GetEquippedShield()
-    Spell GetEquippedSpell(Int aiSource)
-    Int GetEquippedItemType(Int aiHand)
-    Bool AddSpell(Spell akSpell, Bool abVerbose)
-    Bool RemoveSpell(Spell akSpell)
-    Bool HasSpell(Form akForm)
-    None SetPlayerTeammate(Bool abTeammate, Bool abCanDoFavor)
-    Bool IsInFaction(Faction akFaction)
-    Int GetFactionRank(Faction akFaction)
-    None SetRelationshipRank(Actor akOther, Int aiRank)
-    Int GetRelationshipRank(Actor akOther)
-    None SetCrimeFaction(Faction akFaction)
-    None SendAssaultAlarm()
-    None Kill(Actor akKiller)
-    None StartCombat(Actor akTarget)
-    None StopCombat()
-    Int GetCombatState()
-    Actor GetCombatTarget()
-    None SetRestrained(Bool abRestrained)
-    None SetDontMove(Bool abDontMove)
-    Bool DispelSpell(Spell akSpell)
-    Bool HasMagicEffect(MagicEffect akEffect)
-    Bool AddShout(Shout akShout)
-    None AddPerk(Perk akPerk)
-    None RemovePerk(Perk akPerk)
-    Bool HasPerk(Perk akPerk)
-    None EvaluatePackage()
-    Package GetCurrentPackage()
-    Bool IsDetectedBy(Actor akOther)
-    Bool IsDead()
-    Bool IsInCombat()
-    Int GetSitState()
-Weather : Form
-    global Weather GetCurrentWeather()
-    global Float GetCurrentWeatherTransition()
-    global Int GetSkyMode()
-    global None ReleaseOverride()
-    None SetActive(Bool abOverride, Bool abAccelerate)
-    None ForceActive(Bool abOverride)
-    global Weather GetOutgoingWeather()
-    global Weather FindWeather(Int auiType)
-Game
-    global Actor GetPlayer()
-    global Form GetFormFromFile(Int aiFormID, String asFilename)
-    global None DisablePlayerControls(Bool abMovement, Bool abFighting, Bool abCamSwitch, Bool abLooking, Bool abSneaking, Bool abMenu, Bool abActivate, Bool abJournalTabs, Int aiDisablePOVType)
-    global None EnablePlayerControls(Bool abMovement, Bool abFighting, Bool abCamSwitch, Bool abLooking, Bool abSneaking, Bool abMenu, Bool abActivate, Bool abJournalTabs, Int aiDisablePOVType)
-    global Bool IsMovementControlsEnabled()
-    global Bool IsFightingControlsEnabled()
-    global None RequestSave()
-    global Float GetGameSettingFloat(String asGameSetting)
-    global Int GetGameSettingInt(String asGameSetting)
-    global Int QueryStat(String asStat)
-    global None IncrementSkill(String asSkillName)
-    global None IncrementSkillBy(String asSkillName, Int aiCount)
-    global None ForceFirstPerson()
-    global None ForceThirdPerson()
-    global None TeachWord(WordOfPower akWord)
-    global None UnlockWord(WordOfPower akWord)
-    global None AdvanceSkill(String asSkillName, Float afMagnitude)
-    global None FastTravel(ObjectReference akDestination)
-    global None EnableFastTravel(Bool abEnable)
-    global Bool IsFastTravelControlsEnabled()
-    global Bool IsFastTravelEnabled()
-Debug
-    global None MessageBox(String asMessageBoxText)
-    global None SendAnimationEvent(ObjectReference arRef, String asEventName)
-    global None Notification(String asNotificationText)
-    global None Trace(String asTextToPrint, Int aiSeverity)
-Utility
-    global None Wait(Float afSeconds)
-    global Float GetCurrentRealTime()
-    global Float GetCurrentGameTime()
-Math
-    global Int Floor(Float afValue)
-    global Float sqrt(Float afValue)
-";
+/// The functions the game's base scripts declare (`natives.txt`, generated
+/// from the installed game's scripts with `vrm-tool pex-dump`): a class
+/// (`Class : Parent`), then its functions, `global` for those called on the
+/// class. Calls are checked against these when built, the compiler
+/// ([`papyrus::compile`]) types against them, and the dry runs in the tests
+/// declare them to the VM.
+const NATIVE_TABLE: &str = include_str!("natives.txt");
 
+/// Default arguments, which compiled scripts don't keep (the Creation Kit's
+/// sources give them; these are the CK wiki's): `Class.Function`, then each
+/// defaulted parameter's value, for the last parameters in order.
+const DEFAULTS: &str = "\
+ObjectReference.MoveTo 0.0 0.0 0.0 true
+ObjectReference.PlaceAtMe 1 false false
+ObjectReference.PlaceActorAtMe 4 None
+ObjectReference.AddItem 1 false
+ObjectReference.RemoveItem 1 false None
+ObjectReference.RemoveAllItems None false false
+ObjectReference.Disable false
+ObjectReference.Enable false
+ObjectReference.Lock true false
+ObjectReference.Activate false
+ObjectReference.DropObject 1
+ObjectReference.SetMotionType true
+ObjectReference.SetOpen true
+ObjectReference.SetDestroyed true
+ObjectReference.DamageObject
+ObjectReference.Reset None
+ObjectReference.SetActorOwner
+ObjectReference.KnockAreaEffect
+ObjectReference.AddToMap false
+ObjectReference.EnableFastTravel true
+ObjectReference.PushActorAway
+ObjectReference.TranslateTo 0.0
+ObjectReference.SetPosition
+ObjectReference.CreateDetectionEvent 0
+ObjectReference.PlayAnimationAndWait
+ObjectReference.GetLinkedRef None
+ObjectReference.CountLinkedRefChain None 100
+Actor.Kill None
+Actor.KillSilent None
+Actor.StartCombat
+Actor.EquipItem false false
+Actor.UnequipItem false false
+Actor.AddSpell true
+Actor.SetAlert true
+Actor.SetGhost true
+Actor.SetRestrained true
+Actor.SetDontMove true
+Actor.EnableAI true
+Actor.SetPlayerTeammate true true
+Actor.SetAttackActorOnSight true
+Actor.SetCrimeFaction
+Actor.AddToFaction
+Actor.SetFactionRank
+Actor.SetOutfit false
+Actor.StartSneaking
+Actor.SetUnconscious true
+Actor.Resurrect
+Actor.SetNoBleedoutRecovery
+Actor.SetDoingFavor true
+Actor.DrawWeapon
+Actor.SetExpressionOverride 7 100
+ActorBase.SetEssential true
+ActorBase.SetProtected true
+ActorBase.SetInvulnerable true
+ActorBase.SetOutfit false
+Faction.SetEnemy false false
+Faction.SetAlly false false
+Faction.SetPlayerExpelled true
+Faction.SetPlayerEnemy true
+Faction.ModCrimeGold false
+Faction.PlayerPayCrimeGold true true
+Spell.Cast None
+Spell.RemoteCast None
+Quest.SetObjectiveDisplayed true false
+Quest.SetObjectiveCompleted true
+Quest.SetObjectiveFailed true
+Weather.SetActive false false
+Weather.ForceActive false
+Game.EnablePlayerControls true true true true true true true true 0
+Game.DisablePlayerControls true true false false false false false false 0
+Game.SetPlayerAIDriven true
+Game.EnableFastTravel true
+Game.ShakeCamera None 0.5 0.0
+Debug.Trace 0
+Utility.RandomInt 0 100
+Utility.RandomFloat 0.0 1.0
+Utility.GameTimeToString
+Location.SetCleared true
+Sound.Play
+FormList.AddForm
+LeveledItem.AddForm
+";
 /// A class of [`NATIVE_TABLE`].
 pub(super) struct NativeClass {
     pub name: &'static str,
@@ -228,7 +116,10 @@ pub(super) fn natives() -> &'static [NativeClass] {
     static CLASSES: OnceLock<Vec<NativeClass>> = OnceLock::new();
     CLASSES.get_or_init(|| {
         let mut classes: Vec<NativeClass> = Vec::new();
-        for line in NATIVE_TABLE.lines().filter(|l| !l.trim().is_empty()) {
+        for line in NATIVE_TABLE
+            .lines()
+            .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+        {
             if !line.starts_with(' ') {
                 let (name, parent) = line.split_once(" : ").unwrap_or((line, ""));
                 classes.push(NativeClass {
@@ -286,6 +177,72 @@ pub(super) fn native(class: &str, name: &str) -> (&'static str, &'static NativeD
         assert!(!decl.parent.is_empty(), "{class}.{name} not declared");
         c = decl.parent;
     }
+}
+
+/// The declarations of [`NATIVE_TABLE`] with [`DEFAULTS`], for the compiler.
+pub(super) struct Natives;
+
+fn default_value(text: &str) -> Arg {
+    match text.to_ascii_lowercase().as_str() {
+        "true" => Arg::Bool(true),
+        "false" => Arg::Bool(false),
+        "none" => Arg::None,
+        t if t.contains('.') => Arg::Float(t.parse().expect("a float default")),
+        t => Arg::Int(t.parse().expect("an int default")),
+    }
+}
+
+impl papyrus::compile::Signatures for Natives {
+    fn parent(&self, class: &str) -> Option<String> {
+        natives()
+            .iter()
+            .find(|n| n.name.eq_ignore_ascii_case(class))
+            .map(|n| n.parent.to_owned())
+    }
+
+    fn function(&self, class: &str, name: &str) -> Option<papyrus::compile::Signature> {
+        let decl = natives()
+            .iter()
+            .find(|n| n.name.eq_ignore_ascii_case(class))?;
+        let (fname, ret, params, global) = decl
+            .functions
+            .iter()
+            .find(|f| f.0.eq_ignore_ascii_case(name))?;
+        let defaults: Vec<Arg> = DEFAULTS
+            .lines()
+            .filter_map(|l| {
+                let mut words = l.split_whitespace();
+                let (c, f) = words.next()?.split_once('.')?;
+                (c.eq_ignore_ascii_case(decl.name) && f.eq_ignore_ascii_case(fname))
+                    .then(|| words.map(default_value).collect::<Vec<_>>())
+            })
+            .next()
+            .unwrap_or_default();
+        assert!(
+            defaults.len() <= params.len(),
+            "{class}.{name}: too many defaults"
+        );
+        let first_default = params.len() - defaults.len();
+        Some(papyrus::compile::Signature {
+            name: fname.to_string(),
+            ret: ret.to_string(),
+            params: params
+                .iter()
+                .enumerate()
+                .map(|(i, (p, t))| {
+                    let d = i.checked_sub(first_default).map(|j| defaults[j].clone());
+                    (p.to_string(), t.to_string(), d)
+                })
+                .collect(),
+            global: *global,
+        })
+    }
+}
+
+/// `sources` compiled together against the game's declarations: `.pex`
+/// bytes by script name.
+pub(super) fn compile(sources: &[&str]) -> anyhow::Result<Vec<(String, Vec<u8>)>> {
+    papyrus::compile::compile_sources(sources, &Natives).map_err(|e| anyhow::anyhow!(e))
 }
 
 /// A function being built, with natives' calls checked against
