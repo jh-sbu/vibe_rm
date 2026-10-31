@@ -466,6 +466,10 @@ impl<'a, 'gc> LayoutBuilder<'a, 'gc> {
         self.is_first_line = end_of_para;
         self.has_line_break = true;
 
+        // The next line starts in `span`. The line that ended may have started
+        // in another one, such as an `<img>`'s placeholder (font size 2):
+        // keeping that span's metrics put every later line a few px apart.
+        self.current_line_span = span.clone();
         let font_size = Twips::from_pixels(self.current_line_span.font.size);
         let metrics = self.font_set.unwrap().metrics();
         self.max_font_size = font_size;
