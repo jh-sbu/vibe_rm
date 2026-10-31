@@ -1,5 +1,9 @@
 # Which ambiguities an autotest could settle
 
+**Superseded (2026-10-31)** by `plans/autotest-audit.md`, a per-item audit of
+every open item, these lists' leftovers included. Kept for the test designs
+below.
+
 A survey (2026-10-13) of every open item in `known_ambiguities/` for a test
 mod whose script settles it unattended (see `crates/tools/src/test_mods/`):
 the user loads a save with the plugin and leaves the game alone; the script
