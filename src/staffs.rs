@@ -433,4 +433,27 @@ mod tests {
         assert_eq!(e.spell_cost(PLAYER_REF, SPELL), before);
         let _ = std::fs::remove_dir_all(dir);
     }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+    fn an_npcs_own_reduction_lowers_its_staffs_cost() {
+        // NPCs' staff choice (`npc_staff_spell`) and casts go by
+        // `staff_cost`, which reads the caster's own reduction.
+        let (dir, mut e) = staff_engine_of(DESTRUCTION);
+        let npc = FormId(0x890);
+        e.set_actor_value(npc, DESTRUCTION, 0.0);
+        e.add_item(npc, STAFF, 1);
+        e.equip_item(npc, STAFF, true).unwrap();
+        e.inventory_mut(npc).set_charge(STAFF, 12.0, 50.0);
+        assert_eq!(e.staff_cost(npc, ENCH), 20.0);
+        assert!(!e.pay_weapon_charge(npc, STAFF, ENCH));
+        e.set_actor_value(npc, DESTRUCTION_MOD, 50.0);
+        assert_eq!(e.staff_cost(npc, ENCH), 10.0);
+        assert!(e.pay_weapon_charge(npc, STAFF, ENCH));
+        assert_eq!(e.actor_value(npc, av::RIGHT_ITEM_CHARGE), 2.0);
+        // The reduction is the NPC's own, not the player's.
+        e.set_actor_value(PLAYER_REF, DESTRUCTION, 0.0);
+        assert_eq!(e.staff_cost(PLAYER_REF, ENCH), 20.0);
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }
