@@ -18,7 +18,7 @@ String Function TakeStory()
 EndFunction
 
 String Function TestStoryItems()
-    String r = "(player " + Id(Player) + ")\n"
+    String r = "(player " + Id(Player) + "); left from earlier tests: " + TakeStory() + "\n"
     Player.AddItem(IngotIron, 1, false)
     r += "AddItem(ingot) to the player: " + TakeStory() + "\n"
     ObjectReference dropped = Player.DropObject(IngotIron, 1)

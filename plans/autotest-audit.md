@@ -51,6 +51,68 @@ About 12 hours of unattended game time across roughly 30 to 35 runs, 15 to 20 ho
 with reruns. Building the plugins comes on top, mostly the new record writers
 behind the A* items.
 
+## Covered by `test-mod autotest21` (2026-10-31)
+
+`test-mod autotest21` (`crates/tools/src/test_mods/autotest21/`) runs these
+in one batch: 192 of the 536 automatic items, by file, with the test
+that asks each. Items not listed are still open for a later batch.
+
+| File | Items | Tests |
+| --- | ---: | --- |
+| actor-natives | 4 | ActorNatives (leveled traits race, `GetNthLinkedRef` 0 / -1 / keyword-only link), EnableAI |
+| actor-values | 5 | NpcStats (tie order, PC-level-mult skills past 100, Khayla, skill offsets), QueryNatives (class from the stats template) |
+| alias-fills | 3 | CreatedRefs (clean-up on Clear / Stop / Complete), AliasMatch (no Closest, in loaded area; create level) |
+| casting | 4 | HandTypes (empty hand beside a spell), Casters (hand, distance, cast cadence), StoryCombat (CAST members) |
+| combat-assistance | 4 | Assistance (reach, RELA rank), Teammate, FriendlyHits |
+| combat-conditions | 4 | ItemConditions (`IsShieldOut`, `IsTorchOut`), FactionConditions (`GetShouldHelp`), ActorConditions (`IsProtected`) |
+| combat-fleeing | 3 | Flee (damage requirement, check timing, ending), SoundLevels (the forgetting settings' values) |
+| combat-movement | 1 | AlertFlag (idle sheathe delay, repeated `DrawWeapon`) |
+| combat-state | 4 | Teammate (player's state), StopCombat (re-acquiring, switching targets), InCombatParam |
+| comparison-conditions | 4 | FactionConditions (`SameFaction` rank -1, `SameRace` templates), ActorConditions (stamina scale, NPC over-encumbered) |
+| condition-geometry | 5 | Geometry (`GetRelativeAngle`, `GetHeadingAngle`, `GetWithinDistance` edge, `IsCloserToAThanB` tie, line of sight, starting position) |
+| condition-variables | 1 | FactionConditions (`GetScriptVariable`) |
+| created-refs | 3 | Delete |
+| crime | 7 | FactionRanks (rank changes, `IsGuard`), Infamy, StolenDrop, AttackOnSight, TakeUpArmor |
+| death | 5 | DeathConditions (`GetTimeDead`, `IsKiller`, `IsKillerObject`, `GetCauseofDeath`, teammate's kill) |
+| destruction | 4 | Destruction (thresholds, stage numbering, events, `ClearDestruction`), ReferenceSetters |
+| detection | 4 | ViewCone (cone, distance, blindness, light), AlertFlag (`SetAlert`), SoundLevels (`iSoundLevel*`) |
+| disarm | 3 | Disarm (where it lands, a sheathed two-hander, events) |
+| encumbrance | 1 | EncumbranceEdge |
+| factions | 8 | FactionNatives (`SetReaction`, expelled, crime groups), PlayerEnemy (enemy flag, aggression 0, attack on sight, allies), FightAfterAlly |
+| fast-travel | 2 | FastTravel (gate after `MoveTo`, time taken) |
+| followers | 2 | Teammate (joins, kill not murder) |
+| formlists | 2 | FormLists |
+| hands | 1 | HandTypes (`weaponSpeedMult`) |
+| inventory-restrictions | 1 | BoundWeapon |
+| invisibility | 3 | InvisiblePotion (drinking, locked activation), InvisibleAttacker |
+| journal | 2 | KillStats, UseStats |
+| loose-objects | 6 | LooseObjects (lying still, falling, impulse, drop position, corpses), RememberBefore / RememberAfter |
+| magic | 11 | AbsorbMagicka, Recheck, ResistanceCap, Holds (holds, level cap with resistance), Cloak, Ethereal, SlowTime, WornEnchantment, HostileSpell, EnchantedBlows |
+| magic-menu | 2 | NpcCostReduction |
+| map-markers | 2 | MapMarkers |
+| math-natives | 3 | MathNatives |
+| npc-healing | 1 | Healer |
+| npc-templates | 1 | ActorKeywords |
+| outfits | 3 | Outfits |
+| protection | 5 | Protection, AliasProtection |
+| query-natives | 5 | QueryNatives |
+| relationships | 2 | Relationships |
+| remaining-natives | 27 | ContainerCounts, WornKeyword, Dimensions, DeadCount, QuestStates, 3DLoaded, SoundIds, ReferenceSetters, ActorState, Hostility, Reset, Finders |
+| soul-trap | 3 | SoulTrap |
+| staffs | 1 | NpcStaff |
+| status-conditions | 18 | PlatformConditions, ItemConditions, ActorConditions, FactionConditions |
+| story-cast-events | 1 | StoryCombat |
+| story-manager | 5 | StoryItems (REMP and AIPL members, owners), StoryCombat (assault, kills' crime status, skill increase) |
+| wards | 3 | Wards (NPC warding, build, keep) |
+| weather | 3 | Weather (transition law by delta, acceleration, `FindWeather`), BackOutside (indoors) |
+
+Not in autotest21: packages and procedures (activate, use-weapon,
+use-magic, package-trees, escort, locks' packages), unloaded actors
+(actor-execution, unloaded-placement), the Havok graph questions
+(object-graphs, state-machine events), criticals and perk tabs (perk
+entries not written yet), traps and triggers, telekinesis, harvest,
+falling, the remaining combat-conditions read during fights.
+
 ## By file
 
 Each row: verdict, the question, and the serial minutes for A / A* items.

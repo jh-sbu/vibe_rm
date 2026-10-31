@@ -12,14 +12,31 @@
 //! fights, fleeing and packages: a cell of ours has no navmesh, and writing
 //! one risks the whole run. The player is moved between them by script.
 //!
-//! Run: load a save outdoors (the usual one), wait for the "running"
-//! notification and leave the game alone until "done" (the reports say how
-//! long each took; expect about an hour). The game saves every 20 tests, so
-//! a crash keeps what ran; `vrm-tool test-results` reads the newest save.
-//! The run changes that save for good (factions, crime gold paid back, the
-//! player's skills and statistics), so use a throwaway.
+//! The groups, in running order: `natives` (query, math and the remaining
+//! natives, references, outfits, form lists, factions, protection),
+//! `conditions` (status, comparison, geometry, death and variable
+//! conditions through probes), `magic`, `items` (actor values, statistics,
+//! loose objects, disarm), `detect`, `story` (Story Manager events, quest
+//! aliases), `extra`, then in the warehouse `combat` and `combat2`, `leave`
+//! (back to the cell), and `outdoors` (weather, fast travel, map markers,
+//! from where the run began; skipped if that was indoors). Which audit
+//! items each answers: `plans/autotest-audit.md`, "Covered by test-mod
+//! autotest21".
 //!
-//! What each test asks is in its source; the questions are the audit's.
+//! Run: load a save outdoors (the usual one), wait for the "running"
+//! notification and leave the game alone until the "done" box (the reports
+//! say how long each took; expect 40 to 60 minutes, mostly the probes'
+//! waits). The player is moved to the cells and back, fast travels to
+//! Whiterun and Solitude and visits a far map marker. The game saves every
+//! 20 tests, so a crash keeps what ran; `vrm-tool test-results` reads the
+//! newest save. The run changes that save for good (factions, crime gold,
+//! a marker or two discovered, the player's skills and statistics), so use
+//! a throwaway.
+//!
+//! A run in our own engine (the plugin linked into
+//! `tests/assets/overlay/Data`, `--cell Riverwood --screenshot --wait
+//! 220000`, traces at `RUST_LOG=vibe_rm::script::natives=debug`) runs every
+//! test to the end; its readings are ours, not the game's.
 
 use std::collections::BTreeMap;
 
