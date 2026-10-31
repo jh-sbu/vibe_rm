@@ -19,6 +19,19 @@ release clips for hand type 8: `StfMagicRight_Release`, `SpellFire` at
   0.59 at 100, which gives UESP's 1.7 times the uses). Spell cost perks
   (`ModSpellCost`, the school's Novice .. Master perks) aren't applied;
   whether they are isn't published.
+- **Spell cost perks on enchantments**: `vrm-tool cost-entries <Data>`
+  classifies the 43 vanilla `ModSpellCost` entries by whether their spell
+  conditions could match an enchantment. 31 can't: the school perks'
+  `SpellHasCastingPerk` (an `ENCH` has no `SPIT` casting perk) and
+  `DLC1UnearthlyWill`'s `GetIsID` (vampire lord spells only). 11 could:
+  `PerkSkillBoosts`' five `EPMagic_SpellHasSkill` entries (the school
+  reduction, `AlterationMod`..`RestorationMod`),
+  `DLC2BlackBookSeekerPerks` and `DLC2StandingStoneTreePerk` (any school),
+  `StormMastery` / `FrostMastery` / `FireMastery` (`MagicDamage*`
+  keywords, which staff and weapon effects carry) and
+  `DLC2dunKolbjornHelmPerk` (summon and rune keywords). One is
+  unconditioned (`DLC2BlackBookNoMagickaPerk`). Nothing public says
+  whether the game runs the entry point for enchantments, so it isn't run.
 - **Too little charge**: a cast needs its whole cost (a concentration
   staff any charge at all, and stops when a frame's share can't be paid),
   and "Your item has insufficient charge" shows; the magicka meter doesn't

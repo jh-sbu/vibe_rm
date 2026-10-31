@@ -5700,6 +5700,139 @@ fn main() -> Result<()> {
                 println!("{n:5} {k}");
             }
         }
+        Some("cost-entries") => {
+            // cost-entries <data dir>: every `ModSpellCost` (entry point 38) entry with
+            // its perk-owner and spell conditions, its value, and whether the spell
+            // conditions could match an enchantment (an `ENCH` has no casting perk; a
+            // `GetIsID` or `HasKeyword` matches one only if it names an enchantment or a
+            // keyword an enchantment or its effects carry).
+            const MOD_SPELL_COST: u8 = 38;
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            let kwda = |r: &esp::LoadedRecord| -> Vec<esp::FormId> {
+                r.get(b"KWDA")
+                    .map(|d| {
+                        d.chunks_exact(4)
+                            .map(|c| r.fid(esp::FormId(u32::from_le_bytes(c.try_into().unwrap()))))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            };
+            // Keywords on enchantments and on the effects they use.
+            let mut ench_keywords = std::collections::BTreeSet::new();
+            for &id in lo.ids_of_type(b"ENCH") {
+                let Some(r) = lo.get(id) else { continue };
+                ench_keywords.extend(kwda(&r));
+                for sr in r.subrecords().filter(|sr| sr.tag.0 == *b"EFID") {
+                    let effect = r.fid(esp::FormId(sr.u32(0)));
+                    if let Some(m) = lo.get(effect) {
+                        ench_keywords.extend(kwda(&m));
+                    }
+                }
+            }
+            let mut verdicts: std::collections::BTreeMap<&str, usize> = Default::default();
+            for &id in lo.ids_of_type(b"PERK") {
+                let Some(r) = lo.get(id) else { continue };
+                let edid = r.editor_id().unwrap_or_default();
+                let mut entry: Option<(Vec<String>, Vec<String>, Option<bool>, String)> = None;
+                let mut kind = None;
+                let mut tab = -1i32;
+                let mut finish =
+                    |entry: &mut Option<(Vec<String>, Vec<String>, Option<bool>, String)>| {
+                        let Some((owner, spell, matches, value)) = entry.take() else {
+                            return;
+                        };
+                        let verdict = match matches {
+                            None => "unconditioned: applies to enchantments",
+                            Some(true) => "can match an enchantment",
+                            Some(false) => "can't match an enchantment",
+                        };
+                        *verdicts.entry(verdict).or_default() += 1;
+                        println!("{edid} {id}: {value}; {verdict}");
+                        for c in owner {
+                            println!("  owner {c}");
+                        }
+                        for c in spell {
+                            println!("  spell {c}");
+                        }
+                    };
+                for sr in r.subrecords() {
+                    match &sr.tag.0 {
+                        b"PRKE" => {
+                            finish(&mut entry);
+                            kind = Some(sr.u8(0));
+                            tab = -1;
+                        }
+                        b"DATA" if kind == Some(2) && sr.data.len() >= 3 => {
+                            if sr.u8(0) == MOD_SPELL_COST {
+                                entry =
+                                    Some((vec![], vec![], None, format!("function {}", sr.u8(1))));
+                            }
+                        }
+                        b"PRKC" => tab = sr.u8(0) as i32,
+                        b"CTDA" if entry.is_some() && sr.data.len() >= 24 => {
+                            let (owner, spell, matches, _) = entry.as_mut().unwrap();
+                            let f = sr.u16(8);
+                            let p = sr.u32(12);
+                            let name = functions::name(f);
+                            let text = format!(
+                                "{name} {p:08x} op {} {}{}",
+                                sr.u8(0) >> 5,
+                                sr.f32(4),
+                                if sr.u8(0) & 1 != 0 { " OR" } else { "" }
+                            );
+                            if tab != 1 {
+                                owner.push(text);
+                                continue;
+                            }
+                            let can = match name {
+                                "SpellHasCastingPerk" => false,
+                                "EPMagic_SpellHasSkill" => true,
+                                "GetIsID" => {
+                                    lo.tag_of(r.fid(esp::FormId(p))).map(|t| t.0) == Some(*b"ENCH")
+                                }
+                                "HasKeyword" => ench_keywords.contains(&r.fid(esp::FormId(p))),
+                                _ => true,
+                            };
+                            *matches = Some(matches.unwrap_or(false) || can);
+                            let what = match name {
+                                "GetIsID" | "HasKeyword" => lo
+                                    .get(r.fid(esp::FormId(p)))
+                                    .map(|t| {
+                                        format!(
+                                            " ({} {})",
+                                            String::from_utf8_lossy(&t.tag().0),
+                                            t.editor_id().unwrap_or_default()
+                                        )
+                                    })
+                                    .unwrap_or_default(),
+                                "EPMagic_SpellHasSkill" => {
+                                    format!(" ({})", esp::actor_value::name(p).unwrap_or("?"))
+                                }
+                                _ => String::new(),
+                            };
+                            spell.push(format!("{text}{what}"));
+                        }
+                        b"EPFD" if entry.is_some() => {
+                            let (_, _, _, value) = entry.as_mut().unwrap();
+                            let fs: Vec<String> = sr
+                                .data
+                                .chunks_exact(4)
+                                .map(|c| f32::from_le_bytes(c.try_into().unwrap()).to_string())
+                                .collect();
+                            *value = format!("{value} [{}]", fs.join(", "));
+                        }
+                        b"PRKF" => kind = None,
+                        _ => {}
+                    }
+                }
+                finish(&mut entry);
+            }
+            for (k, n) in verdicts {
+                println!("{n:5} {k}");
+            }
+        }
         Some("quest-log") => {
             // quest-log <data dir> [quest]: one quest's type, stages with their log
             // entries (flags, conditions, text) and objectives, or counts over all
