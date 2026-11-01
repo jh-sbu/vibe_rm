@@ -660,14 +660,16 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         361 => subject
             .and_then(|s| e.death(s))
             .map(|d| (e.game_hours_total() - d.at) as f32), // GetTimeDead
-        // The subject killed the actor named (the victim).
-        408 => b(subject.is_some_and(|s| e.death(p1).is_some_and(|d| d.killer == Some(s)))), // IsKiller
-        // The subject killed one of the actors (or their bases) the list names.
+        // The subject (the victim) was killed by the actor named (test-mod
+        // autotest22: true run on the victim, false run on the killer).
+        408 => b(subject.is_some_and(|s| e.death(s).is_some_and(|d| d.killer == Some(p1)))), // IsKiller
+        // The subject's killer is one of the actors (or their bases) the list
+        // names, read the way `IsKiller` is.
         409 => b(subject.is_some_and(|s| {
             let list = e.formlist(p1);
-            e.world_state.deaths.iter().any(|(&v, d)| {
-                d.killer == Some(s) && list.iter().any(|&f| f == v || e.base_of(v) == Some(f))
-            })
+            e.death(s)
+                .and_then(|d| d.killer)
+                .is_some_and(|k| list.iter().any(|&f| f == k || e.base_of(k) == Some(f)))
         })), // IsKillerObject
         80 => Some(e.actor_level(subject?) as f32), // GetLevel
         // Actor values (`actor_values`).

@@ -32,18 +32,29 @@ unverified in Skyrim SE.
   `IsKiller` is called three times, all in INFO (MS07 Vald and Jaree-Ra topics),
   on a quest alias (run on 5) with the player reference as its parameter.
 
+## Confirmed in the game (`test-mod autotest22`, 2026-11-01)
+
+- `IsKiller(Actor)` runs on the victim and names the killer: true run on the
+  victim with the killer as parameter, false run on the killer with the
+  victim. So MS07's uses ask whether the alias was killed by the player.
+- `GetCauseofDeath` was -1 for a script `Kill(killer)`.
+- `GetTimeDead` is not in game hours: 70–85 s after the death (0.41–0.47
+  game hours at timescale 20) it was `>= 1` and not `>= 10`. Real minutes or
+  tenths of a game hour fit; the unit stays open (`plans/ROADMAP.md`).
+
 ## Unconfirmed
 
-- `GetTimeDead` unit: unconfirmed; game hours since death (`Engine::game_hours_total`)
-  chosen. Days or seconds are equally possible. No vanilla comparison settles it
-  (see above). Living subjects, and those dead before the game (placed dead, or
+- `GetTimeDead` unit: game hours since death (`Engine::game_hours_total`) is
+  still what we return, though the game's isn't game hours (above); kept until
+  a follow-up reading tells real minutes from tenths of a game hour. No
+  vanilla comparison settles it (see above). Living subjects, and those dead before the game (placed dead, or
   dead in a loaded save), have no value and fail the condition.
-- `IsKiller(Actor)` direction: unconfirmed; the subject killed the actor named
-  (the parameter is the victim). The reverse (the actor named killed the subject)
-  is possible from the name. The three vanilla uses don't settle it from the
-  record alone (their dialogue lines don't show which way the test runs).
-- `IsKillerObject(FormList)`: unconfirmed; the subject killed an actor whose
-  reference or base the list names. Whether the list is of bases only is open.
+- `IsKillerObject(FormList)`: the subject's killer is an actor whose
+  reference or base the list names. In the game (`test-mod autotest22`,
+  `research/autotest22.md`) it was false run on the killer with a list of
+  the victim's base or reference, which rules out "the subject killed one of
+  these". The reading as `IsKiller` (run on the victim) is inferred, not
+  observed.
 - `GetCauseofDeath`: unsupported; the meaning of its values is not in any source
   checked (no UESP page, no cause enum in CommonLibSSE).
 - `GetKillingBlowLimb`: unsupported; the body part of the killing blow isn't kept

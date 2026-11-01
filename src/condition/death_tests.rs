@@ -161,26 +161,26 @@ fn get_time_dead_is_the_game_hours_since_the_death() {
 }
 
 #[test]
-fn is_killer_asks_whether_the_subject_killed_the_actor_named() {
+fn is_killer_runs_on_the_victim_and_names_the_killer() {
     let (_dir, mut e) = fixture();
     kill_victim(&mut e);
-    assert!(holds(&e, KILLER, IS_KILLER, VICTIM.0, 1.0));
-    // Not the other way round, nor for one still alive.
-    assert!(!holds(&e, VICTIM, IS_KILLER, KILLER.0, 1.0));
-    assert!(!holds(&e, KILLER, IS_KILLER, OTHER_VICTIM.0, 1.0));
+    assert!(holds(&e, VICTIM, IS_KILLER, KILLER.0, 1.0));
+    // Not the other way round (test-mod autotest22), nor for one still alive.
+    assert!(!holds(&e, KILLER, IS_KILLER, VICTIM.0, 1.0));
+    assert!(!holds(&e, OTHER_VICTIM, IS_KILLER, KILLER.0, 1.0));
     // A null actor names nobody.
-    assert!(!holds(&e, KILLER, IS_KILLER, 0, 1.0));
+    assert!(!holds(&e, VICTIM, IS_KILLER, 0, 1.0));
 }
 
 #[test]
-fn is_killer_object_asks_whether_the_subject_killed_a_listed_actor() {
+fn is_killer_object_asks_whether_the_subjects_killer_is_listed() {
     let (_dir, mut e) = fixture();
     kill_victim(&mut e);
-    // The victim's base is on the list.
-    assert!(holds(&e, KILLER, IS_KILLER_OBJECT, LIST.0, 1.0));
-    assert!(!holds(&e, KILLER, IS_KILLER_OBJECT, EMPTY_LIST.0, 1.0));
-    assert!(!holds(&e, VICTIM, IS_KILLER_OBJECT, LIST.0, 1.0));
-    // Nothing killed by the other actor: not a killer of anything listed.
+    // The killer's base is on the list.
+    assert!(holds(&e, VICTIM, IS_KILLER_OBJECT, LIST.0, 1.0));
+    assert!(!holds(&e, VICTIM, IS_KILLER_OBJECT, EMPTY_LIST.0, 1.0));
+    assert!(!holds(&e, KILLER, IS_KILLER_OBJECT, LIST.0, 1.0));
+    // Alive, so killed by nobody.
     assert!(!holds(&e, OTHER_VICTIM, IS_KILLER_OBJECT, LIST.0, 1.0));
 }
 
