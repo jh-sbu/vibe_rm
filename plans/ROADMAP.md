@@ -1764,25 +1764,28 @@ probes, created aliases, our NPC casters, early-ending fights) need a
 follow-up batch: `test-mod autotest22`.
 
 **autotest22** (`research/autotest22.md`, run 2026-11-01): the readings that
-differ from ours, to apply: `GetPlayerControlsDisabled` (true unless a
+differed from ours are applied: `GetPlayerControlsDisabled` (true unless a
 selected control is disabled), `GetCrimeGold` without a faction (no sum),
-`IsActorUsingATorch`, `GetIsCreature` (not the keyword), `GetDisease` (not
-NPCs), `GetUnconscious` (`SetUnconscious`'s flag, not bleedout),
-`GetFactionCombatReaction` of a faction towards itself (0),
-`GetFactionRankDifference` (0 for rank 0 against -1), `GetScriptVariable`
-(no Papyrus variables), `GetLineOfSight` (the facing counts), `IsKiller` and
-`IsKillerObject` (run on the victim), `IsUnique` (the traits template),
-invisibility ended by eating but not by activating a locked chest, and
-created references kept when their quest stops.
+`IsActorUsingATorch` (drawn), `GetIsCreature` (never), `GetDisease` (the
+player only), `GetUnconscious` (`SetUnconscious`'s flag), a faction's
+`GetFactionCombatReaction` to itself (0), `GetFactionRankDifference`
+(non-members as rank 0), `GetScriptVariable` (0), an NPC's
+`GetLineOfSight` (its view cone), `IsKiller` / `IsKillerObject` (run on the
+victim), `IsUnique` (the traits template), invisibility (ended by eating,
+not by activating something locked) and created references (kept when
+their quest stops).
 
-Open from it: `GetXPForNextLevel`'s value, `GetTimeDead`'s unit (not game
-hours), the sun position's scale (not a unit vector: lengths 324–368, Y 40),
-`SetAttackActorOnSight` (an aggressive non-enemy didn't attack the marked
-player). To compare before deciding: the warlock's range and cadence, NPC
-cost with DestructionMod, staff charge (about 5.8 a second for sparks),
-Average NPCs not fleeing at 18% health, stolen `AIPL` (type 1, owner None),
-`KILL` for an essential `Kill(None)`. The rest of the note's follow-up list
-needs `test-mod autotest23`.
+Open from it: `GetXPForNextLevel`'s value (under 25 at level 1, so not the
+cost of 100 we give), `GetTimeDead`'s unit (not game hours, which we still
+give), the sun position's scale (lengths 324–368, Y 40; ours is a unit
+vector), `SetAttackActorOnSight` (an aggressive non-enemy didn't attack the
+marked player; ours would), what `SetUnconscious` does to the actor (only
+the flag is kept, unsaved), and whether `GetCrimeGold` without a faction
+reads the hold the player stands in. To compare before deciding: the
+warlock's range and cadence, NPC cost with DestructionMod, staff charge
+(about 5.8 a second for sparks), Average NPCs not fleeing at 18% health,
+stolen `AIPL` (type 1, owner None), `KILL` for an essential `Kill(None)`.
+The note's follow-up list needs `test-mod autotest23`.
 
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done).
    The bounded work of `plans/animation-unblocked.md` is complete within its
