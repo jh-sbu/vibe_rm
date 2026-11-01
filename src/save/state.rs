@@ -21,7 +21,7 @@
 //! `SFGT` (scene force-greet completion markers),
 //! `RLSP` (rolled leveled spell-list results),
 //! `WSTA` (ward-hit outcomes and their remaining `IsWardState` hold),
-//! `DETH` (killers and times of death), `DCNT` (deaths by actor base), `STPT` (stealth-point reservoirs and
+//! `DETH` (killers and times of death), `DCNT` (deaths by actor base), `DSFL` (SetDestroyed flags), `STPT` (stealth-point reservoirs and
 //! regeneration delays), `COWN` (the owners of dropped stolen items), `ORIG`
 //! (world-created references' initial transforms), and `VM` / `VMAR`
 //! (`super::vm`: the Papyrus VM) and `MBXW` (message boxes and supported
@@ -144,6 +144,7 @@ pub struct Snapshot {
     pub stealth_points: HashMap<FormId, (f32, f32)>,
     pub open_doors: HashSet<FormId>,
     pub actor_open_doors: HashSet<FormId>,
+    pub destroyed_flags: HashSet<FormId>,
     pub body_poses: HashMap<FormId, Vec<Mat4>>,
     pub wounds: HashMap<FormId, Wounds>,
     pub moved: HashMap<FormId, Moved>,
@@ -577,6 +578,7 @@ impl Snapshot {
             stealth_points: e.detection.saved_stealth_points(),
             open_doors: ws.open_doors.clone(),
             actor_open_doors: ws.actor_open_doors.clone(),
+            destroyed_flags: ws.destroyed_flags.clone(),
             body_poses: ws.body_poses.clone(),
             wounds,
             moved: ws.moved.clone(),
@@ -909,6 +911,10 @@ impl Snapshot {
         let mut w = Writer::default();
         put_forms(&mut w, &self.actor_open_doors);
         file.add(b"ADOR", w.0);
+
+        let mut w = Writer::default();
+        put_forms(&mut w, &self.destroyed_flags);
+        file.add(b"DSFL", w.0);
 
         let mut w = Writer::default();
         w.len(self.destruction.len());
@@ -2098,6 +2104,11 @@ impl Snapshot {
             s.actor_open_doors = get_forms(&mut r)?;
             r.finish()?;
         }
+        if let Some(data) = file.section(b"DSFL") {
+            let mut r = Reader::new(data);
+            s.destroyed_flags = get_forms(&mut r)?;
+            r.finish()?;
+        }
         if let Some(data) = file.section(b"DSTR") {
             let mut r = Reader::new(data);
             for _ in 0..r.count(16)? {
@@ -2437,6 +2448,7 @@ impl Snapshot {
         ws.dead_counts = self.dead_counts;
         ws.open_doors = self.open_doors;
         ws.actor_open_doors = self.actor_open_doors;
+        ws.destroyed_flags = self.destroyed_flags;
         ws.body_poses = self.body_poses;
         ws.moved = self.moved;
         ws.item_charges = self.item_charges;

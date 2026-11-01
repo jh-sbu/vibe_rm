@@ -40,7 +40,8 @@ and `IsUnlockedDoor` (718). Engine helpers: `is_destroyed`
   something else, is not documented. Vanilla uses it only as `GetDestroyed == 0`
   in the `CWPatrolAndGuardContestedHold` packages (no destructible), so the choice
   doesn't change any vanilla result we can see. Papyrus `SetDestroyed` sets it
-  by moving to a destroying stage (`known_ambiguities/remaining-natives.md`).
+  with a flag, without changing the stage, because Skyrim SE changed no stage
+  (`known_ambiguities/remaining-natives.md`).
 - `GetIsObjectType` compares the base object's record type, and a subject with
   no base (or a base whose type the table doesn't list) is not that type.
   Vanilla never passes a value the table omits.

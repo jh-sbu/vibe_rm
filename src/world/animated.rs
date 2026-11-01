@@ -92,6 +92,8 @@ pub struct AnimatedObject {
     pub open: bool,
     /// Opened for a passing actor (closes again by itself).
     pub auto: bool,
+    /// Who opened or closed it last (`OnOpen` / `OnClose`'s action ref).
+    pub opener: Option<FormId>,
     pub clear_for: f32,
     /// Sequence playing and its phase (reverse cycles include the return leg).
     pub playing: Option<(usize, f32)>,
@@ -125,6 +127,7 @@ pub(crate) fn test_graph_object(
         door: false,
         open: false,
         auto: false,
+        opener: None,
         clear_for: 0.0,
         playing: None,
         age: 0.0,
@@ -370,6 +373,7 @@ mod node_controller_tests {
             door: false,
             open: false,
             auto: false,
+            opener: None,
             clear_for: 0.0,
             playing: None,
             age: 0.0,
@@ -651,6 +655,7 @@ impl Engine {
             door,
             open: false,
             auto: false,
+            opener: None,
             clear_for: 0.0,
             playing: None,
             age: 0.0,
@@ -674,6 +679,11 @@ impl Engine {
 
     /// Open or close a (non-load) door. Returns false if it isn't an animated door.
     pub fn toggle_door(&mut self, door: FormId, auto: bool) -> bool {
+        self.toggle_door_by(door, auto, None)
+    }
+
+    /// `toggle_door`, `by` someone (whom its `OnOpen` / `OnClose` names).
+    pub fn toggle_door_by(&mut self, door: FormId, auto: bool, by: Option<FormId>) -> bool {
         let Some((key, i)) = self.find_animated(door) else {
             return false;
         };
@@ -699,6 +709,7 @@ impl Engine {
         }
         obj.open = open;
         obj.auto = auto && open;
+        obj.opener = by;
         // Doors the player opens stay open across loads; doors actors open stay
         // open too while they are open at unloading, and close behind them once
         // clear (`update_animated`).
@@ -722,7 +733,8 @@ impl Engine {
 
     /// Papyrus `SetOpen`: open or close a door or openable object, whatever
     /// it is now; opening a door also unlocks it (the CK wiki's note). No
-    /// activation events fire.
+    /// activation events fire, but `OnOpen` / `OnClose` do once it has moved,
+    /// with no action ref (Skyrim SE, autotest21).
     pub fn set_open(&mut self, r: FormId, open: bool) {
         let door = self
             .base_of(r)
@@ -864,6 +876,12 @@ impl Engine {
         true
     }
 
+    /// `OnOpen` / `OnClose` for an object that finished opening or closing.
+    fn send_open_close(&mut self, r: FormId, open: bool, by: Option<FormId>) {
+        let by = by.map_or(papyrus::Value::None, |b| self.object_value(b));
+        self.send_script_event(r, if open { "OnOpen" } else { "OnClose" }, vec![by]);
+    }
+
     /// Papyrus / condition `GetOpenState`: animated doors by their sequences
     /// (or whether they were left open), objects with a graph by the opening
     /// and closing events it took and raised; other doors, activators and
@@ -984,7 +1002,7 @@ impl Engine {
                 if !self.is_locked(obj.ref_id)
                     || at.iter().any(|&w| self.npc_may_open(w, obj.ref_id))
                 {
-                    opening.push(obj.ref_id);
+                    opening.push((obj.ref_id, at[0]));
                 } else {
                     log::trace!("locked door {} stays shut for {at:?}", obj.ref_id);
                 }
@@ -1006,27 +1024,35 @@ impl Engine {
         let mut toggle = Vec::new();
         let mut raised: Vec<(FormId, Vec<havok::behavior::runtime::Raised>)> = Vec::new();
         let mut sounds: Vec<(String, Vec3)> = Vec::new();
+        // Doors that finished opening or closing: whether open, and by whom.
+        let mut moved: Vec<(FormId, bool, Option<FormId>)> = Vec::new();
         for (key, rt) in self.cells.iter_mut() {
             for obj in &mut rt.animated {
                 if !obj.door || obj.playing.is_some() {
                     continue;
                 }
-                if !obj.open && opening.contains(&obj.ref_id) {
-                    toggle.push((obj.ref_id, true));
+                if !obj.open
+                    && let Some(&(_, by)) = opening.iter().find(|o| o.0 == obj.ref_id)
+                {
+                    toggle.push((obj.ref_id, true, Some(by)));
                 } else if obj.open && obj.auto {
                     if near(obj.position, CLEAR_DISTANCE, true) {
                         obj.clear_for = 0.0;
                     } else {
                         obj.clear_for += dt;
                         if obj.clear_for > CLOSE_DELAY {
-                            toggle.push((obj.ref_id, false));
+                            toggle.push((obj.ref_id, false, None));
                         }
                     }
                 }
             }
             if let Some(rc) = self.scene.cells.get_mut(key) {
                 for obj in &mut rt.animated {
+                    let moving = obj.door && obj.playing.is_some();
                     obj.update(dt, self.renderer.time, &mut rc.instances);
+                    if moving && obj.playing.is_none() {
+                        moved.push((obj.ref_id, obj.open, obj.opener));
+                    }
                     // Behaviour graphs pose the parts and carry their collision.
                     let Some(g) = obj.graph.as_mut() else {
                         continue;
@@ -1077,8 +1103,11 @@ impl Engine {
                 }
             }
         }
-        for (door, auto) in toggle {
-            self.toggle_door(door, auto);
+        for (door, auto, by) in toggle {
+            self.toggle_door_by(door, auto, by);
+        }
+        for (r, open, by) in moved {
+            self.send_open_close(r, open, by);
         }
         for (sound, at) in sounds {
             self.play_sound_at(&sound, at);
@@ -1087,6 +1116,7 @@ impl Engine {
             for ev in &events {
                 if let Some(s) = OpenState::after_event(&ev.event, false) {
                     self.world_state.graph_open.insert(r, s);
+                    self.send_open_close(r, s == OpenState::Open, None);
                 }
             }
             let notifications: Vec<_> = events
@@ -1136,6 +1166,7 @@ mod door_tests {
             door: true,
             open: false,
             auto: false,
+            opener: None,
             clear_for: 0.0,
             playing: None,
             age: 0.0,
@@ -1197,5 +1228,27 @@ mod door_tests {
         assert!(e.toggle_door(ACTOR_DOOR, false));
         assert_eq!(e.world_state.door_left_open(ACTOR_DOOR), None);
         assert_eq!(e.open_state(ACTOR_DOOR), OpenState::Closing);
+
+        // Once a door has moved its scripts hear OnOpen / OnClose, naming
+        // who moved it (Skyrim SE sent them for SetOpen too: autotest21).
+        e.cells.get_mut(&CellKey::Interior(CELL)).unwrap().animated[0] = door(DOOR);
+        e.scene.cells.insert(
+            CellKey::Interior(CELL),
+            crate::render::RenderCell::default(),
+        );
+        e.scripts.pending_events.clear();
+        assert!(e.toggle_door_by(DOOR, false, Some(crate::engine::PLAYER_REF)));
+        for _ in 0..30 {
+            e.update_animated(0.1);
+        }
+        let heard: Vec<_> = e
+            .scripts
+            .pending_events
+            .iter()
+            .filter(|(_, ev, _)| ev == "OnOpen" || ev == "OnClose")
+            .map(|(_, ev, args)| (ev.clone(), args.first().is_some_and(|a| !a.is_none())))
+            .collect();
+        assert!(heard.contains(&("OnOpen".to_string(), true)), "{heard:?}");
+        assert!(heard.contains(&("OnClose".to_string(), false)), "{heard:?}");
     }
 }

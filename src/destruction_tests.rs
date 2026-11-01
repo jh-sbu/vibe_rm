@@ -781,7 +781,7 @@ fn get_destroyed_follows_the_destroy_stage_of_the_reference() {
 
 #[test]
 #[ignore = "needs a headless GPU adapter; synthetic records only"]
-fn set_destroyed_jumps_to_the_destroying_stage_without_events() {
+fn set_destroyed_flags_without_changing_the_stage() {
     let (_dir, mut e) = fixture();
     let call = |e: &mut Engine, r: FormId, on: bool| {
         let this = e.object_value(r);
@@ -793,19 +793,19 @@ fn set_destroyed_jumps_to_the_destroying_stage_without_events() {
             &[Value::Bool(on)],
         );
     };
+    // Skyrim SE (autotest21): the stage stays, no stage event.
     call(&mut e, REF_A, true);
-    assert_eq!(e.current_destruction_stage(REF_A), 1);
+    assert_eq!(e.current_destruction_stage(REF_A), -1);
     assert!(e.is_destroyed(REF_A));
-    assert_eq!(e.world_state.destruction[&REF_A].health, 0.0);
     assert!(e.scripts.pending_events.is_empty());
-    // No stage destroys it: the last stage, which doesn't count as destroyed.
-    call(&mut e, REF_D, true);
-    assert_eq!(e.current_destruction_stage(REF_D), 9);
-    assert!(!e.is_destroyed(REF_D));
-    // Nothing to destroy without a definition.
+    // Nothing to flag without a definition.
     call(&mut e, REF_B, true);
-    assert!(!e.world_state.destruction.contains_key(&REF_B));
+    assert!(!e.is_destroyed(REF_B));
     call(&mut e, REF_A, false);
     assert_eq!(e.current_destruction_stage(REF_A), -1);
+    assert!(!e.is_destroyed(REF_A));
+    // ClearDestruction clears the flag too.
+    call(&mut e, REF_A, true);
+    e.clear_destruction(REF_A);
     assert!(!e.is_destroyed(REF_A));
 }

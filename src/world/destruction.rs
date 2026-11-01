@@ -103,6 +103,9 @@ impl Engine {
         let Some(data) = self.destructible_data(reference) else {
             return false;
         };
+        if self.world_state.destroyed_flags.contains(&reference) {
+            return true;
+        }
         let stage = self.current_destruction_stage(reference);
         data.stages
             .iter()
@@ -165,38 +168,26 @@ impl Engine {
         self.damage_object(reference, damage);
     }
 
-    /// Papyrus `SetDestroyed(true)`: a reference with a destruction definition
-    /// goes to its first stage that destroys it (else its last) with no health
-    /// left, without the damage events or effects a blow would bring.
+    /// Papyrus `SetDestroyed`: flags the reference destroyed (or clears the
+    /// flag) without changing its stage or sending a stage event. Skyrim SE
+    /// (autotest21) left a web at stage -1, enabled, with no
+    /// `OnDestructionStageChanged`, though its 3D was rebuilt (`OnLoad`); what
+    /// the flag shows is unknown (`known_ambiguities/remaining-natives.md`).
     pub fn set_destroyed(&mut self, reference: FormId, destroyed: bool) {
-        if !destroyed {
-            self.clear_destruction(reference);
+        if self.destructible_data(reference).is_none() {
             return;
         }
-        let Some(data) = self.destructible_data(reference) else {
-            return;
-        };
-        let Some(stage) = data
-            .stages
-            .iter()
-            .find(|s| s.flags & 0x04 != 0)
-            .or(data.stages.last())
-        else {
-            return;
-        };
-        let stage = stage.index as i32;
-        let current = self.current_destruction_stage(reference);
-        if current >= stage && self.is_destroyed(reference) {
-            return;
+        if destroyed {
+            self.world_state.destroyed_flags.insert(reference);
+        } else {
+            self.world_state.destroyed_flags.remove(&reference);
         }
-        self.world_state
-            .destruction
-            .insert(reference, DestructionState { health: 0.0, stage });
     }
 
     /// Papyrus `ObjectReference.ClearDestruction`. Clear the stored per-reference
     /// health and stage without requiring the reference to be loaded.
     pub fn clear_destruction(&mut self, reference: FormId) {
         self.world_state.destruction.remove(&reference);
+        self.world_state.destroyed_flags.remove(&reference);
     }
 }

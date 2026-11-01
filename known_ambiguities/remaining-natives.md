@@ -108,14 +108,20 @@ item to an empty `LeveledItem`, save and load, then roll it through `AddItem`.
 
 ## Reference setters (SetOpen / SetDestroyed / SetScale)
 
-Unconfirmed: whether `SetOpen` raises `OnOpen` / `OnClose` (we raise none);
-whether `SetDestroyed` runs the stage's explosion and debris and sends
-`OnDestructionStageChanged` (we do neither), and which stage the flag implies
-(we take the first that destroys, else the last); and whether `SetScale` on an
-actor keeps the NPC's and race's heights multiplied on top (we do). The player
-isn't rescaled. **test-mod** wanted: `SetDestroyed` on a destructible with
-`OnDestructionStageChanged` registered, and `SetScale(2)` on an NPC then
-`GetScale`.
+Checked in Skyrim SE (autotest21, 2026-11-01): `SetOpen` raises `OnOpen` /
+`OnClose` once the door has moved (a door went from state 3 to 1 with `OnOpen`, and
+back with `OnClose`). We send them, for every animated door, when its movement
+ends, with whoever moved it as `akActionRef` (None for `SetOpen`). Graph-driven
+objects send them when the graph says it has opened or closed. `SetDestroyed(true)`
+on a destructible web left its stage at -1, kept it enabled and sent no
+`OnDestructionStageChanged`, but rebuilt its 3D (`OnCellAttach`, `OnLoad`,
+`OnCellLoad`); `SetDestroyed(false)` sent nothing.
+
+Our choices: `SetDestroyed` keeps a flag that `GetDestroyed` reads and the stage
+is left alone. What the flag shows (the destroyed model?) and whether it blocks
+activation is unknown, so we show nothing different. `ClearDestruction` clears
+the flag. Whether `SetScale` on an actor keeps the NPC's and race's heights
+multiplied on top is unconfirmed (we do). The player isn't rescaled.
 
 ## Reference flags and encounter levels
 

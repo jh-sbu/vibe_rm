@@ -3507,7 +3507,7 @@ impl Engine {
                     ));
                 }
                 None => {
-                    self.toggle_door(owner, false);
+                    self.toggle_door_by(owner, false, Some(PLAYER_REF));
                 }
             }
         }

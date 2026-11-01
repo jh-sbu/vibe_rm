@@ -33,6 +33,9 @@ pub struct WorldState {
     /// Animated doors an actor opened and was still holding open when its cell
     /// unloaded: they load open and close again once nobody is near.
     pub actor_open_doors: std::collections::HashSet<FormId>,
+    /// References `SetDestroyed(true)` flagged, their stage untouched (saved
+    /// in `DSFL`).
+    pub destroyed_flags: std::collections::HashSet<FormId>,
     /// Dead actors' ragdoll bodies as they lay (world transforms).
     pub body_poses: HashMap<FormId, Vec<Mat4>>,
     /// References scripts moved (`MoveTo`, `SetPosition`, `SetAngle`): where to.
