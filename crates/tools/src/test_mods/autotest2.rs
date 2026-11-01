@@ -2406,10 +2406,10 @@ mod tests {
             "the victim killed: crime 1 1 (violent 1); crime 2 1 (violent 1)\n",
             "a hare, Kill(player): People Killed 1 to 1",
             "a misc quest's objective shown and completed: Quests Completed 1 to 1",
-            "timescale 60, delta 125: current at once True",
+            "timescale 60, delta 125: current at once TRUE",
             "timescale 60, delta 82:",
             "23: 1\n",
-            "no override, delta 125, accelerated: current at once True",
+            "no override, delta 125, accelerated: current at once TRUE",
         ] {
             assert!(all.contains(expected), "{expected:?} not in the reports");
         }

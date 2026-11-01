@@ -916,9 +916,9 @@ mod tests {
             "x1.5: 7 for 10.500\n",
             "SetAV 40: base 50, current 50, percent 0.5",
             "lock outside: inside locked False level 1",
-            "this script disables movement, the helper enables it: movement True",
-            "weapon drawn at start True, before disabling fighting True, after True",
-            "delta 125: current at once True",
+            "this script disables movement, the helper enables it: movement TRUE",
+            "weapon drawn at start TRUE, before disabling fighting TRUE, after TRUE",
+            "delta 125: current at once TRUE",
             "delta 125, accelerated:",
             "delta 75:",
         ] {

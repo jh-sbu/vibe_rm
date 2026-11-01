@@ -672,10 +672,10 @@ mod tests {
         let all = shown.boxes.join("\n");
         for expected in [
             "start (no override set yet): current ",
-            "1. SetActive(false, false), no override yet: current at once True",
+            "1. SetActive(false, false), no override yet: current at once TRUE",
             "3. ForceActive(false) of WeatherA\n",
             "4. FindWeather: pleasant none, cloudy none\n",
-            "5. SetActive(true, true): current at once True",
+            "5. SetActive(true, true): current at once TRUE",
             "another weather coming in after (s; -1 not within the wait) -1\n",
             "6. after the release, SetActive(false, false):",
             "s: combat state 1, target none, drawn False, weapon none, distance 1",
