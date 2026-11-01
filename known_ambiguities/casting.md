@@ -146,13 +146,16 @@ hands' casting events.
   `WardPower`) and telekinesis by its archetype, both self-delivered
   concentration spells in the records. The records carry no casting
   animation, and how the game picks isn't published.
-- **An empty hand beside a spell** is a spell's (9) to the graph, as both
-  hands' types: only the left hand's spell and staff states
-  (`1HM_Readied_BehaviorGraph`, its start bound to `iLeftHandType`) reach
-  the magic behaviour, so a spell in the right hand alone would otherwise
-  have none. `test-mod autotest2` read 9 with spells in both hands; a spell
-  in one hand alone wasn't measured. An empty hand beside a staff is a
-  staff's (8) the same way (`staffs.md`).
+- **An empty hand beside a spell** stays empty (0) to the graph. Skyrim SE
+  (`test-mod autotest21`): Flames in the right hand alone gave
+  `GetEquippedItemType` 0 / 9 and graph `iLeftHandType` 0, `iRightHandType`
+  9, sheathed and drawn. Only the left hand's spell states
+  (`1HM_Readied_BehaviorGraph`, its start bound to `iLeftHandType`) reach the
+  magic behaviour in the graph we read, so how the game animates a
+  right-hand-only spell is open. Until then such a cast plays as with no
+  casting state. An empty hand beside a staff is still given the staff's
+  (8), our choice (`staffs.md`); the reason we had for it (the same as for
+  spells) no longer holds.
 - **Hands the graph has no casting for**: a spell beside a weapon, shield or
   torch (`iLeftHandType` 1 to 7, 10 to 12) leaves the graph outside the
   magic behaviour; the graph refusing the start, the spell is cast as with

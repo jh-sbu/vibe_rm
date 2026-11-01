@@ -288,13 +288,14 @@ pub(crate) fn hand_graph_vars(
             .unwrap_or(1.0)
             * speed_mults[h]
     };
-    // An empty hand beside a spell is a spell's to the graph, beside a staff
-    // a staff's: only the left hand's spell and staff states reach the magic
-    // behaviour (`known_ambiguities/casting.md`).
+    // An empty hand beside a spell stays empty (0) to the graph (Skyrim SE,
+    // autotest21: Flames in the right hand alone gave iLeftHandType 0,
+    // sheathed and drawn). Beside a staff it is a staff's, our choice
+    // (`known_ambiguities/casting.md`).
     let (mut right, mut left) = (inv.hand(lo, false), inv.hand(lo, true));
     match (right, left) {
-        (h @ (HandType::Spell | HandType::Staff), HandType::Empty) => left = h,
-        (HandType::Empty, h @ (HandType::Spell | HandType::Staff)) => right = h,
+        (HandType::Staff, HandType::Empty) => left = HandType::Staff,
+        (HandType::Empty, HandType::Staff) => right = HandType::Staff,
         _ => {}
     }
     [
