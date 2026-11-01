@@ -21,7 +21,7 @@
 //! `SFGT` (scene force-greet completion markers),
 //! `RLSP` (rolled leveled spell-list results),
 //! `WSTA` (ward-hit outcomes and their remaining `IsWardState` hold),
-//! `DETH` (killers and times of death), `STPT` (stealth-point reservoirs and
+//! `DETH` (killers and times of death), `DCNT` (deaths by actor base), `STPT` (stealth-point reservoirs and
 //! regeneration delays), `COWN` (the owners of dropped stolen items), `ORIG`
 //! (world-created references' initial transforms), and `VM` / `VMAR`
 //! (`super::vm`: the Papyrus VM) and `MBXW` (message boxes and supported
@@ -140,6 +140,7 @@ pub struct Snapshot {
     pub alerted: HashSet<FormId>,
     pub dead: HashMap<FormId, (Place, Vec3)>,
     pub deaths: HashMap<FormId, crate::world_state::Death>,
+    pub dead_counts: HashMap<FormId, u32>,
     pub stealth_points: HashMap<FormId, (f32, f32)>,
     pub open_doors: HashSet<FormId>,
     pub actor_open_doors: HashSet<FormId>,
@@ -572,6 +573,7 @@ impl Snapshot {
             alerted: ws.alerted.clone(),
             dead: ws.dead.clone(),
             deaths: ws.deaths.clone(),
+            dead_counts: ws.dead_counts.clone(),
             stealth_points: e.detection.saved_stealth_points(),
             open_doors: ws.open_doors.clone(),
             actor_open_doors: ws.actor_open_doors.clone(),
@@ -1041,6 +1043,14 @@ impl Snapshot {
             w.f64(death.at);
         }
         file.add(b"DETH", w.0);
+
+        let mut w = Writer::default();
+        w.len(self.dead_counts.len());
+        for (base, n) in sorted(&self.dead_counts) {
+            w.form(base);
+            w.u32(*n);
+        }
+        file.add(b"DCNT", w.0);
 
         // Stealth reservoirs are optional so older saves restore as empty.
         let mut w = Writer::default();
@@ -2142,6 +2152,16 @@ impl Snapshot {
             }
             r.finish()?;
         }
+        if let Some(data) = file.section(b"DCNT") {
+            let mut r = Reader::new(data);
+            for _ in 0..r.count(8)? {
+                let base = r.form()?;
+                if s.dead_counts.insert(base, r.u32()?).is_some() {
+                    return Err(Corrupt("duplicate dead count".into()));
+                }
+            }
+            r.finish()?;
+        }
         if let Some(data) = file.section(b"STPT") {
             let mut r = Reader::new(data);
             for _ in 0..r.count(12)? {
@@ -2414,6 +2434,7 @@ impl Snapshot {
         ws.alerted = self.alerted;
         ws.dead = self.dead;
         ws.deaths = self.deaths;
+        ws.dead_counts = self.dead_counts;
         ws.open_doors = self.open_doors;
         ws.actor_open_doors = self.actor_open_doors;
         ws.body_poses = self.body_poses;

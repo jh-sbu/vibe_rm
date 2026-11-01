@@ -921,7 +921,7 @@ fn batch04_inventory_totals_and_worn_queries() {
             FormId(0x800),
             &[]
         ),
-        Value::Int(25)
+        Value::Int(2)
     );
     assert_eq!(
         call(
@@ -1054,10 +1054,11 @@ fn batch05_actor_classification_package_dialogue_and_scene() {
         call(&mut e, "actor", "isoverencumbered", FormId(0x800), &[]),
         Value::Bool(false)
     );
+    // Never for an NPC (Skyrim SE, autotest21).
     e.inventory_mut(FormId(0x800)).add(FormId(0x840), 10000);
     assert_eq!(
         call(&mut e, "actor", "isoverencumbered", FormId(0x800), &[]),
-        Value::Bool(true)
+        Value::Bool(false)
     );
     assert_eq!(
         call(&mut e, "actor", "getcurrentpackage", FormId(0x800), &[]),
@@ -1283,12 +1284,19 @@ fn batch07_form_value_deaths_and_info_owner() {
         call(&mut e, "actorbase", "getdeadcount", FormId(0x810), &[]),
         Value::Int(1)
     );
-    e.world_state.dead.insert(
-        FormId(0x800),
-        (
-            crate::ai::schedule::Place::Interior(FormId(0x870)),
-            glam::Vec3::ZERO,
-        ),
+    // Deaths in play count once each and stay counted.
+    *e.world_state.dead_counts.entry(FormId(0x810)).or_default() += 2;
+    assert_eq!(
+        call(&mut e, "actorbase", "getdeadcount", FormId(0x810), &[]),
+        Value::Int(3)
+    );
+    // The placed dead one killed again in play counts as that death only.
+    e.world_state.deaths.insert(
+        FormId(0x801),
+        crate::world_state::Death {
+            killer: None,
+            at: 0.0,
+        },
     );
     assert_eq!(
         call(&mut e, "actorbase", "getdeadcount", FormId(0x810), &[]),

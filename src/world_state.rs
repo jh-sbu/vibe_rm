@@ -25,6 +25,9 @@ pub struct WorldState {
     /// Actors killed in play (`kill_actor_by`): who dealt the killing blow and
     /// when (saved in `DETH`; older saves load without them).
     pub deaths: HashMap<FormId, Death>,
+    /// Deaths in play by actor base, never lowered (`GetDeadCount`; saved in
+    /// `DCNT`).
+    pub dead_counts: HashMap<FormId, u32>,
     /// Animated doors the player left open.
     pub open_doors: std::collections::HashSet<FormId>,
     /// Animated doors an actor opened and was still holding open when its cell

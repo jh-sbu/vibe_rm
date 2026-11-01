@@ -33,11 +33,11 @@ Malformed parent cycles terminate at the first repeated location.
 
 ## Batch 4
 
-GetAllItemsCount sums copies rather than distinct base forms. The public wording
-is not precise about that distinction, quest items, unplayable items or gold.
-We count all positive inventory quantities; IsContainerEmpty uses the same rule.
-WornHasKeyword includes every equipped item in the runtime equipment list; exact
-hand-held weapon and hidden-skin inclusion in Skyrim remains unverified.
+GetAllItemsCount counts distinct items, not copies (Skyrim SE, autotest21: 10 gold
+counted 1, then 3 with 3 swords and 2 ingots added). Quest items, unplayable items
+and gold are counted like any other: unverified. IsContainerEmpty uses the same rule.
+WornHasKeyword includes every equipped item in the runtime equipment list. A drawn
+sword counts (Skyrim SE, autotest21); hidden-skin inclusion remains unverified.
 
 ## Batch 5
 
@@ -46,8 +46,9 @@ unloaded actors report the schedule selection. Skyrim's timing and interrupt
 package reporting are unverified. GetDialogueTarget uses the scene's explicit
 headtracking target while speaking; headtracking and dialogue listeners need not
 coincide in all scenes. Implicit scene listeners, idle pauses between lines and
-non-scene ambient dialogue are unresolved and return None. Encumbrance uses our
-existing NPC capacity calculation, whose precise Skyrim enforcement is unverified.
+non-scene ambient dialogue are unresolved and return None. `IsOverEncumbered` is
+False for NPCs whatever they carry (Skyrim SE, autotest21: 39 against a carry
+weight of 0, and 9 against 8.9). For the player it uses our capacity calculation.
 
 ## Batch 6
 
@@ -61,10 +62,10 @@ and inventory-held objects' worldspace inheritance remain unresolved.
 
 ## Batch 7
 
-GetDeadCount uses actors currently dead (including placed Starts Dead). Whether
-Skyrim instead maintains a cumulative counter across respawn, resurrection or
-cleanup is unclear from the public descriptions. Deleted created actors are no
-longer enumerated. Leveled actor bases follow our existing base resolver.
+GetDeadCount is cumulative (Skyrim SE, autotest21): 1 when one was killed, still 1
+after Resurrect, 2 when it was killed again, and still 2 after Delete. We count
+deaths in play by base (saved in `DCNT`). Placed Starts Dead references never
+killed in play also count, which is our choice and unverified. Leveled actor bases follow our existing base resolver.
 GetGoldValue uses the existing inventory parser's stored values; dynamically
 calculated potion values and non-carryable light values remain unverified.
 Conflicting INFO group membership across plugins and duplicate keyword editor

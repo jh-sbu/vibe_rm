@@ -459,27 +459,24 @@ pub fn call(
             me.and_then(|f| crate::world::inventory::item_info(&e.lo, f))
                 .map_or(-1, |item| item.value),
         )),
+        // Every death of the base so far (Skyrim SE, autotest21: resurrecting
+        // or deleting one doesn't lower it), plus placed "starts dead" ones
+        // never killed in play.
         ("actorbase", "getdeadcount") => {
             let count = me.map_or(0, |base| {
-                let mut refs: std::collections::HashSet<_> =
-                    e.lo.ids_of_type(b"ACHR").iter().copied().collect();
-                refs.extend(
-                    e.created_refs
-                        .refs
+                let killed = e.world_state.dead_counts.get(&base).copied().unwrap_or(0) as usize;
+                let placed_dead =
+                    e.lo.ids_of_type(b"ACHR")
                         .iter()
-                        .filter(|(_, c)| c.actor)
-                        .map(|(&r, _)| r),
-                );
-                refs.into_iter()
-                    .filter(|&r| {
-                        e.base_of(r) == Some(base)
-                            && (e.is_dead(r)
-                                || (e.actor_ref(r).is_none()
-                                    && e.lo.get(r).is_some_and(|rec| {
-                                        rec.flags() & esp::record_flags::STARTS_DEAD != 0
-                                    })))
-                    })
-                    .count()
+                        .filter(|&&r| {
+                            !e.world_state.deaths.contains_key(&r)
+                                && e.base_of(r) == Some(base)
+                                && e.lo.get(r).is_some_and(|rec| {
+                                    rec.flags() & esp::record_flags::STARTS_DEAD != 0
+                                })
+                        })
+                        .count();
+                killed + placed_dead
             });
             v(Value::Int(count.min(i32::MAX as usize) as i32))
         }
@@ -588,11 +585,15 @@ pub fn call(
             none()
         }
         ("objectreference", "getallitemscount") | ("objectreference", "iscontainerempty") => {
+            // Distinct items, not copies (Skyrim SE, autotest21: 10 gold count
+            // 1; with 3 swords and 2 ingots, 3).
             let count = me.map_or(0i32, |r| {
                 e.inventory_mut(r)
                     .items
                     .iter()
-                    .fold(0i32, |sum, (_, n)| sum.saturating_add((*n).max(0)))
+                    .filter(|(_, n)| *n > 0)
+                    .count()
+                    .min(i32::MAX as usize) as i32
             });
             v(if func == "iscontainerempty" {
                 Value::Bool(count == 0)
@@ -623,8 +624,13 @@ pub fn call(
             me.and_then(|r| e.race_of(r))
                 .is_some_and(|race| e.race_is_child(race)),
         )),
+        // False for NPCs whatever they carry (Skyrim SE, autotest21: one with
+        // 39 against a carry weight of 0).
         ("actor", "isoverencumbered") => {
             let over = me.is_some_and(|r| {
+                if r != crate::engine::PLAYER_REF {
+                    return false;
+                }
                 e.inventory_mut(r);
                 !e.can_carry_more(r, 0.0)
             });

@@ -3679,6 +3679,9 @@ impl Engine {
             self.world_state
                 .deaths
                 .insert(actor, crate::world_state::Death { killer, at });
+            if let Some(base) = self.base_of(actor) {
+                *self.world_state.dead_counts.entry(base).or_default() += 1;
+            }
             let k = killer.map_or(papyrus::Value::None, |k| self.object_value(k));
             self.send_script_event(actor, "OnDying", vec![k.clone()]);
             self.send_script_event(actor, "OnDeath", vec![k]);
