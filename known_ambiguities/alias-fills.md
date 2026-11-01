@@ -57,8 +57,9 @@ Alias Tab* and UESP *Mod File Format/QUST* and */LCTN*.
   Papyrus `PlaceAtMe` / `PlaceActorAtMe` and console `placeatme` make them too.
 - Created references are cleaned up when their quest stops or its aliases are
   filled again: items made in a container (not the player's) are taken out of
-  it, objects made in the world are disabled and forgotten. Ones the player
-  has (made in their inventory, or picked up) stay.
+  it. Objects made in the world stay when the quest stops (as in the game,
+  below); a refill of a still-running quest disables and forgets them. Ones
+  the player has (made in their inventory, or picked up) stay.
 
 ## Confirmed in the game (`test-mod autotest4`, 2026-10-13)
 
@@ -78,14 +79,19 @@ quest added to a save: unique to an NPC whose one reference isn't flagged
 persistent (in an unloaded interior, in memory and moving by its package):
 empty. Forced to such a reference: filled.
 
+`test-mod autotest22` (2026-11-01), optional aliases created at the player
+(an actor, and an iron sword in the world): after `Clear` on both aliases,
+`Stop`, a new `Start` (new references), `CompleteQuest` (the quest kept
+running) and `Stop` again, every created reference was neither disabled nor
+deleted, its 3D still loaded, 2 s after each step.
+
 ## Open questions
 
-- Clean-up (unconfirmed): no public source we could reach (CommonLibSSE's alias flags, the
-  data) says what is deleted and when; the cases are our choice. Actors
-  are kept (a created follower or quest giver vanishing on `Stop` would be
-  worse than one lingering), the player's items too. Whether the game also
-  deletes them when the alias is cleared by script (`Clear`), or when the
-  quest completes rather than stops, isn't known.
+- Clean-up (unconfirmed beyond the reading above): nothing is removed at
+  once on `Clear`, `Stop` or `CompleteQuest`. Whether created references go
+  later (when their cell unloads or resets), and what happens to items
+  created in a container other than the player's, isn't known; taking those
+  out on stop is our choice.
 - What `ALNT` other than 0 would mean, and how far "near" reaches.
 - The create level (`ALCL`) is ignored; whether it changes a leveled actor's
   pick isn't known.

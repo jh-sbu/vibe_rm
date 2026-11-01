@@ -90,7 +90,8 @@ pub struct AliasSpec {
 /// What happens to a reference an alias created when its quest stops or starts over.
 #[derive(Debug, PartialEq)]
 enum CleanUp {
-    /// Left be: the player has it (carried or picked up), or it is an actor.
+    /// Left be: the player has it (carried or picked up), it is an actor, or
+    /// the quest only stopped and it lies in the world.
     Keep,
     /// An item made in another container: taken out of it.
     TakeOut(FormId),
@@ -99,11 +100,16 @@ enum CleanUp {
 }
 
 impl CleanUp {
-    fn of(c: &Created, disabled: bool) -> Self {
+    /// `stopping`: the quest stops, rather than starting over. An object it
+    /// created in the world stays then: in the game it was neither disabled
+    /// nor deleted after the alias was cleared, the quest stopped, or
+    /// `CompleteQuest` (test-mod autotest22).
+    fn of(c: &Created, disabled: bool, stopping: bool) -> Self {
         match c.container {
             _ if c.actor || disabled => Self::Keep,
             Some(PLAYER_REF) => Self::Keep,
             Some(container) => Self::TakeOut(container),
+            None if stopping => Self::Keep,
             None => Self::Remove,
         }
     }
@@ -564,9 +570,10 @@ impl Engine {
     }
 
     /// Clear away what quest `q`'s aliases created (`ALCO`): items made in a
-    /// container leave it, objects lying about are gone. What the player took or
-    /// was given, and actors, stay.
-    pub(crate) fn clean_up_alias_creations(&mut self, q: FormId) {
+    /// container leave it, objects lying about are gone when the quest starts
+    /// over (not when it only stops: `stopping`). What the player took or was
+    /// given, and actors, stay.
+    pub(crate) fn clean_up_alias_creations(&mut self, q: FormId, stopping: bool) {
         let specs = self.alias_specs(q);
         for a in specs
             .iter()
@@ -578,7 +585,7 @@ impl Engine {
             let Some(c) = self.created(r).cloned() else {
                 continue;
             };
-            match CleanUp::of(&c, self.is_disabled(r)) {
+            match CleanUp::of(&c, self.is_disabled(r), stopping) {
                 CleanUp::Keep => continue,
                 CleanUp::TakeOut(container) => {
                     let inv = self.inventory_mut(container);
@@ -597,7 +604,7 @@ impl Engine {
     /// Fill quest `q`'s aliases in order. False (and nothing filled) when a
     /// required alias finds nothing.
     pub fn fill_quest_aliases(&mut self, q: FormId) -> bool {
-        self.clean_up_alias_creations(q);
+        self.clean_up_alias_creations(q, false);
         let specs = self.alias_specs(q);
         let reserved = self.reserved_refs(q);
         let previous_aliases = self
@@ -686,17 +693,22 @@ mod tests {
     #[test]
     fn creations_are_cleaned_up_unless_the_player_has_them() {
         let chest = FormId(0x1234);
-        assert_eq!(CleanUp::of(&made(None, false), false), CleanUp::Remove);
         assert_eq!(
-            CleanUp::of(&made(Some(chest), false), false),
+            CleanUp::of(&made(None, false), false, false),
+            CleanUp::Remove
+        );
+        // Stopping leaves objects in the world (test-mod autotest22).
+        assert_eq!(CleanUp::of(&made(None, false), false, true), CleanUp::Keep);
+        assert_eq!(
+            CleanUp::of(&made(Some(chest), false), false, true),
             CleanUp::TakeOut(chest)
         );
         // Given to the player, picked up, or an actor: kept.
         assert_eq!(
-            CleanUp::of(&made(Some(PLAYER_REF), false), false),
+            CleanUp::of(&made(Some(PLAYER_REF), false), false, false),
             CleanUp::Keep
         );
-        assert_eq!(CleanUp::of(&made(None, false), true), CleanUp::Keep);
-        assert_eq!(CleanUp::of(&made(None, true), false), CleanUp::Keep);
+        assert_eq!(CleanUp::of(&made(None, false), true, false), CleanUp::Keep);
+        assert_eq!(CleanUp::of(&made(None, true), false, false), CleanUp::Keep);
     }
 }
