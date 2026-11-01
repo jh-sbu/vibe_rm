@@ -65,7 +65,7 @@ impl Value {
         match self {
             Value::Bool(b) => *b as i32,
             Value::Int(i) => *i,
-            Value::Float(f) => *f as i32,
+            Value::Float(f) => float_to_int(*f),
             Value::String(s) => s
                 .trim()
                 .parse::<i32>()
@@ -100,12 +100,31 @@ impl Value {
     }
 }
 
+/// A float cast to Int: truncated, and `i32::MIN` when it doesn't fit (or is
+/// NaN), as x86's conversion gives: SE cast 4e9 to -2147483648 (autotest21).
+fn float_to_int(f: f32) -> i32 {
+    if f.is_finite() && f > i32::MIN as f32 - 1.0 && f < i32::MAX as f32 {
+        f as i32
+    } else {
+        i32::MIN
+    }
+}
+
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Value::None => write!(f, "None"),
-            Value::Bool(b) => write!(f, "{}", if *b { "True" } else { "False" }),
+            // As Skyrim SE casts them (autotest21): "TRUE" but "False".
+            Value::Bool(b) => write!(f, "{}", if *b { "TRUE" } else { "False" }),
             Value::Int(i) => write!(f, "{i}"),
+            // Six decimals, and the C runtime's names for the rest: SE printed
+            // `Math.sqrt(-1)` as "-nan(ind)" (autotest21).
+            Value::Float(x) if x.is_nan() => {
+                write!(f, "{}", if x.is_sign_negative() { "-nan(ind)" } else { "nan" })
+            }
+            Value::Float(x) if x.is_infinite() => {
+                write!(f, "{}", if *x < 0.0 { "-inf" } else { "inf" })
+            }
             Value::Float(x) => write!(f, "{x:.6}"),
             Value::String(s) => write!(f, "{s}"),
             Value::Object(ObjectId::Form(id), c) => write!(f, "[{c} <{id:08X}>]"),

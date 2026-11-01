@@ -1538,7 +1538,7 @@ EndEvent
         assert_eq!(
             host.traces,
             vec![
-                "a1 1.500000! True two 42 len 3 at 1 d 3.500000! id 20 1 1.500000! 1 -2 or"
+                "a1 1.500000! TRUE two 42 len 3 at 1 d 3.500000! id 20 1 1.500000! 1 -2 or"
                     .to_owned()
             ],
             "{:?}",
