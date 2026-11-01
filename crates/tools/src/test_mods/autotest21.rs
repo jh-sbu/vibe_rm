@@ -40,6 +40,13 @@
 //! --loose tests/assets --cell Riverwood --screenshot <png> --wait 220000`,
 //! traces at `RUST_LOG=vibe_rm::script::natives=debug`) runs every test to
 //! the end; its readings are ours, not the game's.
+//!
+//! Run in Skyrim SE on 2026-11-01: what each test showed, and which were
+//! test faults, is in `research/autotest21.md`. Every probe was void: the
+//! probe effect's actor value is still the potion's damage modifier (135;
+//! autotest5 set it to `OneHanded`), and `HasMagicEffect` counts an effect
+//! whose condition fails. Created aliases created nothing, and our caster
+//! NPCs never cast.
 
 use std::collections::BTreeMap;
 

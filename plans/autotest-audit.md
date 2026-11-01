@@ -57,6 +57,17 @@ behind the A* items.
 in one batch: 192 of the 536 automatic items, by file, with the test
 that asks each. Items not listed are still open for a later batch.
 
+**Run 2026-11-01** (`research/autotest21.md`): about 45 tests settled their
+items. Every condition probe was void: the probe effect raised OneHanded's
+damage modifier, and `HasMagicEffect` reports an effect whose condition
+fails. So status-, comparison-, geometry-, death- and variable-condition
+items, combat-conditions and magic's recheck interval stay open. Also open:
+created aliases (nothing was created), our NPC casters (never cast: casting,
+magic-menu, npc-healing, wards, staffs), fights that ended early, and the
+smaller faults listed at the end of the note. The settled readings that
+differ from our choices are listed in `plans/ROADMAP.md` (autotest21, to
+apply).
+
 | File | Items | Tests |
 | --- | ---: | --- |
 | actor-natives | 4 | ActorNatives (leveled traits race, `GetNthLinkedRef` 0 / -1 / keyword-only link), EnableAI |

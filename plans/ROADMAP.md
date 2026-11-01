@@ -1742,6 +1742,32 @@ game each piece unlocks.
   same Ignore External Damage gate; explosions are not done.
 
 ## Next
+**autotest21, to apply** (`research/autotest21.md`, run 2026-11-01): Skyrim SE
+settled these against our recorded choices. Each needs its engine change and
+its `known_ambiguities/` entry rewritten:
+- Location population (`GetRefTypeAliveCount`, `HasRefType`) doesn't recurse
+  into child locations.
+- Inverse trig out of [-1, 1] returns 0, not NaN.
+- `GetAllItemsCount` counts distinct forms.
+- `IsOverEncumbered` is False for NPCs whatever they carry.
+- `GetWidth` / `GetLength` / `GetHeight` ignore scale (and rotation); actors'
+  height reads 128.
+- `GetDeadCount` is cumulative (resurrection and deletion don't lower it).
+- `SetOpen` raises `OnOpen` / `OnClose`.
+- `SetDestroyed` changes no stage and sends no stage event; it reloads the 3D.
+- Resurrect returns the actor to its base inventory.
+- `ObjectReference.Reset` leaves a disabled reference disabled.
+- Khayla-like non-auto-calc NPCs have base health 50, not race plus offset.
+- An empty hand beside a spell is 0 to the graph, not 9.
+
+Readings to compare before deciding: the rest marked "compare" in the note
+(destruction stages and overkill, faction expulsion's rank -2, outfits
+removing non-outfit copies, enchanted blows' charge, weather speed law, fast
+travel's 14,800 units an hour, map marker reveal at 2000–4000, Slow Time at
+0.5×, kill and use statistics, and others). The test faults (all condition
+probes, created aliases, our NPC casters, early-ending fights) need a
+follow-up batch, listed at the end of the note.
+
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done).
    The bounded work of `plans/animation-unblocked.md` is complete within its
    researched scope; autotest20 is deferred by the user.
