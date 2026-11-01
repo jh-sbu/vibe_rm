@@ -410,10 +410,11 @@ object one).
   (sprinting included), and for a loaded NPC moving faster than the midpoint
   of its movement type's walk and run speeds, the rule footsteps use. Whether
   the game reads the graph's speed or the movement input is not documented.
-- `GetUnconscious` is true while the actor is bleeding out. Skyrim's
-  unconscious state (the old Oblivion flag, also used by knock-out) has no
-  public description beyond the one line, and no other source of it exists
-  here. Nothing in vanilla's conditions calls either function.
+- `GetUnconscious` is the flag Papyrus `Actor.SetUnconscious` sets. In the
+  game (`test-mod autotest22`) it was 1 after `SetUnconscious(true)` and 0
+  for an essential NPC bleeding out. What the state does to the actor (it
+  collapses, in the game's knock-outs) isn't modelled here, and the flag
+  isn't saved yet. Nothing in vanilla's conditions calls either function.
 
 ## IsRidingMount
 

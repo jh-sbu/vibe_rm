@@ -849,7 +849,7 @@ fn cell_parameter_torch_and_cannibal_conditions() {
 
 #[test]
 #[ignore = "needs a headless GPU adapter; synthetic records only"]
-fn is_running_follows_the_players_gait_and_nobody_is_unconscious_standing() {
+fn is_running_follows_the_players_gait_and_unconscious_the_flag() {
     let (_f, mut e) = fixture();
     assert!(is(&e, PLAYER_REF, 287, 0, 0.0)); // IsRunning
     e.player.moving = true;
@@ -857,5 +857,8 @@ fn is_running_follows_the_players_gait_and_nobody_is_unconscious_standing() {
     assert!(is(&e, PLAYER_REF, 287, 0, 1.0));
     e.player.moving = false;
     assert!(is(&e, PLAYER_REF, 287, 0, 0.0));
-    assert!(is(&e, HUMAN_REF, 242, 0, 0.0)); // GetUnconscious
+    // GetUnconscious: `SetUnconscious`'s flag (test-mod autotest22).
+    assert!(is(&e, HUMAN_REF, 242, 0, 0.0));
+    e.world_state.unconscious.insert(HUMAN_REF);
+    assert!(is(&e, HUMAN_REF, 242, 0, 1.0));
 }

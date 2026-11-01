@@ -2029,6 +2029,16 @@ pub fn call(
             }
             none()
         }
+        ("actor", "setunconscious") => {
+            if let Some(r) = me {
+                if args.first().is_none_or(|a| a.as_bool()) {
+                    e.world_state.unconscious.insert(r);
+                } else {
+                    e.world_state.unconscious.remove(&r);
+                }
+            }
+            none()
+        }
         ("actor", "setrestrained") | ("actor", "setdontmove") => none(),
         ("actor", "getsitstate") | ("actor", "getsleepstate") => {
             let kind = if func == "getsitstate" {

@@ -20,6 +20,9 @@ pub struct WorldState {
     /// Explicit Papyrus `SetAlert` flags, independent of loaded actor runtimes.
     /// Automatic detection-state changes are not mapped to this flag yet.
     pub alerted: std::collections::HashSet<FormId>,
+    /// Papyrus `SetUnconscious` flags (`GetUnconscious`). Only the flag: the
+    /// state's effect on the actor isn't modelled, and it isn't saved yet.
+    pub unconscious: std::collections::HashSet<FormId>,
     /// Dead actors and where their bodies lie.
     pub dead: HashMap<FormId, (Place, Vec3)>,
     /// Actors killed in play (`kill_actor_by`): who dealt the killing blow and

@@ -501,3 +501,42 @@ fn actor_base_outfit_dresses_actors_that_were_never_loaded() {
     assert!(inv.is_equipped(ROBE) && inv.is_equipped(BOOTS));
     assert_eq!(inv.count(CUIRASS), 0);
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn set_unconscious_is_what_get_unconscious_reads() {
+    let (_f, mut e) = fixture("unconscious");
+    place(&mut e, ACTOR, NPC);
+    let unconscious = |e: &Engine| {
+        let c = crate::condition::Condition {
+            func: 242,
+            value: 1.0,
+            ..Default::default()
+        };
+        crate::condition::evaluate_one(
+            e,
+            &c,
+            crate::condition::Context {
+                subject: Some(ACTOR),
+                ..Default::default()
+            },
+        )
+    };
+    assert!(!unconscious(&e));
+    call(
+        &mut e,
+        "actor",
+        "setunconscious",
+        ACTOR,
+        &[Value::Bool(true)],
+    );
+    assert!(unconscious(&e));
+    call(
+        &mut e,
+        "actor",
+        "setunconscious",
+        ACTOR,
+        &[Value::Bool(false)],
+    );
+    assert!(!unconscious(&e));
+}

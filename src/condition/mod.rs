@@ -1210,8 +1210,9 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
                 e.actor_running(s)
             }
         })),
-        // GetUnconscious: bleeding out (`known_ambiguities/death.md`).
-        242 => b(subject.is_some_and(|s| e.is_bleeding_out(s))),
+        // GetUnconscious: `SetUnconscious`'s flag, not bleeding out (test-mod
+        // autotest22).
+        242 => b(subject.is_some_and(|s| e.world_state.unconscious.contains(&s))),
         // Nor flees, attacks, staggers, recoils or is ridden.
         329 => b(subject.is_some_and(|s| e.is_fleeing(s))), // IsFleeing
         477 => Some(subject.map_or(0.0, |s| e.threat_ratio(s, p1))), // GetThreatRatio
