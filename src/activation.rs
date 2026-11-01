@@ -127,8 +127,12 @@ impl Engine {
     /// activation is blocked its children are activated in turn.
     pub(crate) fn activate_ref(&mut self, target: FormId, by: Option<FormId>, default_only: bool) {
         // Scripts explicitly activating as the player also interrupt it
-        // (USKP's TGDoorCloserTriggerScript fix documents this behavior).
-        if by == Some(crate::engine::PLAYER_REF) && self.reference_of(target).is_some() {
+        // (USKP's TGDoorCloserTriggerScript fix documents this behavior), but
+        // not on something locked (test-mod autotest22: a key-only chest).
+        if by == Some(crate::engine::PLAYER_REF)
+            && self.reference_of(target).is_some()
+            && !self.is_locked(target)
+        {
             self.break_invisibility(crate::engine::PLAYER_REF);
         }
         if !default_only {

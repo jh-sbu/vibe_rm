@@ -1920,6 +1920,9 @@ impl Engine {
         if actor == crate::engine::PLAYER_REF {
             self.learn_ingredient_effects(item);
         }
+        // Drinking a potion or eating ends invisibility as a cast does
+        // (test-mod autotest21 and autotest22); a potion of it renews it.
+        self.casting_breaks_invisibility(actor, &m);
         self.apply_item(item, Some(actor), actor);
         Ok(())
     }

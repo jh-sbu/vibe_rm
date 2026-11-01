@@ -61,8 +61,15 @@ made, and the tests generate their own records without game assets.
 - Player activation interrupts after disabled-control and scene-block checks
   but before script dispatch/default activation. No target or a disabled
   Activate control leaves it intact. Scripts' explicit `Activate(player)`
-  interrupts when the target reference exists; activation as someone else
-  does not reveal the player.
+  interrupts when the target reference exists and isn't locked; activation
+  as someone else does not reveal the player. In the game (`test-mod
+  autotest22`) `Activate(player)` on a locked key-only chest left the player
+  invisible. Whether player activation of a locked door or chest (the lock
+  message, or a lockpicking start) interrupts is untested; we interrupt.
+- Drinking a potion or eating food or an ingredient interrupts, as a cast of
+  the item would (a self potion with an invisibility effect renews it). The
+  game ended it for a potion (`test-mod autotest21`) and a sweet roll
+  (`autotest22`), both used by `EquipItem`; ingredients are untested.
 
 ## Remaining ambiguities and scope
 

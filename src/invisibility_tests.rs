@@ -20,6 +20,8 @@ const AMMO: FormId = FormId(0x821);
 const NPC: FormId = FormId(0x830);
 const ACTOR: FormId = FormId(0x831);
 const ACTIVATE: FormId = FormId(0x841);
+/// Food with an ordinary effect.
+const FOOD: FormId = FormId(0x822);
 
 struct Fixture(std::path::PathBuf);
 
@@ -93,6 +95,18 @@ fn fixture() -> (Fixture, Engine) {
         Node::top(
             b"AMMO",
             vec![RecordBuilder::new(b"AMMO", AMMO).field(b"DATA", &ammo_data)],
+        ),
+        Node::top(
+            b"ALCH",
+            vec![{
+                let mut efit = [0; 12];
+                efit[..4].copy_from_slice(&7.0f32.to_le_bytes());
+                efit[8..12].copy_from_slice(&30u32.to_le_bytes());
+                RecordBuilder::new(b"ALCH", FOOD)
+                    .field(b"ENIT", &[0; 20])
+                    .u32(b"EFID", 0x801)
+                    .field(b"EFIT", &efit)
+            }],
         ),
         Node::top(b"NPC_", vec![RecordBuilder::new(b"NPC_", NPC)]),
         Node::top(
@@ -224,7 +238,19 @@ fn casting_and_activation_end_only_the_actors_timed_invisibility() {
     cloak(&mut engine, PLAYER_REF);
     engine.activate_ref(ACTIVATE, Some(ACTOR), true);
     assert!(invisible(&engine, PLAYER_REF));
+    // A script's activation as the player of something locked: not revealed
+    // (a key-only chest in test-mod autotest22).
+    engine.scripts.locked.insert(ACTIVATE, true);
     engine.activate_ref(ACTIVATE, Some(PLAYER_REF), true);
+    assert!(invisible(&engine, PLAYER_REF));
+    engine.scripts.locked.insert(ACTIVATE, false);
+    engine.activate_ref(ACTIVATE, Some(PLAYER_REF), true);
+    assert!(!invisible(&engine, PLAYER_REF));
+
+    // Eating or drinking ends it (autotest21's potion, autotest22's sweet roll).
+    cloak(&mut engine, PLAYER_REF);
+    engine.add_item(PLAYER_REF, FOOD, 1);
+    engine.consume(PLAYER_REF, FOOD).unwrap();
     assert!(!invisible(&engine, PLAYER_REF));
 
     // Constant sources are explicitly left to the ability reconciler.
