@@ -23,15 +23,13 @@ unsupported (below).
 
 ## Unconfirmed choices
 
-- 53 reads the reference's Papyrus variable (`Vm::get_var`, which matches the bare
-  name or `::name_var`, as 629 and 630 do), on the reference named in parameter 1
-  rather than the subject; a variable the reference's scripts lack reads 0; no CIS2
-  name means the condition fails. Unconfirmed: the legacy function may read
-  Oblivion-era script locals (SCRI / SCRV), which the engine doesn't keep, and vanilla
-  never calls it, so no record shows the answer. Parameter 1 follows 630, whose
-  141 vanilla uses all run on the subject (a speaker, an actor in a scene or
-  package) and name the script's holder in parameter 1 (e.g. Delphine's "Close the
-  door." asks `MQ106DelphineBedroomTrigger`).
+- 53 is 0 whenever it names a variable (CIS2); no name means the condition
+  fails. In the game (`test-mod autotest22`), `GetScriptVariable(Alpha,
+  "Marker") == 7` failed run on another actor and on Alpha itself, while
+  Alpha's Papyrus script had `Int Marker = 7`, and a missing variable `== 0`
+  held. So it doesn't read Papyrus variables; it likely reads Oblivion-era
+  script locals (SCRI / SCRV), which Skyrim's data doesn't have. Vanilla
+  never calls it.
 - 79 stays unsupported: its variable is a number, and nothing in the record, the
   quest's VMAD, or the public sources we checked says which Papyrus variable a number
   names (`setpqv` in Skyrim:Console takes the variable's name). A mapping from quest

@@ -193,10 +193,13 @@ locations name it.
   members only when they are the victim.
 - Assault: the player's first blow on someone calm who keeps the law (see the
   Story Manager's `ASSU`). Murder: the player killing someone they assaulted.
-- `GetCrimeGold` and `GetInfamy*` with no faction on the player sum every
-  faction; with no faction on anyone else, they are 0. Infamy is the sum of
-  the rises (`mod_crime_gold`), so paying off a bounty leaves it. Not checked
-  against the game.
+- `GetInfamy*` with no faction on the player sum every faction; with no
+  faction on anyone else, they are 0. Infamy is the sum of the rises
+  (`mod_crime_gold`), so paying off a bounty leaves it (autotest21 agrees).
+  `GetCrimeGold*` with no faction (and no crime faction on the subject) are
+  0: in the game, the player owing 70 to one faction in a cell of no hold
+  didn't give 70 (`test-mod autotest22`). Whether it reads the hold the
+  player stands in is open, so we give 0.
 - Unsupported, failing whatever they are compared with: `GetCrime` (122),
   `IsPCAMurderer` (176),
   `GetPCFactionMurder` (195), `GetPCFactionAttack` (199). Unconfirmed: what

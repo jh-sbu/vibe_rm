@@ -693,7 +693,9 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         459 | 375 | 376 | 533 | 534 | 535 => {
             // GetCrimeGold (Violent / Nonviolent) and GetInfamy (all / Violent /
             // Nonviolent): the player's with the faction given, else the
-            // subject's crime faction; the player's own, all.
+            // subject's crime faction. With neither, the player's infamy is all
+            // of it, but not their crime gold: `GetCrimeGold` was 0 with 70 owed
+            // to one faction (test-mod autotest22).
             let pick = |b: crate::crime::Bounty| match c.func {
                 375 => b.violent,
                 376 => b.nonviolent,
@@ -707,7 +709,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
                 .or_else(|| subject.and_then(|s| e.crime_faction(s)));
             Some(match faction {
                 Some(f) => pick(e.bounty(f)),
-                None if subject == Some(PLAYER_REF) => {
+                None if subject == Some(PLAYER_REF) && matches!(c.func, 533..=535) => {
                     e.crime.bounties.values().map(|&b| pick(b)).sum()
                 }
                 None => 0,
@@ -792,16 +794,12 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
                     .unwrap_or(0.0),
             )
         }
-        // GetScriptVariable(reference, "name"): the reference's script variable, read
-        // like GetVMScriptVariable's; the name comes in CIS2 (see `parse_all_before`).
-        // Vanilla data never calls it (`known_ambiguities/condition-variables.md`).
+        // GetScriptVariable(reference, "name"): 0. It doesn't read Papyrus
+        // variables (test-mod autotest22: `Marker`, 7 on the reference's script,
+        // wasn't 7); the name comes in CIS2 (see `parse_all_before`).
         53 => {
-            let name = c.string_p2.as_deref()?;
-            Some(
-                e.vm.get_var(papyrus::ObjectId::Form(p1.0), name)
-                    .map(|v| v.as_float())
-                    .unwrap_or(0.0),
-            )
+            c.string_p2.as_deref()?;
+            Some(0.0)
         }
         249 => b(e
             .conversation
@@ -885,14 +883,12 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         // Menu mode: a menu that pauses the game is open. Other menu numbers
         // (Oblivion's) name no Skyrim menu here, so they are unsupported.
         36 => (c.p1 == 0).then(|| e.in_menu_mode() as u32 as f32), // MenuMode
-        // The controls the two parameters select (movement, fighting) are all
-        // disabled; none selected asks whether any control is.
+        // None of the controls the two parameters select (movement, fighting)
+        // is disabled; true with none selected. That is the reverse of the name,
+        // but what the game gives (test-mod autotest22).
         98 => {
             let d = e.disabled_controls;
-            b(match (c.p1 != 0, c.p2 != 0) {
-                (false, false) => d.any(),
-                (m, f) => (!m || d.movement) && (!f || d.fighting),
-            })
+            b(!(c.p1 != 0 && d.movement) && !(c.p2 != 0 && d.fighting))
         } // GetPlayerControlsDisabled
         // Game time moves when the world runs, and while waiting or sleeping.
         265 => b(!e.in_menu_mode() || e.waiting.is_some()), // IsTimePassing
@@ -905,15 +901,20 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         }, // IsNullPackageData
         // The subject's scale: a loaded actor's, else a placed reference's.
         24 => Some(e.ref_scale(subject?)), // GetScale
-        // Creatures are the actors whose race carries `ActorTypeCreature`.
-        64 => b(subject.is_some_and(|s| e.has_keyword(s, FormId(0x13795)))), // GetIsCreature
+        // Never: a wolf, whose race has `ActorTypeCreature`, isn't one (test-mod
+        // autotest22). Oblivion's creature records are gone.
+        64 => b(false), // GetIsCreature
         // How the subject's factions regard the actor's in combat (0 neutral, 1
         // enemy, 2 ally, 3 friend); no actor means the player.
         449 => {
             Some(e.faction_relation(subject?, if p1.is_null() { PLAYER_REF } else { p1 }) as f32)
         } // GetFactionRelation
-        // The subject's rank in the faction less the actor's (-1: not a member).
-        60 => Some((e.faction_rank(subject?, p1) - e.faction_rank(FormId(c.p2), p1)) as f32), // GetFactionRankDifference
+        // The subject's rank in the faction less the actor's, a rank below 0
+        // (not a member) counting as 0: rank 0 against -1 gave 0 (test-mod
+        // autotest22).
+        60 => Some(
+            (e.faction_rank(subject?, p1).max(0) - e.faction_rank(FormId(c.p2), p1).max(0)) as f32,
+        ), // GetFactionRankDifference
         // The animation type of the weapon in the right hand, else the left; 0
         // (hand to hand) with none.
         108 => Some(
@@ -935,11 +936,14 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
             Some(e.ref_position(t)?.z - e.ref_position(s)?.z)
         } // GetTargetHeight
         680 => Some(e.ref_position(ctx.target?)?.z - e.ref_position(subject?)?.z), // GetActivatorHeight
-        // The base value of the clothes worn; a disease from any source on the subject.
+        // The base value of the clothes worn; a disease from any source on the
+        // player (an NPC given one isn't diseased: test-mod autotest22); a
+        // torch out with the weapons drawn (held sheathed, it is out but not
+        // used: autotest22).
         41 => Some(subject.map_or(0, |s| e.clothing_value(s)) as f32), // GetClothingValue
-        39 => b(subject.is_some_and(|s| e.has_disease(s))),            // GetDisease
-        306 => b(subject.is_some_and(|s| e.torch_out(s))),             // IsActorUsingATorch
-        230 => b(e.ref_cell(FormId(c.p2)) == Some(p1)),                // GetInCellParam
+        39 => b(subject == Some(PLAYER_REF) && e.has_disease(PLAYER_REF)), // GetDisease
+        306 => b(subject.is_some_and(|s| e.torch_out(s) && e.weapon_drawn(s))), // IsActorUsingATorch
+        230 => b(e.ref_cell(FormId(c.p2)) == Some(p1)),                         // GetInCellParam
         // Combat: the combat group the subject fights in (its side of the fight,
         // the player included while it is fought) and its targets.
         709 => Some(
@@ -1698,7 +1702,15 @@ impl Engine {
         members(a)
             .into_iter()
             .flat_map(|f| theirs.iter().map(move |&g| (f, g)))
-            .map(|(f, g)| self.faction_combat_reaction(f, g))
+            // A shared faction is an ally, as combat treats it, though
+            // `GetFactionCombatReaction` of a faction towards itself is 0.
+            .map(|(f, g)| {
+                if f == g {
+                    2
+                } else {
+                    self.faction_combat_reaction(f, g)
+                }
+            })
             .max()
             .unwrap_or(0)
     }

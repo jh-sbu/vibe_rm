@@ -197,9 +197,13 @@ first faction lists towards the second: 0 neutral, 1 enemy, 2 ally, 3 friend.
 
 - Only the first faction's `XNAM` list is read; the answer need not be mutual.
   The AI's own faction test takes the strongest reaction between two lists of
-  factions in both directions of membership, which this does not.
-- A faction towards itself is an ally (2), as the AI treats shared membership;
-  a pair with no entry is neutral (0).
+  factions in both directions of membership, which this does not. The game
+  agrees (`test-mod autotest22`): Red listing Green as an enemy gave 1, and
+  Green listing nobody gave 0 back.
+- A faction towards itself is neutral (0) unless it lists itself, as a pair
+  with no entry is: the game gave 0 for a faction with no list (autotest22).
+  The AI still treats shared membership as allies, and `GetFactionRelation`
+  counts it so (below).
 - `GetFactionRelation` (449, an actor) stays unsupported: nothing public says
   what it returns.
 
@@ -271,9 +275,12 @@ first faction lists towards the second: 0 neutral, 1 enemy, 2 ally, 3 friend.
   parameter naming an Oblivion menu type is unsupported: no source maps those
   numbers to Skyrim's menus, and nothing in vanilla calls it.
 - `GetPlayerControlsDisabled` has only two parameters in the condition table:
-  movement and fighting. Selected controls must all be disabled; with none
-  selected it asks whether any control is. Whether the game ands or ors the
-  selection, and what no selection means, is not documented.
+  movement and fighting. It is true unless one of the selected controls is
+  disabled, and true with none selected: the reverse of what its name says.
+  That is the one rule fitting the game's five readings (`test-mod
+  autotest22`): with movement disabled, `(0,0)` 1, `(1,0)` 0, `(0,1)` 1;
+  with everything enabled, `(0,0)` and `(1,0)` 1. Disabled fighting wasn't
+  read; it is taken to work as movement does.
 - `IsTimePassing` is true while the world runs, and while waiting or
   sleeping (the clock advances from inside the menu). The game may treat
   other states (a scene's camera, the dialogue menu) as time not passing.
@@ -331,15 +338,19 @@ first faction lists towards the second: 0 neutral, 1 enemy, 2 ally, 3 friend.
 
 - `GetScale` is a loaded actor's scale, else a placed reference's `XSCL`
   (1 with none).
-- `GetIsCreature` is a race with `ActorTypeCreature`. Oblivion's function
-  asked for a creature record; Skyrim has none.
+- `GetIsCreature` is always false. In the game (`test-mod autotest22`) a
+  wolf wasn't one, though `WolfRace` has `ActorTypeCreature`; neither was an
+  NPC. Oblivion's function asked for a creature record, and Skyrim has none.
+  Something else might make it true, but nothing found suggests what.
 - `GetFactionRelation` is the strongest reaction (3 friend, 2 ally, 1 enemy,
   0 neutral) of any member faction of the subject towards any of the actor's,
   as combat's hostility reads them; a shared faction is an ally. Ranks below 0
   are not membership. A null actor is taken to be the player (the dialogue
   uses), where the geometry conditions take the combat target.
-- `GetFactionRankDifference` is the subject's rank less the actor's, -1 for
-  a non-member, so two non-members differ by 0.
+- `GetFactionRankDifference` is the subject's rank less the actor's, a
+  non-member (rank below 0) counting as 0. In the game (`test-mod
+  autotest22`), rank 0 against rank -1 gave 0 (only 0 matched in -3..3).
+  The function always giving 0 would fit that reading too.
 - `GetWeaponAnimType` is the animation type of the weapon in the right hand,
   else the left, 0 with none. A spell in hand is not a type here (the idles
   compare it against numbers we can't map to magic).
@@ -357,8 +368,15 @@ first faction lists towards the second: 0 neutral, 1 enemy, 2 ally, 3 friend.
   returned something other than gold value; the thresholds above (12, 1000)
   don't settle it.
 - `GetDisease` is true while any disease spell (type Disease) has an effect on
-  the subject, whatever its source.
-- `IsActorUsingATorch` is `IsTorchOut`'s test (a torch in the left hand).
+  the player, whatever its source. An NPC given Ataxia by `AddSpell` wasn't
+  diseased in the game (`test-mod autotest22`), so NPCs never are. Whether
+  that is because NPCs don't take diseases, or the condition is always 0,
+  wasn't read: the diseased player is untested. The vanilla uses all ask
+  about the player.
+- `IsActorUsingATorch` is a torch in the left hand with the weapons drawn.
+  In the game (`test-mod autotest22`), a torch held with the weapons
+  sheathed was out (`IsTorchOut` 1) but not used (0). The drawn case wasn't
+  read (the NPC sheathed again before the probe), so "drawn" is our choice.
 - `GetInCellParam(cell, reference)` is true when the reference named in the
   second parameter is in the cell; whether the game asks about the subject
   instead is unknown, and no vanilla record uses it.

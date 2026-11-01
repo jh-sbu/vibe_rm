@@ -566,8 +566,9 @@ fn get_faction_combat_reaction_reads_the_first_factions_list() {
     // Not mutual unless the other lists the first, and unlisted is neutral.
     assert!(reaction(HUNTERS, WOLVES, 0.0));
     assert!(reaction(WOLVES, GUILD, 0.0));
-    // A faction is its own ally.
-    assert!(reaction(HUNTERS, HUNTERS, 2.0));
+    // A faction towards itself is neutral unless it lists itself (test-mod
+    // autotest22).
+    assert!(reaction(HUNTERS, HUNTERS, 0.0));
 }
 
 /// Whether `func(param, second) == value` holds for the player, in a quest's
@@ -680,20 +681,22 @@ fn menu_mode_and_time_passing_follow_the_pausing_menus() {
 
 #[test]
 #[ignore = "needs a headless GPU adapter; synthetic records only"]
-fn get_player_controls_disabled_asks_about_the_selected_controls() {
+fn get_player_controls_disabled_is_true_unless_a_selected_control_is() {
     let (_f, mut e) = fixture();
     let asks =
         |e: &Engine, movement, fighting, want| is2(e, PLAYER_REF, 98, movement, fighting, want);
-    assert!(asks(&e, 0, 0, 0.0));
-    assert!(asks(&e, 1, 0, 0.0));
-    e.disabled_controls.movement = true;
+    // test-mod autotest22's readings, enabled and with movement disabled.
     assert!(asks(&e, 0, 0, 1.0));
     assert!(asks(&e, 1, 0, 1.0));
-    assert!(asks(&e, 0, 1, 0.0));
-    // Both selected: both must be disabled.
+    e.disabled_controls.movement = true;
+    assert!(asks(&e, 0, 0, 1.0));
+    assert!(asks(&e, 1, 0, 0.0));
+    assert!(asks(&e, 0, 1, 1.0));
     assert!(asks(&e, 1, 1, 0.0));
+    e.disabled_controls.movement = false;
     e.disabled_controls.fighting = true;
-    assert!(asks(&e, 1, 1, 1.0));
+    assert!(asks(&e, 1, 0, 1.0));
+    assert!(asks(&e, 0, 1, 0.0));
 }
 
 #[test]
@@ -723,9 +726,10 @@ fn is_towards(e: &Engine, subject: FormId, target: FormId, func: u16, value: f32
 
 #[test]
 #[ignore = "needs a headless GPU adapter; synthetic records only"]
-fn creatures_and_scale_come_from_the_race_and_the_reference() {
+fn nobody_is_a_creature_and_scale_comes_from_the_reference() {
     let (_f, e) = fixture();
-    assert!(is(&e, BEAST_REF, 64, 0, 1.0)); // GetIsCreature
+    // GetIsCreature: not even an `ActorTypeCreature` race (test-mod autotest22).
+    assert!(is(&e, BEAST_REF, 64, 0, 0.0));
     assert!(is(&e, HUMAN_REF, 64, 0, 0.0));
     // A placed reference's scale; an unscaled one is 1.
     assert!(is(&e, PLAIN_REF, 24, 0, 1.5)); // GetScale
@@ -752,11 +756,12 @@ fn faction_relation_is_the_strongest_reaction_between_the_actors_factions() {
     assert!(relation(&e, HUMAN_IN_B, BEAST_IN_A.0, 0.0));
     // No actor: the player, who is in no faction here.
     assert!(relation(&e, BEAST_IN_A, 0, 0.0));
-    // The difference in ranks, with -1 for a non-member.
+    // The difference in ranks, a non-member counting as rank 0 (test-mod
+    // autotest22: rank 0 against -1 gave 0).
     let difference = |a: FormId, b: FormId, want: f32| is2(&e, a, 60, WOLVES.0, b.0, want);
     assert!(difference(BEAST_IN_A, BEAST_REF, 3.0));
-    assert!(difference(BEAST_IN_A, HUMAN_IN_C, 5.0));
-    assert!(difference(HUMAN_IN_C, BEAST_IN_A, -5.0));
+    assert!(difference(BEAST_IN_A, HUMAN_IN_C, 4.0));
+    assert!(difference(HUMAN_IN_C, BEAST_IN_A, -4.0));
     assert!(difference(HUMAN_IN_C, HUMAN_IN_B, 0.0));
 }
 
@@ -815,11 +820,13 @@ fn clothing_value_totals_the_worn_clothes_only() {
 
 #[test]
 #[ignore = "needs a headless GPU adapter; synthetic records only"]
-fn get_disease_is_a_disease_effect_on_the_subject() {
+fn get_disease_is_a_disease_effect_on_the_player() {
     let (_f, mut e) = fixture();
     assert!(is(&e, PLAYER_REF, 39, 0, 0.0)); // GetDisease
     e.apply_item(PLAGUE, None, PLAYER_REF);
     assert!(is(&e, PLAYER_REF, 39, 0, 1.0));
+    // An NPC given a disease isn't diseased (test-mod autotest22).
+    e.apply_item(PLAGUE, None, HUMAN_REF);
     assert!(is(&e, HUMAN_REF, 39, 0, 0.0));
 }
 
@@ -831,10 +838,12 @@ fn cell_parameter_torch_and_cannibal_conditions() {
     // GetInCellParam(cell, reference).
     assert!(is2(&e, PLAIN_REF, 230, CELL_A.0, HUMAN_IN_A.0, 1.0));
     assert!(is2(&e, PLAIN_REF, 230, CELL_B.0, HUMAN_IN_A.0, 0.0));
-    // IsActorUsingATorch: a torch in the hand; nobody eats corpses yet.
+    // IsActorUsingATorch: a torch in the hand with the weapons drawn (held
+    // sheathed, it isn't: test-mod autotest22); nobody eats corpses yet.
     assert!(is(&e, HUMAN_REF, 306, 0, 0.0));
     hold(&mut e, HUMAN_REF, TORCH, &[LEFT]);
-    assert!(is(&e, HUMAN_REF, 306, 0, 1.0));
+    assert!(is(&e, HUMAN_REF, 102, 0, 1.0)); // IsTorchOut
+    assert!(is(&e, HUMAN_REF, 306, 0, 0.0));
     assert!(is(&e, HUMAN_REF, 227, 0, 0.0)); // GetCannibal
 }
 

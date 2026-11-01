@@ -88,7 +88,7 @@ fn holds(e: &Engine, c: Condition, subject: FormId) -> bool {
 }
 
 #[test]
-fn get_script_variable_reads_the_named_variable_of_the_reference() {
+fn get_script_variable_is_0_whatever_the_papyrus_variables() {
     let (_dir, mut e) = fixture();
     attach_vars(
         &mut e,
@@ -96,28 +96,21 @@ fn get_script_variable_reads_the_named_variable_of_the_reference() {
         "MyScript",
         &[("::speed_var", Value::Float(2.5))],
     );
-    // The reference named in the condition, not the subject, holds the script.
-    assert!(holds(
+    // Papyrus variables aren't what it reads (test-mod autotest22).
+    assert!(!holds(
         &e,
         parsed(&e, GET_SCRIPT_VARIABLE, OBJ, Some("Speed"), 2.5),
         QUEST,
     ));
-    assert!(!holds(
+    assert!(holds(
         &e,
-        parsed(&e, GET_SCRIPT_VARIABLE, OBJ, Some("speed"), 1.0),
+        parsed(&e, GET_SCRIPT_VARIABLE, OBJ, Some("Speed"), 0.0),
         QUEST,
     ));
-    // A variable the reference's scripts lack is 0.
     assert!(holds(
         &e,
         parsed(&e, GET_SCRIPT_VARIABLE, OBJ, Some("missing"), 0.0),
         QUEST,
-    ));
-    // A reference without scripts: the same.
-    assert!(holds(
-        &e,
-        parsed(&e, GET_SCRIPT_VARIABLE, QUEST, Some("speed"), 0.0),
-        OBJ,
     ));
 }
 

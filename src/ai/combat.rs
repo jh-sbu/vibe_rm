@@ -1748,12 +1748,10 @@ impl Engine {
 
     /// How one faction regards another in combat (`XNAM` group combat reaction
     /// on the first, or a change made since: 0 neutral, 1 enemy, 2 ally,
-    /// 3 friend); a faction is its own ally and anything unlisted is neutral.
-    /// The first's list alone counts, so the answer need not be mutual.
+    /// 3 friend); anything unlisted is neutral, a faction towards itself too
+    /// (test-mod autotest22). The first's list alone counts, so the answer
+    /// need not be mutual.
     pub(crate) fn faction_combat_reaction(&self, from: FormId, to: FormId) -> u32 {
-        if from == to {
-            return 2;
-        }
         self.reaction_towards(from, to).combat
     }
 
