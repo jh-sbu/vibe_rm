@@ -135,12 +135,14 @@ read back at a known player level.
 
 ## Actor state (Resurrect / UnequipAll / critical stages)
 
-Unconfirmed: whether a resurrected actor's equipment comes back worn (we keep it
-as it died), whether `Resurrect` should refuse an actor placed "starts dead" (we
-revive it), whether `UnequipAll` also readies away spells (we leave them), and the
-numbering `UnequipItemSlot` takes (we use biped slots 30..61). The critical stage
+Checked in Skyrim SE (autotest21): a dead NPC still has its armor equipped.
+`Resurrect` brings it back with its base inventory: a cuirass added and worn by
+script was gone (count 0). We roll the inventory again from the record.
+`UnequipItemSlot(32)` takes off a cuirass and `(2)` doesn't: biped slots 30..61,
+as ours. Still unconfirmed: whether `Resurrect` refuses an actor placed "starts
+dead" (we revive it) and whether `UnequipAll` also readies away spells (we leave
+them; the test's spell had already been displaced by a sword). The critical stage
 ends remove the actor by disabling it; the game's ash and goo are not shown.
-**test-mod** wanted: `Resurrect` an NPC killed with armor, then `IsEquipped`.
 
 ## Hostility and favor flags
 
@@ -151,15 +153,15 @@ faction combat relation the `GetFactionRelation` condition uses.
 
 ## Resets (ObjectReference / Cell / Quest)
 
-Unconfirmed: exactly what `ObjectReference.Reset` restores beyond the location,
-inventory and a dead actor (we also restore enable, lock, destruction, open
-state and harvest, and leave factions, relationships, owners and alias fills);
-whether a cell reset resurrects the actors killed in it and re-enables what
-scripts disabled (we do both); whether a quest's text globals are copied when it
-starts or when its text first shows them (the latter); and what `Quest.Reset`
-does to a running quest and its script variables (we stop it and clear its state
-but keep its script). **test-mod** wanted: kill an NPC in a cell, `Cell.Reset`,
-leave and return; and `Reset` a disabled reference.
+Checked in Skyrim SE (autotest21): `ObjectReference.Reset` on a plugin container
+put it back where it was placed and restored its inventory (three ingots back,
+added gold gone). It left its owner and blocked activation as set, and a disabled
+container stayed disabled. We do the same, and also restore lock, destruction,
+open state and harvest (the lock wasn't tested: the container started locked).
+`Quest.Reset` on a running quest stopped it, set stage 0 and cleared the done
+stages, as ours. Unconfirmed: whether a cell reset resurrects the actors killed in
+it and re-enables what scripts disabled (we do both), and whether a quest's text
+globals are copied when it starts or when its text first shows them (the latter).
 
 ## Game finders, sun and flags
 

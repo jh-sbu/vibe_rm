@@ -127,7 +127,7 @@ impl Engine {
     }
 
     /// `ObjectReference.Reset(akTarget)`: back to its placed place (or to
-    /// `target`, if it is loaded), enabled or not as placed, unlocked or locked
+    /// `target`, if it is loaded), still disabled if it was, unlocked or locked
     /// as placed, not destroyed, its inventory as first rolled, an actor alive
     /// and well. Factions, relationships and owners aren't touched (the CK
     /// wiki's note). Scripts hear `OnReset`.
@@ -176,7 +176,9 @@ impl Engine {
         ws.open_doors.remove(&r);
         ws.actor_open_doors.remove(&r);
         ws.item_charges.remove(&r);
-        if self.scripts.disabled.remove(&r).is_some() {
+        // `ObjectReference.Reset` leaves a disabled reference disabled (Skyrim
+        // SE, autotest21); a cell's reset re-enables it (our choice).
+        if !asked && self.scripts.disabled.remove(&r).is_some() {
             self.scripts.visibility_dirty = true;
         }
         self.scripts.locked.remove(&r);
@@ -367,6 +369,8 @@ mod tests {
         disturb(&mut e, CHEST);
         disturb(&mut e, STATUE);
         call(&mut e, "objectreference", "reset", CHEST, &[]);
+        // Still disabled (Skyrim SE, autotest21); the rest is undone.
+        assert!(e.scripts.disabled.remove(&CHEST).is_some());
         assert!(untouched(&e, CHEST));
         // A container's contents are rolled again from the record.
         assert_eq!(e.inventory_mut(CHEST).count(ITEM), 2);

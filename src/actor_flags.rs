@@ -101,6 +101,14 @@ impl Engine {
             }
             return;
         }
+        // Back to its base inventory (Skyrim SE, autotest21: a cuirass added
+        // and worn by script was gone after Resurrect).
+        if self.is_dead(actor) {
+            self.inventories.remove(&actor);
+            if self.actor_cells.contains_key(&actor) {
+                self.inventory_mut(actor);
+            }
+        }
         self.world_state.dead.remove(&actor);
         self.world_state.deaths.remove(&actor);
         self.world_state.body_poses.remove(&actor);
@@ -328,8 +336,11 @@ mod tests {
             },
         );
         assert!(e.is_dead(ACTOR));
+        // What it was given goes (Skyrim SE, autotest21).
+        e.inventory_mut(ACTOR).add(FormId(0xf), 25);
         call(&mut e, "resurrect", &[]);
         assert!(!e.is_dead(ACTOR));
+        assert_eq!(e.inventory_mut(ACTOR).count(FormId(0xf)), 0);
         assert_eq!(e.actor_ref(ACTOR).unwrap().exec.health, 80.0);
         assert!(e.death(ACTOR).is_none());
         assert!(e.world_state.dead.is_empty());
