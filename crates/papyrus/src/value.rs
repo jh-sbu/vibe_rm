@@ -120,7 +120,15 @@ impl fmt::Display for Value {
             // Six decimals, and the C runtime's names for the rest: SE printed
             // `Math.sqrt(-1)` as "-nan(ind)" (autotest21).
             Value::Float(x) if x.is_nan() => {
-                write!(f, "{}", if x.is_sign_negative() { "-nan(ind)" } else { "nan" })
+                write!(
+                    f,
+                    "{}",
+                    if x.is_sign_negative() {
+                        "-nan(ind)"
+                    } else {
+                        "nan"
+                    }
+                )
             }
             Value::Float(x) if x.is_infinite() => {
                 write!(f, "{}", if *x < 0.0 { "-inf" } else { "inf" })
