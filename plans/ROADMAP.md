@@ -1742,22 +1742,13 @@ game each piece unlocks.
   same Ignore External Damage gate; explosions are not done.
 
 ## Next
-**autotest21, to apply** (`research/autotest21.md`, run 2026-11-01): Skyrim SE
-settled these against our recorded choices. Each needs its engine change and
-its `known_ambiguities/` entry rewritten:
-- Location population (`GetRefTypeAliveCount`, `HasRefType`) doesn't recurse
-  into child locations.
-- Inverse trig out of [-1, 1] returns 0, not NaN.
-- `GetAllItemsCount` counts distinct forms.
-- `IsOverEncumbered` is False for NPCs whatever they carry.
-- `GetWidth` / `GetLength` / `GetHeight` ignore scale (and rotation); actors'
-  height reads 128.
-- `GetDeadCount` is cumulative (resurrection and deletion don't lower it).
-- `SetOpen` raises `OnOpen` / `OnClose`.
-- `SetDestroyed` changes no stage and sends no stage event; it reloads the 3D.
-- Resurrect returns the actor to its base inventory.
-- `ObjectReference.Reset` leaves a disabled reference disabled.
-- An empty hand beside a spell is 0 to the graph, not 9.
+**autotest21** (`research/autotest21.md`, run 2026-11-01): the settled
+readings that differed from ours are applied: location ref-type counts,
+inverse trig and string casts, `GetAllItemsCount`, NPC `IsOverEncumbered`,
+dimensions, `GetDeadCount`, `OnOpen` / `OnClose`, `SetDestroyed`,
+Resurrect's inventory, Reset of a disabled reference, and the empty hand
+beside a spell. Khayla's health already agreed: her offset is 0, not the 105
+the notes had.
 
 Open from it: the rule sharing auto-calculated skills past 100 (the game
 matches the stored `DNAM`s, e.g. `EncDremoraMelee06` at 46: Block and
@@ -1770,7 +1761,7 @@ removing non-outfit copies, enchanted blows' charge, weather speed law, fast
 travel's 14,800 units an hour, map marker reveal at 2000–4000, Slow Time at
 0.5×, kill and use statistics, and others). The test faults (all condition
 probes, created aliases, our NPC casters, early-ending fights) need a
-follow-up batch, listed at the end of the note.
+follow-up batch: `test-mod autotest22`.
 
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done).
    The bounded work of `plans/animation-unblocked.md` is complete within its
