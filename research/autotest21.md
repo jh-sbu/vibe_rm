@@ -326,14 +326,16 @@ effect and `OnHit`, then combat state 2 (searching), and no crime gold.
 - Dervenin: OneHanded 17, Marksman 27, Block 17, Enchanting 18, Alteration
   18, Alchemy 23, level 6. All equal `esp::auto_calc`'s. *Settled*: the
   tie order (higher index first) **agrees**.
-- Khayla (not auto-calc, health offset 105): base health 50, level 10.
-  *Settled*: not race plus offset (155). **Differs**.
+- Khayla (not auto-calc): base health 50, level 10. Her `ACBS` health
+  offset is 0, so this is race plus offset, as ours (**agrees**). The audit
+  and `actor-values.md` had her offset as 105, which was wrong.
 - Deer: Sneak 85 (15 + the offset of 70). `MGArnielSummon`: Alteration 115.
   *Settled*: offsets are added past 100 (**agrees**).
 - A PC-level-mult copy of `EncDremoraMelee06` (calc min 46): level 46,
   OneHanded 100, TwoHanded 100, HeavyArmor 84, Block 84, Destruction 15,
-  health 545. *Settled*: held at 100. How the excess is shared out: compare
-  with ours at level 46.
+  health 545. *Settled*: held at 100, and the others are the stored
+  `DNAM`'s (Block and HeavyArmor 84), not ours (80, 81). **Differs**; the
+  rule is open.
 - Class with the stats template: see QueryNatives (the placed actor's
   leveled base has the bandit class). *Settled*.
 

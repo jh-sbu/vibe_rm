@@ -49,26 +49,32 @@ use them (`vrm-tool av-conditions <data>`).
   race's `DATA` has 0.7: that is the player's. Our NPCs at 90 of 300 health
   didn't heal in 30 s, free, held or fighting (`test-mod autotest5`).
 
+- Checked in Skyrim SE (`test-mod autotest21`, 2026-11-01;
+  `research/autotest21.md`):
+  - Ties in the leftover skill points go to the higher actor value index
+    first: Dervenin read OneHanded 17, Marksman 27, Block 17, Enchanting 18,
+    Alteration 18, Alchemy 23, as `esp::auto_calc` gives.
+  - Non-auto-calc NPCs are race plus `ACBS` offset: Khayla read base health
+    50, her race's 50 plus her offset of 0. (This file once gave her offset as
+    105. Her `ACBS` has 0.)
+  - Skill offsets are added past 100: a deer's Sneak read 85 (15 + 70), and
+    `MGArnielSummon`'s Alteration 115.
+  - The class comes with the stats template: an actor placed from a base
+    whose stats template is a leveled list has the rolled bandit's class.
+
 ## Choices made without a source
 
-- **Ties in the leftover skill points**: UESP's CLAS page has equal weights
-  served by lower actor value index first; the stored `DNAM`s fit only the
-  other way (higher index first, as UESP has it for attributes): Dervenin's
-  three leftover points went to Enchanting, Alteration and Alchemy, not to
-  One-Handed, Archery and Block. Taken from the data.
 - **Skills past 100**: UESP says the shares are worked out otherwise once a
   skill reaches 100 (not how). The stored `DNAM`s give more to the other
   skills than an even share of the excess (Dremora at level 46: the two
   capped skills lost 26 points, the others gained 10). NPCs at their own
   level take `DNAM`'s skills, which have it right; "PC level mult" NPCs
   are worked out at their level, the skills held at 100 and the excess
-  lost.
-- **Non-auto-calc NPCs**: race plus `ACBS` offset, as the CK wiki's
-  description and modders have it ("just race+offset"), not `DNAM`
-  (garbage in many: Khayla's 16686). UESP's NPC pages disagree for some:
-  Khayla (non-auto, health offset 105) is listed at 50, the race's alone.
-- **Skill offsets** (`DNAM` 18..36; 12 vanilla NPCs, none auto-calc: prey
-  animals' Sneak +70, Jorgen, a wisp mother) are added to the skill
-  values, past 100 too (`MGArnielSummon`'s Alteration).
-- The class (`CNAM`) comes with the stats template, as on the Creation
-  Kit's Stats tab.
+  lost. Skyrim SE (autotest21): a "PC level mult" copy of
+  `EncDremoraMelee06` at level 46 read OneHanded 100, TwoHanded 100,
+  HeavyArmor 84, Block 84, Destruction 15. Block and HeavyArmor are the
+  stored `DNAM`'s values, so the game shares the excess as the Creation Kit
+  does. Ours gives 80, 81 and Sneak 48. Simple rules (per-level shares over
+  the uncapped skills, the excess re-shared by weight) don't reproduce the
+  stored values; open in `plans/ROADMAP.md`.
+

@@ -1757,8 +1757,12 @@ its `known_ambiguities/` entry rewritten:
 - `SetDestroyed` changes no stage and sends no stage event; it reloads the 3D.
 - Resurrect returns the actor to its base inventory.
 - `ObjectReference.Reset` leaves a disabled reference disabled.
-- Khayla-like non-auto-calc NPCs have base health 50, not race plus offset.
 - An empty hand beside a spell is 0 to the graph, not 9.
+
+Open from it: the rule sharing auto-calculated skills past 100 (the game
+matches the stored `DNAM`s, e.g. `EncDremoraMelee06` at 46: Block and
+HeavyArmor 84, ours 80 and 81); fit it against the 81 vanilla NPCs with a
+skill past 100 (`vrm-tool npc-stats`).
 
 Readings to compare before deciding: the rest marked "compare" in the note
 (destruction stages and overkill, faction expulsion's rank -2, outfits
