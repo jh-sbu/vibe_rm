@@ -65,8 +65,10 @@ items, combat-conditions and magic's recheck interval stay open. Also open:
 created aliases (nothing was created), our NPC casters (never cast: casting,
 magic-menu, npc-healing, wards, staffs), fights that ended early, and the
 smaller faults listed at the end of the note. The settled readings that
-differ from our choices are listed in `plans/ROADMAP.md` (autotest21, to
-apply).
+differ from our choices are applied (`plans/ROADMAP.md`, autotest21).
+`test-mod autotest22` reruns the faults: every condition probe (now read by
+the OneHanded gain alone), Recheck, created aliases, casters (vanilla copies),
+fights, and the small ones.
 
 | File | Items | Tests |
 | --- | ---: | --- |

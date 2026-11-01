@@ -551,7 +551,7 @@ visible and travellable at 2000, with Locations Discovered +1. Another,
 player then came within 200. *Settled*: reveal between 2000 and 4000; an
 AddToMap'd marker is never counted as discovered.
 
-## Faults, for a follow-up batch
+## Faults, for a follow-up batch (`test-mod autotest22`)
 
 1. **Probes**: the effect's actor value set to `OneHanded` (6), and the
    gain read alone. That reruns every condition item, Recheck, and the

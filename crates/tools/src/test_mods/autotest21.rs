@@ -47,6 +47,11 @@
 //! autotest5 set it to `OneHanded`), and `HasMagicEffect` counts an effect
 //! whose condition fails. Created aliases created nothing, and our caster
 //! NPCs never cast.
+//!
+//! Since then the builder serves later batches too ([`Batch`]:
+//! `autotest22` reruns the faults), and the created aliases' anchor is the
+//! player and optional (it was our cell's marker in the run). Built as
+//! `autotest21`, the probes still raise the damage modifier, as they did.
 
 use std::collections::BTreeMap;
 
@@ -65,9 +70,33 @@ use super::{TestMod, own};
 mod ctda_functions;
 
 const SCRIPT: &str = "VrmAt21Script";
+/// `OneHanded`'s actor value index.
+const ONE_HANDED: u32 = 6;
 const PLAYER_REF: FormId = FormId(0x14);
 
-/// The test sources, in running order (base first: the helpers).
+/// One batch built from these records: its name, the prefix of its
+/// forms' editor ids and scripts, and its test sources in running order (base first:
+/// the helpers). Later batches (`autotest22`) reuse the records and loggers.
+pub(super) struct Batch {
+    pub name: &'static str,
+    /// Seven characters, as `VrmAt21`: the built plugin and scripts are
+    /// renamed by replacing it in place, which keeps every length.
+    pub prefix: &'static str,
+    pub sources: &'static [(&'static str, &'static str)],
+    /// The probe effects raise `OneHanded` (actor value 6) rather than the
+    /// potion's damage modifier (135), as autotest5 found they must;
+    /// autotest21 ran without it.
+    pub probes_on_skill: bool,
+}
+
+pub(super) const AUTOTEST21: Batch = Batch {
+    name: "autotest21",
+    prefix: "VrmAt21",
+    sources: SOURCES,
+    probes_on_skill: false,
+};
+
+/// autotest21's test sources, in running order (base first: the helpers).
 const SOURCES: &[(&str, &str)] = &[
     ("base", include_str!("autotest21/base.psc")),
     ("natives", include_str!("autotest21/natives.psc")),
@@ -160,6 +189,17 @@ const HEALER: u32 = 0x84D;
 const STAFF_NPC: u32 = 0x84E;
 const PC_MULT_DREMORA: u32 = 0x84F;
 const CRIME_GUARD: u32 = 0x8A0;
+// For autotest22: copies of vanilla casters with our logger, a staff user
+// without spells, a unique NPC without a template.
+const WARLOCK_LOG: u32 = 0xA00;
+const VIGILANT_LOG: u32 = 0xA01;
+const STAFF_WARLOCK: u32 = 0xA02;
+const UNIQUE_PLAIN: u32 = 0xA03;
+const LOW_LOGGED: u32 = 0xA04;
+const LOW_FIGHTER: u32 = 0xA05;
+const LEVEL20_FIGHTER: u32 = 0xA06;
+/// The next free object id.
+const NEXT_OBJECT: u32 = 0xA10;
 
 const DOOR: u32 = 0x850;
 const WEB: u32 = 0x851;
@@ -701,13 +741,20 @@ const OWN: &[(&str, &str, u32)] = &[
     ("MatchBase", "ActorBase", MATCH_NPC),
     ("MatchFar", "Actor", MATCH_FAR),
     ("MatchWh", "Actor", MATCH_WH),
+    ("WarlockLogBase", "ActorBase", WARLOCK_LOG),
+    ("VigilantLogBase", "ActorBase", VIGILANT_LOG),
+    ("StaffWarlockBase", "ActorBase", STAFF_WARLOCK),
+    ("UniquePlainBase", "ActorBase", UNIQUE_PLAIN),
+    ("LowLoggedBase", "ActorBase", LOW_LOGGED),
+    ("LowFighterBase", "ActorBase", LOW_FIGHTER),
+    ("Level20FighterBase", "ActorBase", LEVEL20_FIGHTER),
 ];
 
 /// The tests, in running order: every `String Function TestName()` of the
 /// sources.
-fn tests() -> Vec<String> {
+fn tests(batch: &Batch) -> Vec<String> {
     let mut out = Vec::new();
-    for (_, src) in SOURCES {
+    for (_, src) in batch.sources {
         for line in src.lines() {
             let l = line.trim();
             if let Some(rest) = l.strip_prefix("String Function Test")
@@ -721,7 +768,8 @@ fn tests() -> Vec<String> {
 }
 
 /// The main script's header: properties, variables and the runner.
-fn header() -> String {
+fn header(batch: &Batch) -> String {
+    let name = batch.name;
     let mut s = format!("Scriptname {SCRIPT} extends Quest\n");
     s += "Actor Property Player Auto\n";
     for (name, ty, _) in VANILLA {
@@ -742,14 +790,14 @@ fn header() -> String {
     }
     s += "Bool Ran = false\n";
     s += "ObjectReference StartMarker\nWeather CellWeather\nInt CellSkyMode\n";
-    let tests = tests();
+    let tests = tests(batch);
     for t in &tests {
         s += &format!("String Result{t}\n");
     }
     s += "\nEvent OnInit()\n    RegisterForSingleUpdate(10.0)\nEndEvent\n\n";
     s += "Event OnUpdate()\n    If Ran\n        return\n    EndIf\n    Ran = true\n";
     s += &format!(
-        "    Debug.Notification(\"vibe_rm autotest21 running: {} tests, about an hour. Leave the game be.\")\n",
+        "    Debug.Notification(\"vibe_rm {name} running: {} tests. Leave the game be.\")\n",
         tests.len()
     );
     s += "    StartMarker = Player.PlaceAtMe(XMarker, 1, true, false)\n";
@@ -758,30 +806,32 @@ fn header() -> String {
     for (i, t) in tests.iter().enumerate() {
         s += &format!("    t = Now()\n    Result{t} = Test{t}()\n");
         s += &format!("    Result{t} += \"(took \" + Num(Now() - t) + \" s)\"\n");
-        s += &format!("    Debug.Trace(\"vibe_rm autotest21 {t}: \" + Result{t})\n");
+        s += &format!("    Debug.Trace(\"vibe_rm {name} {t}: \" + Result{t})\n");
         if i % 20 == 19 {
             s += "    Game.RequestSave()\n    Utility.Wait(3.0)\n";
         }
     }
     s += "    Game.EnablePlayerControls(true, true, true, true, true, true, true, true, 0)\n";
     s += "    Game.RequestSave()\n    Utility.Wait(3.0)\n";
-    s += "    Debug.MessageBox(\"vibe_rm autotest21 done: read the reports with vrm-tool test-results.\")\n";
+    s += &format!(
+        "    Debug.MessageBox(\"vibe_rm {name} done: read the reports with vrm-tool test-results.\")\n"
+    );
     s += "EndEvent\n";
     s
 }
 
 /// The main script's source: header, then the test files.
-fn main_source() -> String {
-    let mut s = header();
-    for (_, src) in SOURCES {
+fn main_source(batch: &Batch) -> String {
+    let mut s = header(batch);
+    for (_, src) in batch.sources {
         s += "\n";
         s += src;
     }
     s
 }
 
-fn scripts() -> Result<Vec<(String, Vec<u8>)>> {
-    let main = main_source();
+fn scripts(batch: &Batch) -> Result<Vec<(String, Vec<u8>)>> {
+    let main = main_source(batch);
     let mut sources: Vec<&str> = vec![&main];
     sources.extend(LOGGERS.iter().copied());
     script::compile(&sources)
@@ -1013,6 +1063,36 @@ impl Npc {
     }
 }
 
+/// A copy of a vanilla NPC with our actor logger, its script no longer
+/// taken from its template (`ACBS` template flag 0x200); without its spells
+/// (its own and the template's, flag 0x8) if `no_spells`.
+fn logged_copy(
+    lo: &LoadOrder,
+    from: &str,
+    object_id: u32,
+    edid: &str,
+    no_spells: bool,
+) -> Result<RecordBuilder> {
+    records::copy(
+        lo,
+        from,
+        object_id,
+        edid,
+        Some(attached("VrmAt21ActorLog")),
+        |tag, d| match tag {
+            b"ACBS" if d.len() >= 20 => {
+                let mut flags = u16::from_le_bytes([d[18], d[19]]) & !0x200;
+                if no_spells {
+                    flags &= !0x8;
+                }
+                d[18..20].copy_from_slice(&flags.to_le_bytes());
+            }
+            b"SPLO" | b"SPCT" if no_spells => d.clear(),
+            _ => {}
+        },
+    )
+}
+
 fn form_list(object_id: u32, edid: &str, forms: &[FormId]) -> RecordBuilder {
     let mut rec = RecordBuilder::new(b"FLST", own(object_id)).zstring(b"EDID", edid);
     for f in forms {
@@ -1096,6 +1176,44 @@ fn linked(rec: RecordBuilder, keyword: FormId, to: FormId) -> RecordBuilder {
 }
 
 pub fn build(lo: &LoadOrder) -> Result<TestMod> {
+    build_batch(lo, &AUTOTEST21)
+}
+
+/// `name` with this batch's prefix for `VrmAt21`.
+fn renamed(name: &str, batch: &Batch) -> String {
+    name.replace(AUTOTEST21.prefix, batch.prefix)
+}
+
+/// Every `from` in `bytes` replaced by `to`, of the same length.
+fn replace_bytes(bytes: &mut [u8], from: &[u8], to: &[u8]) {
+    assert_eq!(from.len(), to.len());
+    let mut i = 0;
+    while i + from.len() <= bytes.len() {
+        if &bytes[i..i + from.len()] == from {
+            bytes[i..i + from.len()].copy_from_slice(to);
+            i += from.len();
+        } else {
+            i += 1;
+        }
+    }
+}
+
+/// A batch's plugin and scripts.
+pub(super) fn build_batch(lo: &LoadOrder, batch: &Batch) -> Result<TestMod> {
+    anyhow::ensure!(batch.prefix.len() == AUTOTEST21.prefix.len());
+    let mut m = build_records(lo, batch)?;
+    if batch.prefix != AUTOTEST21.prefix {
+        let (from, to) = (AUTOTEST21.prefix.as_bytes(), batch.prefix.as_bytes());
+        replace_bytes(&mut m.plugin, from, to);
+        for (name, bytes) in &mut m.scripts {
+            *name = renamed(name, batch);
+            replace_bytes(bytes, from, to);
+        }
+    }
+    Ok(m)
+}
+
+fn build_records(lo: &LoadOrder, batch: &Batch) -> Result<TestMod> {
     let v = Vanilla { lo };
     let object = PropertyValue::Object;
 
@@ -1165,17 +1283,20 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
     ];
 
     let mut quests = quests;
+    // The anchor was our cell's marker in autotest21's run, and the aliases
+    // weren't optional: nothing was created. autotest4's created aliases,
+    // which worked, were optional and made at the player.
     let anchor = || records::Alias {
         id: 0,
         name: "Anchor",
-        flags: 0,
-        fill: records::Fill::Forced(own(CELL_CENTER)),
+        flags: records::alias_flags::OPTIONAL,
+        fill: records::Fill::Forced(PLAYER_REF),
         packages: Vec::new(),
     };
     let create = |object: FormId, level: u32, id: u32, name: &'static str| records::Alias {
         id,
         name,
-        flags: 0,
+        flags: records::alias_flags::OPTIONAL,
         fill: records::Fill::Create {
             object,
             at: 0,
@@ -1537,6 +1658,53 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
                 }
             },
         )?,
+        logged_copy(
+            lo,
+            "EncWarlockFire03BretonM",
+            WARLOCK_LOG,
+            "VrmAt21WarlockLog",
+            false,
+        )?,
+        logged_copy(
+            lo,
+            "EncVigilantOfStendarr01NordF",
+            VIGILANT_LOG,
+            "VrmAt21VigilantLog",
+            false,
+        )?,
+        logged_copy(
+            lo,
+            "EncWarlockFire03BretonM",
+            STAFF_WARLOCK,
+            "VrmAt21StaffWarlock",
+            true,
+        )?,
+        Npc {
+            flags: 0x20,
+            template: None,
+            ..npc(UNIQUE_PLAIN, "VrmAt21UniquePlain")
+        }
+        .record(),
+        Npc {
+            level: 1,
+            script: Some("VrmAt21ActorLog"),
+            ..npc(LOW_LOGGED, "VrmAt21LowLogged")
+        }
+        .record(),
+        Npc {
+            level: 1,
+            temper: (1, 3, 0),
+            items: vec![(sword, 1)],
+            ..npc(LOW_FIGHTER, "VrmAt21LowFighter")
+        }
+        .record(),
+        Npc {
+            level: 20,
+            temper: (2, 4, 0),
+            items: vec![(v.id("IronGreatsword")?, 1)],
+            ..npc(LEVEL20_FIGHTER, "VrmAt21Level20Fighter")
+        }
+        .record(),
     ];
 
     // Objects with a logger.
@@ -1639,6 +1807,9 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
             None,
             |tag, d| {
                 if tag == b"DATA" && d.len() >= 0x58 {
+                    if batch.probes_on_skill {
+                        d[0x44..0x48].copy_from_slice(&ONE_HANDED.to_le_bytes());
+                    }
                     d[0x50..0x54].copy_from_slice(&spell::CONSTANT.to_le_bytes());
                     d[0x54..0x58].copy_from_slice(&spell::SELF.to_le_bytes());
                 }
@@ -1869,7 +2040,7 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
         &["Skyrim.esm"],
         "vibe_rm",
         "plans/autotest-audit.md's automatic items: tests run by script, reports saved.",
-        PROBES + 2 * PROBE_LIST.len() as u32,
+        NEXT_OBJECT,
         &[
             Node::top(b"KYWD", keywords),
             Node::top(b"FACT", factions),
@@ -1890,24 +2061,40 @@ pub fn build(lo: &LoadOrder) -> Result<TestMod> {
     );
     Ok(TestMod {
         plugin,
-        scripts: scripts()?,
+        scripts: scripts(batch)?,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_mods::script::dry_run::{form, run};
 
     #[test]
     fn the_scripts_compile() {
-        let built = scripts().unwrap();
+        let built = scripts(&AUTOTEST21).unwrap();
         assert_eq!(built.len(), 1 + LOGGERS.len());
-        assert!(tests().len() > 20);
+        assert!(tests(&AUTOTEST21).len() > 20);
     }
 
     #[test]
     fn the_tests_run_and_report() {
+        check_batch(&AUTOTEST21);
+    }
+
+    #[test]
+    fn renaming_keeps_lengths() {
+        let mut b = b"xVrmAt21Script VrmAt21".to_vec();
+        replace_bytes(&mut b, b"VrmAt21", b"VrmAt22");
+        assert_eq!(&b, b"xVrmAt22Script VrmAt22");
+    }
+}
+
+/// A batch's scripts compile, run in the dry-run VM to the closing box, and
+/// save before it.
+#[cfg(test)]
+pub(super) fn check_batch(batch: &Batch) {
+    use crate::test_mods::script::dry_run::{form, run};
+    {
         let mut properties = vec![("Player".to_owned(), form(0x14, "Actor"))];
         for (i, (name, ty, _)) in VANILLA.iter().enumerate() {
             properties.push((name.to_string(), form(0x1000 + i as u32, ty)));
@@ -1932,7 +2119,11 @@ mod tests {
                 form(own(PROBES + 2 * i).0, "MagicEffect"),
             ));
         }
-        let shown = run(scripts().unwrap(), &[(own(QUEST).0, SCRIPT, properties)], 1);
+        let shown = run(
+            scripts(batch).unwrap(),
+            &[(own(QUEST).0, SCRIPT, properties)],
+            1,
+        );
         assert_eq!(shown.boxes.len(), 1, "the closing box");
         assert!(shown.saved_at_box == Some(0), "saved before it");
     }
