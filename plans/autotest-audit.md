@@ -70,6 +70,17 @@ differ from our choices are applied (`plans/ROADMAP.md`, autotest21).
 the OneHanded gain alone), Recheck, created aliases, casters (vanilla copies),
 fights, and the small ones.
 
+**autotest22 run 2026-11-01** (`research/autotest22.md`): the probes work,
+so the condition items are answered (status, comparison, geometry, death,
+variables, combat-conditions, `IsInCombat`'s parameter, the 1 s recheck).
+Created aliases, vanilla casters, staffs, the fights, `PlayerEnemy`,
+`IsUnique`, invisibility's food and activation, story pickups, the view
+cone and the sun gave readings too. Still open, for a follow-up batch (the
+note's last section): `GetXPForNextLevel`'s value, `GetTimeDead`'s unit,
+`GetRelativeAngle` (no axis given), drawn torch and shield reads,
+`SetAttackActorOnSight`, crime Attack on Sight, Disarm, Holds, Healer,
+Wards, create level.
+
 | File | Items | Tests |
 | --- | ---: | --- |
 | actor-natives | 4 | ActorNatives (leveled traits race, `GetNthLinkedRef` 0 / -1 / keyword-only link), EnableAI |

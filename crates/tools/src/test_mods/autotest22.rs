@@ -27,6 +27,12 @@
 //! (about 25 minutes, mostly the probes). The player is moved to our cell,
 //! the warehouse and back where the run began. Read with `vrm-tool
 //! test-results`.
+//!
+//! **Run 2026-11-01** (`research/autotest22.md`): the probes work (the
+//! controls hold and fail as they should), so the condition readings stand.
+//! Created aliases, vanilla casters, fights and most small faults gave
+//! readings. Still faults: `GetRelativeAngle` (no axis), the "drawn" torch and
+//! shield reads, Disarm, Holds and the crime guard (no Attack on Sight).
 
 use anyhow::Result;
 use esp::LoadOrder;
