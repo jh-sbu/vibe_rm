@@ -595,9 +595,10 @@ fn ref_type_counts_split_a_locations_living_and_dead() {
     assert!(is2(&e, PLAYER_REF, 592, INN.0, BOSS.0, 2.0));
     assert!(is2(&e, PLAYER_REF, 591, INN.0, BOSS.0, 0.0));
     assert!(is2(&e, PLAYER_REF, 592, FORT.0, BOSS.0, 0.0));
-    // The hold counts what is inside it.
-    assert!(is2(&e, PLAYER_REF, 592, HOLD.0, BOSS.0, 2.0));
-    assert!(is2(&e, PLAYER_REF, 592, HOLD.0, GUARD_TYPE.0, 1.0));
+    // The hold doesn't count what is inside it (Skyrim SE's natives,
+    // autotest21; the conditions follow them).
+    assert!(is2(&e, PLAYER_REF, 592, HOLD.0, BOSS.0, 0.0));
+    assert!(is2(&e, PLAYER_REF, 592, HOLD.0, GUARD_TYPE.0, 0.0));
     // A killed one moves over, loaded or not.
     let place = crate::ai::schedule::Place::Interior(CELL_A);
     e.world_state
@@ -605,7 +606,7 @@ fn ref_type_counts_split_a_locations_living_and_dead() {
         .insert(HUMAN_IN_A, (place, glam::Vec3::ZERO));
     assert!(is2(&e, PLAYER_REF, 592, INN.0, BOSS.0, 1.0));
     assert!(is2(&e, PLAYER_REF, 591, INN.0, BOSS.0, 1.0));
-    assert!(is2(&e, PLAYER_REF, 591, HOLD.0, BOSS.0, 1.0));
+    assert!(is2(&e, PLAYER_REF, 591, HOLD.0, BOSS.0, 0.0));
 }
 
 #[test]
