@@ -861,8 +861,8 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         610 => b(alias(e, ctx, c.p1).is_some_and(|l| e.has_keyword(l, FormId(c.p2)))), // LocAliasHasKeyword
         561 => b(subject.is_some_and(|s| e.ref_types(s).contains(&p1))),               // HasRefType
         563 => b(subject_location(e, subject)
-            .is_some_and(|l| !e.location_refs_of_type(l, p1).is_empty())), // LocationHasRefType
-        // The references of a ref type in a location (or inside it), the living
+            .is_some_and(|l| !e.location_own_refs_of_type(l, p1).is_empty())), // LocationHasRefType
+        // The references of a ref type in the location itself, the living
         // and the dead ones; the alias forms ask about the location alias's.
         591 | 592 => Some(e.location_population(p1, FormId(c.p2), c.func == 592) as f32), // GetRefTypeDeadCount / GetRefTypeAliveCount
         600 | 601 => Some(match alias(e, ctx, c.p1) {

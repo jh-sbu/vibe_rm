@@ -26,8 +26,8 @@ GetVoiceType inherits the existing actor template precedence.
 
 HasCommonParent compares strict ancestors on both sides. Whether Skyrim considers
 one of the two input locations itself a shared parent is unspecified. HasRefType
-includes descendant locations, following our existing location reference index;
-exact descendant and disabled-reference inclusion remains unverified. Reservations
+counts the location's own references, not its children's (Skyrim SE, autotest21:
+see query-natives.md); disabled-reference inclusion remains unverified. Reservations
 use running quest reference aliases with Reserves Reference, not furniture use.
 Malformed parent cycles terminate at the first repeated location.
 

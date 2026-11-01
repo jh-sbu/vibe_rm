@@ -842,6 +842,17 @@ fn batch03_location_hierarchy_reservations_and_packages() {
         ),
         Value::Bool(true)
     );
+    // Not counted in the parent location (Skyrim SE, autotest21).
+    assert_eq!(
+        call(
+            &mut e,
+            "location",
+            "hasreftype",
+            FormId(0x801),
+            &[ty.clone()]
+        ),
+        Value::Bool(false)
+    );
     assert!(e.start_quest(FormId(0x860)));
     assert_eq!(
         call(

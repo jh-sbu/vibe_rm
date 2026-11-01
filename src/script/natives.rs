@@ -1949,7 +1949,7 @@ pub fn call(
         ))),
         ("location", "hasreftype") => v(Value::Bool(me.zip(form_arg(args, 0)).is_some_and(
             |(l, ty)| {
-                e.location_refs_of_type(l, ty)
+                e.location_own_refs_of_type(l, ty)
                     .into_iter()
                     .any(|r| !e.in_alias_with(r, crate::aliases::flags::RESERVES))
             },

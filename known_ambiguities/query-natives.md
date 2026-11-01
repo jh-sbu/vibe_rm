@@ -20,7 +20,7 @@ GetCurrentLocation uses runtime cell, actor schedule, explicit moved or created 
 
 ## alive
 
-Location population queries include descendant locations, as the existing condition helper does; public documentation does not specify recursion clearly. We do not reproduce the reported plugin/master double-counting bug. Counts follow enabled editor references rather than actors wandering in; no Skyrim runtime comparison was performed.
+Checked in Skyrim SE (autotest21, 2026-11-01): `GetRefTypeAliveCount` and `Location.HasRefType` count the location's own references only. Whiterun Hold read Boss alive 0 and HasRefType False, while Bleak Falls Barrow inside it read 1 and True. The conditions (`GetRefTypeAliveCount`/`DeadCount`, the location-alias forms, `LocationHasRefType`) follow the natives. That part is inferred (assumed to be the same query), not observed. Location alias fills and `IsCleared` still look inside child locations; that is unverified. We do not reproduce the reported plugin/master double-counting bug. Counts follow enabled editor references rather than actors wandering in; no Skyrim runtime comparison was performed.
 
 ## loaded
 

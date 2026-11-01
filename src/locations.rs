@@ -277,11 +277,25 @@ impl Engine {
         out
     }
 
-    /// How many references of ref type `ty` in location `l` (or inside it) are
-    /// alive, or dead.
+    /// References of ref type `ty` in location `l` itself, not its children
+    /// (Skyrim SE, autotest21: Whiterun Hold has no Boss though Bleak Falls
+    /// Barrow inside it has one).
+    pub fn location_own_refs_of_type(&self, l: FormId, ty: FormId) -> Vec<FormId> {
+        self.locations()
+            .typed
+            .get(&l)
+            .into_iter()
+            .flatten()
+            .filter(|(t, _)| *t == ty)
+            .map(|(_, r)| *r)
+            .collect()
+    }
+
+    /// How many references of ref type `ty` in location `l` itself are alive,
+    /// or dead.
     pub fn location_population(&self, l: FormId, ty: FormId, alive: bool) -> usize {
         let mut seen = std::collections::HashSet::new();
-        self.location_refs_of_type(l, ty)
+        self.location_own_refs_of_type(l, ty)
             .into_iter()
             .filter(|&r| seen.insert(r) && !self.is_disabled(r) && self.is_dead(r) != alive)
             .count()
