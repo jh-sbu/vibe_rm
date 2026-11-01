@@ -438,11 +438,22 @@ impl Engine {
     }
 
     /// Whether `from` has a clear line to `to` (`GetLineOfSight`): actors look
-    /// from their eyes, other references from their position. None when either
-    /// has no place in the world.
+    /// from their eyes, other references from their position. An NPC sees only
+    /// within its view cone: one 200 units behind another wasn't in its line of
+    /// sight in the game (test-mod autotest22). None when either has no place
+    /// in the world.
     pub(crate) fn line_of_sight(&self, from: FormId, to: FormId) -> Option<bool> {
         let a = self.sight_point(from)?;
         let t = self.sight_point(to)?;
+        if from != PLAYER_REF
+            && let Some(actor) = self.actor_ref(from)
+        {
+            let facing = Vec3::new(actor.exec.heading.sin(), actor.exec.heading.cos(), 0.0);
+            let flat = Vec3::new(t.x - a.x, t.y - a.y, 0.0).normalize_or_zero();
+            if flat != Vec3::ZERO && facing.dot(flat) < VIEW_HALF_ANGLE.to_radians().cos() {
+                return Some(false);
+            }
+        }
         Some(self.clear_line(a, t, from, to))
     }
 

@@ -540,3 +540,20 @@ fn set_unconscious_is_what_get_unconscious_reads() {
     );
     assert!(!unconscious(&e));
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn an_npcs_line_of_sight_stays_within_its_view_cone() {
+    let (_f, mut e) = fixture("sight");
+    place(&mut e, WOLF_REF, NPC);
+    place(&mut e, HUNTER_REF, NPC);
+    // The wolf faces north (heading 0); the hunter is 200 ahead, then behind.
+    e.actor_mut(WOLF_REF).unwrap().exec.heading = 0.0;
+    e.actor_mut(HUNTER_REF).unwrap().exec.pos = glam::Vec3::new(0.0, 200.0, 0.0);
+    assert_eq!(e.line_of_sight(WOLF_REF, HUNTER_REF), Some(true));
+    // Behind it: not in its line of sight (test-mod autotest22).
+    e.actor_mut(HUNTER_REF).unwrap().exec.pos = glam::Vec3::new(0.0, -200.0, 0.0);
+    assert_eq!(e.line_of_sight(WOLF_REF, HUNTER_REF), Some(false));
+    // The hunter, facing north, has the wolf ahead.
+    assert_eq!(e.line_of_sight(HUNTER_REF, WOLF_REF), Some(true));
+}
