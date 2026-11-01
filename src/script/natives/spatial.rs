@@ -36,6 +36,9 @@ fn scale(e: &Engine, reference: FormId) -> f32 {
     placed * height * race_height
 }
 
+/// What `GetHeight` reads for any actor.
+const ACTOR_HEIGHT: f32 = 128.0;
+
 pub(super) fn call(e: &Engine, func: &str, reference: Option<FormId>) -> Value {
     if func == "getworldspace" {
         let world = reference
@@ -54,12 +57,19 @@ pub(super) fn call(e: &Engine, func: &str, reference: Option<FormId>) -> Value {
         "getlength" => 1,
         _ => 2,
     };
+    // Skyrim SE (autotest21): the base's bounds, unscaled and unturned (a
+    // barrel read 54 x 54 x 80 at scale 1, scaled 2 and turned 45 degrees),
+    // and 128 high for the player and an NPC (its bounds 86 high), at scale 1
+    // and 2.
+    if axis == 2 && reference.is_some_and(|r| e.is_actor_ref(r)) {
+        return Value::Float(ACTOR_HEIGHT);
+    }
     let extent = reference
         .and_then(|r| {
             let base = e.lo.get(e.base_of(r)?)?;
             let data = base.get(b"OBND")?.get(..12)?;
             let coordinate = |offset| i16::from_le_bytes([data[offset], data[offset + 1]]) as f32;
-            Some((coordinate(axis * 2 + 6) - coordinate(axis * 2)).max(0.0) * scale(e, r))
+            Some((coordinate(axis * 2 + 6) - coordinate(axis * 2)).max(0.0))
         })
         .unwrap_or(0.0);
     Value::Float(extent)

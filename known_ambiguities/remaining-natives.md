@@ -52,9 +52,11 @@ weight of 0, and 9 against 8.9). For the player it uses our capacity calculation
 
 ## Batch 6
 
-Dimensions use authored OBND extents multiplied by effective scale, independent of
-rotation or animation. Whether Skyrim uses these bounds or current loaded-3D
-bounds, and when it applies scale, remains unresolved. Missing/malformed bounds
+Dimensions are the base's OBND extents, unscaled and independent of rotation
+(Skyrim SE, autotest21: a barrel read 54 x 54 x 80 at scale 1, after SetScale(2) and
+turned 45 degrees). GetHeight of an actor read 128 for the player and for an NPC
+whose bounds are 86 high, at scale 1 and 2; we return 128 for every actor.
+Actors' width and length are their bounds, unverified. Missing/malformed bounds
 return zero; reversed bounds clamp to zero. Scale uses our spawn-time actor
 height factors; original player scale and race-change timing are unverified.
 GetWorldSpace uses our current-placement resolver; unloaded schedule-only travel

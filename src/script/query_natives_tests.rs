@@ -1148,7 +1148,7 @@ fn batch05_actor_classification_package_dialogue_and_scene() {
 
 #[test]
 #[ignore = "needs a headless GPU adapter; synthetic records only"]
-fn batch06_scaled_bounds_and_current_worldspace() {
+fn batch06_unscaled_bounds_and_current_worldspace() {
     let bounds: Vec<u8> = [-10i16, -20, -30, 30, 40, 90]
         .into_iter()
         .flat_map(i16::to_le_bytes)
@@ -1173,10 +1173,11 @@ fn batch06_scaled_bounds_and_current_worldspace() {
         Node::top(b"WRLD", vec![RecordBuilder::new(b"WRLD", FormId(0x820))]),
     ]);
     for (func, expected) in [
+        // The bounds unscaled (Skyrim SE, autotest21).
         ("getscale", 2.0),
-        ("getwidth", 80.0),
-        ("getlength", 120.0),
-        ("getheight", 240.0),
+        ("getwidth", 40.0),
+        ("getlength", 60.0),
+        ("getheight", 120.0),
     ] {
         assert_eq!(
             call(&mut e, "objectreference", func, FormId(0x800), &[]),
