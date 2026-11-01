@@ -2107,7 +2107,7 @@ pub fn call(
         ("actorbase", "getsex") => v(Value::Int(
             me.map(|f| e.npc_is_female(f) as i32).unwrap_or(0),
         )),
-        ("actorbase", "isunique") => v(Value::Bool(me.is_some_and(|b| e.base_has_flag(b, 0x20)))),
+        ("actorbase", "isunique") => v(Value::Bool(me.is_some_and(|b| e.is_unique(b)))),
         ("actorbase", "setessential")
         | ("actorbase", "setprotected")
         | ("actorbase", "setinvulnerable") => {

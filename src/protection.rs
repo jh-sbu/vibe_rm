@@ -34,6 +34,14 @@ pub struct Protection {
 }
 
 impl Engine {
+    /// Whether an actor (or actor base) is unique: the unique flag of the
+    /// base its traits come from. A base flagged unique under a non-unique
+    /// traits template isn't (test-mod autotest22).
+    pub fn is_unique(&self, actor: FormId) -> bool {
+        self.templates_of(actor)
+            .is_some_and(|t| self.base_has_flag(t.of(crate::world::template::TRAITS), 0x20))
+    }
+
     /// Whether an actor base has an `ACBS` flag: as a script left it, else
     /// as its record says.
     pub fn base_has_flag(&self, base: FormId, flag: u32) -> bool {

@@ -37,20 +37,25 @@ fn call(e: &mut Engine, class: &str, func: &str, on: FormId, args: &[Value]) -> 
 
 #[test]
 #[ignore = "needs a headless GPU adapter; synthetic records only"]
-fn is_unique_reads_the_base_flag() {
+fn is_unique_reads_the_traits_bases_flag() {
     let (_f, mut e) = fixture(vec![Node::top(
         b"NPC_",
         vec![
             RecordBuilder::new(b"NPC_", FormId(0x800)).u32(b"ACBS", 0x20),
             RecordBuilder::new(b"NPC_", FormId(0x801)).u32(b"ACBS", 0x2),
             RecordBuilder::new(b"NPC_", FormId(0x802)).field(b"ACBS", &[0x20]),
+            // Unique, but its traits come from 0x801, which isn't.
+            RecordBuilder::new(b"NPC_", FormId(0x803))
+                .field(b"ACBS", &acbs_with_template(0x20, 0x1))
+                .form(b"TPLT", FormId(0x801)),
         ],
     )]);
     assert_eq!(
         call(&mut e, "actorbase", "isunique", FormId(0x800), &[]),
         Value::Bool(true)
     );
-    for id in [0x801, 0x802, 0] {
+    // 0x803 follows its traits template (test-mod autotest22).
+    for id in [0x801, 0x802, 0x803, 0] {
         assert_eq!(
             call(&mut e, "actorbase", "isunique", FormId(id), &[]),
             Value::Bool(false)
@@ -1434,4 +1439,12 @@ fn batch08_movement_arrest_and_loaded_3d() {
         call(&mut e, "objectreference", "is3dloaded", FormId(0x800), &[]),
         Value::Bool(false)
     );
+}
+
+/// An `ACBS` with these flags and template flags (bytes 18..20).
+fn acbs_with_template(flags: u32, template: u16) -> [u8; 24] {
+    let mut d = [0; 24];
+    d[0..4].copy_from_slice(&flags.to_le_bytes());
+    d[18..20].copy_from_slice(&template.to_le_bytes());
+    d
 }

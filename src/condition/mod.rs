@@ -974,11 +974,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         476 => b(subject.is_some_and(|s| e.is_protected(s))),    // IsProtected
         118 => b(subject.is_some_and(|s| e.aggro_radius_violated(s))), // GetActorAggroRadiusViolated
         503 => b(true),                                                // GetAllowWorldInteractions
-        641 => b(subj_base.is_some_and(|n| {
-            e.lo.get(n)
-                .and_then(|r| r.get(b"ACBS").map(|d| d[0] & 0x20 != 0))
-                .unwrap_or(false)
-        })), // IsUnique
+        641 => b(subject.is_some_and(|s| e.is_unique(s))),             // IsUnique
         555 => b(subject.is_some_and(|s| s == PLAYER_REF || e.actor_cells.contains_key(&s))), // HasLoaded3D
         606 => Some(
             e.location_keyword_data
