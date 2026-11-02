@@ -288,6 +288,31 @@ impl Engine {
             .is_some_and(|edid| !Lod::new(&self.vfs, &edid).is_empty())
     }
 
+    pub(crate) fn show_objective_on_map(&mut self, quest: FormId, objective: i32) -> bool {
+        let Some((world, _)) = self.map_world() else {
+            return false;
+        };
+        if !self.map_available() {
+            return false;
+        }
+        let Some(at) = self.map_objective_target(world, quest, objective) else {
+            return false;
+        };
+        self.map_focus = Some((world, at));
+        self.menu = Some(crate::items::Menu::Map);
+        true
+    }
+
+    pub(crate) fn apply_map_focus(&mut self) {
+        if let Some((world, at)) = self.map_focus.take()
+            && let Some(view) = &mut self.map_view
+            && world == view.world
+        {
+            view.center = at;
+            view.zoom = 1.0;
+        }
+    }
+
     /// Builds the map view. None when the worldspace has no map data or
     /// distant LOD.
     pub fn open_map_view(&mut self) -> Option<()> {
@@ -347,12 +372,14 @@ impl Engine {
             view.zoom = zoom.clamp(0.0, 1.0);
             view.pitch = pitch.clamp(MIN_PITCH, MAX_PITCH);
         }
+        self.apply_map_focus();
         self.map_view_rows();
         self.update_map_view();
         Some(())
     }
 
     pub fn close_map_view(&mut self) {
+        self.map_focus = None;
         if let Some(view) = self.map_view.take() {
             self.map_start = Some((view.center, view.zoom, view.pitch));
             self.map_heading = view.heading;
@@ -511,7 +538,9 @@ mod tests {
             r
         };
         let worlds = vec![
-            world(0x800, None, 1.0, 0.0, 0.0),
+            world(0x800, None, 1.0, 0.0, 0.0)
+                .zstring(b"EDID", "SyntheticMap")
+                .field(b"MNAM", &[0; 16]),
             world(0x801, Some(0x800), 2.0, 100.0, 200.0),
             world(0x802, Some(0x801), 0.5, -100.0, -200.0),
             world(0x803, None, 1.0, 0.0, 0.0),
@@ -871,6 +900,44 @@ mod tests {
             center: (0, 0),
         };
         assert!(!e.compass_markers().iter().any(|m| m.frame == custom()));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    #[ignore = "requires a headless GPU; synthetic records only"]
+    fn show_objective_focus_is_transient_and_resolves_untracked_targets() {
+        let dir = hierarchy_fixture("objective-focus");
+        let mut e = crate::stats::action_tests::headless_engine(&dir, "Map.esp");
+        e.location = Location::Exterior {
+            world: FormId(0x800),
+            center: (0, 0),
+        };
+        let st = e.scripts.quests.entry(FormId(0xB00)).or_default();
+        st.running = true;
+        st.objectives_displayed.insert(10);
+        st.aliases.insert(0, FormId(0x901));
+        let mut map = view(50.0);
+        map.world = FormId(0x800);
+        map.heading = 80.0;
+        e.map_view = Some(map);
+        let saved = Some((Vec2::new(1000.0, -2000.0), 0.3, 70.0));
+        e.map_start = saved;
+        assert!(e.show_objective_on_map(FormId(0xB00), 10));
+        assert_eq!(e.menu, Some(crate::items::Menu::Map));
+        e.apply_map_focus();
+        let view = e.map_view.as_ref().unwrap();
+        assert_eq!(view.center, Vec2::new(120.0, 240.0));
+        assert_eq!((view.zoom, view.heading), (1.0, 80.0));
+        assert_eq!(e.map_start, saved);
+        assert!(e.map_focus.is_none());
+        e.scripts
+            .quests
+            .get_mut(&FormId(0xB00))
+            .unwrap()
+            .objectives_completed
+            .insert(10);
+        assert!(!e.show_objective_on_map(FormId(0xB00), 10));
+        assert!(!e.show_objective_on_map(FormId(0xDEAD), 10));
         std::fs::remove_dir_all(dir).unwrap();
     }
 

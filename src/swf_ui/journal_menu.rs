@@ -90,6 +90,13 @@ struct Data {
     player: Vec<Value>,
 }
 
+fn target_at(targets: &[(FormId, i32)], index: f64) -> Option<(FormId, i32)> {
+    if !index.is_finite() || index < 0.0 || index.fract() != 0.0 {
+        return None;
+    }
+    targets.get(index as usize).copied()
+}
+
 fn target_id(
     engine: &mut Engine,
     world: Option<FormId>,
@@ -443,8 +450,19 @@ impl JournalMenu {
                 }
             }
             _ if super::journal_system::answer_load(&self.system, &self.menu, engine, call) => {}
-            // CloseMenu keeps the tab; Show on Map awaits map integration.
-            "RememberCurrentTabIndex" | "ShowTargetOnMap" => {}
+            "ShowTargetOnMap" => {
+                self.update(engine);
+                let target = match call.args.first() {
+                    Some(Value::Number(id)) => target_at(&self.targets, *id),
+                    _ => None,
+                };
+                if !target.is_some_and(|(quest, objective)| {
+                    engine.show_objective_on_map(quest, objective)
+                }) {
+                    engine.play_sound_at("UIMenuCancel", engine.camera.position);
+                }
+            }
+            "RememberCurrentTabIndex" => {}
             "QuitToMainMenu" => engine.request_quit_to_main_menu(),
             "QuitToDesktop" => engine.quit_requested = true,
             _ => return false,
@@ -545,5 +563,19 @@ impl JournalMenu {
     /// Esc or the journal key: the menu closes as on Tab (`CloseMenu`).
     pub fn close(&self) {
         self.menu.callback("StartCloseMenu", &[]);
+    }
+}
+
+#[cfg(test)]
+mod map_target_tests {
+    use super::*;
+    #[test]
+    fn show_on_map_rejects_untrusted_indices() {
+        let targets = [(FormId(0x123), 10), (FormId(0x456), 20)];
+        assert_eq!(target_at(&targets, 0.0), Some(targets[0]));
+        assert_eq!(target_at(&targets, 1.0), Some(targets[1]));
+        for index in [-1.0, 0.5, 2.0, f64::NAN, f64::INFINITY, f64::MAX] {
+            assert_eq!(target_at(&targets, index), None);
+        }
     }
 }

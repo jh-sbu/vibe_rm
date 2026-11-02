@@ -444,7 +444,7 @@ impl VmSnapshot {
                         m.form(recipe);
                     }
                     Some(crate::messages::BoxAction::PlayerMarker { marker, replace }) => {
-                        m.u8(8);
+                        m.u8(10);
                         m.form(marker.world);
                         m.f32(marker.pos.x);
                         m.f32(marker.pos.y);
@@ -661,7 +661,7 @@ impl VmSnapshot {
                         }
                         Some(crate::messages::BoxAction::Poison { weapon, poison })
                     }
-                    8 => {
+                    10 => {
                         let marker = crate::map_markers::PlayerMarker {
                             world: r.form()?,
                             pos: glam::Vec3::new(r.f32()?, r.f32()?, r.f32()?),
