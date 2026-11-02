@@ -24,13 +24,13 @@ const TRAVEL: u8 = 0x02;
 const CHECK_INTERVAL: f32 = 0.5;
 
 /// The compass marker clip's frames (`hudmenu.swf`, "Compass Marker"): the
-/// quest targets', the enemies' (the player's own marker's, 3, isn't used:
-/// there's no map to set it on), then the location markers' (a frame per map
+/// quest targets', the custom destination's, the enemies', then the location markers' (a frame per map
 /// marker type, in `TNAM` order from type 1 at `LocationMarkers`: the empty
 /// marker has none) and the undiscovered ones' (likewise).
 pub mod frame {
     pub const QUEST: f32 = 1.0;
     pub const QUEST_DOOR: f32 = 2.0;
+    pub const PLAYER_SET: f32 = 3.0;
     pub const ENEMY: f32 = 4.0;
     pub const LOCATIONS: f32 = 5.0;
     pub const UNDISCOVERED: f32 = 72.0;
@@ -325,6 +325,19 @@ impl Engine {
     pub fn compass_markers(&self) -> Vec<CompassMarker> {
         let mut out = self.compass_location_markers();
         out.extend(self.compass_quest_markers());
+        if let Some(marker) = self.player_marker
+            && let Location::Exterior { world, .. } = self.location
+            && let Some((owner, player)) =
+                crate::map_view::world_map_point(&self.lo, world, self.player.position.truncate())
+            && owner == marker.world
+        {
+            out.push(CompassMarker {
+                heading: heading(player.extend(0.0), marker.pos),
+                alpha: 100.0,
+                frame: frame::PLAYER_SET,
+                scale: 100.0,
+            });
+        }
         let player = self.player.position;
         for a in self.cells.values().flat_map(|rt| &rt.actors) {
             let fighting = a

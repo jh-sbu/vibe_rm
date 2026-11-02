@@ -68,3 +68,11 @@ destination does not remove it. Replacement occurs only after another map
 click and the Move It answer, immediately at that click position. Empty-map
 placement without an existing marker is immediate. These are observed behavior,
 not unresolved choices (`research/ui/map-menu.md`).
+
+The custom compass marker uses frame 3 at full alpha and scale 100 at any
+distance in exterior spaces sharing its map owner; heading compares both
+positions after ONAM projection. It is hidden indoors and on unrelated maps.
+These visibility/scale policies extend the quest-marker implementation; exact
+vanilla distance and interior behavior have not been measured. Height uses
+loaded LAND in the same world, then loaded terrain LOD triangles, else zero.
+Placement itself uses the inverse of the existing z=0 marker projection.

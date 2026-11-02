@@ -786,6 +786,38 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires a headless GPU; synthetic records only"]
+    fn custom_compass_uses_map_owner_and_stays_when_reached() {
+        let dir = hierarchy_fixture("custom-compass");
+        let mut e = crate::stats::action_tests::headless_engine(&dir, "Map.esp");
+        e.location = Location::Exterior {
+            world: FormId(0x801),
+            center: (0, 0),
+        };
+        e.player.position = Vec3::new(10.0, 20.0, 0.0); // map (120,240)
+        e.place_player_marker(FormId(0x800), Vec2::new(120.0, 100000.0));
+        let custom = || crate::map_markers::frame::PLAYER_SET;
+        let compass = e.compass_markers();
+        let marker = compass.iter().find(|m| m.frame == custom()).unwrap();
+        assert_eq!(
+            (marker.heading, marker.alpha, marker.scale),
+            (0.0, 100.0, 100.0)
+        );
+        e.place_player_marker(FormId(0x800), Vec2::new(120.0, 240.0));
+        e.update_map_markers(1.0);
+        assert!(e.player_marker.is_some());
+        assert!(e.compass_markers().iter().any(|m| m.frame == custom()));
+        e.location = Location::Interior(FormId(0xD00));
+        assert!(!e.compass_markers().iter().any(|m| m.frame == custom()));
+        e.location = Location::Exterior {
+            world: FormId(0x803),
+            center: (0, 0),
+        };
+        assert!(!e.compass_markers().iter().any(|m| m.frame == custom()));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn map_callback_indices_keep_stable_destination_identity() {
         let rows = vec![
             MapRow {
