@@ -71,7 +71,9 @@ pub(super) struct MapMenu {
     click: bool,
     released: bool,
     marker_snapshot: Option<crate::map_markers::PlayerMarker>,
+    /// The pointer as a fraction of the window, and in window pixels.
     pointer: Vec2,
+    pointer_px: (f64, f64),
     /// The marker told to the movie as selected.
     selected: Option<usize>,
     restore_selected: Option<usize>,
@@ -113,6 +115,7 @@ impl MapMenu {
             released: false,
             marker_snapshot: engine.player_marker,
             pointer: Vec2::splat(0.5),
+            pointer_px: (0.0, 0.0),
             selected: None,
             restore_selected: None,
             release_waiting: false,
@@ -362,6 +365,7 @@ impl MapMenu {
         }
         drop(bindings);
         self.pointer = Vec2::new((pointer.0 / w) as f32, (pointer.1 / h) as f32);
+        self.pointer_px = pointer;
         if place {
             self.place_at_pointer(engine);
         }
@@ -426,13 +430,12 @@ impl MapMenu {
         if !(0.0..=1.0).contains(&self.pointer.x) || !(0.0..=1.0).contains(&self.pointer.y) {
             return;
         }
+        // hitTest takes the movie's stage coordinates, not window pixels:
+        // they differ whenever the window isn't the stage's size.
+        let (x, y) = self.menu.stage_point(self.pointer_px.0, self.pointer_px.1);
         let over_bar = self.menu.invoke(
             &format!("{M}.BottomBar.hitTest"),
-            &[
-                num(self.pointer.x * engine.renderer.width as f32),
-                num(self.pointer.y * engine.renderer.height as f32),
-                Value::Bool(false),
-            ],
+            &[Value::Number(x), Value::Number(y), Value::Bool(false)],
         );
         if over_bar == Value::Bool(true) {
             return;
@@ -698,6 +701,28 @@ mod integration_tests {
         map.update(&mut e, 0.1, (900.0, 450.0), (1280, 720));
         map.key(KeyCode::KeyG, false);
         assert_ne!(e.map_view.as_ref().unwrap().center, before);
+        // The bottom bar is hit-tested in the movie's stage coordinates. Find
+        // a stage row on it at 1280x720 (stage == window), then press P over
+        // the same spot at 1920x1080, where the window is 1.5 times the stage.
+        let bar_y = (500..720)
+            .rev()
+            .find(|&y| {
+                swf.map.as_ref().unwrap().menu.invoke(
+                    "_root.WorldMap.BottomBar.hitTest",
+                    &[num(640.0), num(y as f32), Value::Bool(false)],
+                ) == Value::Bool(true)
+            })
+            .expect("a stage row on the bottom bar");
+        swf.resize(1920, 1080);
+        e.renderer.resize(1920, 1080);
+        for (at, placed) in [((960.0, bar_y as f64 * 1.5), false), ((960.0, 300.0), true)] {
+            e.player_marker = None;
+            let map = swf.map.as_mut().unwrap();
+            map.key(KeyCode::KeyP, true);
+            map.update(&mut e, 1.0 / 60.0, at, (1920, 1080));
+            map.key(KeyCode::KeyP, false);
+            assert_eq!(e.player_marker.is_some(), placed, "P at {at:?}");
+        }
         swf.press(KeyCode::KeyM);
         tick(&mut swf, &mut e);
         assert_eq!(e.menu, None);
