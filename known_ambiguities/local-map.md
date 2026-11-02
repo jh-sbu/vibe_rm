@@ -41,3 +41,15 @@ OBND values (for example, `FXDrips01tall` and `FXAmbBlowingFog01`). Those
 boxes expand far beyond the dungeon, so the map omits objects with that exact
 sentinel box when fitting and drawing. This is a practical filter based on the
 installed assets; other effects may use different bounds.
+
+## Exploration and reveal
+
+UESP's [map bugs](https://en.uesp.net/w/index.php?oldid=3651114) describe
+unmapping in rectangular pieces but do not specify the grid or reveal rule.
+We use 256-unit squares in 16-by-16 pages, with separate grids per interior
+and worldspace. Every half second the player reveals square centres within
+2,560 units (twenty 128-unit standing body lengths); exteriors are limited to
+loaded cells. The user observed roughly twenty body lengths and provisionally
+the same distance indoors and outdoors; the exact range remains unverified.
+We do not check line of sight, lights, or height, and do not know the game's
+exact rule for those factors.

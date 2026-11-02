@@ -64,9 +64,89 @@ impl Seen {
     }
 }
 
+/// Approximately twenty standing body lengths (128 units each).
+pub const REVEAL_RADIUS: f32 = 20.0 * 128.0;
+
+impl Seen {
+    /// Reveal squares whose centres are within the radius. `loaded` prevents
+    /// exterior pages that are not currently loaded from becoming explored.
+    pub fn reveal(
+        &mut self,
+        space: Space,
+        position: Vec2,
+        radius: f32,
+        loaded: impl Fn(Page) -> bool,
+    ) {
+        if !position.is_finite() || !radius.is_finite() || radius < 0.0 {
+            return;
+        }
+        let Some((min_x, min_y)) = square_at(position - Vec2::splat(radius)) else {
+            return;
+        };
+        let Some((max_x, max_y)) = square_at(position + Vec2::splat(radius)) else {
+            return;
+        };
+        // Avoid pathological work from corrupt or unrealistic positions/radii.
+        if i64::from(max_x) - i64::from(min_x) > 1024 || i64::from(max_y) - i64::from(min_y) > 1024
+        {
+            return;
+        }
+        for y in min_y..=max_y {
+            for x in min_x..=max_x {
+                let center = Vec2::new(x as f32 + 0.5, y as f32 + 0.5) * SQUARE_SIZE;
+                if center.distance_squared(position) <= radius * radius
+                    && loaded(index(space, x, y).0)
+                {
+                    self.set_square(space, x, y);
+                }
+            }
+        }
+    }
+}
+
+impl crate::engine::Engine {
+    pub(crate) fn reveal_local_map(&mut self) {
+        let space = match self.location {
+            crate::engine::Location::Interior(id) => Space::Interior(id),
+            crate::engine::Location::Exterior { world, .. } => Space::Exterior(world),
+            crate::engine::Location::Nowhere => return,
+        };
+        let cells = &self.scene.cells;
+        self.local_seen.reveal(
+            space,
+            self.player.position.truncate(),
+            REVEAL_RADIUS,
+            |page| {
+                matches!(page.space, Space::Interior(_))
+                    || cells.contains_key(&crate::render::CellKey::Exterior(page.x, page.y))
+            },
+        );
+    }
+
+    pub(crate) fn update_local_seen(&mut self, dt: f32) {
+        self.local_seen_next -= dt.max(0.0);
+        if self.local_seen_next <= 0.0 {
+            self.local_seen_next = 0.5;
+            self.reveal_local_map();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reveal_is_radial_and_limited_to_loaded_pages() {
+        let mut seen = Seen::default();
+        let space = Space::Exterior(FormId(1));
+        seen.reveal(space, Vec2::new(4090.0, 128.0), 512.0, |page| {
+            page.x == 0 && page.y == 0
+        });
+        assert!(seen.contains(space, Vec2::new(4000.0, 128.0)));
+        assert!(!seen.contains(space, Vec2::new(4200.0, 128.0)));
+        assert!(!seen.contains(space, Vec2::new(3000.0, 128.0)));
+    }
+
     #[test]
     fn negative_positions_and_pages_do_not_alias_other_cells_or_spaces() {
         let mut seen = Seen::default();

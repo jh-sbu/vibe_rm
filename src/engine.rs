@@ -85,6 +85,8 @@ pub struct Engine {
     /// Persistent references of the current worldspace bucketed by grid cell.
     world_persistent: HashMap<(i32, i32), Vec<cell::CellReference>>,
     pub(crate) cell_references: cell::ReferenceCache,
+    pub(crate) local_seen: crate::local_map::seen::Seen,
+    pub(crate) local_seen_next: f32,
     pending_loads: Vec<(i32, i32)>,
     /// Name of what the crosshair points at, if activatable.
     pub look_target: Option<(FormId, String)>,
@@ -496,6 +498,8 @@ impl Engine {
             cells: HashMap::new(),
             world_persistent: HashMap::new(),
             cell_references: Default::default(),
+            local_seen: Default::default(),
+            local_seen_next: 0.0,
             pending_loads: Vec::new(),
             look_target: None,
             skeletons: HashMap::new(),
@@ -3135,6 +3139,7 @@ impl Engine {
         self.update_triggers(world_dt);
         self.update_hazards(world_dt);
         self.update_story();
+        self.update_local_seen(dt);
         self.update_map_markers(dt);
         self.update_quest_targets(dt);
         self.update_harvests();

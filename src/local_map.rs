@@ -301,6 +301,7 @@ pub struct LocalMap {
 
 impl LocalMap {
     pub fn new(engine: &mut crate::engine::Engine) -> Option<Self> {
+        engine.reveal_local_map();
         let (bounds, north) = match engine.location {
             Location::Interior(id) => {
                 let refs = engine.cell_references.get(&engine.lo, id);
