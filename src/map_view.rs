@@ -17,6 +17,7 @@ use crate::world::lod::Lod;
 const USE_MAP_DATA: u16 = 0x04;
 /// `map.swf`'s icon type of the player's own marker (`IconTypes`' last).
 pub const PLAYER_ICON: u8 = 66;
+pub const PLAYER_SET_ICON: u8 = 65;
 /// The lowest the map's camera tilts, and the highest (nearly straight down:
 /// exactly down has no up),
 /// degrees above the horizon.
@@ -314,11 +315,23 @@ impl Engine {
     }
 
     /// Destination markers, then the player, in stable callback order.
-    fn map_view_rows(&mut self) {
+    pub(crate) fn map_view_rows(&mut self) {
         let Some(view) = &self.map_view else { return };
         let world = view.world;
         let mut rows = self.map_rows_for_world(world);
         rows.extend(self.map_quest_rows(world));
+        if let Some(marker) = self.player_marker.filter(|m| m.world == world) {
+            rows.push(MapRow {
+                marker: None,
+                name: self
+                    .gmst_string("sPlayerSetMarkerName")
+                    .unwrap_or_else(|| "Custom Destination".into()),
+                kind: PLAYER_SET_ICON,
+                undiscovered: false,
+                pos: marker.pos.truncate(),
+                rotation: 0.0,
+            });
+        }
         if let Some((pos, rotation)) = self.map_view.as_ref().and_then(|v| v.player) {
             rows.push(MapRow {
                 marker: None,
