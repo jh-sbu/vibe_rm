@@ -1,6 +1,6 @@
 # Plan: the local map
 
-**Status: drafted** (2026-11-01). ROADMAP Next item 6 (UI), "The map's rest":
+**Status: in progress** (2026-11-02). ROADMAP Next item 6 (UI), "The map's rest":
 "the local map for interiors and nearby cells (`SetLocalMapExtents`, the
 movie's `img://Local_Map`)". The local map is a top-down picture of the
 player's area, with the doors, quest targets, the custom marker and the player
@@ -130,8 +130,7 @@ These are names and layouts only, used as leads, not as behaviour.
   - **2b. North.**
     - Interior: the camera turns by the cell's `NorthMarker` Z rotation, so
       the marker's facing is up.
-    - Exterior: true north. Whether the game's exteriors are turned is open
-      (L2).
+    - Exterior: true north (L2, observed in vanilla).
     - Check the turn's sign against the UESP tutorial's statement: its
       exports needed rotating by that angle to put north up, so the in-game
       image already has north up. Write down the reasoning.
@@ -144,8 +143,8 @@ These are names and layouts only, used as leads, not as behaviour.
     - Lit by a fixed light in a grey tone. The game's own image-space pass
       (CommonLibSSE's `ImageSpaceShaderParam`) has no public description,
       so the look is a choice. Record it.
-    - Multi-level interiors draw every level. Whether the game slices by
-      height around the player is open (L3).
+    - Multi-level interiors draw every level in a fixed top-down projection;
+      higher levels obscure lower ones (L3, observed in vanilla).
   - **2d. Fit.**
     - The orthographic box covers the bounds at the texture's 16:9 aspect
       (800 × 450, `map.swf`), padded by the bounds' larger side over 20 as
@@ -185,11 +184,12 @@ These are names and layouts only, used as leads, not as behaviour.
     - Hovering shows the name (`SetDescription`, as on the world map).
     - Clicking a door or a marker does nothing. The game's local map has no
       travel; a click without a marker is ignored.
-  - **3d.** Which map opens first indoors: the game's choice is observation
-    L1. Open the world map until then, as now. When the world map opens from
+  - **3d.** Which map opens first indoors: M opens the local map (L1, observed
+    in vanilla). When the world map opens from
     an interior, put the player's marker at the exterior door the way out
     leads to (`door_on_way` from the interior to the map's world). The
-    player gets a marker instead of the map's middle, also part of L1.
+    player gets a marker instead of the map's middle; its vanilla position
+    remains open.
 - **Step 4. The explored area.**
   - **4a.** A per-cell grid of seen squares.
     - Interiors: over the cell's bounds. Exteriors: one grid per exterior
@@ -200,12 +200,12 @@ These are names and layouts only, used as leads, not as behaviour.
       the revealed pieces are rectangles.
   - **4b.** Revealing: squares within a radius of the player, every half
     second, while loaded.
-    - The radius is a choice (1024 units) until L4.
+    - Start with approximately 20 player body lengths indoors and outdoors
+      (L4); the exact range remains unverified.
     - Lights or line of sight aren't considered.
   - **4c.** Drawing: unrevealed squares are covered in the local map image
-    (dark, at the texture's alpha the movie shows behind). Markers under
-    them are hidden, the player's and quest targets' aside. Whether the game
-    hides quest targets in unexplored parts is open (L5).
+    (dark, at the texture's alpha the movie shows behind). Doors, quest targets and the player remain visible over unrevealed parts
+    (L5, observed in vanilla).
   - **4d.** Saved: the revealed squares of each cell, in `Continuity`,
     as bitsets keyed by cell (interior form id, or world and grid).
     Round-trip and corrupt-payload tests. Size: Skyrim has about 11,000
@@ -220,15 +220,14 @@ None of these can be read from a save (vanilla Papyrus can't see the map),
 so they are direct observations for the user, batched with
 `plans/map-menu.md`'s. Each answer replaces a choice above.
 
-- **L1.** In an interior, does M open the world map or the local map? Does the
-  world map show "you are here", and where (the exterior door)?
-- **L2.** Is an exterior local map turned, or is north always up?
-- **L3.** In a multi-level interior (Bleak Falls Barrow), does the local map
-  show the other levels?
-- **L4.** How far around the player does the local map reveal, roughly in
-  body lengths? Is it the same outdoors?
-- **L5.** Are quest targets and doors shown in unexplored parts of the local
-  map?
+- **L1.** M opens the local map in interiors. The world-map player marker's
+  position when toggled from an interior remains open.
+- **L2.** Exterior local maps are not turned.
+- **L3.** A fixed top-down projection shows all levels; a higher level blocks
+  the lower level beneath it, and changing level does not change the map.
+- **L4.** Roughly 20 body lengths, provisionally the same indoors and outdoors;
+  the exact range and whether it differs are still open.
+- **L5.** Quest targets and doors are shown in unexplored parts.
 
 ## Order and size
 

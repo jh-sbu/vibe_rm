@@ -44,6 +44,7 @@ mod leveled;
 mod load_screens;
 mod loading;
 mod loading_view;
+mod local_map;
 mod locations;
 mod locks;
 mod loose;
