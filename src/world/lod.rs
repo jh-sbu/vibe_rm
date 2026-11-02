@@ -130,6 +130,25 @@ impl Lod {
         self.loaded.contains_key(&key)
     }
 
+    /// Height on loaded terrain only; object LOD must not become ground.
+    pub fn height_at(&self, at: Vec2) -> Option<f32> {
+        self.instances()
+            .filter(|i| i.model.path.to_ascii_lowercase().ends_with(".btr"))
+            .flat_map(|i| {
+                i.model.parts.iter().flat_map(move |part| {
+                    part.cpu_indices.chunks_exact(3).filter_map(move |tri| {
+                        let point = |n: u32| {
+                            part.cpu_vertices
+                                .get(n as usize)
+                                .map(|v| i.transform.transform_point3(Vec3::from(v.position)))
+                        };
+                        triangle_height(at, point(tri[0])?, point(tri[1])?, point(tri[2])?)
+                    })
+                })
+            })
+            .max_by(f32::total_cmp)
+    }
+
     pub fn instances(&self) -> impl Iterator<Item = &Instance> {
         self.loaded.values().flatten()
     }
@@ -241,5 +260,34 @@ pub fn stream(
                 lod.remove(k);
             }
         }
+    }
+}
+
+fn triangle_height(p: Vec2, a: Vec3, b: Vec3, c: Vec3) -> Option<f32> {
+    let ab = (b - a).truncate();
+    let ac = (c - a).truncate();
+    let ap = p - a.truncate();
+    let det = ab.perp_dot(ac);
+    if !det.is_finite() || det.abs() < f32::EPSILON {
+        return None;
+    }
+    let u = ap.perp_dot(ac) / det;
+    let v = ab.perp_dot(ap) / det;
+    let height = a.z + u * (b.z - a.z) + v * (c.z - a.z);
+    (u >= -1e-5 && v >= -1e-5 && u + v <= 1.00001 && height.is_finite()).then_some(height)
+}
+#[cfg(test)]
+mod height_tests {
+    use super::*;
+    #[test]
+    fn interpolates_ground_and_rejects_outside_or_degenerate() {
+        let (a, b, c) = (
+            Vec3::ZERO,
+            Vec3::new(10.0, 0.0, 10.0),
+            Vec3::new(0.0, 10.0, 20.0),
+        );
+        assert_eq!(triangle_height(Vec2::new(2.0, 3.0), a, b, c), Some(8.0));
+        assert_eq!(triangle_height(Vec2::splat(8.0), a, b, c), None);
+        assert_eq!(triangle_height(Vec2::ZERO, a, a, c), None);
     }
 }

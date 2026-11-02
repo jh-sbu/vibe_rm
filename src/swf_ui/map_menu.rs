@@ -53,6 +53,9 @@ pub(super) struct MapMenu {
     drag: Option<((f64, f64), f64)>,
     /// A press on the map waiting to be a click when released in place.
     click: bool,
+    released: bool,
+    marker_snapshot: Option<crate::map_markers::PlayerMarker>,
+    pointer: Vec2,
     /// The marker told to the movie as selected.
     selected: Option<usize>,
     /// Markers are still being created (`CreateMarkers`).
@@ -87,6 +90,9 @@ impl MapMenu {
             wheel: 0.0,
             drag: None,
             click: false,
+            released: false,
+            marker_snapshot: engine.player_marker,
+            pointer: Vec2::splat(0.5),
             selected: None,
             creating: false,
             close: false,
@@ -195,7 +201,7 @@ impl MapMenu {
                 && std::mem::take(&mut self.click)
                 && moved < CLICK_SLOP
             {
-                self.menu.callback("ClickSelectedMarker", &[]);
+                self.released = true;
             }
         }
     }
@@ -203,9 +209,11 @@ impl MapMenu {
     /// The camera's input and the markers' places, once a frame. `pointer`
     /// is in pixels.
     pub fn update(&mut self, engine: &mut Engine, dt: f32, pointer: (f64, f64), size: (u32, u32)) {
+        let mut place = false;
         for event in std::mem::take(&mut self.pending) {
             match event {
                 "Cancel" => self.close = true,
+                "PlacePlayerMarker" => place = true,
                 "PlayerPosition" => {
                     if let Some(view) = &mut engine.map_view
                         && let Some((p, _)) = view.player
@@ -246,6 +254,16 @@ impl MapMenu {
             view.pan(right * PAN_SPEED * dt, up * PAN_SPEED * dt);
             // Zooming in is the wheel forwards, which lowers the camera.
             view.zoom_by(-zoom * ZOOM_SPEED * dt - wheel * WHEEL_ZOOM);
+        }
+        drop(bindings);
+        self.pointer = Vec2::new((pointer.0 / w) as f32, (pointer.1 / h) as f32);
+        if place {
+            self.place_at_pointer(engine);
+        }
+        if self.marker_snapshot != engine.player_marker {
+            engine.map_view_rows();
+            self.give_markers(engine);
+            self.marker_snapshot = engine.player_marker;
         }
         engine.update_map_view();
         if self.creating {
@@ -288,6 +306,24 @@ impl MapMenu {
                 "SetSelectedMarker",
                 &[num(under.map_or(-1.0, |i| i as f32))],
             );
+        }
+        if std::mem::take(&mut self.released) {
+            if under.is_some() {
+                self.menu.callback("ClickSelectedMarker", &[]);
+            } else {
+                self.place_at_pointer(engine);
+            }
+        }
+    }
+
+    fn place_at_pointer(&mut self, engine: &mut Engine) {
+        let aspect = engine.renderer.width as f32 / engine.renderer.height.max(1) as f32;
+        if let Some((world, at)) = engine
+            .map_view
+            .as_ref()
+            .and_then(|v| v.ground_at(self.pointer, aspect).map(|at| (v.world, at)))
+        {
+            engine.place_player_marker(world, at);
         }
     }
 

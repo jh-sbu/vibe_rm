@@ -264,6 +264,30 @@ impl Engine {
         }
     }
 
+    /// Set the single destination. Height is for continuity; map icons use z=0.
+    pub(crate) fn place_player_marker(&mut self, world: FormId, at: glam::Vec2) -> bool {
+        if !at.is_finite() || self.lo.world(world).is_none() {
+            return false;
+        }
+        let loaded = match self.location {
+            Location::Exterior { world: here, .. } if here == world => self.ground_height(at),
+            _ => None,
+        };
+        let height = loaded
+            .or_else(|| {
+                self.map_view
+                    .as_ref()
+                    .filter(|v| v.world == world)
+                    .and_then(|v| v.ground_height(at))
+            })
+            .unwrap_or(0.0);
+        self.player_marker = Some(PlayerMarker {
+            world,
+            pos: at.extend(height),
+        });
+        true
+    }
+
     /// Everything on the compass: the location markers, the quest targets
     /// and the enemies fighting the player.
     pub fn compass_markers(&self) -> Vec<CompassMarker> {

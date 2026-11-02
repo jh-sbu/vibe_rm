@@ -154,6 +154,10 @@ impl MapView {
         Some(Vec2::new((ndc.x + 1.0) / 2.0, (1.0 - ndc.y) / 2.0))
     }
 
+    pub(crate) fn ground_height(&self, at: Vec2) -> Option<f32> {
+        self.lod.height_at(at)
+    }
+
     /// Inverse marker projection: intersect the pointer ray with marker z=0.
     pub fn ground_at(&self, screen: Vec2, aspect: f32) -> Option<Vec2> {
         if !screen.is_finite() || !aspect.is_finite() || aspect <= 0.0 {
