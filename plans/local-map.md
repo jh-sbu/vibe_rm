@@ -175,7 +175,7 @@ marker position when leaving an interior. Choices are documented in
   - **3b.** The markers, through `_root.WorldMap.LocalMapMenu.IconDisplay`
     with `invoke` (the shared callback names, above).
     - Doors (61) are the loaded cell's load doors, named by their
-      destination's cell or location.
+      destination's cell or location, visible only in explored areas.
     - Quest targets (62, or 63 for a door on the way) and the custom marker
       (65) when they fall inside the bounds.
     - The player (66), turned by their heading minus north.
@@ -210,9 +210,11 @@ marker position when leaving an interior. Choices are documented in
       (L4); the exact range remains unverified.
     - Lights or line of sight aren't considered.
   - **4c.** Drawing: unrevealed squares are covered in the local map image
-    (dark, at the texture's alpha the movie shows behind). Doors, quest
-    targets and the player remain visible over unrevealed parts (L5, observed
-    in vanilla).
+    (dark, at the texture's alpha the movie shows behind). Ordinary door
+    markers are hidden until their area is explored. Active quest markers,
+    including markers for doors on the route to a target, remain visible
+    over unrevealed parts while the quest remains active (L5, corrected
+    vanilla observation). The player remains visible.
   - **4d.** Saved: the revealed squares of each cell, in `Continuity`,
     as bitsets keyed by cell (interior form id, or world and grid).
     Round-trip and corrupt-payload tests. Size: Skyrim has about 11,000
@@ -234,7 +236,11 @@ so they are direct observations for the user, batched with
   the lower level beneath it, and changing level does not change the map.
 - **L4.** Roughly 20 body lengths, provisionally the same indoors and outdoors;
   the exact range and whether it differs are still open.
-- **L5.** Quest targets and doors are shown in unexplored parts.
+- **L5 (corrected 2026-11-02).** Ordinary doors do not appear in unexplored
+  areas until revealed. If an active quest leads through a door, its quest
+  marker is visible even outside the explored area while the quest remains
+  active. The earlier answer confused this quest-door marker with an
+  ordinary door marker.
 
 ## Order and size
 

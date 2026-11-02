@@ -236,7 +236,7 @@ impl MapMenu {
             let uv = local.frame.texture_point(pos);
             let visible = (0.0..=1.0).contains(&uv.x)
                 && (0.0..=1.0).contains(&uv.y)
-                && (row.kind != 65 || local.seen.contains(local.space, pos.truncate()));
+                && row.revealed(&local.seen, local.space);
             let rotation = if row.kind == 66 {
                 (engine.camera.yaw - local.frame.north).to_degrees()
             } else {
@@ -663,8 +663,7 @@ impl MapMenu {
                         let uv = local.frame.texture_point(row.position);
                         if !(0.0..=1.0).contains(&uv.x)
                             || !(0.0..=1.0).contains(&uv.y)
-                            || (row.kind == 65
-                                && !local.seen.contains(local.space, row.position.truncate()))
+                            || !row.revealed(&local.seen, local.space)
                         {
                             return None;
                         }

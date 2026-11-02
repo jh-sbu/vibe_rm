@@ -28,6 +28,12 @@ VRM_SETTINGS=/tmp/vrm-local-map-settings.ini VRM_SAVES=/tmp/vrm-local-map-saves 
 
 The final captures show the explored area and a door marker over unrevealed
 space. These are implementation captures, not evidence of vanilla appearance.
+The user's corrected vanilla observation on 2026-11-02 distinguishes ordinary
+doors, which remain hidden until their area is explored, from active quest
+markers on doors, which remain visible outside explored areas while the quest
+remains active. The ordinary door shown in the earlier captures reflects the
+previous implementation; ordinary doors are now hidden from both drawing and
+hover selection until revealed. Quest-door markers retain their visibility.
 
 Validation: the application suite passed on the host GPU (600 passed, 394
 opt-in tests skipped). The installed `map.swf` integration test passed for

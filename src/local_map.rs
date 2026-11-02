@@ -257,6 +257,14 @@ pub struct LocalRow {
     pub position: Vec3,
 }
 
+impl LocalRow {
+    /// Ordinary doors and the custom destination require exploration. Active
+    /// quest markers, including doors on the way to a target, remain visible.
+    pub fn revealed(&self, seen: &seen::Seen, space: seen::Space) -> bool {
+        !matches!(self.kind, 61 | 65) || seen.contains(space, self.position.truncate())
+    }
+}
+
 /// The load doors in the loaded area, the active quest targets, custom
 /// destination in this worldspace, and the player.
 pub fn marker_rows(engine: &mut crate::engine::Engine) -> Vec<LocalRow> {
@@ -451,6 +459,31 @@ mod tests {
         FormId,
         writer::{Node, RecordBuilder, write_plugin},
     };
+
+    #[test]
+    fn unexplored_doors_require_reveal_but_quest_markers_remain_visible() {
+        let space = seen::Space::Interior(FormId(0x800));
+        let mut seen = seen::Seen::default();
+        let rows: Vec<_> = [61, 62, 63, 65, 66]
+            .into_iter()
+            .map(|kind| LocalRow {
+                name: String::new(),
+                kind,
+                position: Vec3::new(128.0, 128.0, 0.0),
+            })
+            .collect();
+        let visibility = |seen: &seen::Seen| {
+            rows.iter()
+                .map(|row| row.revealed(seen, space))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(visibility(&seen), [false, true, true, false, true]);
+        seen.set_square(seen::Space::Interior(FormId(0x801)), 0, 0);
+        seen.set_square(space, 1, 0);
+        assert_eq!(visibility(&seen), [false, true, true, false, true]);
+        seen.set_square(space, 0, 0);
+        assert_eq!(visibility(&seen), [true; 5]);
+    }
 
     #[test]
     fn cached_mask_matches_point_queries_across_rotated_square_and_page_edges() {

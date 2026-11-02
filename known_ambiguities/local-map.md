@@ -73,6 +73,10 @@ We do not check line of sight, lights, or height, and do not know the game's
 exact rule for those factors.
 
 Unrevealed pixels are black in the generated image; markers remain a separate
-movie layer. The user observed that doors and quest targets remain visible in
-unexplored areas. We hide the custom destination in unexplored squares; its
-vanilla visibility there, and the exact fog colour and opacity, are unverified.
+movie layer. The user's corrected vanilla observation (2026-11-02, L5 in
+`plans/local-map.md`) establishes that ordinary door markers are hidden until
+their area is explored. Active quest markers, including a marker on a door
+leading to the target, remain visible outside the explored area while the
+quest remains active. Both drawing and hover selection apply this distinction.
+We also hide the custom destination in unexplored squares; its vanilla
+visibility there, and the exact fog colour and opacity, are unverified.
