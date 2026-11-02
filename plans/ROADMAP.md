@@ -2133,7 +2133,9 @@ The note's follow-up list needs `test-mod autotest23`.
      screen is done: `plans/loading-screen.md`) (`known_ambiguities/fast-travel.md`); then custom markers on the
      map and the journal's Show on Map; quest targets updating while the map
      stays open; distant LOD around the loaded cells on by default (the
-     blocks are now placed right: `VRM_LOD=1`)
+     blocks are now placed right: `VRM_LOD=1`). Plans: `plans/map-menu.md` (the
+     controls, custom markers, Show on Map and markers refreshing while open),
+     then `plans/local-map.md`.
    - The inventory's rest: the item's model beside the card (`UpdateItem3D`,
      rotating and zooming it), including crafting previews; independent per-hand
      selection for two differently modified copies of the same weapon base;
