@@ -1,4 +1,5 @@
 //! Geometry used to fit the local map to loaded cells.
+pub mod seen;
 use esp::LoadOrder;
 use glam::{Vec2, Vec3};
 
