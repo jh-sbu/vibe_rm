@@ -725,6 +725,46 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires a headless GPU; synthetic records only"]
+    fn custom_destination_places_moves_leaves_removes_and_survives_save() {
+        let dir = hierarchy_fixture("custom-destination");
+        let mut e = crate::stats::action_tests::headless_engine(&dir, "Map.esp");
+        let world = FormId(0x800);
+        let first = Vec2::new(10.0, 20.0);
+        let next = Vec2::new(300.0, 400.0);
+        e.request_player_marker(world, first);
+        assert!(e.messages.boxes.is_empty());
+        assert_eq!(e.player_marker.unwrap().pos.truncate(), first);
+        e.request_player_marker(world, next);
+        let question = e.messages.boxes.front().unwrap();
+        assert_eq!(
+            question
+                .buttons
+                .iter()
+                .map(|(_, s)| s.as_str())
+                .collect::<Vec<_>>(),
+            ["Move It", "Leave It", "Remove It"]
+        );
+        assert_eq!(e.player_marker.unwrap().pos.truncate(), first);
+        // Preserve the captured click even when the question is saved and loaded.
+        let file = crate::save::state::Snapshot::capture(&e).write();
+        crate::save::state::Snapshot::read(&file)
+            .unwrap()
+            .apply(&mut e)
+            .unwrap();
+        e.choose_message_button(0);
+        assert_eq!(e.player_marker.unwrap().pos.truncate(), next);
+        assert!(e.messages.boxes.is_empty());
+        e.request_player_marker(world, first);
+        e.choose_message_button(1);
+        assert_eq!(e.player_marker.unwrap().pos.truncate(), next);
+        e.request_player_marker(world, first);
+        e.choose_message_button(2);
+        assert_eq!(e.player_marker, None);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn map_callback_indices_keep_stable_destination_identity() {
         let rows = vec![
             MapRow {

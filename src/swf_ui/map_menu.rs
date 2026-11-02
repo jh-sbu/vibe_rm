@@ -323,7 +323,7 @@ impl MapMenu {
             .as_ref()
             .and_then(|v| v.ground_at(self.pointer, aspect).map(|at| (v.world, at)))
         {
-            engine.place_player_marker(world, at);
+            engine.request_player_marker(world, at);
         }
     }
 
@@ -333,13 +333,20 @@ impl MapMenu {
         match call.name.as_str() {
             "ClickCallback" => self.click = true,
             "MarkerClick" => {
-                if let Some(Value::Number(i)) = call.args.first()
-                    && let Some(crate::map_view::RowAction::Travel(marker)) = engine
+                if let Some(Value::Number(i)) = call.args.first() {
+                    match engine
                         .map_view
                         .as_ref()
                         .map(|v| crate::map_view::row_action(&v.rows, *i))
-                {
-                    engine.request_map_travel(marker);
+                    {
+                        Some(crate::map_view::RowAction::Travel(marker)) => {
+                            engine.request_map_travel(marker)
+                        }
+                        Some(crate::map_view::RowAction::PlayerMarker) => {
+                            self.place_at_pointer(engine)
+                        }
+                        _ => {}
+                    }
                 }
             }
             "OpenJournalCallback" => engine.menu = Some(Shown::Journal),

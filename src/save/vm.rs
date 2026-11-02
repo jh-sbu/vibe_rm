@@ -443,6 +443,14 @@ impl VmSnapshot {
                         m.form(station);
                         m.form(recipe);
                     }
+                    Some(crate::messages::BoxAction::PlayerMarker { marker, replace }) => {
+                        m.u8(8);
+                        m.form(marker.world);
+                        m.f32(marker.pos.x);
+                        m.f32(marker.pos.y);
+                        m.f32(marker.pos.z);
+                        m.bool(replace);
+                    }
                     Some(crate::messages::BoxAction::FastTravel { marker }) => {
                         m.u8(2);
                         m.form(marker);
@@ -652,6 +660,19 @@ impl VmSnapshot {
                             return Err(Corrupt("invalid native poison action".into()));
                         }
                         Some(crate::messages::BoxAction::Poison { weapon, poison })
+                    }
+                    8 => {
+                        let marker = crate::map_markers::PlayerMarker {
+                            world: r.form()?,
+                            pos: glam::Vec3::new(r.f32()?, r.f32()?, r.f32()?),
+                        };
+                        if marker.world.is_null() || !marker.pos.is_finite() {
+                            return Err(Corrupt("invalid custom destination action".into()));
+                        }
+                        Some(crate::messages::BoxAction::PlayerMarker {
+                            marker,
+                            replace: r.bool()?,
+                        })
                     }
                     2 => {
                         let marker = r.form()?;

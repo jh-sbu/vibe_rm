@@ -264,6 +264,38 @@ impl Engine {
         }
     }
 
+    pub(crate) fn request_player_marker(&mut self, world: FormId, at: glam::Vec2) {
+        if !self.messages.boxes.is_empty() || !at.is_finite() || self.lo.world(world).is_none() {
+            return;
+        }
+        if self.player_marker.is_none() {
+            self.place_player_marker(world, at);
+            return;
+        }
+        let prompt = self
+            .gmst_string("sMoveMarkerQuestion")
+            .unwrap_or_else(|| "Do you want to move your marker or remove it?".into());
+        let buttons = [
+            ("sMoveMarker", "Move It"),
+            ("sLeaveMarker", "Leave It"),
+            ("sRemoveMarker", "Remove It"),
+        ]
+        .into_iter()
+        .map(|(key, fallback)| self.gmst_string(key).unwrap_or_else(|| fallback.into()))
+        .collect();
+        self.ask(
+            prompt,
+            buttons,
+            crate::messages::BoxAction::PlayerMarker {
+                marker: PlayerMarker {
+                    world,
+                    pos: at.extend(0.0),
+                },
+                replace: true,
+            },
+        );
+    }
+
     /// Set the single destination. Height is for continuity; map icons use z=0.
     pub(crate) fn place_player_marker(&mut self, world: FormId, at: glam::Vec2) -> bool {
         if !at.is_finite() || self.lo.world(world).is_none() {

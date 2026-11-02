@@ -63,6 +63,11 @@ pub enum BoxAction {
     FastTravel {
         marker: FormId,
     },
+    /// Custom destination question; Move It uses the captured new click spot.
+    PlayerMarker {
+        marker: crate::map_markers::PlayerMarker,
+        replace: bool,
+    },
     /// Making a skill Legendary, asked twice (`sLegendaryResetConfirm`, then
     /// `sLegendaryResetSecondConfirm`).
     Legendary {
@@ -501,6 +506,13 @@ impl Engine {
                 if let Err(reason) = self.travel_to_map_marker(marker) {
                     let text = reason.message(self);
                     self.scripts.notify(text);
+                }
+            }
+            Some(BoxAction::PlayerMarker { marker, replace }) => {
+                if index == 0 {
+                    self.place_player_marker(marker.world, marker.pos.truncate());
+                } else if replace && index == 2 {
+                    self.player_marker = None;
                 }
             }
             Some(BoxAction::Poison { weapon, poison }) if index == 0 => {
