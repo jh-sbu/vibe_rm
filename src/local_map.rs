@@ -215,6 +215,62 @@ impl MapFrame {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct LocalRow {
+    pub name: String,
+    pub kind: u8,
+    pub position: Vec3,
+}
+
+/// The load doors in the loaded area, the active quest targets, custom
+/// destination in this worldspace, and the player.
+pub fn marker_rows(engine: &mut crate::engine::Engine) -> Vec<LocalRow> {
+    let mut rows = Vec::new();
+    for door in engine.load_doors() {
+        let Some((dest, _, _)) = door.destination else {
+            continue;
+        };
+        let name = engine
+            .lo
+            .cell_of_ref(dest)
+            .map(|cell| {
+                let location = engine.lo.get(cell).and_then(|r| {
+                    let data = r.get(b"XLCN")?.get(..4)?;
+                    Some(r.fid(esp::FormId(u32::from_le_bytes(data.try_into().ok()?))))
+                });
+                location
+                    .map(|id| engine.form_name(id))
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| engine.form_name(cell))
+            })
+            .unwrap_or_default();
+        rows.push(LocalRow {
+            name,
+            kind: 61,
+            position: door.position,
+        });
+    }
+    rows.extend(engine.local_quest_rows());
+    if let (Location::Exterior { world, .. }, Some(marker)) =
+        (engine.location, engine.player_marker)
+        && marker.world == world
+    {
+        rows.push(LocalRow {
+            name: engine
+                .gmst_string("sPlayerSetMarkerName")
+                .unwrap_or_else(|| "Custom Destination".into()),
+            kind: 65,
+            position: marker.pos,
+        });
+    }
+    rows.push(LocalRow {
+        name: String::new(),
+        kind: 66,
+        position: engine.player.position,
+    });
+    rows
+}
+
 pub struct LocalMap {
     pub frame: MapFrame,
     pub scene: crate::render::Scene,

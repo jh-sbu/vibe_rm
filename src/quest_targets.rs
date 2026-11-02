@@ -395,6 +395,45 @@ impl Engine {
         rows
     }
 
+    /// Tracked targets and the first door towards targets in another space.
+    pub(crate) fn local_quest_rows(&mut self) -> Vec<crate::local_map::LocalRow> {
+        let Some(here) = self.player_space() else {
+            return Vec::new();
+        };
+        let mut rows: Vec<crate::local_map::LocalRow> = Vec::new();
+        for (quest, reference) in self.active_quest_references() {
+            let Some((space, target)) = self.target_spot(reference) else {
+                continue;
+            };
+            let (position, kind) = if space == here {
+                (target, 62)
+            } else {
+                let Some(door) = self.door_on_way(here, space, self.player.position) else {
+                    continue;
+                };
+                (door, 63)
+            };
+            if rows
+                .iter()
+                .any(|row| row.position == position && row.kind == kind)
+            {
+                continue;
+            }
+            let name = self.quest_name(quest);
+            rows.push(crate::local_map::LocalRow {
+                name: if name.is_empty() {
+                    self.gmst_string("sQuestTarget")
+                        .unwrap_or_else(|| "Quest target".into())
+                } else {
+                    name
+                },
+                kind,
+                position,
+            });
+        }
+        rows
+    }
+
     /// The quest targets on the compass.
     pub fn compass_quest_markers(&self) -> Vec<CompassMarker> {
         let player = self.player.position;

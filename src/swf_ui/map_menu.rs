@@ -26,6 +26,7 @@ use super::{Buttons, num, text};
 
 const M: &str = "_root.WorldMap";
 const LOCAL: &str = "_root.WorldMap.LocalMapMenu";
+const LOCAL_ICONS: &str = "_root.WorldMap.LocalMapMenu.IconDisplay";
 
 /// Screen heights a second the arrow keys pan, and zoom a second the keys
 /// zoom. Mouse look is degrees per screen height.
@@ -85,6 +86,8 @@ pub(super) struct MapMenu {
     local: Option<crate::local_map::LocalMap>,
     local_shown: bool,
     local_extents: Option<[f64; 4]>,
+    local_rows: Vec<crate::local_map::LocalRow>,
+    local_creating: bool,
     /// Esc, Tab or the map key: close.
     pub close: bool,
     pub journal: bool,
@@ -128,6 +131,8 @@ impl MapMenu {
             local: None,
             local_shown: false,
             local_extents: None,
+            local_rows: Vec::new(),
+            local_creating: false,
             close: false,
             journal: false,
         };
@@ -176,8 +181,64 @@ impl MapMenu {
                 .unwrap_or(Value::Undefined);
             self.menu
                 .invoke(&format!("{LOCAL}.SetTitle"), &[text(&name), cleared]);
+            self.give_local_markers(engine);
         }
         self.clear_input();
+    }
+
+    fn give_local_markers(&mut self, engine: &mut Engine) {
+        self.local_rows = crate::local_map::marker_rows(engine);
+        let mut data = Vec::with_capacity(self.local_rows.len() * 3);
+        for row in &self.local_rows {
+            data.extend([text(&row.name), num(row.kind as f32), Value::Bool(false)]);
+        }
+        self.menu.set(
+            &format!("{LOCAL_ICONS}.PlayerLocationMarkerType"),
+            num(66.0),
+        );
+        self.menu.invoke(
+            &format!("{LOCAL_ICONS}.SetNumMarkers"),
+            &[num(self.local_rows.len() as f32)],
+        );
+        self.menu
+            .set(&format!("{LOCAL_ICONS}.MarkerData"), Value::List(data));
+        self.local_creating = true;
+    }
+
+    fn update_local_markers(&mut self, engine: &Engine) {
+        if self.local_creating {
+            self.menu
+                .invoke(&format!("{LOCAL_ICONS}.CreateMarkers"), &[]);
+            if !matches!(
+                self.menu
+                    .invoke(&format!("{LOCAL_ICONS}.GetCreatingMarkers"), &[]),
+                Value::Bool(false)
+            ) {
+                return;
+            }
+            self.local_creating = false;
+        }
+        let Some(local) = &self.local else { return };
+        let mut data = Vec::with_capacity(self.local_rows.len() * 4);
+        for row in &self.local_rows {
+            let pos = if row.kind == 66 {
+                engine.player.position
+            } else {
+                row.position
+            };
+            let uv = local.frame.texture_point(pos);
+            let visible = (0.0..=1.0).contains(&uv.x) && (0.0..=1.0).contains(&uv.y);
+            let rotation = if row.kind == 66 {
+                (engine.camera.yaw - local.frame.north).to_degrees()
+            } else {
+                0.0
+            };
+            data.extend([Value::Bool(visible), num(uv.x), num(uv.y), num(rotation)]);
+        }
+        self.menu
+            .set(&format!("{LOCAL_ICONS}.MarkerData"), Value::List(data));
+        self.menu
+            .invoke(&format!("{LOCAL_ICONS}.RefreshMarkers"), &[]);
     }
 
     pub fn show_journal(&mut self, show: bool) {
@@ -391,6 +452,7 @@ impl MapMenu {
         }
         if self.local_shown {
             self.pointer_px = pointer;
+            self.update_local_markers(engine);
             return;
         }
         let bindings = self.bindings.read().unwrap();
@@ -812,6 +874,30 @@ mod integration_tests {
         tick(&mut swf, &mut e);
         let map = swf.map.as_ref().unwrap();
         assert!(map.local_shown);
+        assert!(!map.local_creating);
+        let player_index = map
+            .local_rows
+            .iter()
+            .position(|row| row.kind == 66)
+            .unwrap();
+        assert_eq!(
+            map.menu
+                .get(&format!("{LOCAL_ICONS}.Markers.{player_index}._visible")),
+            Value::Bool(true)
+        );
+        let uv = map
+            .local
+            .as_ref()
+            .unwrap()
+            .frame
+            .texture_point(e.player.position);
+        let x = map
+            .menu
+            .get(&format!("{LOCAL_ICONS}.Markers.{player_index}._x"));
+        assert!(
+            matches!(x, Value::Number(x) if (x - (uv.x * 800.0) as f64).abs() < 0.1),
+            "player x: {x:?}"
+        );
         assert!(
             map.local_extents.is_some(),
             "movie supplies texture extents"
