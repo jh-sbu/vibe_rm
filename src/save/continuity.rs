@@ -1714,7 +1714,7 @@ impl Continuity {
                 return Err(Corrupt("invalid custom destination".into()));
             }
         }
-        if !self.map_heading.is_finite() || !(0.0..360.0).contains(&self.map_heading) {
+        if !self.map_heading.is_finite() || !(0.0..=360.0).contains(&self.map_heading) {
             return Err(Corrupt("invalid map heading".into()));
         }
         if let Some((at, zoom, pitch)) = self.map_camera {
@@ -1860,7 +1860,8 @@ impl Continuity {
         e.imagespace.active = self.image_modifiers;
         e.close_map_view();
         e.map_start = self.map_camera;
-        e.map_heading = self.map_heading;
+        // Saves from before `turn_by` wrapped 360 to 0 can hold exactly 360.
+        e.map_heading = self.map_heading % 360.0;
         e.player_marker = self.player_marker;
         if e.menu == Some(crate::items::Menu::Map) {
             e.menu = None;

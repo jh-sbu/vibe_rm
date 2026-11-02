@@ -310,11 +310,16 @@ pub struct Engine {
     /// The world map, while it is open.
     pub map_view: Option<crate::map_view::MapView>,
     pub stats_view: Option<crate::stats_view::StatsView>,
-    /// The view the next opening of the map starts from (console `map`):
-    /// the position looked at, zoom and pitch.
+    /// The player's custom destination ("Custom Destination"), if set.
     pub player_marker: Option<crate::map_markers::PlayerMarker>,
+    /// The heading, degrees, the next opening of the map starts at: north
+    /// (0) unless a save made with the map open restored one. Taken on opening.
     pub map_heading: f32,
+    /// Show on Map's target for the next map update: (map worldspace, map
+    /// position). Transient; it never becomes `map_start`.
     pub map_focus: Option<(FormId, glam::Vec2)>,
+    /// The view the next opening of the map starts from (console `map`, or
+    /// a save made with the map open): the position looked at, zoom and pitch.
     pub map_start: Option<(glam::Vec2, f32, f32)>,
     /// Where the tracked quests' objectives point (`crate::quest_targets`).
     pub quest_targets: crate::quest_targets::QuestTargets,

@@ -221,7 +221,9 @@ impl MapView {
     }
 
     pub fn turn_by(&mut self, degrees: f32) {
-        self.heading = (self.heading + degrees).rem_euclid(360.0);
+        let heading = (self.heading + degrees).rem_euclid(360.0);
+        // `rem_euclid` rounds a tiny negative sum up to exactly 360.
+        self.heading = if heading < 360.0 { heading } else { 0.0 };
     }
 
     pub fn tilt_by(&mut self, degrees: f32) {
@@ -359,7 +361,7 @@ impl Engine {
             center,
             zoom: 1.0,
             pitch: data.camera.initial_pitch.clamp(MIN_PITCH, MAX_PITCH),
-            heading: self.map_heading,
+            heading: std::mem::take(&mut self.map_heading),
             fov_y,
             lod,
             scene,
@@ -379,11 +381,11 @@ impl Engine {
     }
 
     pub fn close_map_view(&mut self) {
+        // Each opening starts on the player again, as in vanilla (user,
+        // 2026-11-01); only `map_start` / `map_heading` (console, a save made
+        // with the map open) carry a camera into the next opening.
         self.map_focus = None;
-        if let Some(view) = self.map_view.take() {
-            self.map_start = Some((view.center, view.zoom, view.pitch));
-            self.map_heading = view.heading;
-        }
+        self.map_view = None;
     }
 
     /// Visible destination markers, including children that inherit this map.
@@ -931,6 +933,11 @@ pub(crate) mod tests {
         assert_eq!((view.zoom, view.heading), (1.0, 80.0));
         assert_eq!(e.map_start, saved);
         assert!(e.map_focus.is_none());
+        // Closing keeps no camera: the next opening starts on the player.
+        e.map_start = None;
+        e.close_map_view();
+        assert!(e.map_view.is_none());
+        assert_eq!((e.map_start, e.map_heading), (None, 0.0));
         e.scripts
             .quests
             .get_mut(&FormId(0xB00))
@@ -1037,6 +1044,18 @@ pub(crate) mod tests {
 #[cfg(test)]
 mod inverse_tests {
     use super::*;
+    #[test]
+    fn turning_wraps_into_a_saveable_heading() {
+        let mut v = super::tests::view(50.0);
+        v.heading = 0.5;
+        // The sum is a tiny negative number, which `rem_euclid` rounds to 360.
+        v.turn_by(-0.50000006);
+        assert!((0.0..360.0).contains(&v.heading), "{}", v.heading);
+        v.turn_by(-90.0);
+        assert!((v.heading - 270.0).abs() < 1e-3);
+        v.turn_by(450.0);
+        assert!(v.heading.abs() < 1e-3);
+    }
     #[test]
     fn ground_projection_round_trips_tilt_turn_and_aspect() {
         for pitch in [25.0, 50.0, 89.0] {

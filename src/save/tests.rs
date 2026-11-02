@@ -6627,8 +6627,13 @@ fn durable_player_marker_payload() {
         assert!(Snapshot::read(&s.write()).is_err());
     }
     s.continuity.player_marker = None;
-    s.continuity.map_heading = f32::NAN;
-    assert!(Snapshot::read(&s.write()).is_err());
+    // Earlier builds could write exactly 360; such saves still load.
+    s.continuity.map_heading = 360.0;
+    assert!(Snapshot::read(&s.write()).is_ok());
+    for bad in [f32::NAN, -1.0, 360.5] {
+        s.continuity.map_heading = bad;
+        assert!(Snapshot::read(&s.write()).is_err());
+    }
 }
 
 #[test]
@@ -6648,4 +6653,9 @@ fn durable_player_marker_apply() {
     legacy.sections.retain(|(tag, _)| tag != b"PMRK");
     Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
     assert_eq!(e.player_marker, None);
+    // A heading of exactly 360 (written by earlier builds) loads as north.
+    e.map_heading = 360.0;
+    let file = Snapshot::capture(&e).write();
+    Snapshot::read(&file).unwrap().apply(&mut e).unwrap();
+    assert_eq!(e.map_heading, 0.0);
 }
