@@ -91,8 +91,6 @@ pub(super) struct MapMenu {
     local_selected: Option<usize>,
     local_original_half: Vec2,
     local_dirty: bool,
-    local_drag_released: bool,
-    local_redraw_age: f32,
     /// Esc, Tab or the map key: close.
     pub close: bool,
     pub journal: bool,
@@ -141,8 +139,6 @@ impl MapMenu {
             local_selected: None,
             local_original_half: Vec2::ONE,
             local_dirty: false,
-            local_drag_released: false,
-            local_redraw_age: 0.0,
             close: false,
             journal: false,
         };
@@ -340,7 +336,6 @@ impl MapMenu {
                     p.dot(Vec2::new(north.sin(), north.cos())),
                 );
                 self.local_dirty = true;
-                self.local_redraw_age = 0.25;
             }
         } else if let Some(view) = &mut engine.map_view
             && let Some((p, _)) = view.player
@@ -462,13 +457,13 @@ impl MapMenu {
                     {
                         let a = self.menu.stage_point(last.0, last.1);
                         let b = self.menu.stage_point(at.0, at.1);
+                        let previous = local.frame.center;
                         local.frame.center += Vec2::new(
                             -((b.0 - a.0) / (e[2] - e[0])) as f32 * local.frame.half.x * 2.0,
                             ((b.1 - a.1) / (e[3] - e[1])) as f32 * local.frame.half.y * 2.0,
                         );
-                        self.local_dirty = true;
+                        self.local_dirty |= local.frame.center != previous;
                     }
-                    self.local_drag_released = true;
                     return;
                 }
                 let moved = moved + (at.0 - last.0).hypot(at.1 - last.1);
@@ -616,17 +611,16 @@ impl MapMenu {
         };
         if let Some(local) = &mut self.local {
             let frame = &mut local.frame;
+            let previous = (frame.center, frame.half);
             if let (Some((dx, dy)), Some(e)) = (delta, extent) {
                 frame.center += Vec2::new(
                     -(dx / (e[2] - e[0])) as f32 * frame.half.x * 2.0,
                     (dy / (e[3] - e[1])) as f32 * frame.half.y * 2.0,
                 );
-                self.local_dirty = true;
             }
             if right != 0.0 || up != 0.0 {
                 frame.center +=
                     Vec2::new(right * frame.half.x, up * frame.half.y) * (PAN_SPEED * dt * 2.0);
-                self.local_dirty = true;
             }
             let amount = zoom * ZOOM_SPEED * dt + wheel * 0.2;
             if amount != 0.0 {
@@ -635,11 +629,12 @@ impl MapMenu {
                     self.local_original_half * 0.125,
                     self.local_original_half * 4.0,
                 );
-                self.local_dirty = true;
             }
+            self.local_dirty |= previous != (frame.center, frame.half);
         }
-        self.local_redraw_age += dt;
-        if self.local_dirty && (self.local_drag_released || self.local_redraw_age >= 0.25) {
+        // Serve every changed frame before projecting its markers. Waiting
+        // here makes the image lag behind both input and marker positions.
+        if self.local_dirty {
             if let Some(local) = &self.local {
                 local.serve(&mut engine.renderer, &self.menu);
                 // InitMap normally loads only once; reset its guard to reload
@@ -649,9 +644,7 @@ impl MapMenu {
                 self.menu.invoke(&format!("{LOCAL}.InitMap"), &[]);
             }
             self.local_dirty = false;
-            self.local_redraw_age = 0.0;
         }
-        self.local_drag_released = false;
         self.click = false;
         self.released = false;
         self.release_waiting = false;
@@ -1088,20 +1081,84 @@ mod integration_tests {
             Value::Bool(false)
         );
         map.menu.invoke(&format!("{LOCAL}.InitMap"), &[]);
+        let map = swf.map.as_mut().unwrap();
+        map.recenter(&mut e);
+        map.update(&mut e, 1.0 / 60.0, (900.0, 450.0), (1920, 1080));
         let old_center = map.local.as_ref().unwrap().frame.center;
         let old_half = map.local.as_ref().unwrap().frame.half;
         let old_destination = e.player_marker;
         let map = swf.map.as_mut().unwrap();
         map.button(0, true, (900.0, 450.0));
-        map.update(&mut e, 0.05, (1000.0, 500.0), (1920, 1080));
+        map.update(&mut e, 1.0 / 60.0, (1000.0, 500.0), (1920, 1080));
+        assert!(!map.local_dirty, "drag redraws while the mouse is held");
+        let dragged_center = map.local.as_ref().unwrap().frame.center;
+        map.menu
+            .set(&format!("{LOCAL}.bUpdated"), Value::Bool(false));
+        map.update(&mut e, 1.0 / 60.0, (1010.0, 510.0), (1920, 1080));
+        assert_ne!(map.local.as_ref().unwrap().frame.center, dragged_center);
+        assert!(!map.local_dirty);
+        assert_eq!(
+            map.menu.get(&format!("{LOCAL}.bUpdated")),
+            Value::Bool(true),
+            "a second drag frame reloads the image without a timer"
+        );
         map.button(0, false, (1020.0, 500.0));
-        map.update(&mut e, 0.05, (1020.0, 500.0), (1920, 1080));
+        map.update(&mut e, 1.0 / 60.0, (1020.0, 500.0), (1920, 1080));
         assert_ne!(map.local.as_ref().unwrap().frame.center, old_center);
         assert!(!map.local_dirty);
+        map.menu
+            .set(&format!("{LOCAL}.bUpdated"), Value::Bool(false));
         map.wheel(1.0);
-        map.update(&mut e, 0.3, (1020.0, 500.0), (1920, 1080));
+        map.update(&mut e, 1.0 / 60.0, (1020.0, 500.0), (1920, 1080));
         assert!(map.local.as_ref().unwrap().frame.half.x < old_half.x);
+        assert!(!map.local_dirty);
+        assert_eq!(
+            map.menu.get(&format!("{LOCAL}.bUpdated")),
+            Value::Bool(true),
+            "wheel zoom reloads the image in the same update"
+        );
         assert_eq!(e.player_marker, old_destination);
+        let player_uv = map
+            .local
+            .as_ref()
+            .unwrap()
+            .frame
+            .texture_point(e.player.position);
+        assert!(
+            matches!(
+                map.menu.get(&format!("{LOCAL_ICONS}.Markers.{player_index}._x")),
+                Value::Number(x) if (x - (player_uv.x * 800.0) as f64).abs() < 0.1
+            ),
+            "markers use the frame served in this update: {player_uv:?}"
+        );
+        map.menu
+            .set(&format!("{LOCAL}.bUpdated"), Value::Bool(false));
+        map.update(&mut e, 1.0 / 60.0, (1020.0, 500.0), (1920, 1080));
+        assert_eq!(
+            map.menu.get(&format!("{LOCAL}.bUpdated")),
+            Value::Bool(false),
+            "idle updates keep the existing image"
+        );
+        map.key(KeyCode::KeyD, true);
+        map.update(&mut e, 1.0 / 60.0, (1020.0, 500.0), (1920, 1080));
+        map.key(KeyCode::KeyD, false);
+        assert!(!map.local_dirty);
+        assert_eq!(
+            map.menu.get(&format!("{LOCAL}.bUpdated")),
+            Value::Bool(true),
+            "keyboard panning reloads the image in the same update"
+        );
+        map.wheel(100.0);
+        map.update(&mut e, 1.0 / 60.0, (1020.0, 500.0), (1920, 1080));
+        map.menu
+            .set(&format!("{LOCAL}.bUpdated"), Value::Bool(false));
+        map.wheel(1.0);
+        map.update(&mut e, 1.0 / 60.0, (1020.0, 500.0), (1920, 1080));
+        assert_eq!(
+            map.menu.get(&format!("{LOCAL}.bUpdated")),
+            Value::Bool(false),
+            "zooming against the limit does not redraw an unchanged frame"
+        );
         map.answer(
             &mut e,
             &GameCall {

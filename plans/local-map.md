@@ -183,10 +183,10 @@ marker position when leaving an interior. Choices are documented in
       protocol as the world map.
   - **3c. Input.**
     - Left-drag pans (LocalMapMoveMode) and the wheel zooms.
-    - Both act by changing the orthographic box and re-rendering. Re-render
-      on release and at most a few times a second while dragging, or
-      render once at a larger size and crop. Choose after measuring the
-      render's cost (log it).
+    - Both act by changing the orthographic box and re-rendering each changed
+      view in the same UI update, before projecting markers. Unchanged views
+      reuse their image. CPU exploration-square caching and bulk readback
+      conversion reduce the render cost (`research/ui/local-map.md`).
     - Hovering shows the name (`SetDescription`, as on the world map).
     - Clicking a door or a marker does nothing. The game's local map has no
       travel; a click without a marker is ignored.
@@ -250,10 +250,10 @@ the first render also pays substantial startup costs. The stage measurements
 and temporary optimization experiments are in `research/ui/local-map.md`.
 The exploration-square cache and format-specific bulk readback conversion
 are now implemented, preserving mask pixels, channel conversion and opaque
-readback alpha. Remaining work:
+readback alpha. The 250 ms redraw throttle is removed: changed views render
+before markers are projected, including consecutive drag, wheel and keyboard
+updates. Idle views and zoom input against a limit keep the existing image.
+Remaining work:
 
 - Investigate serving the rendered image without a PNG encode/decode round
   trip, and measure the subsequent movie texture upload separately.
-- Keep the image and markers aligned during pan/zoom. Evaluate moving and
-  scaling the cached image immediately while a fresh render is pending;
-  reducing redraw cost alone does not fix the current frame mismatch.

@@ -53,10 +53,12 @@ unknown.
 ## Map motion
 
 The movie exposes an image and marker fractions but does not document how the
-engine pans or zooms its camera. We change the orthographic box and render it
-again at most four times per second during motion and on drag release. Render
-cost is logged at info level. This keeps the image and marker projection in
-step; the game's actual update frequency is unknown.
+engine pans or zooms its camera. We change the orthographic box and render
+each changed view in the same UI update, before projecting its markers.
+The original 250 ms redraw throttle was removed at the user's request after
+profiling the CPU mask and readback costs (`research/ui/local-map.md`). Render
+cost is logged at info level; the game's camera update method and frequency
+remain unknown.
 
 ## Exploration and reveal
 

@@ -9,8 +9,9 @@ assets and are kept outside the repository.
 
 The local render logged approximately 115–126 ms for Bleak Falls before the
 bounds correction and 138 ms for the single exterior cell with the exploration
-mask on the test machine's integrated GPU. The UI re-renders at most four times a second while moving,
-and once on drag release. Times include GPU readback and greyscale conversion;
+mask on the test machine's integrated GPU. The original UI re-rendered at most
+four times a second while moving, and once on drag release; that throttle has
+since been removed. Times include GPU readback and greyscale conversion;
 PNG encoding for the host image is additional.
 
 Reproduce after building `vibe_rm` (the data directory is the normal Skyrim SE
@@ -133,3 +134,27 @@ queries across positive and negative page boundaries, rotated maps, and
 zoomed views. Readback tests cover padded rows, RGBA/BGRA channel order,
 10-bit and half-float conversion, and forced opaque alpha. The profiling
 instrumentation remains outside the repository.
+
+## Immediate redraws implemented
+
+Changed local-map views now render in the same UI update, before marker
+projection and hit testing. The 250 ms timer and drag-release throttle state
+are removed. Updates with no camera change, including wheel input already
+at a zoom limit, reuse the existing image.
+
+With the implemented optimizations and no profiling instrumentation, five
+warm redraws triggered by the normal PlayerPosition control took 29–32 ms
+in Bleak Falls (median 30.2 ms) and 22–27 ms in radius-0 Riverwood (median
+24.1 ms). These use the earlier dev-profile capture recipes with five
+additional `--menu-key KeyE` arguments. The first opens took 152 ms and
+81 ms respectively; startup costs remain. These timings end before host-image
+encoding and movie loading and do not represent complete interactive-frame
+latency. Captures and logs remain outside the repository under
+`/tmp/vrm-local-immediate-*`.
+
+Final validation on the host GPU: 603 default application tests passed,
+394 opt-in tests remained skipped, and the installed `map.swf` integration
+test passed separately. It checks image reloads on consecutive 1/60-second
+drag updates, wheel input, keyboard panning and recentering, marker projection,
+and image reuse on idle and limit-clamped zoom updates. `cargo fmt --check`
+and diff whitespace checks passed.
