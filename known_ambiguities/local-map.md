@@ -35,3 +35,9 @@ engine pans or zooms its camera. We change the orthographic box and render it
 again at most four times per second during motion and on drag release. Render
 cost is logged at info level. This keeps the image and marker projection in
 step; the game's actual update frequency is unknown.
+
+A Bleak Falls Barrow capture exposed effects with full-range signed 16-bit
+OBND values (for example, `FXDrips01tall` and `FXAmbBlowingFog01`). Those
+boxes expand far beyond the dungeon, so the map omits objects with that exact
+sentinel box when fitting and drawing. This is a practical filter based on the
+installed assets; other effects may use different bounds.

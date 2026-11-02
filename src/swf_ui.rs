@@ -574,13 +574,20 @@ impl SwfUi {
             return;
         }
         if self.map.is_none() {
+            let open_local = matches!(engine.location, crate::engine::Location::Interior(_))
+                && engine.map_focus.is_none();
             let buttons = self.buttons.clone();
             let opened = engine
                 .open_map_view()
                 .ok_or_else(|| anyhow::anyhow!("no world map here"))
                 .and_then(|_| map_menu::MapMenu::open(&self.ui, self.size, engine, buttons));
             match opened {
-                Ok(m) => self.map = Some(m),
+                Ok(mut m) => {
+                    if open_local {
+                        m.toggle_local(engine);
+                    }
+                    self.map = Some(m);
+                }
                 Err(e) => {
                     log::error!("map: {e:#}");
                     engine.close_map_view();

@@ -36,6 +36,11 @@ pub fn interior_bounds(lo: &LoadOrder, cell: &CellReferences) -> Option<Bounds> 
         let component = |i: usize| i16::from_le_bytes([data[i * 2], data[i * 2 + 1]]) as f32;
         let min = Vec3::new(component(0), component(1), component(2));
         let max = Vec3::new(component(3), component(4), component(5));
+        // Some particle effects use the full i16 range rather than actual
+        // object bounds; fitting those would hide the entire dungeon.
+        if sentinel_bounds(data) {
+            continue;
+        }
         let transform = reference.transform();
         for x in [min.x, max.x] {
             for y in [min.y, max.y] {
@@ -56,6 +61,14 @@ pub fn interior_bounds(lo: &LoadOrder, cell: &CellReferences) -> Option<Bounds> 
         }
     }
     result
+}
+
+fn sentinel_bounds(data: &[u8]) -> bool {
+    if data.len() < 12 {
+        return false;
+    }
+    (0..3).all(|i| i16::from_le_bytes([data[2 * i], data[2 * i + 1]]) == i16::MIN)
+        && (3..6).all(|i| i16::from_le_bytes([data[2 * i], data[2 * i + 1]]) == i16::MAX)
 }
 
 /// A scene containing only the static environment for the local-map pass.
@@ -82,10 +95,19 @@ pub fn map_scene(lo: &LoadOrder, source: &crate::render::Scene) -> crate::render
                     return None;
                 }
                 let base = lo.get(esp::FormId(object.base))?;
-                if !matches!(
-                    &base.tag().0,
-                    b"STAT" | b"MSTT" | b"ACTI" | b"TACT" | b"DOOR" | b"FURN" | b"CONT" | b"TREE"
-                ) || base.flags() & 0x0080_0000 != 0
+                if base.get(b"OBND").is_some_and(sentinel_bounds)
+                    || !matches!(
+                        &base.tag().0,
+                        b"STAT"
+                            | b"MSTT"
+                            | b"ACTI"
+                            | b"TACT"
+                            | b"DOOR"
+                            | b"FURN"
+                            | b"CONT"
+                            | b"TREE"
+                    )
+                    || base.flags() & 0x0080_0000 != 0
                     || (matches!(&base.tag().0, b"STAT" | b"MSTT" | b"ACTI" | b"TACT")
                         && base.flags() & 0x200 != 0)
                 {
@@ -288,6 +310,11 @@ impl LocalMap {
             }
             Location::Nowhere => return None,
         };
+        log::info!(
+            "local map bounds: {:?}, north {:.2} degrees",
+            bounds,
+            north.to_degrees()
+        );
         let scene = map_scene(&engine.lo, &engine.scene);
         let mut bottom = bounds.min.z.min(engine.player.position.z);
         let mut top = bounds.max.z.max(engine.player.position.z);
@@ -368,6 +395,10 @@ mod tests {
         for v in [-10i16, -20, -5, 10, 20, 5] {
             bounds.extend(v.to_le_bytes());
         }
+        let mut sentinel = Vec::new();
+        for v in [i16::MIN, i16::MIN, i16::MIN, i16::MAX, i16::MAX, i16::MAX] {
+            sentinel.extend(v.to_le_bytes());
+        }
         let reference = |id, base, x: f32, rotation: f32| {
             let mut data = Vec::new();
             for v in [x, 0.0, 0.0, 0.0, 0.0, rotation] {
@@ -393,6 +424,7 @@ mod tests {
                     RecordBuilder::new(b"STAT", FormId(0x812))
                         .flags(0x0080_0000)
                         .field(b"OBND", &bounds),
+                    RecordBuilder::new(b"STAT", FormId(0x813)).field(b"OBND", &sentinel),
                 ],
             ),
             Node::Group {
@@ -411,6 +443,7 @@ mod tests {
                                 reference(0x821, 0x811, 1000.0, 0.0),
                                 reference(0x822, 0x812, -1000.0, 0.0),
                                 reference(0x823, 3, -2000.0, 1.25),
+                                reference(0x824, 0x813, 100.0, 0.0),
                             ],
                         }],
                     },

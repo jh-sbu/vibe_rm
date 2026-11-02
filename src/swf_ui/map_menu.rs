@@ -151,7 +151,7 @@ impl MapMenu {
         Ok(m)
     }
 
-    fn toggle_local(&mut self, engine: &mut Engine) {
+    pub(super) fn toggle_local(&mut self, engine: &mut Engine) {
         if !self.local_shown && self.local.is_none() {
             let Some(local) = crate::local_map::LocalMap::new(engine) else {
                 log::warn!("local map: no area bounds available");
@@ -802,6 +802,10 @@ mod integration_tests {
         );
         let dir = hierarchy_fixture("movie");
         let mut e = crate::stats::action_tests::headless_engine(&dir, "Map.esp");
+        assert_eq!(
+            e.world_exit_for_map(FormId(0xD00), FormId(0x800)),
+            Some(Vec2::new(30.0, 40.0))
+        );
         e.vfs = vfs::Vfs::new(data, &[]).into();
         let controls = e.vfs.read("interface/controls/pc/controlmap.txt").unwrap();
         e.input_map = std::sync::Arc::new(std::sync::RwLock::new(

@@ -332,7 +332,10 @@ impl Engine {
                     .filter(|(owner, _)| *owner == world)
                     .map(|(_, p)| (p, self.camera.yaw.to_degrees().rem_euclid(360.0)))
             }
-            _ => None,
+            Location::Interior(cell) => self
+                .world_exit_for_map(cell, world)
+                .map(|p| (p, self.camera.yaw.to_degrees().rem_euclid(360.0))),
+            Location::Nowhere => None,
         };
         let [min_x, min_y, max_x, max_y] = data.bounds();
         // The camera's field of view takes in the whole map's height from

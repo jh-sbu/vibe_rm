@@ -227,6 +227,50 @@ impl Engine {
         None
     }
 
+    /// Follow the interior's load-door graph out to the displayed world map.
+    /// For equal-length routes, try the closest first interior door first.
+    pub(crate) fn world_exit_for_map(&self, cell: FormId, world: FormId) -> Option<glam::Vec2> {
+        let doors = self
+            .quest_targets
+            .doors
+            .get_or_init(|| read_doors(&self.lo));
+        let origin = Space::Interior(cell);
+        let mut queue = VecDeque::from([origin]);
+        let mut seen = HashSet::from([origin]);
+        while let Some(space) = queue.pop_front() {
+            let mut links: Vec<_> = doors.get(&space).into_iter().flatten().collect();
+            if space == origin {
+                links.sort_by(|a, b| {
+                    a.pos
+                        .distance(self.player.position)
+                        .total_cmp(&b.pos.distance(self.player.position))
+                });
+            }
+            for link in links {
+                if self.is_disabled(link.door) {
+                    continue;
+                }
+                if let Space::World(exit_world) = link.to {
+                    let destination = self.lo.get(link.door).and_then(|rec| {
+                        let data = rec.get(b"XTEL")?.get(..4)?;
+                        Some(rec.fid(FormId(u32::from_le_bytes(data.try_into().ok()?))))
+                    });
+                    if let Some(pos) = destination.and_then(|dest| self.ref_position(dest))
+                        && let Some((_, p)) =
+                            crate::map_view::world_map_point(&self.lo, exit_world, pos.truncate())
+                                .filter(|(owner, _)| *owner == world)
+                    {
+                        return Some(p);
+                    }
+                }
+                if seen.insert(link.to) {
+                    queue.push_back(link.to);
+                }
+            }
+        }
+        None
+    }
+
     /// Shared objective/alias/condition selection for the map and compass.
     fn active_quest_references(&mut self) -> Vec<(FormId, FormId)> {
         let mut quests: Vec<(FormId, Vec<i32>)> = self
