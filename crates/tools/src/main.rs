@@ -5472,6 +5472,7 @@ fn main() -> Result<()> {
             // magic <data dir> [item]: one spell / enchantment / potion /
             // ingredient / scroll with its effects (archetype, actor values,
             // flags, magnitude, area, duration, conditions, scripts), or
+            // --scrolls lists scroll cast types and charge times; otherwise
             // counts over all magic effects: archetypes, cast types and
             // deliveries, and how many have scripts.
             let data = std::path::Path::new(&args[1]);
@@ -5509,6 +5510,30 @@ fn main() -> Result<()> {
                     }
                 )
             };
+            if args.get(2).is_some_and(|arg| arg == "--scrolls") {
+                println!("Plugins: {}", names.join(", "));
+                let mut counts = std::collections::BTreeMap::<u32, usize>::new();
+                let mut longest = 0.0f32;
+                for &id in lo.ids_of_type(b"SCRL") {
+                    let Some(r) = lo.get(id) else { continue };
+                    let Some(d) = r.get(b"SPIT").filter(|d| d.len() >= 20) else {
+                        println!("{id} missing or short SPIT");
+                        continue;
+                    };
+                    let charge = f32_at(d, 12);
+                    let cast = u32_at(d, 16);
+                    *counts.entry(cast).or_default() += 1;
+                    longest = longest.max(charge);
+                    println!(
+                        "{id} {} cast {cast} charge {charge}s",
+                        r.editor_id().unwrap_or_default()
+                    );
+                }
+                println!(
+                    "Scroll SPIT cast types (2 concentration, 3 scroll): {counts:?}; longest stored charge {longest}s"
+                );
+                return Ok(());
+            }
             if let Some(name) = args.get(2) {
                 let id = match u32::from_str_radix(name, 16) {
                     Ok(v) if name.len() == 8 => esp::FormId(v),
