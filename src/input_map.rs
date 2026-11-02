@@ -90,6 +90,63 @@ impl InputMap {
     pub fn events(&self) -> &[Event] {
         self.contexts.first().map_or(&[], Vec::as_slice)
     }
+    /// The asset does not encode context names as rows. Identify Map Menu by
+    /// its unique PlacePlayerMarker event, preserving the original indices for
+    /// cross-context references (including remapped gameplay bindings).
+    pub fn context_bindings(&self, context: &str, event: &str, device: usize) -> Vec<Vec<u32>> {
+        let index = match context {
+            "Map Menu" => self
+                .contexts
+                .iter()
+                .position(|rows| rows.iter().any(|e| e.name == "PlacePlayerMarker")),
+            "Main Gameplay" => Some(0),
+            _ => None,
+        };
+        index.map_or_else(Vec::new, |i| self.resolve(i, event, device, 0))
+    }
+    pub fn held_in(
+        &self,
+        context: &str,
+        event: &str,
+        keys: &HashSet<K>,
+        mouse: &HashSet<u32>,
+    ) -> bool {
+        self.context_bindings(context, event, 0).iter().any(|c| {
+            c.iter()
+                .all(|n| key_code(*n).is_some_and(|k| keys.contains(&k)))
+        }) || self
+            .context_bindings(context, event, 1)
+            .iter()
+            .any(|c| c.iter().all(|n| mouse.contains(n)))
+    }
+    pub fn triggered_in(
+        &self,
+        context: &str,
+        event: &str,
+        button: Button,
+        keys: &HashSet<K>,
+        mouse: &HashSet<u32>,
+    ) -> bool {
+        let (device, code) = match button {
+            Button::Key(k) => (0, scan_code(k)),
+            Button::Mouse(n) => (1, Some(n)),
+        };
+        code.is_some_and(|code| {
+            self.context_bindings(context, event, device)
+                .iter()
+                .any(|c| {
+                    c.last() == Some(&code)
+                        && c.iter().all(|n| {
+                            *n == code
+                                || if device == 0 {
+                                    key_code(*n).is_some_and(|k| keys.contains(&k))
+                                } else {
+                                    mouse.contains(n)
+                                }
+                        })
+                })
+        })
+    }
     pub fn bindings(&self, event: &str, device: usize) -> Vec<Vec<u32>> {
         self.resolve(0, event, device, 0)
     }
@@ -463,5 +520,27 @@ mod release_tests {
         ));
         assert!(map.released("Activate", Button::Key(K::KeyG)));
         assert!(!map.released("Activate", Button::Key(K::ControlLeft)));
+    }
+}
+
+#[cfg(test)]
+mod context_tests {
+    use super::*;
+    #[test]
+    fn map_references_follow_gameplay_rebinding() {
+        let mut m = InputMap::parse(
+            "Forward\t0x11\t0xff\t0xff\t1\t1\t0\n\nPlacePlayerMarker\t0x19\t0xff\t0xff\t0\t0\t0\nUp\t!0,Forward\t0xff\t0xff\t0\t0\t0\n",
+        );
+        assert_eq!(m.context_bindings("Map Menu", "Up", 0), vec![vec![0x11]]);
+        assert!(m.remap("Forward", Button::Key(K::KeyG)));
+        assert!(m.held_in("Map Menu", "Up", &[K::KeyG].into(), &HashSet::new()));
+        assert!(m.triggered_in(
+            "Map Menu",
+            "Up",
+            Button::Key(K::KeyG),
+            &HashSet::new(),
+            &HashSet::new()
+        ));
+        assert!(m.context_bindings("Missing", "Up", 0).is_empty());
     }
 }
