@@ -322,6 +322,29 @@ impl MapMenu {
         self.give_markers(engine);
         self.restore_selected = selected;
         self.marker_snapshot = engine.player_marker;
+        if self.local_shown {
+            self.give_local_markers(engine);
+            self.local_selected = None;
+        }
+    }
+
+    fn recenter(&mut self, engine: &mut Engine) {
+        if self.local_shown {
+            if let Some(local) = &mut self.local {
+                let p = engine.player.position.truncate();
+                let north = local.frame.north;
+                local.frame.center = Vec2::new(
+                    p.dot(Vec2::new(north.cos(), -north.sin())),
+                    p.dot(Vec2::new(north.sin(), north.cos())),
+                );
+                self.local_dirty = true;
+                self.local_redraw_age = 0.25;
+            }
+        } else if let Some(view) = &mut engine.map_view
+            && let Some((p, _)) = view.player
+        {
+            view.center = p;
+        }
     }
 
     /// A complete synthetic click still waits for the movie's ClickCallback,
@@ -467,13 +490,7 @@ impl MapMenu {
             match event {
                 "Cancel" => self.close = true,
                 "PlacePlayerMarker" => place = true,
-                "PlayerPosition" => {
-                    if let Some(view) = &mut engine.map_view
-                        && let Some((p, _)) = view.player
-                    {
-                        view.center = p;
-                    }
-                }
+                "PlayerPosition" => self.recenter(engine),
                 "Journal" => engine.menu = Some(Shown::Journal),
                 "LocalMap" => self.toggle_local(engine),
                 _ => {}
@@ -704,6 +721,7 @@ impl MapMenu {
     /// menus' shared ones.
     pub fn answer(&mut self, engine: &mut Engine, call: &GameCall) -> bool {
         match call.name.as_str() {
+            "ClickCallback" if self.local_shown => {}
             "ClickCallback" => {
                 if std::mem::take(&mut self.release_waiting) {
                     self.released = true;
@@ -730,13 +748,7 @@ impl MapMenu {
                 }
             }
             "OpenJournalCallback" => engine.menu = Some(Shown::Journal),
-            "CurrentLocationCallback" => {
-                if let Some(view) = &mut engine.map_view
-                    && let Some((p, _)) = view.player
-                {
-                    view.center = p;
-                }
-            }
+            "CurrentLocationCallback" => self.recenter(engine),
             "ToggleMapCallback" => self.toggle_local(engine),
             "SetLocalMapExtents" => {
                 if let [
@@ -1039,6 +1051,13 @@ mod integration_tests {
             map.menu.get("_root.WorldMap.Markers.0._visible"),
             Value::Bool(false)
         );
+        map.menu
+            .set(&format!("{LOCAL}.bUpdated"), Value::Bool(false));
+        assert_eq!(
+            map.menu.get(&format!("{LOCAL}.bUpdated")),
+            Value::Bool(false)
+        );
+        map.menu.invoke(&format!("{LOCAL}.InitMap"), &[]);
         let old_center = map.local.as_ref().unwrap().frame.center;
         let old_half = map.local.as_ref().unwrap().frame.half;
         let old_destination = e.player_marker;
@@ -1053,6 +1072,23 @@ mod integration_tests {
         map.update(&mut e, 0.3, (1020.0, 500.0), (1920, 1080));
         assert!(map.local.as_ref().unwrap().frame.half.x < old_half.x);
         assert_eq!(e.player_marker, old_destination);
+        map.answer(
+            &mut e,
+            &GameCall {
+                name: "CurrentLocationCallback".into(),
+                id: None,
+                args: vec![],
+            },
+        );
+        map.update(&mut e, 0.01, (1020.0, 500.0), (1920, 1080));
+        assert!(
+            map.local
+                .as_ref()
+                .unwrap()
+                .frame
+                .texture_point(e.player.position)
+                .abs_diff_eq(Vec2::splat(0.5), 0.0001)
+        );
         assert_eq!(
             map.menu.get(&format!("{LOCAL}.bUpdated")),
             Value::Bool(true)

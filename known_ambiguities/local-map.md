@@ -57,3 +57,7 @@ exact rule for those factors.
 Unrevealed pixels are black in the generated image; markers remain a separate
 movie layer. The user observed that doors and quest targets remain visible in
 unexplored areas. The game's exact fog colour and opacity are not established.
+
+If an interior has no usable reference bounds, we centre a 512-unit fallback
+box on the player so its local map can still open. The game's behavior for
+such a cell is unknown.

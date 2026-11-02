@@ -8,8 +8,8 @@ the loaded Riverwood cell aligned north-up. The images are derived from game
 assets and are kept outside the repository.
 
 The local render logged approximately 115–126 ms for Bleak Falls before the
-bounds correction and 75 ms for the single exterior cell on the test machine's
-integrated GPU. The UI re-renders at most four times a second while moving,
+bounds correction and 138 ms for the single exterior cell with the exploration
+mask on the test machine's integrated GPU. The UI re-renders at most four times a second while moving,
 and once on drag release. Times include GPU readback and greyscale conversion;
 PNG encoding for the host image is additional.
 
@@ -25,4 +25,5 @@ VRM_SETTINGS=/tmp/vrm-local-map-settings.ini VRM_SAVES=/tmp/vrm-local-map-saves 
   --console map --menu-key KeyL --menu-key pause --screenshot /tmp/vrm-local-exterior.png
 ```
 
-These are implementation captures, not evidence of vanilla appearance.
+The final captures show the explored area and a door marker over unrevealed
+space. These are implementation captures, not evidence of vanilla appearance.

@@ -288,14 +288,14 @@ pub fn marker_rows(engine: &mut crate::engine::Engine) -> Vec<LocalRow> {
     rows.extend(engine.local_quest_rows());
     if let (Location::Exterior { world, .. }, Some(marker)) =
         (engine.location, engine.player_marker)
-        && marker.world == world
+        && let Some(position) = marker_in_world(&engine.lo, world, marker)
     {
         rows.push(LocalRow {
             name: engine
                 .gmst_string("sPlayerSetMarkerName")
                 .unwrap_or_else(|| "Custom Destination".into()),
             kind: 65,
-            position: marker.pos,
+            position,
         });
     }
     rows.push(LocalRow {
@@ -304,6 +304,28 @@ pub fn marker_rows(engine: &mut crate::engine::Engine) -> Vec<LocalRow> {
         position: engine.player.position,
     });
     rows
+}
+
+/// Invert the uniform scale and offset by which a child worldspace inherits
+/// its parent's map, so the custom destination uses local coordinates.
+fn marker_in_world(
+    lo: &LoadOrder,
+    world: esp::FormId,
+    marker: crate::map_markers::PlayerMarker,
+) -> Option<Vec3> {
+    let (owner, origin) = crate::map_view::world_map_point(lo, world, Vec2::ZERO)?;
+    if owner != marker.world {
+        return None;
+    }
+    let (_, one) = crate::map_view::world_map_point(lo, world, Vec2::ONE)?;
+    let scale = one - origin;
+    if !scale.is_finite() || scale.x <= 0.0 || scale.y <= 0.0 {
+        return None;
+    }
+    let position = (marker.pos.truncate() - origin) / scale;
+    position
+        .is_finite()
+        .then_some(position.extend(marker.pos.z))
 }
 
 pub struct LocalMap {
@@ -319,7 +341,11 @@ impl LocalMap {
         let (bounds, north) = match engine.location {
             Location::Interior(id) => {
                 let refs = engine.cell_references.get(&engine.lo, id);
-                (interior_bounds(&engine.lo, &refs)?, north_rotation(&refs))
+                let bounds = interior_bounds(&engine.lo, &refs).unwrap_or_else(|| Bounds {
+                    min: engine.player.position - Vec3::splat(256.0),
+                    max: engine.player.position + Vec3::splat(256.0),
+                });
+                (bounds, north_rotation(&refs))
             }
             location @ Location::Exterior { .. } => {
                 (exterior_bounds(location, engine.radius)?, 0.0)
@@ -413,6 +439,20 @@ mod tests {
         FormId,
         writer::{Node, RecordBuilder, write_plugin},
     };
+
+    #[test]
+    fn custom_destination_inverts_inherited_map_coordinates() {
+        let dir = crate::map_view::tests::hierarchy_fixture("local-custom");
+        let lo = LoadOrder::load(&dir, &["Map.esp".into()]).unwrap();
+        let marker = crate::map_markers::PlayerMarker {
+            world: FormId(0x800),
+            pos: Vec3::new(120.0, 240.0, 0.0),
+        };
+        let p = marker_in_world(&lo, FormId(0x801), marker).unwrap();
+        assert!(p.abs_diff_eq(Vec3::new(10.0, 20.0, 0.0), 0.001));
+        assert!(marker_in_world(&lo, FormId(0x803), marker).is_none());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn mask_covers_only_unseen_pixels_at_rotated_world_positions() {
