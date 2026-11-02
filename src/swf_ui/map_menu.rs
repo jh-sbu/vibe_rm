@@ -238,7 +238,9 @@ impl MapMenu {
                 row.position
             };
             let uv = local.frame.texture_point(pos);
-            let visible = (0.0..=1.0).contains(&uv.x) && (0.0..=1.0).contains(&uv.y);
+            let visible = (0.0..=1.0).contains(&uv.x)
+                && (0.0..=1.0).contains(&uv.y)
+                && (row.kind != 65 || local.seen.contains(local.space, pos.truncate()));
             let rotation = if row.kind == 66 {
                 (engine.camera.yaw - local.frame.north).to_degrees()
             } else {
@@ -666,7 +668,11 @@ impl MapMenu {
                     .filter(|(_, row)| row.kind != 66)
                     .filter_map(|(i, row)| {
                         let uv = local.frame.texture_point(row.position);
-                        if !(0.0..=1.0).contains(&uv.x) || !(0.0..=1.0).contains(&uv.y) {
+                        if !(0.0..=1.0).contains(&uv.x)
+                            || !(0.0..=1.0).contains(&uv.y)
+                            || (row.kind == 65
+                                && !local.seen.contains(local.space, row.position.truncate()))
+                        {
                             return None;
                         }
                         let distance = ((uv - at) * Vec2::new(800.0, 450.0)).length();
@@ -1015,11 +1021,35 @@ mod integration_tests {
         map.key(KeyCode::KeyP, false);
         assert!(e.player_marker.is_some());
         assert!(e.messages.boxes.is_empty());
+        e.player_marker = Some(crate::map_markers::PlayerMarker {
+            world: FormId(0x800),
+            pos: glam::Vec3::new(128.0, 128.0, 0.0),
+        });
         swf.press(KeyCode::KeyL);
         tick(&mut swf, &mut e);
         let map = swf.map.as_ref().unwrap();
         assert!(map.local_shown);
         assert!(!map.local_creating);
+        let custom = map
+            .local_rows
+            .iter()
+            .position(|row| row.kind == 65)
+            .unwrap();
+        assert_eq!(
+            map.menu
+                .get(&format!("{LOCAL_ICONS}.Markers.{custom}._visible")),
+            Value::Bool(false)
+        );
+        let map = swf.map.as_mut().unwrap();
+        let local = map.local.as_mut().unwrap();
+        local.seen.set_square(local.space, 0, 0);
+        map.update_local_markers(&e);
+        assert_eq!(
+            map.menu
+                .get(&format!("{LOCAL_ICONS}.Markers.{custom}._visible")),
+            Value::Bool(true)
+        );
+        let map = swf.map.as_ref().unwrap();
         let player_index = map
             .local_rows
             .iter()
