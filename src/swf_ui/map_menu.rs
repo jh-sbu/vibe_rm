@@ -79,7 +79,11 @@ impl MapMenu {
             &format!("{M}.PlayerLocationMarkerType"),
             num(PLAYER_ICON as f32),
         );
-        menu.callback("SetDateString", &[text(&engine.date_text())]);
+        menu.invoke(&format!("{M}.SetDateString"), &[text(&engine.date_text())]);
+        log::debug!(
+            "map callback owner: {:?}",
+            menu.get("_global.gfx.io.GameDelegate.callBackHash.RefreshMarkers.0.MapMovie._target")
+        );
         let mut m = MapMenu {
             menu,
             keys: HashSet::new(),
@@ -284,7 +288,7 @@ impl MapMenu {
             data.push(num(*rotation));
         }
         self.menu.set(&format!("{M}.MarkerData"), Value::List(data));
-        self.menu.callback("RefreshMarkers", &[]);
+        self.menu.invoke(&format!("{M}.RefreshMarkers"), &[]);
         let aspect = w as f32 / h as f32;
         let under = engine.map_view.as_ref().and_then(|v| {
             let at = Vec2::new((pointer.0 / w) as f32, (pointer.1 / h) as f32);
@@ -302,14 +306,14 @@ impl MapMenu {
                     &[text(&row.name), Value::List(Vec::new())],
                 );
             }
-            self.menu.callback(
-                "SetSelectedMarker",
+            self.menu.invoke(
+                &format!("{M}.SetSelectedMarker"),
                 &[num(under.map_or(-1.0, |i| i as f32))],
             );
         }
         if std::mem::take(&mut self.released) {
             if under.is_some() {
-                self.menu.callback("ClickSelectedMarker", &[]);
+                self.menu.invoke(&format!("{M}.ClickSelectedMarker"), &[]);
             } else {
                 self.place_at_pointer(engine);
             }

@@ -306,3 +306,15 @@ identity (step 4b) coming before Part 3's rebuild (step 8). Offscreen
 captures of each state (the world map with a custom marker, the journal's
 Show on Map) go with the commits that make them, per the existing capture
 recipes. `plans/local-map.md` follows.
+
+## Step 7a callback routing finding
+
+The game asset's local-map constructor creates its own Map.MapMenu, whose
+Init registers the same callback names. GameDelegate stores just one scope
+and method per name; root initialization subsequently constructs WorldMap,
+which registers again. This accounts for the existing world-map markers
+working. Every world-map operation now invokes `_root.WorldMap.*` explicitly,
+including refresh, selection, click, date and (step 7b) ShowJournal. This also
+keeps routing correct if local-map construction order changes. A debug log
+records the callback scope's MapMovie target for offscreen verification.
+No game bytecode is included here; evidence is the permitted map.swf asset.
