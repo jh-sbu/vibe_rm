@@ -1,6 +1,6 @@
 //! Geometry used to fit the local map to loaded cells.
 use esp::LoadOrder;
-use glam::Vec3;
+use glam::{Vec2, Vec3};
 
 use crate::engine::Location;
 use crate::world::cell::CellReferences;
@@ -145,6 +145,137 @@ pub fn exterior_bounds(location: Location, radius: i32) -> Option<Bounds> {
     })
 }
 
+pub const IMAGE_SIZE: (u32, u32) = (1600, 900);
+
+/// Orthographic area in a north-aligned coordinate system.
+#[derive(Clone, Copy, Debug)]
+pub struct MapFrame {
+    pub center: Vec2,
+    pub half: Vec2,
+    pub north: f32,
+    pub top: f32,
+    pub far: f32,
+}
+
+impl MapFrame {
+    pub fn fit(bounds: Bounds, north: f32, bottom: f32, top: f32) -> Self {
+        let right = Vec2::new(north.cos(), -north.sin());
+        let up = Vec2::new(north.sin(), north.cos());
+        let mut min = Vec2::splat(f32::INFINITY);
+        let mut max = Vec2::splat(f32::NEG_INFINITY);
+        for x in [bounds.min.x, bounds.max.x] {
+            for y in [bounds.min.y, bounds.max.y] {
+                let p = Vec2::new(x, y);
+                let p = Vec2::new(p.dot(right), p.dot(up));
+                min = min.min(p);
+                max = max.max(p);
+            }
+        }
+        let padding = (max - min).max_element().max(1.0) / 20.0;
+        let mut half = (max - min) * 0.5 + Vec2::splat(padding);
+        let aspect = IMAGE_SIZE.0 as f32 / IMAGE_SIZE.1 as f32;
+        half.x = half.x.max(half.y * aspect);
+        half.y = half.y.max(half.x / aspect);
+        Self {
+            center: (min + max) * 0.5,
+            half,
+            north,
+            top: top + 100.0,
+            far: (top - bottom + 200.0).max(201.0),
+        }
+    }
+
+    pub fn camera(&self) -> crate::render::Camera {
+        let right = Vec2::new(self.north.cos(), -self.north.sin());
+        let up = Vec2::new(self.north.sin(), self.north.cos());
+        let center = right * self.center.x + up * self.center.y;
+        crate::render::Camera {
+            position: center.extend(self.top),
+            yaw: self.north,
+            pitch: -std::f32::consts::FRAC_PI_2,
+            fov_y: 1.0,
+            projection: crate::render::Projection::Orthographic {
+                half_width: self.half.x,
+                half_height: self.half.y,
+                far: self.far,
+            },
+        }
+    }
+
+    /// World point to texture fractions, with Y down.
+    pub fn texture_point(&self, position: Vec3) -> Vec2 {
+        let right = Vec2::new(self.north.cos(), -self.north.sin());
+        let up = Vec2::new(self.north.sin(), self.north.cos());
+        let p = position.truncate();
+        let relative = Vec2::new(p.dot(right), p.dot(up)) - self.center;
+        Vec2::new(
+            0.5 + relative.x / (2.0 * self.half.x),
+            0.5 - relative.y / (2.0 * self.half.y),
+        )
+    }
+}
+
+pub struct LocalMap {
+    pub frame: MapFrame,
+    pub scene: crate::render::Scene,
+}
+
+impl LocalMap {
+    pub fn new(engine: &mut crate::engine::Engine) -> Option<Self> {
+        let (bounds, north) = match engine.location {
+            Location::Interior(id) => {
+                let refs = engine.cell_references.get(&engine.lo, id);
+                (interior_bounds(&engine.lo, &refs)?, north_rotation(&refs))
+            }
+            location @ Location::Exterior { .. } => {
+                (exterior_bounds(location, engine.radius)?, 0.0)
+            }
+            Location::Nowhere => return None,
+        };
+        let scene = map_scene(&engine.lo, &engine.scene);
+        let mut bottom = bounds.min.z.min(engine.player.position.z);
+        let mut top = bounds.max.z.max(engine.player.position.z);
+        for cell in scene.cells.values() {
+            for (center, radius) in cell
+                .instances
+                .iter()
+                .map(|i| (i.world_center, i.world_radius))
+                .chain(cell.terrain.iter().map(|i| (i.center, i.radius)))
+                .chain(cell.water.iter().map(|i| (i.center, i.radius)))
+            {
+                bottom = bottom.min(center.z - radius);
+                top = top.max(center.z + radius);
+            }
+        }
+        Some(Self {
+            frame: MapFrame::fit(bounds, north, bottom, top),
+            scene,
+        })
+    }
+
+    pub fn render(&self, renderer: &mut crate::render::Renderer) -> Vec<u8> {
+        let start = std::time::Instant::now();
+        let distances = renderer.distances;
+        renderer.distances = Default::default();
+        let mut pixels =
+            renderer.render_to_image(&self.scene, &self.frame.camera(), IMAGE_SIZE, |_, _| {});
+        renderer.distances = distances;
+        for pixel in pixels.chunks_exact_mut(4) {
+            let grey = (0.2126 * pixel[0] as f32
+                + 0.7152 * pixel[1] as f32
+                + 0.0722 * pixel[2] as f32) as u8;
+            pixel[..3].fill(grey);
+        }
+        log::info!("local map render: {:?}", start.elapsed());
+        pixels
+    }
+
+    pub fn serve(&self, renderer: &mut crate::render::Renderer, menu: &ui_swf::Menu) {
+        let pixels = self.render(renderer);
+        menu.set_host_image("Local_Map", IMAGE_SIZE.0, IMAGE_SIZE.1, &pixels);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -153,6 +284,25 @@ mod tests {
         FormId,
         writer::{Node, RecordBuilder, write_plugin},
     };
+
+    #[test]
+    fn fitted_frame_contains_rotated_bounds_and_matches_camera() {
+        let bounds = Bounds {
+            min: Vec3::new(-200.0, -100.0, -20.0),
+            max: Vec3::new(300.0, 400.0, 50.0),
+        };
+        let frame = MapFrame::fit(bounds, 0.8, -20.0, 50.0);
+        for x in [bounds.min.x, bounds.max.x] {
+            for y in [bounds.min.y, bounds.max.y] {
+                let point = Vec3::new(x, y, 0.0);
+                let uv = frame.texture_point(point);
+                assert!((0.0..=1.0).contains(&uv.x) && (0.0..=1.0).contains(&uv.y));
+                let camera = frame.camera();
+                let ndc = (camera.proj(16.0 / 9.0) * camera.view()).project_point3(point);
+                assert!(uv.abs_diff_eq(Vec2::new(0.5 + ndc.x * 0.5, 0.5 - ndc.y * 0.5), 0.0001));
+            }
+        }
+    }
 
     #[test]
     fn interior_bounds_transform_corners_and_exclude_flagged_objects() {
