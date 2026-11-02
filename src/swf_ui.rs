@@ -902,11 +902,15 @@ impl SwfUi {
                     });
                     return true;
                 }
-                WindowEvent::MouseInput {
-                    state,
-                    button: winit::event::MouseButton::Left,
-                    ..
-                } => map.button(*state == ElementState::Pressed, self.pointer.position()),
+                WindowEvent::MouseInput { state, button, .. } => {
+                    if let Some(button) = crate::input_map::mouse_code(*button) {
+                        map.button(
+                            button,
+                            *state == ElementState::Pressed,
+                            self.pointer.position(),
+                        );
+                    }
+                }
                 _ => {}
             }
         }

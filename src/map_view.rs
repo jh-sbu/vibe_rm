@@ -64,6 +64,7 @@ pub struct MapView {
     pub zoom: f32,
     /// Degrees above the horizon.
     pub pitch: f32,
+    pub heading: f32,
     fov_y: f32,
     lod: Lod,
     pub scene: Scene,
@@ -114,11 +115,12 @@ impl MapView {
         let height = cam.min_height + (cam.max_height - cam.min_height) * self.zoom;
         let p = self.pitch.to_radians();
         // Looking north, tilted down.
-        let forward = Vec3::new(0.0, p.cos(), -p.sin());
+        let yaw = self.heading.to_radians();
+        let forward = Vec3::new(yaw.sin() * p.cos(), yaw.cos() * p.cos(), -p.sin());
         let target = self.center.extend(0.0);
         Camera {
             position: target - forward * (height / p.sin()),
-            yaw: 0.0,
+            yaw,
             pitch: -p,
             fov_y: self.fov_y,
         }
@@ -155,8 +157,9 @@ impl MapView {
     pub fn pan(&mut self, right: f32, up: f32) {
         let scale = self.world_per_screen_height();
         // Up the screen is further north, stretched by the tilt.
-        self.center.x += right * scale;
-        self.center.y += up * scale / self.pitch.to_radians().sin();
+        let yaw = self.heading.to_radians();
+        self.center += Vec2::new(yaw.cos(), -yaw.sin()) * right * scale
+            + Vec2::new(yaw.sin(), yaw.cos()) * up * scale / self.pitch.to_radians().sin();
         let [min_x, min_y, max_x, max_y] = self.data.bounds();
         self.center = self
             .center
@@ -165,6 +168,10 @@ impl MapView {
 
     pub fn zoom_by(&mut self, by: f32) {
         self.zoom = (self.zoom + by).clamp(0.0, 1.0);
+    }
+
+    pub fn turn_by(&mut self, degrees: f32) {
+        self.heading = (self.heading + degrees).rem_euclid(360.0);
     }
 
     pub fn tilt_by(&mut self, degrees: f32) {
@@ -261,6 +268,7 @@ impl Engine {
             center,
             zoom: 1.0,
             pitch: data.camera.initial_pitch.clamp(MIN_PITCH, MAX_PITCH),
+            heading: 0.0,
             fov_y,
             lod,
             scene,
@@ -361,7 +369,7 @@ impl Engine {
                 Some(s) => (
                     (-0.05..=1.05).contains(&s.x) && (-0.05..=1.05).contains(&s.y),
                     s,
-                    row.rotation,
+                    row.rotation - view.heading,
                 ),
                 None => (false, Vec2::ZERO, 0.0),
             })
@@ -387,6 +395,7 @@ mod tests {
             center: Vec2::new(0.0, 0.0),
             zoom: 1.0,
             pitch,
+            heading: 0.0,
             fov_y: 1.6,
             lod: Lod::default(),
             scene: Scene::default(),

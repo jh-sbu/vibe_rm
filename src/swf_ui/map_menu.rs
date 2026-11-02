@@ -30,7 +30,7 @@ const M: &str = "_root.WorldMap";
 /// zoom, and degrees a second the keys tilt.
 const PAN_SPEED: f32 = 0.5;
 const ZOOM_SPEED: f32 = 0.6;
-const TILT_SPEED: f32 = 40.0;
+const LOOK_SPEED: f32 = 120.0;
 /// Zoom a wheel notch.
 const WHEEL_ZOOM: f32 = 0.06;
 /// How close a marker must be to the pointer to be under it, screen heights.
@@ -42,6 +42,10 @@ pub(super) struct MapMenu {
     pub menu: Menu,
     /// Keys held, for the camera.
     keys: HashSet<KeyCode>,
+    mouse: HashSet<u32>,
+    bindings: crate::input_map::Shared,
+    pending: Vec<&'static str>,
+    look: Option<(f64, f64)>,
     /// Wheel notches since the last update.
     wheel: f32,
     /// The left button held: where the pointer was, and how far it has
@@ -76,6 +80,10 @@ impl MapMenu {
         let mut m = MapMenu {
             menu,
             keys: HashSet::new(),
+            mouse: HashSet::new(),
+            bindings: engine.input_map.clone(),
+            pending: Vec::new(),
+            look: None,
             wheel: 0.0,
             drag: None,
             click: false,
@@ -107,69 +115,113 @@ impl MapMenu {
 
     /// A key pressed or released. True when the map takes it.
     pub fn key(&mut self, code: KeyCode, pressed: bool) -> bool {
-        match code {
-            KeyCode::Escape | KeyCode::Tab | KeyCode::KeyM => {
-                if pressed {
-                    self.close = true;
-                }
-                true
-            }
-            KeyCode::KeyW
-            | KeyCode::KeyA
-            | KeyCode::KeyS
-            | KeyCode::KeyD
-            | KeyCode::ArrowUp
-            | KeyCode::ArrowDown
-            | KeyCode::ArrowLeft
-            | KeyCode::ArrowRight
-            | KeyCode::KeyQ
-            | KeyCode::KeyE
-            | KeyCode::PageUp
-            | KeyCode::PageDown => {
-                if pressed {
-                    self.keys.insert(code);
-                } else {
-                    self.keys.remove(&code);
-                }
-                true
-            }
-            _ => false,
+        use crate::input_map::Button;
+        if pressed {
+            self.keys.insert(code);
+        } else {
+            self.keys.remove(&code);
         }
+        let bindings = self.bindings.read().unwrap();
+        if pressed && bindings.triggered("Quick Map", Button::Key(code), &self.keys, &self.mouse) {
+            self.close = true;
+        }
+        for event in [
+            "Cancel",
+            "Up",
+            "Down",
+            "Left",
+            "Right",
+            "Zoom In",
+            "Zoom Out",
+            "MapLookMode",
+            "PlacePlayerMarker",
+            "PlayerPosition",
+            "LocalMap",
+            "LocalMapMoveMode",
+            "Journal",
+        ] {
+            if pressed
+                && bindings.triggered_in(
+                    "Map Menu",
+                    event,
+                    Button::Key(code),
+                    &self.keys,
+                    &self.mouse,
+                )
+            {
+                self.pending.push(event);
+            }
+        }
+        // All map input is modal; releases still update chord state.
+        true
     }
 
     pub fn wheel(&mut self, notches: f32) {
-        self.wheel += notches;
+        let bindings = self.bindings.read().unwrap();
+        let button = crate::input_map::Button::Mouse(if notches > 0.0 { 8 } else { 9 });
+        for (event, sign) in [("Zoom In", 1.0), ("Zoom Out", -1.0)] {
+            if bindings.triggered_in("Map Menu", event, button, &self.keys, &self.mouse) {
+                self.wheel += notches.abs() * sign;
+            }
+        }
     }
 
-    /// The left button went down or up at a position, pixels.
-    pub fn button(&mut self, pressed: bool, at: (f64, f64)) {
+    pub fn button(&mut self, button: u32, pressed: bool, at: (f64, f64)) {
         if pressed {
-            self.drag = Some((at, 0.0));
-        } else if let Some((_, moved)) = self.drag.take()
-            && std::mem::take(&mut self.click)
-            && moved < CLICK_SLOP
-        {
-            self.menu.callback("ClickSelectedMarker", &[]);
+            self.mouse.insert(button);
+        } else {
+            self.mouse.remove(&button);
+        }
+        let bindings = self.bindings.read().unwrap();
+        if bindings.triggered_in(
+            "Map Menu",
+            "MapLookMode",
+            crate::input_map::Button::Mouse(button),
+            &self.keys,
+            &self.mouse,
+        ) {
+            self.look = pressed.then_some(at);
+        }
+        if bindings.triggered_in(
+            "Map Menu",
+            "LocalMapMoveMode",
+            crate::input_map::Button::Mouse(button),
+            &self.keys,
+            &self.mouse,
+        ) {
+            if pressed {
+                self.drag = Some((at, 0.0));
+            } else if let Some((_, moved)) = self.drag.take()
+                && std::mem::take(&mut self.click)
+                && moved < CLICK_SLOP
+            {
+                self.menu.callback("ClickSelectedMarker", &[]);
+            }
         }
     }
 
     /// The camera's input and the markers' places, once a frame. `pointer`
     /// is in pixels.
     pub fn update(&mut self, engine: &mut Engine, dt: f32, pointer: (f64, f64), size: (u32, u32)) {
-        let held = |keys: &[KeyCode]| keys.iter().any(|k| self.keys.contains(k));
-        let axis = |plus: &[KeyCode], minus: &[KeyCode]| {
-            held(plus) as i32 as f32 - held(minus) as i32 as f32
-        };
-        let right = axis(
-            &[KeyCode::KeyD, KeyCode::ArrowRight],
-            &[KeyCode::KeyA, KeyCode::ArrowLeft],
-        );
-        let up = axis(
-            &[KeyCode::KeyW, KeyCode::ArrowUp],
-            &[KeyCode::KeyS, KeyCode::ArrowDown],
-        );
-        let zoom = axis(&[KeyCode::KeyQ], &[KeyCode::KeyE]);
-        let tilt = axis(&[KeyCode::PageUp], &[KeyCode::PageDown]);
+        for event in std::mem::take(&mut self.pending) {
+            match event {
+                "Cancel" => self.close = true,
+                "PlayerPosition" => {
+                    if let Some(view) = &mut engine.map_view
+                        && let Some((p, _)) = view.player
+                    {
+                        view.center = p;
+                    }
+                }
+                "Journal" => engine.menu = Some(Shown::Journal),
+                _ => {}
+            }
+        }
+        let bindings = self.bindings.read().unwrap();
+        let held = |event| bindings.held_in("Map Menu", event, &self.keys, &self.mouse);
+        let right = held("Right") as i32 as f32 - held("Left") as i32 as f32;
+        let up = held("Up") as i32 as f32 - held("Down") as i32 as f32;
+        let zoom = held("Zoom In") as i32 as f32 - held("Zoom Out") as i32 as f32;
         let (w, h) = (size.0.max(1) as f64, size.1.max(1) as f64);
         if let Some((last, moved)) = &mut self.drag {
             let (dx, dy) = (pointer.0 - last.0, pointer.1 - last.1);
@@ -182,12 +234,18 @@ impl MapMenu {
                 view.pan(-(dx / h) as f32, (dy / h) as f32);
             }
         }
+        if let Some(last) = &mut self.look {
+            if let Some(view) = &mut engine.map_view {
+                view.turn_by(((pointer.0 - last.0) / h) as f32 * LOOK_SPEED);
+                view.tilt_by(((pointer.1 - last.1) / h) as f32 * LOOK_SPEED);
+            }
+            *last = pointer;
+        }
         let wheel = std::mem::take(&mut self.wheel);
         if let Some(view) = &mut engine.map_view {
             view.pan(right * PAN_SPEED * dt, up * PAN_SPEED * dt);
             // Zooming in is the wheel forwards, which lowers the camera.
             view.zoom_by(-zoom * ZOOM_SPEED * dt - wheel * WHEEL_ZOOM);
-            view.tilt_by(tilt * TILT_SPEED * dt);
         }
         engine.update_map_view();
         if self.creating {
