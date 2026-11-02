@@ -1,6 +1,7 @@
 # Plan: scrolls hold the player in place while cast
 
-**Status: drafted** (2026-10-30). ROADMAP Next item 5, "Magic, NPCs and
+**Status: implemented and verified** (2026-11-02); manual SE edge-behavior
+observation remains open. ROADMAP Next item 5, "Magic, NPCs and
 items": "scrolls holding the player in place while cast (UESP
 Skyrim:Scrolls)". Each numbered step is one commit; run `cargo fmt` before
 each.
@@ -50,11 +51,13 @@ each.
 
 ## Steps
 
-0. **Survey.** `vrm-tool magic <Data>`: list the scrolls' cast types and
+0. **Survey (done).** `vrm-tool magic <Data>`: list the scrolls' cast types and
    charge times (`SCRL` `SPIT`), so the plan knows whether concentration
    scrolls exist and how long the longest hold is. Note the result in
    `known_ambiguities/scrolls.md`. Commit only if the tool needs a change to
-   print it.
+   print it. Results: `research/magic/scroll-casting-hold.md`; two
+   concentration records, maximum stored charge time three seconds. The survey
+   mode is `vrm-tool magic <Data> --scrolls`.
 1. **The hold.** Add `Engine::player_scroll_held() -> bool` in
    `src/casting.rs`: true while either hand's `HandCast` or `Firing` (not
    yet fired) names a `SCRL`. In `Engine::update`, after
@@ -72,8 +75,8 @@ each.
 ## Verification
 
 - `cargo test` for step 1.
-- Offscreen run: put a scroll in the right hand (`player.additem`, equip
-  through the console), cast with a held right button (`--console` with
+- Offscreen run: put a scroll in the right hand (`player.additem`, then
+  `useitem` after initialization), cast with a held right button (`--console` with
   `pcast`, as earlier casting captures did) while `test_walk` drives
   forward input. Read the player position before, during and after the
   cast from the log.
@@ -86,3 +89,29 @@ each.
   press buttons.
 - Interruption by blows and shouts is a separate ROADMAP clause ("charges
   interrupted by blows or shouts") and stays out of this plan.
+
+- Whether auto-calculated charge time differs from stored SPIT charge time for
+  scrolls whose SPIT time is zero (the format reference describes calculation
+  from effects). The survey reports stored times; changing charge-time
+  calculation is separate from the movement hold.
+
+## Completed verification (2026-11-02)
+
+- Six scroll engine tests pass with host Vulkan GPU access, including both
+  hands, two-handed equipment, early cancellation, unequipping, concentration,
+  jump suppression, waiting for SpellFire, and ordinary spells remaining mobile.
+- Engine regression suite: 604 passed, 398 ignored, zero failures. GPU access
+  is needed even for some non-ignored engine tests; the sandbox GL fallback
+  cannot construct the terrain renderer (17 sampled textures, limit 16).
+- `cargo fmt --check` and `git diff --check` pass.
+- Offscreen QASmoke check with vanilla Scroll of Firebolt (00096598): add two,
+  `@10 useitem 00096598`, `@20 pdraw`, `@150 pcast right`, then
+  `@151 pwalk 140`. Position at frames 151 and 210 was identical:
+  (-363.3, 2035.2, 7042.0). After `@240 pcast right off`, the log confirms
+  firing and position at frame 290 is (-856.0, 1950.3, 7042.0).
+  Run with `tcl`, `--cell QASmoke --wait 300`, and host Vulkan access.
+  Logs/capture were written under `/tmp/vrm-scroll-*`.
+- Startup equipment must be scheduled after initialization for this check.
+  The console's existing `player.equipitem` path consumes magic items, including
+  scrolls; `useitem` exercises inventory equipping correctly. Repairing that
+  console command remains separate open work.

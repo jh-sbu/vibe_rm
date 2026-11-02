@@ -888,7 +888,9 @@ game each piece unlocks.
 - Scrolls (`known_ambiguities/scrolls.md`): used from the inventory or
   favorites into the hand asked for (or away again), cast like a spell with
   the scroll's charge time, free of magicka and skill, and used up by the
-  cast (one cut short isn't); `GetEquippedSpell` leaves them out.
+  cast (one cut short isn't); `GetEquippedSpell` leaves them out. Casting a
+  scroll now holds movement through charging and firing, including concentration
+  scrolls; early cancellation releases the hold (`plans/scroll-casting-hold.md`).
 - Saves (`src/save/`, `known_ambiguities/saves.md`): the engine's own format
   (sections with CRCs, written through a temporary file) holding the clock,
   globals, quests, statistics, actor value changes, inventories with their
@@ -2070,9 +2072,7 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      recharging; whether spell cost perks (`ModSpellCost`) also lower staffs'
      and enchanted weapons' charge use, and whether NPCs' worn school cost
      reductions do (the player's do: see Done; `known_ambiguities/staffs.md`); individual staff copies
-     selectable in the menus and hands (`known_ambiguities/staffs.md`); scrolls
-     holding the player in place while cast (UESP Skyrim:Scrolls;
-     `plans/scroll-casting-hold.md`), NPCs casting
+     selectable in the menus and hands (`known_ambiguities/staffs.md`); NPCs casting
      scrolls; charges interrupted by blows or shouts (spells and scrolls)
    - Pickpocket retry resets beyond the two-day gate (see Done): guards sent
      off by bribes, Thanes or guild payment, and Harmony
