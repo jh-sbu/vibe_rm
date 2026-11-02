@@ -51,6 +51,7 @@ impl Default for Saved {
 pub(super) struct JournalMenu {
     pub menu: Menu,
     return_to_map: bool,
+    targets: Vec<(FormId, i32)>,
     /// Toggle Active in the menu: (quest, now tracked), for the engine with
     /// the next update. `FormId::NULL` is the miscellaneous objectives'.
     toggles: Arc<Mutex<Vec<(FormId, bool)>>>,
@@ -78,6 +79,8 @@ fn form(id: FormId) -> Value {
 struct Data {
     /// The quests' title list entries (the misc ones aside), latest first.
     quests: Vec<Value>,
+    targets: Vec<(FormId, i32)>,
+    allow_map: bool,
     /// The miscellaneous objectives, for `RequestObjectivesData`.
     misc: Vec<Value>,
     misc_hidden: bool,
@@ -87,9 +90,30 @@ struct Data {
     player: Vec<Value>,
 }
 
+fn target_id(
+    engine: &mut Engine,
+    world: Option<FormId>,
+    quest: FormId,
+    objective: i32,
+    targets: &mut Vec<(FormId, i32)>,
+) -> Value {
+    if world
+        .and_then(|world| engine.map_objective_target(world, quest, objective))
+        .is_none()
+    {
+        return Value::Undefined;
+    }
+    let index = targets.len();
+    targets.push((quest, objective));
+    Value::Number(index as f64)
+}
+
 impl Data {
     fn of(engine: &mut Engine) -> Data {
         let mut quests = Vec::new();
+        let mut targets = Vec::new();
+        let world = engine.map_world().map(|(world, _)| world);
+        let allow_map = engine.map_available();
         let mut misc = Vec::new();
         let mut active = HashMap::new();
         for j in engine.journal() {
@@ -100,7 +124,7 @@ impl Data {
                 if j.completed || j.failed {
                     continue;
                 }
-                for (_, text_, _) in j
+                for (objective, text_, _) in j
                     .objectives
                     .iter()
                     .rev()
@@ -108,6 +132,10 @@ impl Data {
                 {
                     misc.push(object([
                         ("text", text(text_)),
+                        (
+                            "questTargetID",
+                            target_id(engine, world, j.id, *objective, &mut targets),
+                        ),
                         ("formID", form(j.id)),
                         ("instance", num(0.0)),
                         ("active", Value::Bool(j.active)),
@@ -123,10 +151,18 @@ impl Data {
                 .objectives
                 .iter()
                 .rev()
-                .map(|(_, text_, state)| {
+                .map(|(objective, text_, state)| {
                     let shown = *state == ObjectiveState::Shown;
                     object([
                         ("text", text(text_)),
+                        (
+                            "questTargetID",
+                            if shown && !done {
+                                target_id(engine, world, j.id, *objective, &mut targets)
+                            } else {
+                                Value::Undefined
+                            },
+                        ),
                         ("active", Value::Bool(shown && j.active && !done)),
                         (
                             "completed",
@@ -166,6 +202,8 @@ impl Data {
             num(engine.level_progress() * 100.0),
         ];
         Data {
+            targets,
+            allow_map,
             quests,
             misc,
             misc_hidden: engine.scripts.misc_objectives_hidden,
@@ -187,6 +225,7 @@ impl JournalMenu {
     ) -> anyhow::Result<Self> {
         let menu = ui.open("quest_journal.swf", size)?;
         let mut data = Data::of(engine);
+        let targets = data.targets.clone();
         let toggles: Arc<Mutex<Vec<(FormId, bool)>>> = Default::default();
         let mut saved_quest = saved.clone();
         // Nothing saved yet: the latest quest still running, else the
@@ -225,8 +264,7 @@ impl JournalMenu {
                         saved_quest.instance.clone(),
                         Value::Bool(!data.misc.is_empty()),
                         Value::Bool(!data.misc_hidden),
-                        // No map to show it on yet.
-                        Value::Bool(false),
+                        Value::Bool(data.allow_map),
                     ])
                 }
                 // The selected entry is the miscellaneous one: its objectives.
@@ -280,6 +318,7 @@ impl JournalMenu {
         menu.callback("RestoreSavedSettings", &[tab, Value::Bool(false)]);
         Ok(JournalMenu {
             return_to_map: engine.map_view.is_some(),
+            targets,
             menu,
             toggles,
             system,

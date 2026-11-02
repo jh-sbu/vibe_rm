@@ -249,29 +249,87 @@ impl Engine {
         quests.sort_by_key(|(q, _)| *q);
         let mut refs = Vec::new();
         for (q, open) in quests {
-            let targets = match self.quest_targets.targets.get(&q) {
-                Some(t) => t.clone(),
-                None => {
-                    let t = Arc::new(read_targets(&self.lo, q));
-                    self.quest_targets.targets.insert(q, t.clone());
-                    t
-                }
-            };
-            for t in targets.iter().filter(|t| open.contains(&t.objective)) {
-                let Some(r) = self.alias_ref(q, t.alias) else {
-                    continue;
-                };
-                let ctx = crate::condition::Context {
-                    subject: Some(r),
-                    quest: Some(q),
-                    ..Default::default()
-                };
-                if crate::condition::evaluate(self, &t.conditions, ctx) && !refs.contains(&(q, r)) {
-                    refs.push((q, r));
+            for objective in open {
+                for r in self.objective_references(q, objective) {
+                    if !refs.contains(&(q, r)) {
+                        refs.push((q, r));
+                    }
                 }
             }
         }
         refs
+    }
+
+    /// Resolve a displayed unfinished objective even when its quest is untracked.
+    fn objective_references(&mut self, q: FormId, objective: i32) -> Vec<FormId> {
+        let valid = self.scripts.quests.get(&q).is_some_and(|st| {
+            st.running
+                && !st.completed
+                && !st.failed
+                && st.objectives_displayed.contains(&objective)
+                && !st.objectives_completed.contains(&objective)
+                && !st.objectives_failed.contains(&objective)
+        });
+        if !valid {
+            return Vec::new();
+        }
+        let targets = self
+            .quest_targets
+            .targets
+            .entry(q)
+            .or_insert_with(|| Arc::new(read_targets(&self.lo, q)))
+            .clone();
+        let mut refs = Vec::new();
+        for target in targets.iter().filter(|t| t.objective == objective) {
+            let Some(r) = self.alias_ref(q, target.alias) else {
+                continue;
+            };
+            let ctx = crate::condition::Context {
+                subject: Some(r),
+                quest: Some(q),
+                ..Default::default()
+            };
+            if crate::condition::evaluate(self, &target.conditions, ctx) && !refs.contains(&r) {
+                refs.push(r);
+            }
+        }
+        refs
+    }
+
+    pub(crate) fn map_objective_target(
+        &mut self,
+        world: FormId,
+        quest: FormId,
+        objective: i32,
+    ) -> Option<glam::Vec2> {
+        self.objective_references(quest, objective)
+            .into_iter()
+            .find_map(|r| self.map_reference_spot(world, r).map(|(p, _)| p))
+    }
+
+    /// The same direct-target / first-load-door resolution for map rows and
+    /// journal Show on Map; target conditions are evaluated by the caller.
+    fn map_reference_spot(&self, world: FormId, r: FormId) -> Option<(glam::Vec2, u8)> {
+        let (space, pos) = self.target_spot(r)?;
+        if let Space::World(here) = space
+            && let Some((_, p)) = crate::map_view::world_map_point(&self.lo, here, pos.truncate())
+                .filter(|(owner, _)| *owner == world)
+        {
+            return Some((p, 62));
+        }
+        let origin = match self.location {
+            Location::Exterior { world: here, .. } => {
+                crate::map_view::world_map_point(&self.lo, here, self.player.position.truncate())
+                    .filter(|(owner, _)| *owner == world)
+                    .map(|(_, p)| p.extend(0.0))
+            }
+            _ => None,
+        }
+        .unwrap_or(Vec3::ZERO);
+        let p = self
+            .door_on_way(Space::World(world), space, origin)?
+            .truncate();
+        p.is_finite().then_some((p, 61))
     }
 
     /// Twice a second: resolve tracked references or the first door towards them.
@@ -311,36 +369,10 @@ impl Engine {
     /// Map overlays use the movie's quest icon (62) and door icon (61).
     /// They have no travel identity; only actual destination markers can travel.
     pub(crate) fn map_quest_rows(&mut self, world: FormId) -> Vec<crate::map_view::MapRow> {
-        let origin = match self.location {
-            Location::Exterior { world: here, .. } => {
-                crate::map_view::world_map_point(&self.lo, here, self.player.position.truncate())
-                    .filter(|(owner, _)| *owner == world)
-                    .map(|(_, p)| p.extend(0.0))
-            }
-            _ => None,
-        }
-        .unwrap_or(Vec3::ZERO);
         let mut rows: Vec<crate::map_view::MapRow> = Vec::new();
         for (q, r) in self.active_quest_references() {
-            let Some((space, pos)) = self.target_spot(r) else {
+            let Some((pos, kind)) = self.map_reference_spot(world, r) else {
                 continue;
-            };
-            let direct = match space {
-                Space::World(here) => {
-                    crate::map_view::world_map_point(&self.lo, here, pos.truncate())
-                        .filter(|(owner, _)| *owner == world)
-                        .map(|(_, p)| p)
-                }
-                _ => None,
-            };
-            let (pos, kind) = match direct {
-                Some(p) => (p, 62),
-                None => {
-                    let Some(p) = self.door_on_way(Space::World(world), space, origin) else {
-                        continue;
-                    };
-                    (p.truncate(), 61)
-                }
             };
             if !pos.is_finite() || rows.iter().any(|r| r.pos == pos && r.kind == kind) {
                 continue;

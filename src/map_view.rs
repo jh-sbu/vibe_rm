@@ -269,7 +269,7 @@ pub fn frame_parts(
 impl Engine {
     /// The worldspace the map opens on, with its map data: where the player
     /// is (a child worldspace's is its parent's), else Tamriel.
-    fn map_world(&self) -> Option<(FormId, WorldMapData)> {
+    pub(crate) fn map_world(&self) -> Option<(FormId, WorldMapData)> {
         let here = match self.location {
             Location::Exterior { world, .. } => world,
             _ => self.lo.find_editor_id("Tamriel")?,
@@ -277,6 +277,15 @@ impl Engine {
         let (owner, _) = world_map_point(&self.lo, here, Vec2::ZERO)?;
         let rec = self.lo.get(owner)?;
         Some((owner, WorldMapData::parse(rec.get(b"MNAM")?)?))
+    }
+
+    pub(crate) fn map_available(&self) -> bool {
+        if self.map_view.is_some() {
+            return true;
+        }
+        self.map_world()
+            .and_then(|(world, _)| self.lo.get(world)?.editor_id())
+            .is_some_and(|edid| !Lod::new(&self.vfs, &edid).is_empty())
     }
 
     /// Builds the map view. None when the worldspace has no map data or
@@ -712,6 +721,18 @@ mod tests {
             world: FormId(0x800),
             center: (0, 0),
         };
+        assert_eq!(
+            e.map_objective_target(FormId(0x800), FormId(0xB00), 10),
+            Some(Vec2::new(120.0, 240.0))
+        );
+        assert_eq!(
+            e.map_objective_target(FormId(0x800), FormId(0xB01), 10),
+            Some(Vec2::new(30.0, 40.0))
+        );
+        assert_eq!(
+            e.map_objective_target(FormId(0x800), FormId(0xB02), 10),
+            None
+        ); // target condition fails
         let rows = e.map_quest_rows(FormId(0x800));
         assert_eq!(rows.len(), 2); // duplicate target and false condition are excluded
         let direct = rows.iter().find(|r| r.kind == 62).unwrap();
@@ -740,10 +761,23 @@ mod tests {
         e.scripts.disabled.clear();
         e.scripts.quests.get_mut(&FormId(0xB01)).unwrap().active = false;
         assert!(e.map_quest_rows(FormId(0x800)).is_empty());
+        // Untracking hides map overlays but must not disable Show on Map.
+        assert_eq!(
+            e.map_objective_target(FormId(0x800), FormId(0xB01), 10),
+            Some(Vec2::new(30.0, 40.0))
+        );
+        assert_eq!(
+            e.map_objective_target(FormId(0x800), FormId(0xB00), 10),
+            None
+        ); // completed
         let st = e.scripts.quests.get_mut(&FormId(0xB01)).unwrap();
         st.active = true;
         st.failed = true;
         assert!(e.map_quest_rows(FormId(0x800)).is_empty());
+        assert_eq!(
+            e.map_objective_target(FormId(0x800), FormId(0xB01), 10),
+            None
+        );
         std::fs::remove_dir_all(dir).unwrap();
     }
 
