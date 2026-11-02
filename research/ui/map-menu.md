@@ -12,11 +12,24 @@ Direct observations in vanilla Skyrim SE supplied by the user on 2026-11-01:
 6. Esc from the journal opened over the map returns to the map.
 7. Show on Map adds no extra target highlighting.
 8. The first click on empty map places the custom destination immediately.
+9. The map opens on the player each time, not where it was left.
+
+From `map.swf` (game asset, read in the spike harness): the bottom bar's
+`LeftButton` is labelled `$Zoom` ("Zoom") and `RightButton`
+`$Set Destination`. The engine gives them the Map Menu context's Zoom In and
+PlacePlayerMarker key art.
 
 Asset evidence and the public reference revision links are in `plans/map-menu.md`.
 The Show on Map opening zoom was not specified by these observations.
 
 ## Implementation validation
+
+Follow-up fixes after an audit (2026-11-01): the map no longer keeps its
+camera between openings (observation 9), headings wrap below 360 so saves
+stay loadable, the bottom bar is hit-tested in stage coordinates (the movie
+test presses P over it at 1920x1080), held keys don't repeat the map's
+events, and Place Marker is offered only for undiscovered locations, not for
+discovered ones a script denied travel to. The counts below predate them.
 
 The application suite passed: 591 tests, zero failures (393 opt-in tests were
 not part of that default run). This includes the new regression decoding both

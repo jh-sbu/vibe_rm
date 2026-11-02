@@ -91,20 +91,17 @@ inconsistent nesting. Child rows retain original reference IDs for actual travel
 map coordinates never become physical arrival coordinates. Travel timing across
 spaces remains separately unresolved.
 
-## User observations in vanilla Skyrim SE (2026-11-01)
+## Camera on opening
 
-M closes the map. Holding the right mouse button allows both tilt and turn.
-Esc from a journal opened over the map returns to the map. Show on Map adds
-no extra target highlighting. All eight observations are recorded in
-`research/ui/map-menu.md` and `plans/map-menu.md`.
+Each opening of the map starts on the player; the user confirmed vanilla
+does (`research/ui/map-menu.md`). It also starts facing north, at zoom 1 and
+the worldspace's initial pitch, whatever the camera was turned, zoomed or
+tilted to before. Whether vanilla also resets the turn, zoom and tilt wasn't
+part of that observation; resetting them with the centre is the choice.
 
-## Camera continuity
-
-Closing the map retains its centre, zoom, pitch and heading for reopening.
-The existing optional MCAM native-save payload stores centre/zoom/pitch; the
-new optional MHED payload stores heading (absent means north). This is this
-engine's continuity representation, not a claim about Skyrim's save layout.
-Exact vanilla camera persistence has not been measured; retaining the camera
-extends the plan's saved-camera policy. A journal opened over the map retains
-the live view, and Show on Map applies a transient focus at normal opening
-zoom (`known_ambiguities/journal.md`).
+Only a save made with the map open carries its camera into the next opening:
+the optional MCAM payload (centre, zoom, pitch) and MHED (heading, absent
+means north). This is this engine's continuity representation, not a claim
+about Skyrim's save layout. A journal opened over the map keeps the live
+view, and Show on Map applies a transient focus at the opening zoom
+(`known_ambiguities/journal.md`).

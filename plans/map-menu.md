@@ -45,8 +45,8 @@ compass). Open questions stay in this plan.
   - `SetJournalInput(art)`: the journal button's key art.
   - The bottom bar's buttons: `LocalMapButton` (calls
     `ToggleMapCallback`), `JournalButton` (`OpenJournalCallback`) and
-    `PlayerLocButton` (`CurrentLocationCallback`). `LeftButton` and
-    `RightButton` show key art only. The translation file has
+    `PlayerLocButton` (`CurrentLocationCallback`). `LeftButton` (labelled
+    `$Zoom`) and `RightButton` (`$Set Destination`) show key art only. The translation file has
     `$Set Destination`, `$Local Map` and `$World Map`.
   - A mouse press anywhere outside the bottom bar calls `ClickCallback`.
 - **Callback names are shared.** Both `Map.MapMenu` instances register the same
@@ -290,6 +290,7 @@ These observations supersede the provisional choices in the steps above.
 - **O7:** Show on Map adds no extra target highlighting. Its precise opening
   zoom remains an open question; this implementation uses the opening zoom.
 - **O8:** Empty-map placement is immediate, without a confirmation question.
+- **O9:** The map opens on the player each time, not where it was left.
 
 ## Order and size
 

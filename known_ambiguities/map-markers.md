@@ -63,11 +63,15 @@ is a choice, not a claim about Skyrim's save format. Native saves use the
 optional PMRK section; absent means no destination. Invalid worlds (null) and
 nonfinite coordinates are rejected before applying the snapshot.
 
-The user observed in vanilla Skyrim SE (2026-11-01) that reaching the custom
-destination does not remove it. Replacement occurs only after another map
-click and the Move It answer, immediately at that click position. Empty-map
-placement without an existing marker is immediate. These are observed behavior,
-not unresolved choices (`research/ui/map-menu.md`).
+How placing, moving and removing behave (immediate first placement, the
+question at the next click, the marker staying when reached) was observed in
+Skyrim SE and is recorded in `research/ui/map-menu.md`, not here.
+
+Placing, moving or removing the marker plays no sound. Which sound vanilla
+plays, if any, isn't known: the movie only reports `ClickCallback` for a
+click on the map (its sounds are CLIK's generic button ones), no game
+setting names one, and the observations didn't cover it. Silence is the
+choice until it is observed.
 
 The custom compass marker uses frame 3 at full alpha and scale 100 at any
 distance in exterior spaces sharing its map owner; heading compares both

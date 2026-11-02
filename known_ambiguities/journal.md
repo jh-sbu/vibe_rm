@@ -152,9 +152,8 @@ target in authored order, directly on the owning map or at the first load door
 towards it. This ordering follows the existing map/compass resolver; the exact
 vanilla choice among multiple targets has not been measured.
 
-The user observed on 2026-11-01 that Show on Map adds no extra highlighting,
-and Esc from a journal opened over the map returns to that map. Both are
-implemented (`research/ui/map-menu.md`); these are settled observations.
+Observed behaviour around it (no extra highlighting, Esc returning to the
+map) is settled and recorded in `research/ui/map-menu.md`, not here.
 
 The user did not specify the opening zoom. The working choice is normal
 opening zoom (1, the highest camera), preserving pitch and heading and using
