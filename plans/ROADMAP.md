@@ -888,9 +888,12 @@ game each piece unlocks.
 - Scrolls (`known_ambiguities/scrolls.md`): used from the inventory or
   favorites into the hand asked for (or away again), cast like a spell with
   the scroll's charge time, free of magicka and skill, and used up by the
-  cast (one cut short isn't); `GetEquippedSpell` leaves them out. Casting a
-  scroll now holds movement through charging and firing, including concentration
-  scrolls; early cancellation releases the hold (`plans/scroll-casting-hold.md`).
+  cast (one cut short isn't); `GetEquippedSpell` leaves them out. Ordinary
+  scrolls allow walking while charging but refuse sprint/jump; ritual scrolls
+  hold movement and refuse sheathing, with brief cancellation recovery. Scroll
+  starts are refused airborne/swimming. Effect casting times supply automatic
+  charge time; Detect Life uses its timed FF effects despite SPIT type 2
+  (`plans/scroll-casting-hold.md`, user SE observations).
 - Saves (`src/save/`, `known_ambiguities/saves.md`): the engine's own format
   (sections with CRCs, written through a temporary file) holding the clock,
   globals, quests, statistics, actor value changes, inventories with their
