@@ -1,6 +1,6 @@
 # Plan: the map's rest (controls, custom destination, Show on Map)
 
-**Status: drafted** (2026-11-01). ROADMAP Next item 6 (UI), "The map's rest".
+**Status: implementing** (2026-11-01). ROADMAP Next item 6 (UI), "The map's rest".
 This plan covers the world-map parts of that entry that no other item
 blocks: the map's controls as the game binds them, the player-set marker
 ("Custom Destination"), the journal's Show on Map, and keeping the map's
@@ -28,7 +28,6 @@ Describe the movies' behaviour in prose and don't copy their bytecode into the
 repository (the disassembly in `spike/swf/out/` is ignored and stays that
 way). Choices made without a source go in `known_ambiguities/map-view.md`
 (the world map), `known_ambiguities/map-markers.md` (markers and the
-(the world map) or `known_ambiguities/map-markers.md` (markers and the
 compass). Open questions stay in this plan.
 
 ## The evidence
@@ -282,26 +281,21 @@ compass (PlayerSet frame) and later on the local map. It is saved.
   - **9c.** Update `known_ambiguities/journal.md` and the ROADMAP's journal
     and map entries.
 
-## Observations to settle in Skyrim SE
+## Observed in vanilla Skyrim SE (user, 2026-11-01)
 
-None of these can be read from a save (vanilla Papyrus can't see the map or
-the custom marker), so they are direct observations for the user, batched like
-`plans/main-menu-leftovers.md`'s. Each answer replaces a choice above.
+These observations supersede the provisional choices in the steps above.
 
-- **O1.** Does M (Quick Map) close the map, or only Tab and Esc?
-- **O2.** With the right mouse button held, does moving the mouse tilt only,
-  or also turn the map's heading?
-- **O3.** Does the custom marker disappear when the player reaches it?
-- **O4.** After "Move It", how is the new spot chosen? A click? Does the old
-  marker stay until then?
-- **O5.** Clicking an undiscovered marker in combat: the combat refusal or the
-  Place marker question?
-- **O6.** Journal opened from the map, then Esc: back to the map, or out of
-  both?
-- **O7.** Show on Map: is the target selected or highlighted, and at what
-  zoom does the map open?
-- **O8.** Does a click on empty map place the marker at once, or ask
-  `sPlaceMarker` first?
+- **O1:** M also closes the map.
+- **O2:** Right-button mouse movement both tilts and turns the camera.
+- **O3:** Reaching the custom destination does not remove it.
+- **O4:** The Move It / Leave It / Remove It question opens only when a
+  custom marker exists and the player clicks again on the map. Move It
+  immediately moves the marker to that new click position; no moving mode.
+- **O5:** An undiscovered location shows the Place Marker question even in combat.
+- **O6:** Esc in the journal opened from the map returns to the map.
+- **O7:** Show on Map adds no extra target highlighting. Its precise opening
+  zoom remains an open question; this implementation uses the opening zoom.
+- **O8:** Empty-map placement is immediate, without a confirmation question.
 
 ## Order and size
 

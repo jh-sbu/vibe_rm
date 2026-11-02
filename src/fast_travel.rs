@@ -6,6 +6,8 @@ use crate::loading::{LoadCause, LoadRequest, LoadTarget};
 use esp::FormId;
 use glam::Vec3;
 
+const FAST_TRAVEL_CONFIRM: &str = "sFastTravelConfirm";
+
 /// A refusal has a GMST key and an English fallback for incomplete load orders.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Refusal {
@@ -124,7 +126,7 @@ impl Engine {
             .map(|m| m.name.clone())
             .unwrap_or_default();
         let prompt = self
-            .gmst_string("sConfirmFastTravel")
+            .gmst_string(FAST_TRAVEL_CONFIRM)
             .unwrap_or_else(|| "Fast travel to %s?".into());
         let yes = self.gmst_string("sYes").unwrap_or_else(|| "Yes".into());
         let no = self.gmst_string("sNo").unwrap_or_else(|| "No".into());
@@ -323,6 +325,11 @@ impl Engine {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn confirmation_uses_vanilla_setting() {
+        assert_eq!(super::FAST_TRAVEL_CONFIRM, "sFastTravelConfirm");
+    }
+
     use crate::engine::PLAYER_REF;
     use papyrus::{NativeResult, Value};
 
