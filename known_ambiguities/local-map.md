@@ -27,3 +27,11 @@ The movie specifies an 800 by 450 image but not the camera padding. We fit
 all rotated bounds to that aspect ratio and add five percent of the larger
 side on each edge. The actual game's margin and minimum view size remain
 unknown.
+
+## Map motion
+
+The movie exposes an image and marker fractions but does not document how the
+engine pans or zooms its camera. We change the orthographic box and render it
+again at most four times per second during motion and on drag release. Render
+cost is logged at info level. This keeps the image and marker projection in
+step; the game's actual update frequency is unknown.

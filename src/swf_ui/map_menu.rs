@@ -88,6 +88,11 @@ pub(super) struct MapMenu {
     local_extents: Option<[f64; 4]>,
     local_rows: Vec<crate::local_map::LocalRow>,
     local_creating: bool,
+    local_selected: Option<usize>,
+    local_original_half: Vec2,
+    local_dirty: bool,
+    local_drag_released: bool,
+    local_redraw_age: f32,
     /// Esc, Tab or the map key: close.
     pub close: bool,
     pub journal: bool,
@@ -133,6 +138,11 @@ impl MapMenu {
             local_extents: None,
             local_rows: Vec::new(),
             local_creating: false,
+            local_selected: None,
+            local_original_half: Vec2::ONE,
+            local_dirty: false,
+            local_drag_released: false,
+            local_redraw_age: 0.0,
             close: false,
             journal: false,
         };
@@ -147,6 +157,7 @@ impl MapMenu {
                 log::warn!("local map: no area bounds available");
                 return;
             };
+            self.local_original_half = local.frame.half;
             local.serve(&mut engine.renderer, &self.menu);
             self.menu.invoke(&format!("{LOCAL}.InitMap"), &[]);
             self.local = Some(local);
@@ -417,6 +428,24 @@ impl MapMenu {
                 self.release_waiting = false;
                 self.drag = Some((at, 0.0));
             } else if let Some((last, moved)) = self.drag.take() {
+                if self.local_shown {
+                    let moved = moved + (at.0 - last.0).hypot(at.1 - last.1);
+                    if moved >= CLICK_SLOP
+                        && let (Some(e), Some(local)) = (self.local_extents, &mut self.local)
+                        && e[2] > e[0]
+                        && e[3] > e[1]
+                    {
+                        let a = self.menu.stage_point(last.0, last.1);
+                        let b = self.menu.stage_point(at.0, at.1);
+                        local.frame.center += Vec2::new(
+                            -((b.0 - a.0) / (e[2] - e[0])) as f32 * local.frame.half.x * 2.0,
+                            ((b.1 - a.1) / (e[3] - e[1])) as f32 * local.frame.half.y * 2.0,
+                        );
+                        self.local_dirty = true;
+                    }
+                    self.local_drag_released = true;
+                    return;
+                }
                 let moved = moved + (at.0 - last.0).hypot(at.1 - last.1);
                 if moved < CLICK_SLOP {
                     if std::mem::take(&mut self.click) {
@@ -451,8 +480,7 @@ impl MapMenu {
             }
         }
         if self.local_shown {
-            self.pointer_px = pointer;
-            self.update_local_markers(engine);
+            self.update_local(engine, dt, pointer);
             return;
         }
         let bindings = self.bindings.read().unwrap();
@@ -543,6 +571,107 @@ impl MapMenu {
                 self.menu.invoke(&format!("{M}.ClickSelectedMarker"), &[]);
             } else {
                 self.place_at_pointer(engine);
+            }
+        }
+    }
+
+    fn update_local(&mut self, engine: &mut Engine, dt: f32, pointer: (f64, f64)) {
+        self.pointer_px = pointer;
+        let bindings = self.bindings.read().unwrap();
+        let held = |event| bindings.held_in("Map Menu", event, &self.keys, &self.mouse);
+        let right = held("Right") as i32 as f32 - held("Left") as i32 as f32;
+        let up = held("Up") as i32 as f32 - held("Down") as i32 as f32;
+        let zoom = held("Zoom In") as i32 as f32 - held("Zoom Out") as i32 as f32;
+        drop(bindings);
+        let wheel = std::mem::take(&mut self.wheel);
+        let extent = self.local_extents.filter(|e| e[2] > e[0] && e[3] > e[1]);
+        let current_stage = self.menu.stage_point(pointer.0, pointer.1);
+        let delta = if let Some((last, moved)) = &mut self.drag {
+            let previous = self.menu.stage_point(last.0, last.1);
+            *moved += (pointer.0 - last.0).hypot(pointer.1 - last.1);
+            *last = pointer;
+            (*moved >= CLICK_SLOP)
+                .then_some((current_stage.0 - previous.0, current_stage.1 - previous.1))
+        } else {
+            None
+        };
+        if let Some(local) = &mut self.local {
+            let frame = &mut local.frame;
+            if let (Some((dx, dy)), Some(e)) = (delta, extent) {
+                frame.center += Vec2::new(
+                    -(dx / (e[2] - e[0])) as f32 * frame.half.x * 2.0,
+                    (dy / (e[3] - e[1])) as f32 * frame.half.y * 2.0,
+                );
+                self.local_dirty = true;
+            }
+            if right != 0.0 || up != 0.0 {
+                frame.center +=
+                    Vec2::new(right * frame.half.x, up * frame.half.y) * (PAN_SPEED * dt * 2.0);
+                self.local_dirty = true;
+            }
+            let amount = zoom * ZOOM_SPEED * dt + wheel * 0.2;
+            if amount != 0.0 {
+                let factor = (-amount).exp();
+                frame.half = (frame.half * factor).clamp(
+                    self.local_original_half * 0.125,
+                    self.local_original_half * 4.0,
+                );
+                self.local_dirty = true;
+            }
+        }
+        self.local_redraw_age += dt;
+        if self.local_dirty && (self.local_drag_released || self.local_redraw_age >= 0.25) {
+            if let Some(local) = &self.local {
+                local.serve(&mut engine.renderer, &self.menu);
+                // InitMap normally loads only once; reset its guard to reload
+                // the freshly rendered host image into the same holder.
+                self.menu
+                    .set(&format!("{LOCAL}.bUpdated"), Value::Bool(false));
+                self.menu.invoke(&format!("{LOCAL}.InitMap"), &[]);
+            }
+            self.local_dirty = false;
+            self.local_redraw_age = 0.0;
+        }
+        self.local_drag_released = false;
+        self.click = false;
+        self.released = false;
+        self.release_waiting = false;
+        self.update_local_markers(engine);
+        if let (Some(e), Some(local)) = (extent, &self.local) {
+            let at = Vec2::new(
+                ((current_stage.0 - e[0]) / (e[2] - e[0])) as f32,
+                ((current_stage.1 - e[1]) / (e[3] - e[1])) as f32,
+            );
+            let under = if (0.0..=1.0).contains(&at.x) && (0.0..=1.0).contains(&at.y) {
+                self.local_rows
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, row)| row.kind != 66)
+                    .filter_map(|(i, row)| {
+                        let uv = local.frame.texture_point(row.position);
+                        if !(0.0..=1.0).contains(&uv.x) || !(0.0..=1.0).contains(&uv.y) {
+                            return None;
+                        }
+                        let distance = ((uv - at) * Vec2::new(800.0, 450.0)).length();
+                        (distance < 18.0).then_some((i, distance))
+                    })
+                    .min_by(|a, b| a.1.total_cmp(&b.1))
+                    .map(|(i, _)| i)
+            } else {
+                None
+            };
+            if under != self.local_selected {
+                self.local_selected = under;
+                if let Some(i) = under {
+                    self.menu.invoke(
+                        &format!("{LOCAL_ICONS}.MarkerDescriptionObj.SetDescription"),
+                        &[text(&self.local_rows[i].name), Value::List(Vec::new())],
+                    );
+                }
+                self.menu.invoke(
+                    &format!("{LOCAL_ICONS}.SetSelectedMarker"),
+                    &[num(under.map_or(-1.0, |i| i as f32))],
+                );
             }
         }
     }
@@ -905,6 +1034,24 @@ mod integration_tests {
         assert_eq!(
             map.menu.get("_root.WorldMap.Markers.0._visible"),
             Value::Bool(false)
+        );
+        let old_center = map.local.as_ref().unwrap().frame.center;
+        let old_half = map.local.as_ref().unwrap().frame.half;
+        let old_destination = e.player_marker;
+        let map = swf.map.as_mut().unwrap();
+        map.button(0, true, (900.0, 450.0));
+        map.update(&mut e, 0.05, (1000.0, 500.0), (1920, 1080));
+        map.button(0, false, (1020.0, 500.0));
+        map.update(&mut e, 0.05, (1020.0, 500.0), (1920, 1080));
+        assert_ne!(map.local.as_ref().unwrap().frame.center, old_center);
+        assert!(!map.local_dirty);
+        map.wheel(1.0);
+        map.update(&mut e, 0.3, (1020.0, 500.0), (1920, 1080));
+        assert!(map.local.as_ref().unwrap().frame.half.x < old_half.x);
+        assert_eq!(e.player_marker, old_destination);
+        assert_eq!(
+            map.menu.get(&format!("{LOCAL}.bUpdated")),
+            Value::Bool(true)
         );
         swf.press(KeyCode::KeyL);
         tick(&mut swf, &mut e);
