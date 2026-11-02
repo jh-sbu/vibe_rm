@@ -29,6 +29,7 @@ pub(crate) struct Continuity {
     pub private_homes: HashMap<FormId, FormId>,
     pub trespass: Option<crate::crime::Trespass>,
     pub cleared_locations: std::collections::HashSet<FormId>,
+    pub local_seen: crate::local_map::seen::Seen,
     pub location_keyword_data: HashMap<(FormId, FormId), f32>,
     pub crime_factions: HashMap<FormId, Option<FormId>>,
     /// Caught-pickpocket victims (`PKCT`) with their memory (`PKTM`; legacy
@@ -510,6 +511,7 @@ impl Continuity {
             private_homes: e.crime.private_homes.clone(),
             trespass: e.crime.trespass,
             cleared_locations: e.cleared_locations.clone(),
+            local_seen: e.local_seen.clone(),
             location_keyword_data: e.location_keyword_data.clone(),
             crime_factions: e.crime.crime_factions.clone(),
             pickpocket_caught: e
@@ -816,6 +818,27 @@ impl Continuity {
             w.form(id);
         }
         file.add(b"CLRD", w.0);
+        let mut w = Writer::default();
+        w.len(self.local_seen.pages.len());
+        for (page, bits) in sorted(&self.local_seen.pages) {
+            use crate::local_map::seen::Space;
+            match page.space {
+                Space::Interior(id) => {
+                    w.u8(0);
+                    w.form(id);
+                }
+                Space::Exterior(id) => {
+                    w.u8(1);
+                    w.form(id);
+                }
+            }
+            w.i32(page.x);
+            w.i32(page.y);
+            for &word in bits {
+                w.u64(word);
+            }
+        }
+        file.add(b"LMAP", w.0);
         let mut w = Writer::default();
         w.len(self.harvested.len());
         for (plant, at) in sorted(&self.harvested) {
@@ -1411,6 +1434,32 @@ impl Continuity {
             }
             r.finish()?;
         }
+        if let Some(mut r) = optional(file, b"LMAP")? {
+            use crate::local_map::seen::{Page, Space};
+            let mut previous = None;
+            for _ in 0..r.count(45)? {
+                let kind = r.u8()?;
+                let id = r.form()?;
+                nonnull(id)?;
+                let space = match kind {
+                    0 => Space::Interior(id),
+                    1 => Space::Exterior(id),
+                    _ => return Err(Corrupt("invalid local map space".into())),
+                };
+                let page = Page {
+                    space,
+                    x: r.i32()?,
+                    y: r.i32()?,
+                };
+                ordered(&mut previous, page)?;
+                let bits = [r.u64()?, r.u64()?, r.u64()?, r.u64()?];
+                if bits == [0; 4] {
+                    return Err(Corrupt("empty local map page".into()));
+                }
+                s.local_seen.pages.insert(page, bits);
+            }
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"CLRD")? {
             let mut previous = None;
             for _ in 0..r.count(4)? {
@@ -1845,6 +1894,16 @@ impl Continuity {
                 return Err(Corrupt("nonfinite location keyword data".into()));
             }
         }
+        for (page, bits) in &self.local_seen.pages {
+            use crate::local_map::seen::Space;
+            let id = match page.space {
+                Space::Interior(id) | Space::Exterior(id) => id,
+            };
+            nonnull(id)?;
+            if *bits == [0; 4] {
+                return Err(Corrupt("empty local map page".into()));
+            }
+        }
         for &id in &self.cleared_locations {
             nonnull(id)?;
         }
@@ -1933,6 +1992,8 @@ impl Continuity {
         e.crime.crime_factions = self.crime_factions;
         e.location_keyword_data = self.location_keyword_data;
         e.cleared_locations = self.cleared_locations;
+        e.local_seen = self.local_seen;
+        e.local_seen_next = 0.0;
         e.harvests.harvested = self.harvested;
         e.spell_fx = Default::default();
         e.restore_active_effects(self.active_effects.0, self.active_effects.1);

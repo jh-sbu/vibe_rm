@@ -3738,6 +3738,94 @@ fn continuity_harvest_runtime() {
 }
 
 #[test]
+fn continuity_local_map_round_trip_and_corrupt_payloads() {
+    use crate::local_map::seen::{Page, Space};
+    let mut snapshot = Snapshot::default();
+    snapshot
+        .continuity
+        .local_seen
+        .set_square(Space::Interior(CELL), -1, 4);
+    snapshot
+        .continuity
+        .local_seen
+        .set_square(Space::Exterior(ACTOR), 16, -2);
+    let file = snapshot.write();
+    let loaded = Snapshot::read(&file).unwrap();
+    assert_eq!(loaded.continuity.local_seen, snapshot.continuity.local_seen);
+    assert_eq!(loaded.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"LMAP");
+    let mut legacy = file.clone();
+    legacy.sections.retain(|(tag, _)| tag != b"LMAP");
+    assert!(
+        Snapshot::read(&legacy)
+            .unwrap()
+            .continuity
+            .local_seen
+            .pages
+            .is_empty()
+    );
+    for (offset, bytes) in [
+        (4, vec![2]),
+        (5, vec![0; 4]),
+        (0, u32::MAX.to_le_bytes().to_vec()),
+    ] {
+        let mut bad = file.clone();
+        let payload = &mut bad
+            .sections
+            .iter_mut()
+            .find(|(t, _)| t == b"LMAP")
+            .unwrap()
+            .1;
+        payload[offset..offset + bytes.len()].copy_from_slice(&bytes);
+        assert!(Snapshot::read(&bad).is_err());
+    }
+    let mut bad = file.clone();
+    let payload = &mut bad
+        .sections
+        .iter_mut()
+        .find(|(t, _)| t == b"LMAP")
+        .unwrap()
+        .1;
+    payload[17..49].fill(0);
+    assert!(Snapshot::read(&bad).is_err());
+    let mut bad = file.clone();
+    let payload = &mut bad
+        .sections
+        .iter_mut()
+        .find(|(t, _)| t == b"LMAP")
+        .unwrap()
+        .1;
+    let first = payload[4..49].to_vec();
+    payload[49..94].copy_from_slice(&first);
+    assert!(Snapshot::read(&bad).is_err());
+    snapshot.continuity.local_seen.pages.insert(
+        Page {
+            space: Space::Interior(FormId::NULL),
+            x: 0,
+            y: 0,
+        },
+        [1, 0, 0, 0],
+    );
+    assert!(Snapshot::read(&snapshot.write()).is_err());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn continuity_local_map_restores_runtime_and_legacy_default() {
+    use crate::local_map::seen::Space;
+    let (_fixture, mut engine) = engine("continuity-local-map");
+    engine.local_seen.set_square(Space::Interior(CELL), -1, 4);
+    let saved = Snapshot::capture(&engine).write();
+    engine.local_seen.set_square(Space::Exterior(ACTOR), 0, 0);
+    Snapshot::read(&saved).unwrap().apply(&mut engine).unwrap();
+    assert_eq!(engine.local_seen.pages.len(), 1);
+    let mut legacy = saved;
+    legacy.sections.retain(|(tag, _)| tag != b"LMAP");
+    Snapshot::read(&legacy).unwrap().apply(&mut engine).unwrap();
+    assert!(engine.local_seen.pages.is_empty());
+}
+
+#[test]
 fn continuity_cleared_payload() {
     let mut s = Snapshot::default();
     s.continuity.cleared_locations.extend([ACTOR, CELL]);
