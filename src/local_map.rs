@@ -225,6 +225,18 @@ impl MapFrame {
         }
     }
 
+    /// Texture fractions (Y down) back to world XY.
+    pub fn world_point(&self, uv: Vec2) -> Vec2 {
+        let right = Vec2::new(self.north.cos(), -self.north.sin());
+        let up = Vec2::new(self.north.sin(), self.north.cos());
+        let aligned = self.center
+            + Vec2::new(
+                (uv.x - 0.5) * 2.0 * self.half.x,
+                (0.5 - uv.y) * 2.0 * self.half.y,
+            );
+        right * aligned.x + up * aligned.y
+    }
+
     /// World point to texture fractions, with Y down.
     pub fn texture_point(&self, position: Vec3) -> Vec2 {
         let right = Vec2::new(self.north.cos(), -self.north.sin());
@@ -297,6 +309,8 @@ pub fn marker_rows(engine: &mut crate::engine::Engine) -> Vec<LocalRow> {
 pub struct LocalMap {
     pub frame: MapFrame,
     pub scene: crate::render::Scene,
+    pub seen: seen::Seen,
+    pub space: seen::Space,
 }
 
 impl LocalMap {
@@ -332,9 +346,16 @@ impl LocalMap {
                 top = top.max(center.z + radius);
             }
         }
+        let space = match engine.location {
+            Location::Interior(id) => seen::Space::Interior(id),
+            Location::Exterior { world, .. } => seen::Space::Exterior(world),
+            Location::Nowhere => return None,
+        };
         Some(Self {
             frame: MapFrame::fit(bounds, north, bottom, top),
             scene,
+            seen: engine.local_seen.clone(),
+            space,
         })
     }
 
@@ -351,6 +372,7 @@ impl LocalMap {
                 + 0.0722 * pixel[2] as f32) as u8;
             pixel[..3].fill(grey);
         }
+        mask_unseen(&mut pixels, IMAGE_SIZE, &self.frame, &self.seen, self.space);
         log::info!("local map render: {:?}", start.elapsed());
         pixels
     }
@@ -358,6 +380,28 @@ impl LocalMap {
     pub fn serve(&self, renderer: &mut crate::render::Renderer, menu: &ui_swf::Menu) {
         let pixels = self.render(renderer);
         menu.set_host_image("Local_Map", IMAGE_SIZE.0, IMAGE_SIZE.1, &pixels);
+    }
+}
+
+/// Black out unseen geometry while leaving the movie's marker layer intact.
+pub fn mask_unseen(
+    pixels: &mut [u8],
+    size: (u32, u32),
+    frame: &MapFrame,
+    seen: &seen::Seen,
+    space: seen::Space,
+) {
+    if size.0 == 0 || size.1 == 0 || pixels.len() != size.0 as usize * size.1 as usize * 4 {
+        return;
+    }
+    for (i, pixel) in pixels.chunks_exact_mut(4).enumerate() {
+        let uv = Vec2::new(
+            ((i % size.0 as usize) as f32 + 0.5) / size.0 as f32,
+            ((i / size.0 as usize) as f32 + 0.5) / size.1 as f32,
+        );
+        if !seen.contains(space, frame.world_point(uv)) {
+            pixel[..3].fill(0);
+        }
     }
 }
 
@@ -369,6 +413,30 @@ mod tests {
         FormId,
         writer::{Node, RecordBuilder, write_plugin},
     };
+
+    #[test]
+    fn mask_covers_only_unseen_pixels_at_rotated_world_positions() {
+        let frame = MapFrame {
+            center: Vec2::ZERO,
+            half: Vec2::splat(256.0),
+            north: std::f32::consts::FRAC_PI_2,
+            top: 100.0,
+            far: 200.0,
+        };
+        let space = seen::Space::Interior(FormId(0x800));
+        let mut seen = seen::Seen::default();
+        let point = frame.world_point(Vec2::new(0.75, 0.25));
+        seen.set_square(
+            space,
+            (point.x / 256.0).floor() as i32,
+            (point.y / 256.0).floor() as i32,
+        );
+        let mut pixels = [255; 16];
+        mask_unseen(&mut pixels, (2, 2), &frame, &seen, space);
+        assert_eq!(pixels.chunks_exact(4).filter(|p| p[0] == 255).count(), 1);
+        assert_eq!(&pixels[4..8], &[255, 255, 255, 255]);
+        assert!(pixels.chunks_exact(4).all(|p| p[3] == 255));
+    }
 
     #[test]
     fn fitted_frame_contains_rotated_bounds_and_matches_camera() {

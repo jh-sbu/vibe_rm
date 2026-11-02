@@ -53,3 +53,7 @@ loaded cells. The user observed roughly twenty body lengths and provisionally
 the same distance indoors and outdoors; the exact range remains unverified.
 We do not check line of sight, lights, or height, and do not know the game's
 exact rule for those factors.
+
+Unrevealed pixels are black in the generated image; markers remain a separate
+movie layer. The user observed that doors and quest targets remain visible in
+unexplored areas. The game's exact fog colour and opacity are not established.
