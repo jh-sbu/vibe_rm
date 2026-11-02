@@ -41,7 +41,7 @@ https://en.uesp.net/w/index.php?oldid=3192583); the movie's ActionScript
   Solstheim; 40 to 120 allowed), a guess: it makes the limits mean something,
   and the view is more distorted at its edges than the game's looks.
 - **Tilt** runs from 25 to 89 degrees (not 90: straight down has no up for
-  the camera); the keys and wheel below are this engine's.
+  the camera); the bounds and mouse sensitivity remain implementation choices.
 - **Drawn:** only the distant LOD (terrain and objects, `world::lod`, a block
   size by distance from the camera including its height), lit by a fixed sun,
   no sky, fog or clouds, over a dark blue where there is no land (the LOD's
@@ -61,13 +61,14 @@ https://en.uesp.net/w/index.php?oldid=3192583); the movie's ActionScript
   (`MarkerDescriptionObj.SetDescription(name, [])`, with no lines under it:
   what else the game lists there isn't known). The marker's own label field is
   left as it is: the movie's icons replace it as they change state.
-- **Input:** WASD and the arrows pan, Q and E (or the wheel) zoom, Page Up and
-  Page Down tilt, dragging with the left button pans, a click on a marker
-  without dragging sends `MarkerClick` (a travel confirmation, then eligibility and
-  destination revalidation; `known_ambiguities/fast-travel.md`), Esc, Tab or M close it (straight back to the world, not to the tween
-  menu), "Journal" opens the journal, "Current Location" re-centres on the
-  player. M opens it as the
-  control map's Quick Map; the tween menu's Map does too.
+- **Input:** the asset's Map Menu context resolves Cancel, movement, zoom,
+  MapLookMode, PlacePlayerMarker, PlayerPosition, LocalMap, LocalMapMoveMode
+  and Journal, including references to rebound gameplay keys. Wheel zooms,
+  E re-centres, J opens the journal, L is reserved for the local map plan.
+  The observed M close follows the gameplay Quick Map binding. Q/E zoom and
+  Page Up/Down tilt were removed. Left drag pans; right drag tilts and turns.
+  Pan/zoom speeds, mouse sensitivity (120 degrees per screen height), the
+  six-pixel click threshold and the hover radius remain implementation choices.
 - **The movie's clock** is `SetDateString` with the journal's date text.
 - **Stage.visibleRect** has the edges (`left`, `top`, `right`, `bottom`) the
   movie reads in the vendored Ruffle, as Scaleform's rectangle.
@@ -89,3 +90,10 @@ The camera's owner, player and destination rows share this resolver, avoiding
 inconsistent nesting. Child rows retain original reference IDs for actual travel;
 map coordinates never become physical arrival coordinates. Travel timing across
 spaces remains separately unresolved.
+
+## User observations in vanilla Skyrim SE (2026-11-01)
+
+M closes the map. Holding the right mouse button allows both tilt and turn.
+Esc from a journal opened over the map returns to the map. Show on Map adds
+no extra target highlighting. All eight observations are recorded in
+`research/ui/map-menu.md` and `plans/map-menu.md`.
