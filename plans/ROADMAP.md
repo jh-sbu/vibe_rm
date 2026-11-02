@@ -5,6 +5,24 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- **autotest21 and autotest22's differences** (`research/autotest21.md`,
+  `research/autotest22.md`, both run 2026-11-01): location ref-type counts
+  (not looking inside child locations), inverse trig and string casts,
+  `GetAllItemsCount`, NPCs' `IsOverEncumbered` (False), unscaled
+  dimensions (actors 128 high), `GetDeadCount` accumulating, `SetOpen`'s
+  `OnOpen` / `OnClose`, `SetDestroyed` without a stage, Resurrect restoring
+  the base inventory, Reset leaving a disabled reference disabled, the empty
+  hand beside a spell; `GetPlayerControlsDisabled` (true unless a selected
+  control is disabled), `GetCrimeGold` without a faction (no sum),
+  `IsActorUsingATorch` (drawn), `GetIsCreature` (never), `GetDisease` (the
+  player only), `GetUnconscious` (`SetUnconscious`'s flag), a faction's
+  `GetFactionCombatReaction` to itself (0), `GetFactionRankDifference`
+  (non-members as rank 0), `GetScriptVariable` (0), an NPC's
+  `GetLineOfSight` (its view cone), `IsKiller` / `IsKillerObject` (run on
+  the victim), `IsUnique` (the traits template), invisibility (ended by
+  eating, not by activating something locked) and created references (kept
+  when their quest stops). What they left open is under Next, "Test results
+  to act on".
 - **School cost reduction for staffs and enchanted weapons**
   (`plans/school-cost-enchantments.md`): `Fortify <School>`
   (`AlterationMod` .. `RestorationMod`) lowers the charge staff casts and
@@ -152,7 +170,7 @@ game each piece unlocks.
   (`AddForm`, `RemoveAddedForm`, `Revert`, `Find`; `FLAD`);
   `StopCombatAlarm`; `Actor.SetOutfit` (`OUTF`); `Delete` for references
   made while playing; `EnableAI` (`AIOF`). Scope and tests:
-  `plans/roadmap-natives-ten-items.md`; choices:
+  `plans/roadmap-natives-ten-items.md` (removed in 231444f; see git history); choices:
   `known_ambiguities/protection.md`, `actor-natives.md`, `formlists.md`,
   `outfits.md`, `created-refs.md`.
 - Factions' runtime standing: Papyrus `SetEnemy` / `SetAlly` change both
@@ -162,20 +180,20 @@ game each piece unlocks.
   `GetActorCrimePlayerEnemy`; `FPLR`), with enemy factions' members attacking
   the player on sight; `SetAttackActorOnSight` (`AOSG`);
   `IsFactionInCrimeGroup`; `GetStolenItemValue(No)Crime`. Scope and tests:
-  `plans/roadmap-factions-seven-items.md`; choices:
+  `plans/roadmap-factions-seven-items.md` (removed in 231444f; see git history); choices:
   `known_ambiguities/factions.md`.
 - Active magic effects (`AEFF`), their scripts (`VM`) and tapers (`TAPR`)
   survive native saves without restarting or doubling held values; graph
   open states (`GOPN`) replay on rebuilt graphs. Caught pickpocket victims
   forget after two days away (`PKTM`), and searchers give up lost targets
-  that fled. Scope and tests: `plans/roadmap-effects-six-items.md`; open
+  that fled. Scope and tests: `plans/roadmap-effects-six-items.md` (removed in 231444f; see git history); open
   questions: `known_ambiguities/saves.md`, `crime.md`, `detection.md`.
 - Fifteen more native save-continuity items retain trespass/home warnings,
   guard pursuits, resistance/yield progress, jail sentences and days, delayed
   activations, both random streams, last-hit critical memory, sneak stance,
   attack recovery, map camera preferences, image modifiers and script fades.
   Legacy loads clear or default each category. Scope and tests:
-  `plans/roadmap-durable-fifteen-items.md`; native policies and SE uncertainties:
+  `plans/roadmap-durable-fifteen-items.md` (removed in 231444f; see git history); native policies and SE uncertainties:
   `known_ambiguities/saves.md`.
 - Native save continuity now retains harvest/regrowth timestamps, cleared
   locations, scripted location keyword data, crime factions, caught pickpocket
@@ -183,7 +201,7 @@ game each piece unlocks.
   Controls (both POV owners and cart HUD), voice recovery, player stamina/magicka
   regeneration delays, journal tracking/order, magic usage favorites and camera
   perspective/zoom also restore by replacement. Fifteen independent items and
-  validation: `plans/roadmap-continuity-fifteen-items.md`; native policies and
+  validation: `plans/roadmap-continuity-fifteen-items.md` (removed in 231444f; see git history); native policies and
   remaining SE questions: `known_ambiguities/saves.md`.
 - Active quest targets appear on the world map, projecting exterior targets
   through inherited maps and routing other targets to an entrance. Overlays
@@ -218,7 +236,8 @@ game each piece unlocks.
   script gate; scripted player MoveTo / SetPosition reenable it.
   Evidence and timing limits: `known_ambiguities/fast-travel.md`.
 - `IsRunning` follows the player's run toggle and NPCs' running gait;
-  `GetUnconscious` reads bleeding out. Choices:
+  `GetUnconscious` reads `SetUnconscious`'s flag (autotest22; it read
+  bleeding out before). Choices:
   `known_ambiguities/status-conditions.md`
 - Combat group conditions: `GetCombatGroupMemberCount`, `GetGroupTargetCount`,
   `IsLastHostileActor`, `GetCombatTargetHasKeyword`, `ShouldAttackKill`,
@@ -252,8 +271,9 @@ game each piece unlocks.
   and `IsLocAliasLoaded`. Choices: `known_ambiguities/status-conditions.md`
 - `IsPCSleeping` and `IsPC1stPerson` read the sleep menu's hours and the
   camera. Choices: `known_ambiguities/status-conditions.md`
-- `GetXPForNextLevel` gives the player's next level-up cost.
-  Choices: `known_ambiguities/status-conditions.md`
+- `GetXPForNextLevel` gives the player's next level-up cost. autotest22
+  read under 25 at level 1, so its value is open (Next, "Test results to act
+  on"). Choices: `known_ambiguities/status-conditions.md`
 - Ownership conditions: `IsOwner`, `IsCellOwner` and `IsInMyOwnedCell` read
   owners the way theft and trespass do (scripts' owners included). Which
   party the Skyrim forms ask about: `known_ambiguities/status-conditions.md`
@@ -1746,50 +1766,48 @@ game each piece unlocks.
   same Ignore External Damage gate; explosions are not done.
 
 ## Next
-**autotest21** (`research/autotest21.md`, run 2026-11-01): the settled
-readings that differed from ours are applied: location ref-type counts,
-inverse trig and string casts, `GetAllItemsCount`, NPC `IsOverEncumbered`,
-dimensions, `GetDeadCount`, `OnOpen` / `OnClose`, `SetDestroyed`,
-Resurrect's inventory, Reset of a disabled reference, and the empty hand
-beside a spell. Khayla's health already agreed: her offset is 0, not the 105
-the notes had.
+**Test results to act on.** autotest21 and autotest22's differing
+readings are applied (see Done). autotest22 reran autotest21's faults.
+`tests/results/` holds only autotest22's save.
 
-Open from it: the rule sharing auto-calculated skills past 100 (the game
-matches the stored `DNAM`s, e.g. `EncDremoraMelee06` at 46: Block and
-HeavyArmor 84, ours 80 and 81); fit it against the 81 vanilla NPCs with a
-skill past 100 (`vrm-tool npc-stats`).
-
-Readings to compare before deciding: the rest marked "compare" in the note
-(destruction stages and overkill, faction expulsion's rank -2, outfits
-removing non-outfit copies, enchanted blows' charge, weather speed law, fast
-travel's 14,800 units an hour, map marker reveal at 2000–4000, Slow Time at
-0.5×, kill and use statistics, and others). The test faults (all condition
-probes, created aliases, our NPC casters, early-ending fights) need a
-follow-up batch: `test-mod autotest22`.
-
-**autotest22** (`research/autotest22.md`, run 2026-11-01): the readings that
-differed from ours are applied: `GetPlayerControlsDisabled` (true unless a
-selected control is disabled), `GetCrimeGold` without a faction (no sum),
-`IsActorUsingATorch` (drawn), `GetIsCreature` (never), `GetDisease` (the
-player only), `GetUnconscious` (`SetUnconscious`'s flag), a faction's
-`GetFactionCombatReaction` to itself (0), `GetFactionRankDifference`
-(non-members as rank 0), `GetScriptVariable` (0), an NPC's
-`GetLineOfSight` (its view cone), `IsKiller` / `IsKillerObject` (run on the
-victim), `IsUnique` (the traits template), invisibility (ended by eating,
-not by activating something locked) and created references (kept when
-their quest stops).
-
-Open from it: `GetXPForNextLevel`'s value (under 25 at level 1, so not the
-cost of 100 we give), `GetTimeDead`'s unit (not game hours, which we still
-give), the sun position's scale (lengths 324–368, Y 40; ours is a unit
-vector), `SetAttackActorOnSight` (an aggressive non-enemy didn't attack the
-marked player; ours would), what `SetUnconscious` does to the actor (only
-the flag is kept, unsaved), and whether `GetCrimeGold` without a faction
-reads the hold the player stands in. To compare before deciding: the
-warlock's range and cadence, NPC cost with DestructionMod, staff charge
-(about 5.8 a second for sparks), Average NPCs not fleeing at 18% health,
-stolen `AIPL` (type 1, owner None), `KILL` for an essential `Kill(None)`.
-The note's follow-up list needs `test-mod autotest23`.
+- From autotest21 (`research/autotest21.md`): the rule sharing
+  auto-calculated skills past 100. The game matches the stored `DNAM`s, e.g.
+  `EncDremoraMelee06` at 46 has Block and HeavyArmor 84 where ours gives 80
+  and 81. Fit the rule against the 81 vanilla NPCs with a skill past 100
+  (`vrm-tool npc-stats`).
+- From autotest22 (`research/autotest22.md`):
+  - `GetXPForNextLevel`'s value: under 25 at level 1, so not the cost of
+    100 we give.
+  - `GetTimeDead`'s unit: not game hours, which we still give.
+  - The sun position's scale: lengths 324–368 with Y at 40, where ours is
+    a unit vector.
+  - `SetAttackActorOnSight`: an aggressive non-enemy didn't attack the
+    marked player; ours would.
+  - What `SetUnconscious` does to the actor. Only the flag is kept, and it
+    isn't saved.
+  - Whether `GetCrimeGold` without a faction reads the hold the player
+    stands in.
+- Readings still to compare against ours before deciding (the notes' items
+  marked "compare"):
+  - autotest21's: destruction stages and overkill, faction expulsion's rank
+    -2, outfits removing non-outfit copies, enchanted blows' charge, the
+    weather speed law, fast travel's 14,800 units an hour, map marker reveal
+    at 2000–4000, Slow Time at 0.5×, and kill and use statistics, among
+    others.
+  - autotest22's: the warlock's range and cadence, NPC cost with
+    DestructionMod, staff charge (about 5.8 a second for sparks), Average
+    NPCs not fleeing at 18% health, stolen `AIPL` (type 1, owner None), and
+    `KILL` for an essential `Kill(None)`.
+- Test plugins:
+  - `test-mod autotest23` isn't written yet. It should cover autotest22's
+    follow-up list ("Faults and open items").
+  - Built and waiting for the user's run: `loadscreens`
+    (`plans/loading-screen.md`), `crafting1` (`plans/crafting.md`) and
+    `spell-visuals` (`plans/spell-visuals.md`, Pending SE validation).
+  - autotest20 stays deferred by the user.
+  - Candidates for later batches: `plans/autotest-audit.md` sorts every
+    open `known_ambiguities/` item by whether a strictly automatic test
+    could settle it (536 of 1055 could).
 
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done).
    The bounded work of `plans/animation-unblocked.md` is complete within its
@@ -1947,9 +1965,10 @@ The note's follow-up list needs `test-mod autotest23`.
      horse by physics constraints), passengers riding seated in them (`SetVehicle`)
    - Dragons: flying, circling, landing and perching; breath and shout attacks
      (with magic)
-   - NPC encumbrance: `IsOverEncumbered` covers the player only (`src/encumbrance.rs`);
-     whether NPCs over their carry weight are slowed or changed is unconfirmed, so
-     other actors fail it (`known_ambiguities/comparison-conditions.md`)
+   - NPC encumbrance: `IsOverEncumbered` is False for NPCs over their carry
+     weight, as autotest21 read it (`src/encumbrance.rs`); whether such NPCs
+     are slowed or changed in any other way is unconfirmed
+     (`known_ambiguities/comparison-conditions.md`)
 5. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
    stuck in actors, sneak shots, killmoves and the decapitations they end in, the player's own weapon and
    animations), magic (see Done; next: native healing thresholds and timing, spells chosen by their
@@ -2043,7 +2062,7 @@ The note's follow-up list needs `test-mod autotest23`.
      `WardDeflectSound`) and visuals; NPCs' self-cast and summoning staffs and
      recharging; whether spell cost perks (`ModSpellCost`) also lower staffs'
      and enchanted weapons' charge use, and whether NPCs' worn school cost
-     reductions do (`known_ambiguities/staffs.md`); individual staff copies
+     reductions do (the player's do: see Done; `known_ambiguities/staffs.md`); individual staff copies
      selectable in the menus and hands (`known_ambiguities/staffs.md`); scrolls
      holding the player in place while cast (UESP Skyrim:Scrolls;
      `plans/scroll-casting-hold.md`), NPCs casting
@@ -2095,24 +2114,38 @@ The note's follow-up list needs `test-mod autotest23`.
      Repeating (flags parsed, not enforced; scope open in
      `known_ambiguities/dialogue-selection.md`); automatic Invisible Continue
    - Natives scripts call that still do nothing, most called first
-     (`vrm-tool pex-natives`; see Done for the last ones): `SetAlpha`, `SetSubGraphFloatVariable`,
-     `TranslateTo` and the other translations, `HasLOS`,
-     `MoveToPackageLocation`, `SetRace`, riding, flying, character creation,
-     killmoves and beast forms; `SetOutfit`'s sleep outfits
+     (`vrm-tool pex-natives` call counts, checked 2026-11-02 against
+     `src/script/natives.rs`; the tool counts calls by bare name, so names
+     shared between classes such as `Apply`, `Remove`, `Add` and `Fire` get
+     no count here; see Done for the last ones): `SetAlpha` (143),
+     `ShaderParticleGeometry.Apply` / `Remove`, `SetSubGraphFloatVariable`
+     (100), `Game.AddAchievement` (97), `ShakeController` (91), `TranslateTo`
+     and the other translations, `PlaySubGraphAnimation` (77),
+     `MoveToPackageLocation` (55), `HasLOS` (49), `CreateDetectionEvent` (48),
+     `SetRace` (45), `Game.FastTravel` (43), `ObjectReference.Say`,
+     `Topic.Add`, `Weapon.Fire`, `KnockAreaEffect` (27),
+     `AttachAshPile` (25), `MoveToNode` (22), `SetNoBleedoutRecovery` (21),
+     `SetLookAt` / `ClearLookAt` (19), `WaitForAnimationEvent` (18), the
+     alarms (`SendAssaultAlarm`, `SendStealAlarm`), `IsTrespassing`, the LOS
+     registrations, `PushActorAway`, `SetHeadTracking`, `PathToReference`;
+     riding (`SetVehicle`), flying (`SetAllowFlying`, `SetForcedLandingMarker`),
+     character creation, killmoves and beast forms (`SetBeastForm`);
+     `SetOutfit`'s sleep outfits
      (`known_ambiguities/outfits.md`); `Delete`'s "once nothing holds it"
      (`known_ambiguities/created-refs.md`); follower favors (nothing asks, so
      `SetNoFavorAllowed` and `SetDoingFavor` are only stored); `Quest.Reset`
      rebuilding the quest's script variables; resetting a loaded behaviour-graph
      object in place; categories for dialogue, music and weather sounds;
-     `Actor.IsArrested`, `ObjectReference.SetDefaultOpen`, `Game.FastTravel`
+     `Actor.IsArrested` (always False; declared but no vanilla script calls it)
    - World state: moved references appearing at once when moved out of an
      unloaded cell and following their new cell between loaded ones; looping sounds of enabled references checked
      with an audio device
-6. **UI**: inventory (categories, equipping, item details), map (quest
-   targets on the map and compass: see Done)
-   - The game's menus through `crates/ui-swf` (the HUD, message boxes and the
-     item menus, the journal, the gift, magic, favorites and tween menus
-     done: see Done): waiting's rest: getting into the bed first; the gamepad's d-pad
+6. **UI** (the game's menus through `crates/ui-swf`; see Done)
+   - Done: the HUD, message boxes, the item menus (inventory, container,
+     barter), the journal, gift, magic, favorites, tween, sleep / wait,
+     training, dialogue, skills and level-up menus, the world map, the
+     crafting menus, the main menu with its credits, and the loading menu.
+     What remains of them: waiting's rest: getting into the bed first; the gamepad's d-pad
      favorites; the name popup with character creation; the gamepad (gilrs, as
      the spike)
    - Skills menu: run the stars through their authored effect behavior graphs
@@ -2208,7 +2241,7 @@ The note's follow-up list needs `test-mod autotest23`.
    senders), detection (searches, combat targets), live player
    conversations, the player's spells held ready, script signal waits other
    than animation events (now timed waits on load) and registrations not
-   built yet (key, LOS gain, tracked hits); reading the
+   built yet (LOS gain / lost, tracked stats events); reading the
    original's `.ess` saves later;
    load orders that changed since the save, and the original's refusals to
    save (combat, menus, scripted). Runtime form collection is deferred: all
