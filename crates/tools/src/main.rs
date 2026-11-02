@@ -5491,7 +5491,7 @@ fn main() -> Result<()> {
                     return format!("{id} short DATA");
                 }
                 format!(
-                    "{} {id} archetype {} av {} / {} (x{}) flags {:#x} cast {} delivery {} skill {} resist {} related {:08x}{}",
+                    "{} {id} archetype {} av {} / {} (x{}) flags {:#x} cast {} charge {}s delivery {} skill {} resist {} related {:08x}{}",
                     m.editor_id().unwrap_or_default(),
                     u32_at(d, 0x40),
                     u32_at(d, 0x44) as i32,
@@ -5499,6 +5499,7 @@ fn main() -> Result<()> {
                     f32_at(d, 0x3C),
                     u32_at(d, 0),
                     u32_at(d, 0x50),
+                    f32_at(d, 0x30),
                     u32_at(d, 0x54),
                     u32_at(d, 0x0C) as i32,
                     u32_at(d, 0x10) as i32,
@@ -5551,6 +5552,7 @@ fn main() -> Result<()> {
                 );
                 for sr in r.subrecords() {
                     match &sr.tag.0 {
+                        b"ETYP" => println!("  equip slot {}", r.fid(esp::FormId(sr.u32(0)))),
                         b"SPIT" | b"ENIT" => println!("  {} {:02x?}", sr.tag, sr.data),
                         b"EFID" => println!(
                             "  effect {}",
