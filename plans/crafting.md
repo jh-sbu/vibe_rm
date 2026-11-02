@@ -43,7 +43,7 @@ fmt` before each commit. Each numbered sub-step is one commit.
 ## What the research found (2026-10-28)
 
 Sources: the movie's ActionScript 2 (`swfspike dis` on
-`spike/swf/data/interface/craftingmenu.swf`, folded with `fold.py`), the data
+`$SPIKE_SWF_HOME/interface/craftingmenu.swf`, folded with `fold.py`), the data
 (`vrm-tool esp-list` / `esp-dump` / `gmst`), UESP (permanent links below),
 CommonLibSSE-NG headers (MIT; their structure names and enums, used as
 pointers, not code) and the engine's current code. Write this up as

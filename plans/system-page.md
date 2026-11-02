@@ -42,7 +42,7 @@ unattended scripts); choices made without a source go in
 ## What the research found (2026-10-28)
 
 Sources: the movie's ActionScript 2 (`swfspike dis` on
-`spike/swf/data/interface/quest_journal.swf`, folded with `fold.py`), classes
+`$SPIKE_SWF_HOME/interface/quest_journal.swf`, folded with `fold.py`), classes
 `SystemPage`, `SaveLoadPanel`, `JournalSaveLoadList`, `OptionsList`,
 `SettingsOptionItem` and `InputMappingList`. Also the game's data
 (`vrm-tool esp-list` / `esp-dump`), `interface/controls/pc/controlmap.txt`,

@@ -33,8 +33,8 @@ describes Display Time as seconds for a non-box message; see
 `INAM` is an unused leftover in Skyrim, so no icon lookup is implemented.
 
 The game's HUD movie still controls its own notification animations. Inspection
-of the locally extracted **game asset** `Interface/hudmenu.swf` (the existing
-`spike/swf/out/hudmenu.dis`) shows that `HUDMovieBase.ShowMessage(asMessage)`
+of the locally extracted **game asset** `Interface/hudmenu.swf` (disassembled
+to `$SPIKE_SWF_HOME/out/hudmenu.dis`, outside the repository) shows that `HUDMovieBase.ShowMessage(asMessage)`
 takes only text and appends it to `MessagesInstance.MessageArray`.
 `Messages.Update` creates `MessageText` clips and starts their `FadeOut`
 timeline; it does not consume a per-message duration. No duration argument is
@@ -59,7 +59,7 @@ missing duration argument on `ShowMessage`.
 
 These findings come from the existing local asset disassembly's
 `__Packages.Messages`, `MessageText`, and `HUDMovieBase.ShowMessage`
-sections (`spike/swf/out/hudmenu.dis`, produced by the documented
+sections (`$SPIKE_SWF_HOME/out/hudmenu.dis`, produced by the documented
 `spike/swf` tooling). They establish the movie's behavior, not how Skyrim's
 native HUD code applies `TNAM`. Neither the public record schema nor this
 asset establishes that native-to-movie mechanism. Holding clips on a frame,

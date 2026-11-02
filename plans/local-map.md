@@ -12,8 +12,8 @@ one commit. Run `cargo fmt` before each.
 
 Rules as for all work here (AGENTS.md): public sources and game assets only.
 Describe the movie's behaviour in prose and don't copy its bytecode into the
-repository (the disassembly in `spike/swf/out/` is ignored and stays that
-way). Choices made without a source go in a new
+repository (the disassembly stays outside it, in `$SPIKE_SWF_HOME/out`;
+`spike/swf/paths.sh`). Choices made without a source go in a new
 `known_ambiguities/local-map.md`. Open questions stay in this plan.
 
 ## The evidence

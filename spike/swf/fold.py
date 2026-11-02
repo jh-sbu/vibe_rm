@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Folds `swfspike dis` output (AVM1 stack ops) into pseudo-ActionScript.
 
-    swfspike/target/release/swfspike dis data/interface/inventorymenu.swf > out/inv.dis
-    python3 fold.py out/inv.dis > out/inv.as
+    . ./paths.sh   # $SPIKE_INTERFACE and $SPIKE_OUT, outside the repository
+    swfspike/target/release/swfspike dis "$SPIKE_INTERFACE/inventorymenu.swf" > "$SPIKE_OUT/inv.dis"
+    python3 fold.py "$SPIKE_OUT/inv.dis" > "$SPIKE_OUT/inv.as"
 
 Pushes, member reads and calls are folded into expressions, printed when a
 statement ends them (a set, a pop, a return). Branches stay as

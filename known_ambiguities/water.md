@@ -150,8 +150,8 @@ swimmers. The available float-height probe measured a humanoid and does not
 settle creature float heights or breathing points. Creature breath stays disabled
 until those are resolved (animation plan question 8).
 Transient breath state clears on unloading. Diving controls remain future work.
-The inspected vanilla HUDMenu ActionScript (existing ignored
-spike/swf/out/hudmenu.dis) exports health, magicka, stamina, shout and charge
+The inspected vanilla HUDMenu ActionScript (disassembled to
+`$SPIKE_SWF_HOME/out/hudmenu.dis`, outside the repository) exports health, magicka, stamina, shout and charge
 meter setters, with no breath/oxygen symbol or setter. No custom meter is added.
 
 ## Submerged audio

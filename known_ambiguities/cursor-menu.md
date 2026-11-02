@@ -8,8 +8,8 @@ mirrors were inspected. No assets or asset disassembly were added to the repo.
 
 ## Asset evidence
 
-The installed game's `Interface/cursormenu.swf`, already extracted under
-ignored `spike/swf/data`, is a 640 by 480 movie at 24 fps. Its root ActionScript
+The installed game's `Interface/cursormenu.swf`, extracted by
+`spike/swf/extract.sh` to `$SPIKE_SWF_HOME/interface`, is a 640 by 480 movie at 24 fps. Its root ActionScript
 creates a `mouseListener`, registers it with `Mouse.addListener`, and copies
 the root `_xmouse` and `_ymouse` into `_root.mc_Cursor._x` and `._y` on mouse
 movement. The clip's authored origin is the arrow tip; it starts at (320, 240).

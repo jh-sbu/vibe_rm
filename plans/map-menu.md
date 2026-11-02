@@ -25,8 +25,8 @@ Not in this plan, and staying where they are in the ROADMAP:
 
 Rules as for all work here (AGENTS.md): public sources and game assets only.
 Describe the movies' behaviour in prose and don't copy their bytecode into the
-repository (the disassembly in `spike/swf/out/` is ignored and stays that
-way). Choices made without a source go in `known_ambiguities/map-view.md`
+repository (the disassembly stays outside it, in `$SPIKE_SWF_HOME/out`;
+`spike/swf/paths.sh`). Choices made without a source go in `known_ambiguities/map-view.md`
 (the world map), `known_ambiguities/map-markers.md` (markers and the
 compass). Open questions stay in this plan.
 

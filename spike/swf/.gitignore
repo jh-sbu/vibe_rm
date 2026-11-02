@@ -1,5 +1,4 @@
-# Extracted game files (extract.sh), output and builds.
-/data/
-/out/
+# Builds. Extracted game files and the harness's output live outside the
+# repository ($SPIKE_SWF_HOME, see paths.sh), so nothing else is ignored here.
 /swfspike/target/
 /swfspike/target-avmdebug/

@@ -8,7 +8,8 @@ or copies of their disassembly were added to the repository.
 
 Read the installed game's `Interface/Inventory Components/ItemCard.swf`
 using the repository's `swfspike dis` and `fold.py` tools. The extracted SWF
-already existed under ignored `spike/swf/data`; inspection output was written
+was extracted by `spike/swf/extract.sh` (now to `$SPIKE_SWF_HOME`,
+outside the repository); inspection output was written
 only to `/tmp`. Its `InventoryDefines` assigns `ICT_SPELL` 7 and
 `ICT_SOUL_GEMS` 12. `ItemCard.itemInfo` selects the spell layouts using
 `castTime == 0` (the per-second layout), fills the casting rank from
@@ -114,7 +115,7 @@ ingredient learns effects by the entry point `kModInitialIngredientEffectsLearne
 
 ## Quantity selection in the egui fallback
 
-The installed `spike/swf/data/interface/containermenu.swf` was inspected with
+The extracted `$SPIKE_SWF_HOME/interface/containermenu.swf` was inspected with
 the permitted `swfspike dis` and `fold.py` tooling; output stayed in `/tmp` and
 no asset or derived SWF code was added. Its `InventoryDefines` sets
 `QUANTITY_MENU_COUNT_LIMIT` to 5. `StartItemTransfer` opens the movie's amount

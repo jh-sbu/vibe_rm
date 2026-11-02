@@ -9,16 +9,22 @@ workspace.
 
 ```sh
 ./setup.sh      # build the harness against vendor/ruffle (its `spike` feature on)
-./extract.sh    # Interface .swf/.txt from Skyrim - Interface.bsa into data/ ($SKYRIM_DATA or the Steam default)
-./run-hud.sh    # drive the HUD; out/hud.png, out/hud-end.png and timings
+./extract.sh    # Interface .swf/.txt from Skyrim - Interface.bsa into $SPIKE_SWF_HOME/interface ($SKYRIM_DATA or the Steam default)
+./run-hud.sh    # drive the HUD; $SPIKE_SWF_HOME/out/hud.png, hud-end.png and timings
 ./view.sh hudmenu      # the HUD in a window, in real time (view-hud.sh is the same)
 ./view.sh messagebox   # a message box answered with the mouse, keys or gamepad
 ./view.sh racesex_menu # character creation's name popup: type a name
 ```
 
+The extracted files and everything the harness writes (disassembly, folded
+ActionScript, captures) are game assets or derived from them, so they live
+outside the repository: `$SPIKE_SWF_HOME/interface` and `$SPIKE_SWF_HOME/out`,
+with `SPIKE_SWF_HOME` defaulting to `${XDG_CACHE_HOME:-~/.cache}/vibe_rm/swf`
+(`paths.sh`). Never put them, or symlinks to them, under the repository.
+
 ## Watching it live
 
-`view.sh <menu>` opens a 1280×720 window playing `data/interface/<menu>.swf` in
+`view.sh <menu>` opens a 1280×720 window playing `$SPIKE_SWF_HOME/interface/<menu>.swf` in
 real time (it calls `swfspike view`). Over SSH, prefix it with
 `WAYLAND_DISPLAY=wayland-0`; the window then opens on the machine's own monitor.
 
@@ -195,12 +201,13 @@ The harness calls `run_frame` once per rendered frame. In the engine,
 
 ```sh
 B=swfspike/target/release/swfspike
-$B dis   data/interface/hudmenu.swf          # AS2 disassembly (the game<->menu contract)
-$B fonts data/interface/gfxfontlib.swf       # fonts, imports, exports
-$B run   data/interface/<menu>.swf out.png [ops...]
+. ./paths.sh   # SPIKE_INTERFACE, SPIKE_OUT
+$B dis   "$SPIKE_INTERFACE/hudmenu.swf" > "$SPIKE_OUT/hudmenu.dis"   # AS2 disassembly (the game<->menu contract)
+$B fonts "$SPIKE_INTERFACE/gfxfontlib.swf"       # fonts, imports, exports
+$B run   "$SPIKE_INTERFACE/<menu>.swf" "$SPIKE_OUT/out.png" [ops...]
 ```
 
-`python3 fold.py out/menu.dis` folds the disassembly into readable
+`python3 fold.py "$SPIKE_OUT/menu.dis"` folds the disassembly into readable
 pseudo-ActionScript (expressions instead of stack operations; branches as
 `goto`s): how the item menus' game↔menu contract was read.
 
