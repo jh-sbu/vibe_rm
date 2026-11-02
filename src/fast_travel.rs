@@ -103,12 +103,38 @@ fn travel_time(distance: f32, speed_mult: f32, time_scale: f32) -> Option<(f32, 
 impl Engine {
     /// The map's marker click: preflight, then the shared native message box.
     pub fn request_map_travel(&mut self, marker: FormId) {
-        if self.messages.boxes.iter().any(|b| {
-            matches!(
-                b.action,
-                Some(crate::messages::BoxAction::FastTravel { .. })
-            )
-        }) {
+        if !self.messages.boxes.is_empty() {
+            return;
+        }
+        // Observed in vanilla SE: undiscovered-location placement is offered
+        // even in combat; travel restrictions apply only to actual travel.
+        if !self.can_fast_travel_to(marker)
+            && self.map_marker_visible(marker)
+            && !self.is_disabled(marker)
+            && let Some((world, at)) = self
+                .map_marker_list()
+                .iter()
+                .find(|m| m.r == marker)
+                .and_then(|m| crate::map_view::world_map_point(&self.lo, m.world, m.pos.truncate()))
+        {
+            let prompt = self
+                .gmst_string("sPlaceMarkerUndiscovered")
+                .unwrap_or_else(|| {
+                    "You have not discovered this location yet.\r\nPlace marker?".into()
+                });
+            let yes = self.gmst_string("sYes").unwrap_or_else(|| "Yes".into());
+            let no = self.gmst_string("sNo").unwrap_or_else(|| "No".into());
+            self.ask(
+                prompt,
+                vec![yes, no],
+                crate::messages::BoxAction::PlayerMarker {
+                    marker: crate::map_markers::PlayerMarker {
+                        world,
+                        pos: at.extend(0.0),
+                    },
+                    replace: false,
+                },
+            );
             return;
         }
         let refusal = self

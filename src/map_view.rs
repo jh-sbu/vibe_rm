@@ -765,6 +765,27 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires a headless GPU; synthetic records only"]
+    fn undiscovered_location_offers_placement_before_combat_refusal() {
+        let dir = hierarchy_fixture("undiscovered-placement");
+        let mut e = crate::stats::action_tests::headless_engine(&dir, "Map.esp");
+        let marker = FormId(0x901);
+        e.enable_fast_travel(marker, false);
+        e.fast_travel_disabled = true; // restriction must not suppress the question
+        e.request_map_travel(marker);
+        assert!(e.messages.boxes[0].text.contains("Place marker?"));
+        e.choose_message_button(1);
+        assert_eq!(e.player_marker, None);
+        e.request_map_travel(marker);
+        e.choose_message_button(0);
+        let custom = e.player_marker.unwrap();
+        assert_eq!(custom.world, FormId(0x800));
+        assert_eq!(custom.pos.truncate(), Vec2::new(120.0, 240.0));
+        assert!(e.messages.boxes.is_empty());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn map_callback_indices_keep_stable_destination_identity() {
         let rows = vec![
             MapRow {
