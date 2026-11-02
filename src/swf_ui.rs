@@ -559,6 +559,14 @@ impl SwfUi {
     /// Opens the map when the engine's menu is it, closes it when it goes,
     /// and keeps its camera and markers.
     fn map_menu(&mut self, engine: &mut Engine, dt: Duration) {
+        if engine.menu == Some(crate::items::Menu::Journal)
+            && let Some(map) = &mut self.map
+        {
+            if !map.journal {
+                map.show_journal(true);
+            }
+            return;
+        }
         if engine.menu != Some(crate::items::Menu::Map) {
             if self.map.take().is_some() {
                 engine.close_map_view();
@@ -582,6 +590,9 @@ impl SwfUi {
             }
         }
         let Some(map) = &mut self.map else { return };
+        if map.journal {
+            map.show_journal(false);
+        }
         if std::mem::take(&mut map.close) {
             engine.menu = None;
             return;
@@ -885,6 +896,7 @@ impl SwfUi {
         // The map's camera: its keys and the wheel are its own; the mouse
         // is the movie's too.
         if self.message_box.shown.is_none()
+            && self.journal.is_none()
             && let Some(map) = &mut self.map
         {
             match event {
@@ -1301,6 +1313,14 @@ impl SwfUi {
         if !self.wants_input() || self.item_key(code) || self.journal_key(code) {
             return;
         }
+        if self.message_box.shown.is_none()
+            && self.journal.is_none()
+            && let Some(map) = &mut self.map
+        {
+            map.key(code, true);
+            map.key(code, false);
+            return;
+        }
         let menu = self.top();
         for key in ui_swf::input::keys(code) {
             menu.handle_event(PlayerEvent::KeyDown { key });
@@ -1403,6 +1423,10 @@ impl SwfUi {
             items.menu.render();
             menus.push(&items.menu);
         }
+        if let Some(map) = &mut self.map {
+            map.menu.render();
+            menus.push(&map.menu);
+        }
         if let Some(journal) = &mut self.journal {
             journal.menu.render();
             menus.push(&journal.menu);
@@ -1422,10 +1446,6 @@ impl SwfUi {
         if let Some(sleep_wait) = &mut self.sleep_wait {
             sleep_wait.menu.render();
             menus.push(&sleep_wait.menu);
-        }
-        if let Some(map) = &mut self.map {
-            map.menu.render();
-            menus.push(&map.menu);
         }
         // Under the menus a conversation opens (bartering, training), which
         // hide it.

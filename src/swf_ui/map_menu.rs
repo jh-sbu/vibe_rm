@@ -62,6 +62,7 @@ pub(super) struct MapMenu {
     creating: bool,
     /// Esc, Tab or the map key: close.
     pub close: bool,
+    pub journal: bool,
 }
 
 impl MapMenu {
@@ -100,9 +101,24 @@ impl MapMenu {
             selected: None,
             creating: false,
             close: false,
+            journal: false,
         };
         m.give_markers(engine);
         Ok(m)
+    }
+
+    pub fn show_journal(&mut self, show: bool) {
+        self.journal = show;
+        self.menu
+            .invoke(&format!("{M}.ShowJournal"), &[Value::Bool(show)]);
+        self.keys.clear();
+        self.mouse.clear();
+        self.pending.clear();
+        self.drag = None;
+        self.look = None;
+        self.click = false;
+        self.released = false;
+        self.wheel = 0.0;
     }
 
     /// Tells the movie the markers, to create.

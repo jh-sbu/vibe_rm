@@ -50,6 +50,7 @@ impl Default for Saved {
 
 pub(super) struct JournalMenu {
     pub menu: Menu,
+    return_to_map: bool,
     /// Toggle Active in the menu: (quest, now tracked), for the engine with
     /// the next update. `FormId::NULL` is the miscellaneous objectives'.
     toggles: Arc<Mutex<Vec<(FormId, bool)>>>,
@@ -278,6 +279,7 @@ impl JournalMenu {
         };
         menu.callback("RestoreSavedSettings", &[tab, Value::Bool(false)]);
         Ok(JournalMenu {
+            return_to_map: engine.map_view.is_some(),
             menu,
             toggles,
             system,
@@ -398,7 +400,7 @@ impl JournalMenu {
                     }
                 }
                 if engine.menu == Some(crate::items::Menu::Journal) {
-                    engine.menu = None;
+                    engine.menu = self.return_to_map.then_some(crate::items::Menu::Map);
                 }
             }
             _ if super::journal_system::answer_load(&self.system, &self.menu, engine, call) => {}

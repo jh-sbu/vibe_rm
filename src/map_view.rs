@@ -242,7 +242,14 @@ pub fn frame_parts(
     menu: Option<crate::items::Menu>,
 ) -> Option<(&Scene, Camera)> {
     match map {
-        Some(v) if menu == Some(crate::items::Menu::Map) => Some((&v.scene, v.camera())),
+        Some(v)
+            if matches!(
+                menu,
+                Some(crate::items::Menu::Map | crate::items::Menu::Journal)
+            ) =>
+        {
+            Some((&v.scene, v.camera()))
+        }
         _ => None,
     }
 }
@@ -422,7 +429,11 @@ impl Engine {
                 Some(s) => (
                     (-0.05..=1.05).contains(&s.x) && (-0.05..=1.05).contains(&s.y),
                     s,
-                    row.rotation - view.heading,
+                    if row.kind == PLAYER_ICON {
+                        row.rotation - view.heading
+                    } else {
+                        row.rotation
+                    },
                 ),
                 None => (false, Vec2::ZERO, 0.0),
             })
