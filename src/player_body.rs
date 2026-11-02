@@ -639,6 +639,7 @@ impl PlayerCombatEvents {
             "arrowrelease" => self.arrow_release = true,
             "mrh_spellfire_event" => self.spell_fire[crate::spells::RIGHT] = true,
             "mlh_spellfire_event" => self.spell_fire[crate::spells::LEFT] = true,
+            "ritualspellout" => self.hand_equipped = [true; 2],
             "mrh_equipped_event" => self.hand_equipped[crate::spells::RIGHT] = true,
             "mlh_equipped_event" => self.hand_equipped[crate::spells::LEFT] = true,
             _ => {}
@@ -853,6 +854,9 @@ impl Engine {
     /// Draw (or sheathe) the player's weapon: the graph plays it and the
     /// weapon goes to the hand as it raises `weaponDraw`. False if it won't.
     pub fn player_draw_weapon(&mut self, draw: bool) -> bool {
+        if !draw && self.player_scroll_held() {
+            return false;
+        }
         if draw && self.disabled_controls.fighting {
             return false;
         }

@@ -13,6 +13,9 @@ const OTHER: FormId = FormId(0x811);
 const TWO_HAND: FormId = FormId(0x813);
 const BOTH_SLOT: FormId = FormId(0x820);
 const SPELL: FormId = FormId(0x812);
+const CONC_EFFECT: FormId = FormId(0x801);
+const RELEASE_SCROLL: FormId = FormId(0x814);
+const AUTO_SCROLL: FormId = FormId(0x815);
 const EFFECT: FormId = FormId(0x800);
 
 struct Fixture(std::path::PathBuf);
@@ -35,12 +38,21 @@ fn fixture() -> (Fixture, Engine) {
     mgef[0x10..0x14].copy_from_slice(&u32::MAX.to_le_bytes());
     mgef[0x40..0x44].copy_from_slice(&archetype::VALUE_MODIFIER.to_le_bytes());
     mgef[0x44..0x48].copy_from_slice(&av::SNEAK.to_le_bytes());
+    mgef[0x30..0x34].copy_from_slice(&0.5f32.to_le_bytes());
+    mgef[0x50..0x54].copy_from_slice(&1u32.to_le_bytes());
+    let mut conc_effect = mgef;
+    conc_effect[0x50..0x54].copy_from_slice(&2u32.to_le_bytes());
     let scroll = |id| {
         let mut spit = [0; 36];
         spit[0..4].copy_from_slice(&50u32.to_le_bytes()); // an authored cost
-        spit[4..8].copy_from_slice(&1u32.to_le_bytes());
-        spit[12..16].copy_from_slice(&0.5f32.to_le_bytes()); // charge time
-        let cast_type: u32 = if id == OTHER { 2 } else { 3 };
+        spit[4..8].copy_from_slice(&u32::from(id != AUTO_SCROLL).to_le_bytes());
+        let charge: f32 = if id == AUTO_SCROLL { 0.0 } else { 0.5 };
+        spit[12..16].copy_from_slice(&charge.to_le_bytes());
+        let cast_type: u32 = if id == OTHER || id == RELEASE_SCROLL {
+            2
+        } else {
+            3
+        };
         spit[16..20].copy_from_slice(&cast_type.to_le_bytes());
         let mut efit = [0; 12];
         efit[0..4].copy_from_slice(&7.0f32.to_le_bytes());
@@ -49,7 +61,7 @@ fn fixture() -> (Fixture, Engine) {
             .zstring(b"FULL", "Test Scroll")
             .field(b"DATA", &[0; 8])
             .field(b"SPIT", &spit)
-            .u32(b"EFID", EFFECT.0)
+            .u32(b"EFID", if id == OTHER { CONC_EFFECT.0 } else { EFFECT.0 })
             .field(b"EFIT", &efit);
         if id == TWO_HAND {
             record.u32(b"ETYP", BOTH_SLOT.0)
@@ -60,11 +72,20 @@ fn fixture() -> (Fixture, Engine) {
     let records = [
         Node::top(
             b"MGEF",
-            vec![RecordBuilder::new(b"MGEF", EFFECT).field(b"DATA", &mgef)],
+            vec![
+                RecordBuilder::new(b"MGEF", EFFECT).field(b"DATA", &mgef),
+                RecordBuilder::new(b"MGEF", CONC_EFFECT).field(b"DATA", &conc_effect),
+            ],
         ),
         Node::top(
             b"SCRL",
-            vec![scroll(SCROLL), scroll(OTHER), scroll(TWO_HAND)],
+            vec![
+                scroll(SCROLL),
+                scroll(OTHER),
+                scroll(TWO_HAND),
+                scroll(RELEASE_SCROLL),
+                scroll(AUTO_SCROLL),
+            ],
         ),
         Node::top(
             b"EQUP",
@@ -91,6 +112,7 @@ fn fixture() -> (Fixture, Engine) {
     .unwrap();
     let mut e = crate::stats::action_tests::headless_engine(&f.0, "Scrolls.esp");
     e.set_actor_value(PLAYER_REF, av::MAGICKA, 100.0);
+    e.player.grounded = true;
     (f, e)
 }
 
@@ -206,7 +228,7 @@ fn walk(e: &mut Engine, seconds: f32) {
 
 #[test]
 #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
-fn scroll_holds_movement_until_release_or_cancellation() {
+fn ordinary_scroll_allows_walking_but_blocks_sprint_until_release() {
     let (_f, mut e) = fixture();
     e.player.noclip = true;
     for hand in [LEFT, RIGHT] {
@@ -216,8 +238,9 @@ fn scroll_holds_movement_until_release_or_cancellation() {
         let before = e.player.position;
         assert!(e.player_cast_press(hand));
         walk(&mut e, 0.6);
-        assert!(e.player_scroll_held());
-        assert_eq!(e.player.position, before);
+        assert!(e.player_scroll_casting());
+        assert!(!e.player_scroll_held());
+        assert_ne!(e.player.position, before);
         assert!(!e.player.sprinting);
         assert!(e.player_cast_release(hand));
         assert!(!e.player_scroll_held());
@@ -243,23 +266,29 @@ fn scroll_holds_movement_until_release_or_cancellation() {
 
 #[test]
 #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
-fn scroll_holds_until_spell_fire_but_spells_allow_movement() {
+fn ritual_holds_through_release_exit_but_spells_allow_movement() {
     let (_f, mut e) = fixture();
     e.player.noclip = true;
     // Model the animation's release interval without requiring game assets.
     for hand in [LEFT, RIGHT] {
         e.casting.firing[hand] = Some(Firing {
-            spell: SCROLL,
+            spell: TWO_HAND,
             dual: false,
             fired: false,
             waited: 0.0,
         });
+        e.add_item(PLAYER_REF, TWO_HAND, 2);
+        e.equip_in(PLAYER_REF, TWO_HAND, Some(hand)).unwrap();
         let before = e.player.position;
         walk(&mut e, 0.1);
         assert_eq!(e.player.position, before);
         let mut fire = [false; 2];
         fire[hand] = true;
         e.player_spell_events(fire, [false; 2], 0.0);
+        assert!(e.player_scroll_held());
+        walk(&mut e, 0.1);
+        assert_eq!(e.player.position, before);
+        e.player_spell_events([false; 2], [true; 2], 0.0);
         assert!(!e.player_scroll_held());
         walk(&mut e, 0.1);
         assert_ne!(e.player.position, before);
@@ -275,7 +304,7 @@ fn scroll_holds_until_spell_fire_but_spells_allow_movement() {
 
 #[test]
 #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
-fn concentration_scroll_holds_until_channel_stops_and_blocks_jump() {
+fn concentration_scroll_allows_walking_but_blocks_jump_and_sprint() {
     let (_f, mut e) = fixture();
     e.add_item(PLAYER_REF, OTHER, 1);
     let r = row(&mut e, OTHER);
@@ -295,7 +324,8 @@ fn concentration_scroll_holds_until_channel_stops_and_blocks_jump() {
         1.0 / 60.0,
         0.0,
     );
-    assert!(e.player_scroll_held());
+    assert!(e.player_scroll_casting());
+    assert!(!e.player_scroll_held());
     assert!(!e.player.jumped);
     assert!(!e.test_jump);
     assert!(e.player.sneaking);
@@ -315,12 +345,78 @@ fn two_handed_scroll_holds_movement() {
         assert_eq!(e.equipped_spell(PLAYER_REF, hand), Some(TWO_HAND));
     }
     assert!(e.player_cast_press(RIGHT));
+    assert!(e.player_cast_press(LEFT));
+    assert_eq!(e.casting.hands.iter().flatten().count(), 1);
     assert!(e.player_scroll_held());
     let before = e.player.position;
     walk(&mut e, 0.6);
     assert_eq!(e.player.position, before);
+    assert!(
+        !e.player_draw_weapon(false),
+        "ritual cast refuses sheathing"
+    );
     assert!(e.player_cast_release(RIGHT));
+    assert!(e.player_scroll_held(), "brief release recovery");
+    walk(&mut e, 0.4);
     assert!(!e.player_scroll_held());
-    walk(&mut e, 0.1);
     assert_ne!(e.player.position, before);
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn scroll_assets_supply_charge_time_and_release_cast_type() {
+    let (_f, mut e) = fixture();
+    assert_eq!(e.magic_item(AUTO_SCROLL).unwrap().charge_time, 0.5);
+    assert_eq!(e.magic_item(RELEASE_SCROLL).unwrap().cast_type, 1);
+    e.add_item(PLAYER_REF, RELEASE_SCROLL, 1);
+    let r = row(&mut e, RELEASE_SCROLL);
+    e.use_listed_item(&r, Some(RIGHT));
+    assert!(e.player_cast_press(RIGHT));
+    e.update_casting(0.6);
+    assert_eq!(effects_of(&e, RELEASE_SCROLL), 0, "wait for release");
+    assert!(e.player_cast_release(RIGHT));
+    assert_eq!(effects_of(&e, RELEASE_SCROLL), 1);
+    assert_eq!(e.item_count(PLAYER_REF, RELEASE_SCROLL), 0);
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn scroll_cannot_start_airborne_or_swimming_but_can_start_wading() {
+    let (_f, mut e) = fixture();
+    e.add_item(PLAYER_REF, SCROLL, 2);
+    let r = row(&mut e, SCROLL);
+    e.use_listed_item(&r, Some(RIGHT));
+    e.player.grounded = false;
+    e.player_cast_press(RIGHT);
+    assert!(!e.player_scroll_casting());
+    e.player.grounded = true;
+    e.player.swimming = true;
+    e.player_cast_press(RIGHT);
+    assert!(!e.player_scroll_casting());
+    e.player.swimming = false;
+    e.player_cast_press(RIGHT);
+    assert!(e.player_scroll_casting());
+    assert_eq!(e.item_count(PLAYER_REF, SCROLL), 2);
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn ritual_early_release_recovers_and_switching_items_cancels_without_consumption() {
+    let (_f, mut e) = fixture();
+    e.player.noclip = true;
+    e.add_item(PLAYER_REF, TWO_HAND, 1);
+    let r = row(&mut e, TWO_HAND);
+    e.use_listed_item(&r, Some(RIGHT));
+    e.player_cast_press(RIGHT);
+    e.update_casting(0.1);
+    e.player_cast_release(RIGHT);
+    assert!(e.player_scroll_held());
+    e.update_casting(0.31);
+    assert!(!e.player_scroll_held());
+    assert_eq!(e.item_count(PLAYER_REF, TWO_HAND), 1);
+    e.player_cast_press(RIGHT);
+    e.equip_spell(PLAYER_REF, SPELL, RIGHT);
+    e.update_casting(0.01);
+    assert!(!e.player_scroll_held());
+    assert_eq!(e.item_count(PLAYER_REF, TWO_HAND), 1);
 }

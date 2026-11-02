@@ -404,6 +404,33 @@ impl MagicItem {
                 _ => {}
             }
         }
+        if tag == *b"SCRL" {
+            let effects: Vec<_> = m
+                .effects
+                .iter()
+                .filter_map(|effect| {
+                    let record = e.lo.get(effect.effect)?;
+                    let data = record.get(b"DATA")?;
+                    (data.len() >= 0x54).then(|| (u(data, 0x50), f32::from_bits(u(data, 0x30))))
+                })
+                .collect();
+            // Detect Life's SPIT says concentration, but its FF effects last
+            // 15 seconds and SE observation confirms a single release cast.
+            if m.cast_type == 2
+                && !effects.is_empty()
+                && effects.len() == m.effects.len()
+                && effects.iter().all(|(cast, _)| *cast == 1)
+            {
+                m.cast_type = 1;
+            }
+            // UESP SCRL documents automatic charge time from the longest effect.
+            // Preserve a longer authored SPIT time while filling zero defaults.
+            if m.flags & 1 == 0 {
+                for (_, time) in effects {
+                    m.charge_time = m.charge_time.max(time);
+                }
+            }
+        }
         Some(m)
     }
 

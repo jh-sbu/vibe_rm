@@ -20,33 +20,46 @@ Source: [UESP's Skyrim:Scrolls](https://en.uesp.net/w/index.php?oldid=3543120)
 - A held scroll is an item (equipped and counted like a weapon), not a spell:
   `Actor.GetEquippedSpell` doesn't report it, and the "Favorite Spell" and
   "Favorite School" statistics don't count it (they count spells).
-- The cast is the charge-and-release of a spell, with the scroll's own charge
-  time; dual casting isn't offered for scrolls.
+- The cast is the charge-and-release of a spell; dual casting isn't offered
+  for scrolls. Automatic charge time uses effect casting times (see below).
 - The Scroll of Blizzard gives no skill experience: the page gives no amount.
 - The inventory marks a held scroll with the plain "equipped" icon, not a
   hand's.
 
-## Movement while casting
+## Boundaries inferred from SE observations and assets
 
-[UESP's Scrolls page](https://en.uesp.net/w/index.php?oldid=3543120)
-says walking and running are unavailable during casting, but does not describe
-other controls or exact animation boundaries. The local format reference and
-record survey (`research/magic/scroll-casting-hold.md`) do not settle those
-questions either. These are implementation choices pending manual SE observation:
+The user's SE observations and asset cross-check are recorded in
+`research/magic/scroll-casting-hold.md`. They supersede the original blanket
+movement hold inferred from [UESP's Scrolls page](https://en.uesp.net/w/index.php?oldid=3543120):
+Fireball permits walking; Blizzard ritual casting prevents it. Aiming and sneak
+toggling work; sprint and jump are refused. These are observed behaviors, not
+provisional choices. The remaining implementation decisions are:
 
-- Hold forward/sideways movement, sprinting and new jumps from a successful
-  cast start through charging and the wait for the animation's SpellFire event.
-  Allow movement once the spell fires, without waiting for the release animation
-  to finish. Early release or cancellation frees movement immediately after the
-  casting state clears. Either hand can hold movement; concentration scrolls
-  hold it while channeling.
-- Turning and aiming remain available. Sneaking can still be toggled, but cannot
-  produce movement. Clear sprint input before sprint processing so an attempted
-  sprint neither drains stamina nor cancels sneaking during the hold.
-- Clear movement input rather than freeze position or velocity: existing falls
-  and other physics continue, and swimming receives the same input restriction.
+- Identify ritual scrolls by an equip slot that requires both hands. Fireball
+  and Blizzard's slots and the graph's RitualSpell state support this distinction,
+  but every scroll has not been observed. Ordinary scrolls allow translation;
+  ritual scrolls hold it through charging and the release clip's exit event.
+- After an early ritual release, retain the hold for 0.3 seconds. The user
+  observed an unwind shorter than 0.5 seconds; its exact duration is unknown.
+  Item replacement cancels without an added recovery timer. When no animation
+  graph is available, successful ritual release uses the same 0.3-second fallback.
+  With a graph, the actual RitualSpellOut event ends the release hold.
+- Refuse new scroll casts whenever the player is not grounded or is swimming.
+  The observation specifically tested jumping, not every falling state; applying
+  the check to all airborne starts is a conservative extension. Noclip bypasses
+  the grounded check for developer verification. Physics is never frozen.
+- For automatically calculated scroll charge times, use the greater of stored
+  SPIT time and the longest effect's DATA CastingTime. [UESP's SCRL format](https://en.uesp.net/w/index.php?oldid=2334437)
+  describes the longest-effect calculation. Retaining a longer authored SPIT
+  value is a compatibility choice; conflicting values haven't been tested.
+  Fireball becomes 0.5s; Blizzard remains 3s, consistent with qualitative SE
+  observations. Animation delays remain separate from charge readiness.
+- A concentration-tagged scroll whose available effects are all fire-and-forget
+  is treated as a release cast. This explains observed Detect Life (four 15s
+  FF effects). Other concentration scrolls retain their existing channeling
+  behavior; Telekinesis hasn't been observed. Mixed/missing effect metadata
+  preserves the existing cast type pending further evidence.
 
-These boundaries have not been verified in Skyrim SE. Jumping is blocked as a
-conservative extension of the walking/running hold; preserving aim permits the
-player to target the scroll while charging. No change to scroll consumption or
-interruption by blows/shouts is part of this movement restriction.
+Precise cancellation timing and broader ritual/airborne coverage remain
+uncertain; no deeper game instrumentation is required. General learned-spell
+jump/swim restrictions and interruption by blows/shouts remain separate work.

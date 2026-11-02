@@ -167,6 +167,8 @@ fn cast_start_event(item: &MagicItem, archetype: Option<u32>) -> &'static str {
 #[derive(Debug, Default)]
 pub struct Casting {
     hands: [Option<HandCast>; 2],
+    /// Provisional blend-out after cancelling a ritual scroll (SE observation <0.5s).
+    scroll_recovery: f32,
     firing: [Option<Firing>; 2],
     /// Seconds before the player's magicka comes back after being spent.
     magicka_wait: f32,
@@ -291,17 +293,48 @@ impl Engine {
         self.unequip_if_gone(PLAYER_REF, spell);
     }
 
-    /// Scroll casting holds movement through charging and the wait for SpellFire,
-    /// but not through the remainder of the release animation.
-    pub(crate) fn player_scroll_held(&self) -> bool {
-        let scroll = |spell| self.lo.tag_of(spell).is_some_and(|tag| tag.0 == *b"SCRL");
-        self.casting.hands.iter().flatten().any(|h| scroll(h.spell))
+    fn is_scroll(&self, spell: FormId) -> bool {
+        self.lo.tag_of(spell).is_some_and(|tag| tag.0 == *b"SCRL")
+    }
+
+    fn ritual_scroll(&self, spell: FormId) -> bool {
+        self.is_scroll(spell)
+            && crate::world::inventory::equip_slot(&self.lo, spell)
+                .is_some_and(|slot| slot.all && slot.left && slot.right)
+    }
+
+    /// Any scroll charge/release blocks sprint and new jumps, but ordinary
+    /// scrolls allow walking. Ritual scrolls also hold translation.
+    pub(crate) fn player_scroll_casting(&self) -> bool {
+        self.casting.scroll_recovery > 0.0
+            || self
+                .casting
+                .hands
+                .iter()
+                .flatten()
+                .any(|h| self.is_scroll(h.spell))
             || self
                 .casting
                 .firing
                 .iter()
                 .flatten()
-                .any(|f| !f.fired && scroll(f.spell))
+                .any(|f| self.is_scroll(f.spell))
+    }
+
+    pub(crate) fn player_scroll_held(&self) -> bool {
+        self.casting.scroll_recovery > 0.0
+            || self
+                .casting
+                .hands
+                .iter()
+                .flatten()
+                .any(|h| self.ritual_scroll(h.spell))
+            || self
+                .casting
+                .firing
+                .iter()
+                .flatten()
+                .any(|f| self.ritual_scroll(f.spell))
     }
 
     /// A hand's attack button went down: casting starts if it holds a spell
@@ -310,6 +343,23 @@ impl Engine {
         let Some(spell) = self.hand_spell(hand) else {
             return false;
         };
+        // Observed in SE: scrolls cannot start during a jump or while swimming.
+        // Noclip is a developer mode and has no grounded state.
+        if self.is_scroll(spell)
+            && (self.player.swimming || (!self.player.grounded && !self.player.noclip))
+        {
+            return true;
+        }
+        if self.ritual_scroll(spell)
+            && self
+                .casting
+                .hands
+                .iter()
+                .flatten()
+                .any(|h| h.spell == spell)
+        {
+            return true;
+        }
         self.player_breaks_ethereal();
         if self.disabled_controls.fighting
             || self.player_dead()
@@ -380,6 +430,9 @@ impl Engine {
         };
         if h.held + 1e-3 < self.charge_time(&item, h.dual) {
             log::debug!("{} let go before it charged", item.name);
+            if self.ritual_scroll(h.spell) {
+                self.casting.scroll_recovery = 0.3;
+            }
             if h.graph {
                 self.player_hand_idle(hand);
             }
@@ -416,6 +469,9 @@ impl Engine {
                 CastSource::hand(hand, h.dual),
             );
             self.use_up_scroll(h.spell);
+            if self.ritual_scroll(h.spell) {
+                self.casting.scroll_recovery = 0.3;
+            }
         }
         true
     }
@@ -581,6 +637,10 @@ impl Engine {
     /// graph ignores it there already), then the hand's kind of cast. False
     /// if the graph won't.
     fn player_hand_start(&mut self, hand: usize, item: &MagicItem) -> bool {
+        if self.ritual_scroll(item.id) {
+            self.casting.firing[hand] = None;
+            return self.player_graph_event("RitualSpellStart");
+        }
         let start = format!("{}_{}", hand_prefix(hand), self.cast_start(item));
         let began = self.player_graph_event(if hand == LEFT {
             "BeginCastLeft"
@@ -601,6 +661,7 @@ impl Engine {
     /// A hand stopped casting in the graph: back to holding its spell ready,
     /// and the graph out of its casting state once neither hand casts.
     fn player_hand_idle(&mut self, hand: usize) {
+        self.player_graph_event("RitualSpellOut");
         self.player_graph_event(&format!("{}_Equipped_Event", hand_prefix(hand)));
         self.player_cast_stop();
     }
@@ -621,7 +682,11 @@ impl Engine {
             let Some(mut f) = self.casting.firing[hand] else {
                 continue;
             };
-            if f.fired && done[hand] {
+            if (f.fired && done[hand])
+                || (!f.fired
+                    && self.hand_spell(hand) != Some(f.spell)
+                    && self.ritual_scroll(f.spell))
+            {
                 self.casting.firing[hand] = None;
                 self.player_cast_stop();
                 continue;
@@ -756,6 +821,7 @@ impl Engine {
     /// Holding spells: charging, concentration landing and paying by the
     /// second; magicka coming back.
     pub(crate) fn update_casting(&mut self, dt: f32) {
+        self.casting.scroll_recovery = (self.casting.scroll_recovery - dt).max(0.0);
         let mut casting = false;
         for hand in [RIGHT, LEFT] {
             let Some(mut h) = self.casting.hands[hand].clone() else {

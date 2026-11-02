@@ -3164,6 +3164,8 @@ impl Engine {
         if self.player_scroll_held() {
             input.forward = 0.0;
             input.right = 0.0;
+        }
+        if self.player_scroll_casting() {
             input.sprint = false;
             input.jump = false;
         }
