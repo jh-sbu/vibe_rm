@@ -161,6 +161,32 @@ impl Engine {
                 || self.map_markers.travel.contains(&r))
     }
 
+    /// Whether the marker is still undiscovered for the map's Place Marker
+    /// question: never reached, and travel not allowed by its `FNAM` or a
+    /// script. Unlike `can_fast_travel_to`, a script's `EnableFastTravel(false)`
+    /// on a discovered marker doesn't make it undiscovered.
+    pub(crate) fn map_marker_undiscovered(&self, r: FormId) -> bool {
+        self.map_marker(r).is_some_and(|m| {
+            m.flags & TRAVEL == 0
+                && !self.map_markers.discovered.contains(&r)
+                && !self.map_markers.travel.contains(&r)
+        })
+    }
+
+    /// Test fixtures' markers all allow travel; this makes one undiscovered.
+    #[cfg(test)]
+    pub(crate) fn clear_marker_travel_flag(&mut self, r: FormId) {
+        self.map_marker_list();
+        if let Some(m) = self
+            .map_markers
+            .all
+            .get_mut()
+            .and_then(|all| all.iter_mut().find(|m| m.r == r))
+        {
+            m.flags &= !TRAVEL;
+        }
+    }
+
     /// `AddToMap(abAllowFastTravel)`: the marker goes on the map ("Map
     /// updated." when it wasn't), travel to it allowed when asked, neither
     /// discovering it.

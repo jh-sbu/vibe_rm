@@ -859,7 +859,16 @@ pub(crate) mod tests {
         let dir = hierarchy_fixture("undiscovered-placement");
         let mut e = crate::stats::action_tests::headless_engine(&dir, "Map.esp");
         let marker = FormId(0x901);
+        // Discovered, but a script denied travel: no Place Marker question,
+        // the travel refusal as before.
+        e.map_markers.discovered.insert(marker);
         e.enable_fast_travel(marker, false);
+        e.request_map_travel(marker);
+        assert!(e.messages.boxes.is_empty());
+        assert_eq!(e.player_marker, None);
+        e.map_markers.discovered.remove(&marker);
+        e.map_markers.denied.remove(&marker);
+        e.clear_marker_travel_flag(marker);
         e.fast_travel_disabled = true; // restriction must not suppress the question
         e.request_map_travel(marker);
         assert!(e.messages.boxes[0].text.contains("Place marker?"));

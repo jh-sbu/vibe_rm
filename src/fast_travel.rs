@@ -108,7 +108,7 @@ impl Engine {
         }
         // Observed in vanilla SE: undiscovered-location placement is offered
         // even in combat; travel restrictions apply only to actual travel.
-        if !self.can_fast_travel_to(marker)
+        if self.map_marker_undiscovered(marker)
             && self.map_marker_visible(marker)
             && !self.is_disabled(marker)
             && let Some((world, at)) = self
