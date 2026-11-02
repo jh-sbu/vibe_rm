@@ -420,13 +420,25 @@ pub fn mask_unseen(
     if size.0 == 0 || size.1 == 0 || pixels.len() != size.0 as usize * size.1 as usize * 4 {
         return;
     }
-    for (i, pixel) in pixels.chunks_exact_mut(4).enumerate() {
-        let uv = Vec2::new(
-            ((i % size.0 as usize) as f32 + 0.5) / size.0 as f32,
-            ((i / size.0 as usize) as f32 + 0.5) / size.1 as f32,
-        );
-        if !seen.contains(space, frame.world_point(uv)) {
-            pixel[..3].fill(0);
+    for (y, row) in pixels.chunks_exact_mut(size.0 as usize * 4).enumerate() {
+        let mut previous = None;
+        let mut visible = false;
+        for (x, pixel) in row.chunks_exact_mut(4).enumerate() {
+            let uv = Vec2::new(
+                (x as f32 + 0.5) / size.0 as f32,
+                (y as f32 + 0.5) / size.1 as f32,
+            );
+            let position = frame.world_point(uv);
+            let square = (position / seen::SQUARE_SIZE).floor();
+            // Adjacent pixels usually share an exploration square. Keep the
+            // exact world projection, but query its bitset only on a boundary.
+            if previous != Some(square) {
+                visible = seen.contains(space, position);
+                previous = Some(square);
+            }
+            if !visible {
+                pixel[..3].fill(0);
+            }
         }
     }
 }
@@ -439,6 +451,51 @@ mod tests {
         FormId,
         writer::{Node, RecordBuilder, write_plugin},
     };
+
+    #[test]
+    fn cached_mask_matches_point_queries_across_rotated_square_and_page_edges() {
+        let space = seen::Space::Interior(FormId(0x800));
+        let mut seen = seen::Seen::default();
+        for y in -18..=18 {
+            for x in -18..=18 {
+                if (x + y) % 3 == 0 {
+                    seen.set_square(space, x, y);
+                }
+            }
+        }
+        for north in [0.0, 0.8, std::f32::consts::FRAC_PI_2, std::f32::consts::PI] {
+            for (center, half) in [
+                (Vec2::ZERO, Vec2::new(5000.0, 4500.0)),
+                (Vec2::new(-4096.0, 4096.0), Vec2::splat(256.0)),
+                (Vec2::new(128.0, -128.0), Vec2::splat(0.5)),
+            ] {
+                let frame = MapFrame {
+                    center,
+                    half,
+                    north,
+                    top: 100.0,
+                    far: 200.0,
+                };
+                let size = (113, 67);
+                let mut pixels = vec![127; size.0 as usize * size.1 as usize * 4];
+                let mut expected = pixels.clone();
+                for (i, pixel) in expected.chunks_exact_mut(4).enumerate() {
+                    let uv = Vec2::new(
+                        ((i % size.0 as usize) as f32 + 0.5) / size.0 as f32,
+                        ((i / size.0 as usize) as f32 + 0.5) / size.1 as f32,
+                    );
+                    if !seen.contains(space, frame.world_point(uv)) {
+                        pixel[..3].fill(0);
+                    }
+                }
+                mask_unseen(&mut pixels, size, &frame, &seen, space);
+                assert_eq!(
+                    pixels, expected,
+                    "north={north}, center={center}, half={half}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn custom_destination_inverts_inherited_map_coordinates() {

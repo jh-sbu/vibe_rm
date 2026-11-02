@@ -242,3 +242,18 @@ Step 1 (the renderer's orthographic camera and sized offscreen renders)
 comes first. Steps 1 to 4 are about ten commits. Offscreen captures of the
 local map in Bleak Falls Barrow and outside Riverwood go with the commits
 that make them, per the existing capture recipes.
+
+## Performance follow-up (2026-11-02)
+
+The CPU exploration mask dominates warmed redraws in the measured scenes;
+the first render also pays substantial startup costs. The stage measurements
+and temporary optimization experiments are in `research/ui/local-map.md`.
+The exploration-square cache and format-specific bulk readback conversion
+are now implemented, preserving mask pixels, channel conversion and opaque
+readback alpha. Remaining work:
+
+- Investigate serving the rendered image without a PNG encode/decode round
+  trip, and measure the subsequent movie texture upload separately.
+- Keep the image and markers aligned during pan/zoom. Evaluate moving and
+  scaling the cached image immediately while a fresh render is pending;
+  reducing redraw cost alone does not fix the current frame mismatch.
