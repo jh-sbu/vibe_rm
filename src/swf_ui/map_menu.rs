@@ -27,7 +27,7 @@ use super::{Buttons, num, text};
 const M: &str = "_root.WorldMap";
 
 /// Screen heights a second the arrow keys pan, and zoom a second the keys
-/// zoom, and degrees a second the keys tilt.
+/// zoom. Mouse look is degrees per screen height.
 const PAN_SPEED: f32 = 0.5;
 const ZOOM_SPEED: f32 = 0.6;
 const LOOK_SPEED: f32 = 120.0;
@@ -37,6 +37,22 @@ const WHEEL_ZOOM: f32 = 0.06;
 const REACH: f32 = 0.03;
 /// A press that moves less than this, pixels, is a click, not a drag.
 const CLICK_SLOP: f64 = 6.0;
+
+const EVENTS: &[&str] = &[
+    "Cancel",
+    "Up",
+    "Down",
+    "Left",
+    "Right",
+    "Zoom In",
+    "Zoom Out",
+    "MapLookMode",
+    "PlacePlayerMarker",
+    "PlayerPosition",
+    "LocalMap",
+    "LocalMapMoveMode",
+    "Journal",
+];
 
 pub(super) struct MapMenu {
     pub menu: Menu,
@@ -59,7 +75,8 @@ pub(super) struct MapMenu {
     /// The marker told to the movie as selected.
     selected: Option<usize>,
     restore_selected: Option<usize>,
-    synthetic_release: bool,
+    release_waiting: bool,
+    controls_generation: u64,
     /// Markers are still being created (`CreateMarkers`).
     creating: bool,
     /// Esc, Tab or the map key: close.
@@ -83,10 +100,6 @@ impl MapMenu {
             num(PLAYER_ICON as f32),
         );
         menu.invoke(&format!("{M}.SetDateString"), &[text(&engine.date_text())]);
-        log::debug!(
-            "map callback owner: {:?}",
-            menu.get("_global.gfx.io.GameDelegate.callBackHash.RefreshMarkers.0.MapMovie._target")
-        );
         let mut m = MapMenu {
             menu,
             keys: HashSet::new(),
@@ -102,11 +115,13 @@ impl MapMenu {
             pointer: Vec2::splat(0.5),
             selected: None,
             restore_selected: None,
-            synthetic_release: false,
+            release_waiting: false,
+            controls_generation: u64::MAX,
             creating: false,
             close: false,
             journal: false,
         };
+        m.refresh_controls();
         m.give_markers(engine);
         Ok(m)
     }
@@ -115,6 +130,10 @@ impl MapMenu {
         self.journal = show;
         self.menu
             .invoke(&format!("{M}.ShowJournal"), &[Value::Bool(show)]);
+        self.clear_input();
+    }
+
+    pub fn clear_input(&mut self) {
         self.keys.clear();
         self.mouse.clear();
         self.pending.clear();
@@ -122,7 +141,41 @@ impl MapMenu {
         self.look = None;
         self.click = false;
         self.released = false;
+        self.release_waiting = false;
         self.wheel = 0.0;
+    }
+
+    fn refresh_controls(&mut self) {
+        let bindings = self.bindings.read().unwrap();
+        if self.controls_generation == bindings.generation {
+            return;
+        }
+        self.controls_generation = bindings.generation;
+        for (clip, event) in [
+            ("RightButton", "PlacePlayerMarker"),
+            ("PlayerLocButton", "PlayerPosition"),
+            ("LocalMapButton", "LocalMap"),
+            ("JournalButton", "Journal"),
+            ("LeftButton", "Zoom In"),
+        ] {
+            let art = bindings
+                .context_bindings("Map Menu", event, 0)
+                .first()
+                .and_then(|c| c.last())
+                .and_then(|n| super::keyboard_art(*n))
+                .or_else(|| {
+                    bindings
+                        .context_bindings("Map Menu", event, 1)
+                        .first()
+                        .and_then(|c| c.last())
+                        .and_then(|n| super::mouse_art(*n))
+                })
+                .unwrap_or_else(|| "UnknownKey".into());
+            self.menu
+                .set(&format!("{M}.BottomBar.{clip}.PCArt"), text(&art));
+            self.menu
+                .invoke(&format!("{M}.BottomBar.{clip}.RefreshArt"), &[]);
+        }
     }
 
     pub fn refresh_rows(&mut self, engine: &mut Engine) {
@@ -148,7 +201,7 @@ impl MapMenu {
     /// A complete synthetic click still waits for the movie's ClickCallback,
     /// so the bottom bar gets the same exclusion as interactive mouse input.
     pub fn test_click(&mut self) {
-        self.synthetic_release = true;
+        self.release_waiting = true;
     }
 
     /// Tells the movie the markers, to create.
@@ -181,21 +234,7 @@ impl MapMenu {
         if pressed && bindings.triggered("Quick Map", Button::Key(code), &self.keys, &self.mouse) {
             self.close = true;
         }
-        for event in [
-            "Cancel",
-            "Up",
-            "Down",
-            "Left",
-            "Right",
-            "Zoom In",
-            "Zoom Out",
-            "MapLookMode",
-            "PlacePlayerMarker",
-            "PlayerPosition",
-            "LocalMap",
-            "LocalMapMoveMode",
-            "Journal",
-        ] {
+        for &event in EVENTS {
             if pressed
                 && bindings.triggered_in(
                     "Map Menu",
@@ -229,6 +268,15 @@ impl MapMenu {
             self.mouse.remove(&button);
         }
         let bindings = self.bindings.read().unwrap();
+        let input = crate::input_map::Button::Mouse(button);
+        if pressed && bindings.triggered("Quick Map", input, &self.keys, &self.mouse) {
+            self.close = true;
+        }
+        for &event in EVENTS {
+            if pressed && bindings.triggered_in("Map Menu", event, input, &self.keys, &self.mouse) {
+                self.pending.push(event);
+            }
+        }
         if bindings.triggered_in(
             "Map Menu",
             "MapLookMode",
@@ -247,12 +295,17 @@ impl MapMenu {
         ) {
             if pressed {
                 self.click = false;
+                self.release_waiting = false;
                 self.drag = Some((at, 0.0));
-            } else if let Some((_, moved)) = self.drag.take()
-                && std::mem::take(&mut self.click)
-                && moved < CLICK_SLOP
-            {
-                self.released = true;
+            } else if let Some((last, moved)) = self.drag.take() {
+                let moved = moved + (at.0 - last.0).hypot(at.1 - last.1);
+                if moved < CLICK_SLOP {
+                    if std::mem::take(&mut self.click) {
+                        self.released = true;
+                    } else {
+                        self.release_waiting = true;
+                    }
+                }
             }
         }
     }
@@ -260,6 +313,7 @@ impl MapMenu {
     /// The camera's input and the markers' places, once a frame. `pointer`
     /// is in pixels.
     pub fn update(&mut self, engine: &mut Engine, dt: f32, pointer: (f64, f64), size: (u32, u32)) {
+        self.refresh_controls();
         let mut place = false;
         for event in std::mem::take(&mut self.pending) {
             match event {
@@ -369,6 +423,20 @@ impl MapMenu {
 
     fn place_at_pointer(&mut self, engine: &mut Engine) {
         let aspect = engine.renderer.width as f32 / engine.renderer.height.max(1) as f32;
+        if !(0.0..=1.0).contains(&self.pointer.x) || !(0.0..=1.0).contains(&self.pointer.y) {
+            return;
+        }
+        let over_bar = self.menu.invoke(
+            &format!("{M}.BottomBar.hitTest"),
+            &[
+                num(self.pointer.x * engine.renderer.width as f32),
+                num(self.pointer.y * engine.renderer.height as f32),
+                Value::Bool(false),
+            ],
+        );
+        if over_bar == Value::Bool(true) {
+            return;
+        }
         if let Some((world, at)) = engine
             .map_view
             .as_ref()
@@ -383,7 +451,7 @@ impl MapMenu {
     pub fn answer(&mut self, engine: &mut Engine, call: &GameCall) -> bool {
         match call.name.as_str() {
             "ClickCallback" => {
-                if std::mem::take(&mut self.synthetic_release) {
+                if std::mem::take(&mut self.release_waiting) {
                     self.released = true;
                 } else {
                     self.click = self.drag.is_some();
@@ -418,5 +486,222 @@ impl MapMenu {
             _ => return false,
         }
         true
+    }
+}
+
+#[cfg(test)]
+mod integration_tests {
+    use super::*;
+    use crate::engine::Location;
+    use crate::map_view::{
+        PLAYER_SET_ICON,
+        tests::{hierarchy_fixture, view},
+    };
+    use esp::FormId;
+
+    fn capture(swf: &mut crate::swf_ui::SwfUi, engine: &mut Engine, name: &str) {
+        let Some(out) = std::env::var_os("VRM_MAP_CAPTURES") else {
+            return;
+        };
+        let out = std::path::PathBuf::from(out);
+        std::fs::create_dir_all(&out).unwrap();
+        let (scene, camera) = crate::map_view::frame_parts(&engine.map_view, engine.menu).unwrap();
+        let pixels = engine
+            .renderer
+            .render_to_image(scene, &camera, |_, target| swf.draw(target, false));
+        let file = std::fs::File::create(out.join(format!("{name}.png"))).unwrap();
+        let mut encoder = png::Encoder::new(file, 1280, 720);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder
+            .write_header()
+            .unwrap()
+            .write_image_data(&pixels)
+            .unwrap();
+    }
+
+    /// Reads only installed Interface assets, never copies them. Run with
+    /// SKYRIM_DATA and VRM_SETTINGS pointing outside the repository/game Data.
+    #[test]
+    #[ignore = "requires installed Skyrim Interface assets, SKYRIM_DATA, VRM_SETTINGS and a GPU"]
+    fn map_movie_placement_controls_journal_and_show_on_map() {
+        let data = std::env::var_os("SKYRIM_DATA")
+            .expect("set SKYRIM_DATA to the installed Data directory");
+        assert!(
+            std::env::var_os("VRM_SETTINGS").is_some(),
+            "set VRM_SETTINGS to a temporary output file"
+        );
+        let dir = hierarchy_fixture("movie");
+        let mut e = crate::stats::action_tests::headless_engine(&dir, "Map.esp");
+        e.vfs = vfs::Vfs::new(data, &[]).into();
+        let controls = e.vfs.read("interface/controls/pc/controlmap.txt").unwrap();
+        e.input_map = std::sync::Arc::new(std::sync::RwLock::new(
+            crate::input_map::InputMap::parse(&String::from_utf8_lossy(&controls)),
+        ));
+        e.renderer.resize(1280, 720);
+        e.location = Location::Exterior {
+            world: FormId(0x800),
+            center: (0, 0),
+        };
+        let st = e.scripts.quests.entry(FormId(0xB00)).or_default();
+        st.running = true;
+        st.active = true;
+        st.objectives_displayed.insert(10);
+        st.objective_texts
+            .insert(10, "Find the synthetic target".into());
+        st.aliases.insert(0, FormId(0x901));
+        let mut map = view(50.0);
+        map.world = FormId(0x800);
+        map.player = Some((Vec2::new(10.0, 20.0), 0.0));
+        e.map_view = Some(map);
+        e.map_view_rows();
+        e.menu = Some(Shown::Map);
+        let instance =
+            wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            apply_limit_buckets: false,
+            ..Default::default()
+        }))
+        .unwrap();
+        let mut swf =
+            crate::swf_ui::SwfUi::new(instance, adapter, &e, e.renderer.color_format, (1280, 720))
+                .unwrap();
+        swf.map = Some(MapMenu::open(&swf.ui, (1280, 720), &e, swf.buttons.clone()).unwrap());
+        let tick = |swf: &mut crate::swf_ui::SwfUi, e: &mut Engine| {
+            for _ in 0..30 {
+                swf.update(e, 1.0 / 60.0);
+            }
+        };
+        tick(&mut swf, &mut e);
+        swf.click(700.0, 400.0);
+        tick(&mut swf, &mut e);
+        let first = e.player_marker.expect("empty click places immediately");
+        assert!(e.messages.boxes.is_empty());
+        let i = e
+            .map_view
+            .as_ref()
+            .unwrap()
+            .rows
+            .iter()
+            .position(|r| r.kind == PLAYER_SET_ICON)
+            .unwrap();
+        // Check the original delegate table's scope, independently of our
+        // explicit world-layer invokes. The callbacks currently reach WorldMap.
+        let menu = &swf.map.as_ref().unwrap().menu;
+        menu.callback("SetSelectedMarker", &[num(-1.0)]);
+        menu.callback("SetSelectedMarker", &[num(i as f32)]);
+        assert_eq!(
+            menu.get("_root.WorldMap.SelectedMarker.Index"),
+            num(i as f32)
+        );
+        menu.callback("RefreshMarkers", &[]);
+        let x = menu.get(&format!("_root.WorldMap.Markers.{i}._x"));
+        assert!(matches!(x, Value::Number(x) if (x - 700.0).abs() < 1.0));
+        assert_eq!(
+            menu.get("_root.WorldMap.BottomBar.RightButton.PCButton"),
+            text("P")
+        );
+        capture(&mut swf, &mut e, "movie-custom-destination");
+        swf.map.as_mut().unwrap().key(KeyCode::KeyW, true);
+        swf.click(800.0, 450.0);
+        tick(&mut swf, &mut e);
+        assert_eq!(e.messages.boxes.len(), 1);
+        assert_eq!(e.player_marker, Some(first));
+        capture(&mut swf, &mut e, "movie-move-leave-remove");
+        let center = e.map_view.as_ref().unwrap().center;
+        tick(&mut swf, &mut e);
+        assert_eq!(e.map_view.as_ref().unwrap().center, center);
+        e.choose_message_button(0);
+        tick(&mut swf, &mut e);
+        assert_ne!(e.player_marker, Some(first));
+        assert!(e.messages.boxes.is_empty());
+        swf.press(KeyCode::KeyJ);
+        tick(&mut swf, &mut e);
+        assert!(swf.journal.is_some());
+        assert!(swf.map.as_ref().unwrap().journal);
+        assert!(e.map_view.is_some());
+        let journal = &swf.journal.as_ref().unwrap().menu;
+        assert_eq!(
+            journal
+                .get("_root.QuestJournalFader.Menu_mc.QuestsFader.Page_mc.ShowOnMapButton._alpha"),
+            num(100.0)
+        );
+        capture(&mut swf, &mut e, "movie-journal-show-on-map");
+        e.scripts.quests.get_mut(&FormId(0xB00)).unwrap().active = false;
+        swf.press(KeyCode::Escape);
+        tick(&mut swf, &mut e);
+        assert_eq!(e.menu, Some(Shown::Map));
+        assert!(swf.journal.is_none());
+        assert!(!swf.map.as_ref().unwrap().journal);
+        assert!(
+            !e.map_view
+                .as_ref()
+                .unwrap()
+                .rows
+                .iter()
+                .any(|r| r.kind == 62)
+        );
+        swf.press(KeyCode::KeyJ);
+        tick(&mut swf, &mut e);
+        swf.press(KeyCode::KeyM);
+        tick(&mut swf, &mut e);
+        assert_eq!(e.menu, Some(Shown::Map));
+        assert!(swf.journal.is_none());
+        assert!(
+            e.map_view
+                .as_ref()
+                .unwrap()
+                .center
+                .distance(Vec2::new(120.0, 240.0))
+                < 0.1
+        );
+        assert_eq!(e.map_view.as_ref().unwrap().zoom, 1.0);
+        swf.press(KeyCode::KeyE);
+        tick(&mut swf, &mut e);
+        assert_eq!(e.map_view.as_ref().unwrap().center, Vec2::new(10.0, 20.0));
+        let map = swf.map.as_mut().unwrap();
+        map.button(1, true, (640.0, 360.0));
+        map.update(&mut e, 1.0 / 60.0, (700.0, 400.0), (1280, 720));
+        map.button(1, false, (700.0, 400.0));
+        let view = e.map_view.as_ref().unwrap();
+        assert!(view.heading > 0.0 && view.pitch > 50.0);
+        // Short clicks delivered before a movie tick still wait for its
+        // ClickCallback, rather than dropping the click or accepting a bar click.
+        e.player_marker = None;
+        let map = swf.map.as_mut().unwrap();
+        map.button(0, true, (900.0, 450.0));
+        map.button(0, false, (900.0, 450.0));
+        map.answer(
+            &mut e,
+            &GameCall {
+                name: "ClickCallback".into(),
+                id: None,
+                args: vec![],
+            },
+        );
+        map.update(&mut e, 1.0 / 60.0, (900.0, 450.0), (1280, 720));
+        assert!(e.player_marker.is_some());
+        // Gameplay rebinding flows through the map's Up context reference.
+        let before = e.map_view.as_ref().unwrap().center;
+        assert!(
+            e.input_map
+                .write()
+                .unwrap()
+                .remap("Forward", crate::input_map::Button::Key(KeyCode::KeyG))
+        );
+        let map = swf.map.as_mut().unwrap();
+        map.key(KeyCode::KeyW, true);
+        map.update(&mut e, 0.1, (900.0, 450.0), (1280, 720));
+        map.key(KeyCode::KeyW, false);
+        assert_eq!(e.map_view.as_ref().unwrap().center, before);
+        map.key(KeyCode::KeyG, true);
+        map.update(&mut e, 0.1, (900.0, 450.0), (1280, 720));
+        map.key(KeyCode::KeyG, false);
+        assert_ne!(e.map_view.as_ref().unwrap().center, before);
+        swf.press(KeyCode::KeyM);
+        tick(&mut swf, &mut e);
+        assert_eq!(e.menu, None);
+        assert!(e.map_view.is_none());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

@@ -139,3 +139,24 @@ its data isn't public; the choices below are what the movie's code allows.
   Desktop (index 1), with Main Menu selected first; which one SE selects first
   is unobserved. Quit to Main Menu's teardown: `known_ambiguities/main-menu.md`.
   Other System choices: `known_ambiguities/system-page.md`.
+
+## Show on Map
+
+The movie's objective `questTargetID`, `abAllowShowOnMap` answer and
+`ShowTargetOnMap` call establish the UI contract (game asset; prose findings
+in `plans/map-menu.md`). The engine uses a per-open table of quest/objective
+pairs and re-resolves their targets on selection. Untracked objectives can
+still be shown; completed, failed, disabled, conditional or unreachable targets
+are excluded by the shared map resolver. It centres on the first resolvable
+target in authored order, directly on the owning map or at the first load door
+towards it. This ordering follows the existing map/compass resolver; the exact
+vanilla choice among multiple targets has not been measured.
+
+The user observed on 2026-11-01 that Show on Map adds no extra highlighting,
+and Esc from a journal opened over the map returns to that map. Both are
+implemented (`research/ui/map-menu.md`); these are settled observations.
+
+The user did not specify the opening zoom. The working choice is normal
+opening zoom (1, the highest camera), preserving pitch and heading and using
+transient focus rather than overwriting `map_start`. This choice follows the
+plan's provisional opening policy; exact vanilla zoom remains to be observed.

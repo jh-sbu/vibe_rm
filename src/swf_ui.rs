@@ -599,6 +599,12 @@ impl SwfUi {
             engine.menu = None;
             return;
         }
+        if !engine.messages.boxes.is_empty() {
+            map.clear_input();
+            map.menu.advance(dt);
+            map.menu.take_calls();
+            return;
+        }
         let pointer = self.pointer.position();
         map.update(engine, dt.as_secs_f32(), pointer, self.size);
         map.menu.advance(dt);

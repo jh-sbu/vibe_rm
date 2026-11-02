@@ -97,3 +97,14 @@ M closes the map. Holding the right mouse button allows both tilt and turn.
 Esc from a journal opened over the map returns to the map. Show on Map adds
 no extra target highlighting. All eight observations are recorded in
 `research/ui/map-menu.md` and `plans/map-menu.md`.
+
+## Camera continuity
+
+Closing the map retains its centre, zoom, pitch and heading for reopening.
+The existing optional MCAM native-save payload stores centre/zoom/pitch; the
+new optional MHED payload stores heading (absent means north). This is this
+engine's continuity representation, not a claim about Skyrim's save layout.
+Exact vanilla camera persistence has not been measured; retaining the camera
+extends the plan's saved-camera policy. A journal opened over the map retains
+the live view, and Show on Map applies a transient focus at normal opening
+zoom (`known_ambiguities/journal.md`).

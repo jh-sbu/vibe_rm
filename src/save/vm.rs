@@ -1044,6 +1044,69 @@ mod tests {
     }
 
     #[test]
+    fn marker_question_tag_preserves_legacy_enchant_questions() {
+        use crate::messages::BoxAction;
+        // Tags 8 and 9 are both existing enchanting payloads. The custom
+        // destination must use its own tag rather than shadowing either one.
+        for tag in [8, 9, 10] {
+            let (sample, _) = sample();
+            let mut file = SaveFile::default();
+            sample.write(&mut file);
+            let mut w = Writer::default();
+            w.u64(0);
+            w.len(1);
+            w.str("");
+            w.str("Question");
+            w.len(1);
+            w.i32(0);
+            w.str("Okay");
+            w.bool(false);
+            w.u8(tag);
+            if tag == 10 {
+                w.form(FormId(0x3c));
+                w.f32(10.0);
+                w.f32(20.0);
+                w.f32(0.0);
+                w.bool(true);
+            } else {
+                w.form(FormId(0x10));
+                w.form(FormId(0x11));
+                w.opt_form(None);
+                // Copy state, version 2 for tag 8, version 3 for tag 9.
+                w.f32(1.0);
+                w.opt_form(None);
+                w.f32(0.0);
+                w.f32(0.0);
+                w.bool(false);
+                w.bool(false);
+                if tag == 9 {
+                    w.bool(false);
+                    w.bool(false);
+                }
+                w.len(1);
+                w.form(FormId(0x12));
+                w.form(FormId(0x13));
+                w.u8(1);
+                w.f32(1.0);
+                w.bool(false);
+            }
+            w.len(0);
+            file.add(b"MBXW", w.0);
+            let read = VmSnapshot::read(&file).unwrap();
+            match &read.message_boxes[0].action {
+                Some(BoxAction::PlayerMarker { marker, replace }) if tag == 10 => {
+                    assert_eq!(marker.pos, glam::Vec3::new(10.0, 20.0, 0.0));
+                    assert!(*replace);
+                }
+                Some(BoxAction::Enchant(request)) if tag == 8 || tag == 9 => {
+                    assert_eq!(request.item, FormId(0x11));
+                }
+                action => panic!("wrong action for tag {tag}: {action:?}"),
+            }
+        }
+    }
+
+    #[test]
     fn malformed_message_box_wait_metadata_is_refused() {
         use crate::messages::{MESSAGE_WAIT_PREFIX, MessageBox};
 

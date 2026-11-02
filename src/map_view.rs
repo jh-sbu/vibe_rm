@@ -490,11 +490,11 @@ impl Engine {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use esp::worldspace::CameraLimits;
 
-    pub(super) fn view(pitch: f32) -> MapView {
+    pub(crate) fn view(pitch: f32) -> MapView {
         MapView {
             world: FormId(0x3C),
             data: WorldMapData {
@@ -515,7 +515,7 @@ mod tests {
         }
     }
 
-    fn hierarchy_fixture(label: &str) -> std::path::PathBuf {
+    pub(crate) fn hierarchy_fixture(label: &str) -> std::path::PathBuf {
         use esp::group_type as g;
         use esp::writer::{Node, RecordBuilder as R, write_plugin};
         let dir =
@@ -612,6 +612,7 @@ mod tests {
         let quests = (0..4)
             .map(|i| {
                 let r = R::new(b"QUST", FormId(0xB00 + i))
+                    .field(b"DNAM", &[0, 0, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0])
                     .zstring(b"FULL", &format!("Synthetic quest {i}"))
                     .field(b"QOBJ", &10u16.to_le_bytes())
                     .field(b"QSTA", &[0; 8]);

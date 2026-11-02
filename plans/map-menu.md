@@ -1,6 +1,6 @@
 # Plan: the map's rest (controls, custom destination, Show on Map)
 
-**Status: implementing** (2026-11-01). ROADMAP Next item 6 (UI), "The map's rest".
+**Status: implemented** (2026-11-01). ROADMAP Next item 6 (UI), "The map's rest".
 This plan covers the world-map parts of that entry that no other item
 blocks: the map's controls as the game binds them, the player-set marker
 ("Custom Destination"), the journal's Show on Map, and keeping the map's
@@ -89,8 +89,8 @@ compass). Open questions stay in this plan.
 
 The engine's current keys disagree with this table in three places. E zooms
 here but is PlayerPosition in the game. Q, Page Up and Page Down aren't bound
-in the game at all. M closes the map here, but the game's map context has no
-Quick Map.
+in the game at all. The game's Map Menu context has no Quick Map row; the user confirmed that
+M nevertheless closes the map. It follows the gameplay Quick Map binding.
 
 ### Game settings (Skyrim.esm, `vrm-tool gmst`)
 
@@ -159,18 +159,15 @@ These are names and layouts only, used as leads, not as behaviour.
     - J opens the journal.
     - L toggles the local map. Until `plans/local-map.md` it does nothing, as
       `ToggleMapCallback` does now.
-    - P is held for Part 2.
+    - P places a destination at the pointer, or asks about the existing one.
     - Holding the right button and moving the mouse tilts the camera
-      (MapLookMode). Vertical motion tilts. Whether horizontal motion turns
-      the camera's heading is open (observation O2).
-    - Drop E's zoom, and drop Q and Page Up / Page Down unless they conflict
-      with nothing. Recommendation: keep Page Up / Page Down as an
-      engine-only extra, since the game binds nothing there, and record that
-      in `known_ambiguities/map-view.md`.
-    - Whether M (Quick Map) also closes the map is observation O1. Keep it
-      until then, and record it.
+      (MapLookMode). Vertical motion tilts and horizontal motion turns,
+      confirmed by observation O2.
+    - Drop Q/E zoom and Page Up / Page Down tilt. No extra tilt keys.
+    - M (Quick Map) closes the map, confirmed by observation O1; its binding
+      follows gameplay Quick Map.
   - **2c.** Update `known_ambiguities/map-view.md`'s Input bullet: the
-    game's bindings, and the engine's extras.
+    game's bindings and the remaining camera/sensitivity choices.
 
 ## Part 2: the custom destination
 
@@ -208,22 +205,21 @@ compass (PlayerSet frame) and later on the local map. It is saved.
     several pitches.
   - **5b.** A click (`ClickCallback`, then a release in place) on no marker,
     or P over the map, places the marker at the pointer.
-    - Placing again moves the one marker there.
+    - Placing again asks the move / leave / remove question at that new spot.
     - Which sound plays on placing isn't known; play none until it is.
     - The rows are rebuilt (step 8).
-  - **5c.** A click on the player-set marker asks `sMoveMarkerQuestion` with
-    `sMoveMarker`, `sRemoveMarker` and `sLeaveMarker` (a message box with
-    three buttons, as `ask` makes).
-    - Remove clears it.
-    - Move It: the next click places it again. Hold a `moving` flag on
-      `MapMenu`. What the game shows while moving is open (O4).
-    - Leave closes the question.
+  - **5c.** When a custom marker already exists, a subsequent map click
+    asks `sMoveMarkerQuestion` with `sMoveMarker`, `sLeaveMarker`, and
+    `sRemoveMarker`, in that order. Clicking its icon uses the same question.
+    - Move immediately uses the captured new click position (O4).
+    - Leave closes the question; Remove clears the marker.
+    - There is no moving flag or subsequent placement click.
   - **5d.** A click on an undiscovered marker asks `sPlaceMarkerUndiscovered`
     (Yes / No) instead of notifying `sNoFastTravelUndiscovered`. Yes places
-    the custom marker on that marker's position.
-    - Other refusals (combat, guards...) keep their notifications, and the
-      undiscovered check comes after them, as now. Whether the game checks
-      combat first when the marker is undiscovered is observation O5.
+    the custom marker on that location's map position.
+    - This question takes precedence over combat and other travel refusals,
+      as observed in O5. Discovered locations retain normal travel preflight
+      and revalidation after confirmation.
 - **Step 6. On the compass.**
   - `compass_markers` adds the player-set marker with frame 3 (PlayerSet).
     It shows at any distance, full alpha and scale 100, like quest markers,
@@ -231,8 +227,7 @@ compass (PlayerSet frame) and later on the local map. It is saved.
   - The heading is taken in map coordinates (the player through
     `world_map_point`), so it stays right in child worldspaces with `ONAM`.
   - Not shown indoors, as the other location markers aren't.
-  - Whether reaching the marker removes it is observation O3. Until then it
-    stays.
+  - Reaching the marker does not remove it (observed in O3).
   - Record these choices in `known_ambiguities/map-markers.md`.
 
 ## Part 3: Show on Map, and markers that stay current
@@ -248,8 +243,7 @@ compass (PlayerSet frame) and later on the local map. It is saved.
     - The map view stays alive while the journal is shown.
     - `ShowJournal(true)` on opening, `ShowJournal(false)` on closing back.
     - Closing the journal returns to the map, not to the world.
-    - Where the journal's Esc goes from there (back to the map, or out) is
-      observation O6. Return to the map until then.
+    - Esc returns to the map (confirmed by O6).
 - **Step 8. Rebuilding the markers while open.**
   - `MapMenu::refresh_rows(engine)` rebuilds `rows` and gives the movie the
     markers again (`SetNumMarkers`, `CreateMarkers`), keeping the selection
@@ -276,8 +270,8 @@ compass (PlayerSet frame) and later on the local map. It is saved.
     - The map opens with `map_start` set to the target. Extend
       `map_start`, or add `map_focus`, so the saved camera isn't
       overwritten.
-    - Whether the game also selects or highlights the target is observation
-      O7.
+    - No extra selection or highlighting (confirmed by O7). Opening zoom
+      uses 1, the normal opening zoom; its exact vanilla value remains open.
   - **9c.** Update `known_ambiguities/journal.md` and the ROADMAP's journal
     and map entries.
 
@@ -299,7 +293,7 @@ These observations supersede the provisional choices in the steps above.
 
 ## Order and size
 
-Steps 1 to 9 are about nine commits, mostly in `src/swf_ui/map_menu.rs`,
+Steps 1 to 9, with each lettered sub-step in its own commit, are mostly in `src/swf_ui/map_menu.rs`,
 `src/map_view.rs`, `src/map_markers.rs`, `src/swf_ui/journal_menu.rs` and the
 save continuity. Parts 1 to 3 don't depend on each other beyond Part 2's row
 identity (step 4b) coming before Part 3's rebuild (step 8). Offscreen
@@ -315,6 +309,20 @@ and method per name; root initialization subsequently constructs WorldMap,
 which registers again. This accounts for the existing world-map markers
 working. Every world-map operation now invokes `_root.WorldMap.*` explicitly,
 including refresh, selection, click, date and (step 7b) ShowJournal. This also
-keeps routing correct if local-map construction order changes. A debug log
-records the callback scope's MapMovie target for offscreen verification.
+keeps routing correct if local-map construction order changes. The installed-asset
+movie integration test checks both delegates against the world-layer marker
+index and position.
 No game bytecode is included here; evidence is the permitted map.swf asset.
+
+## Completion and validation
+
+All numbered steps and lettered sub-steps are implemented in the listed order.
+The final validation also covers button art from the live map context, short
+mouse clicks arriving between movie ticks, and suppressing camera input while
+a marker question is open. Saved marker questions use native action tag 10;
+legacy enchanting tags 8 and 9 retain their existing decoding.
+
+Tests and offscreen capture recipes are recorded in `research/ui/map-menu.md`.
+The local map, rendering research and remaining travel behavior listed above
+remain separate work. The precise Show on Map opening zoom remains open; the
+working choice is recorded in `known_ambiguities/journal.md`.

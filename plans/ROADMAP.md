@@ -381,8 +381,12 @@ game each piece unlocks.
   with the banner, the discovery music and Locations Discovered; `AddToMap`,
   `EnableFastTravel`, `IsMapMarkerVisible`; `known_ambiguities/map-markers.md`),
   the map (`map.swf`: M or the tween menu's Map; the worldspace's `MNAM` map data
-  and the world map's camera over its distant LOD, panned, zoomed and tilted,
+  and the world map's camera over its distant LOD, panned, zoomed, tilted and turned,
   with the markers on it, the player's and hovering names them;
+  bound map-context controls, a saved custom destination on the map and compass
+  (immediate first placement, move / leave / remove at the next click), the
+  journal retained over the map, Show on Map for resolvable objectives, and
+  marker rows rebuilt after tracking or destination changes (`plans/map-menu.md`);
   `known_ambiguities/map-view.md`),
   the tracked quests' targets (`QSTA`; the load door the way to one starts
   at when it is elsewhere) and the enemies fighting the player
@@ -2130,12 +2134,12 @@ The note's follow-up list needs `test-mod autotest23`.
      (research-gated); the local map for interiors and nearby cells
      (`SetLocalMapExtents`, the movie's `img://Local_Map`); fast travel: unloaded-follower continuity, exact SE timing and cross-space
      time, mounted/Survival restrictions and autosave timing (the loading
-     screen is done: `plans/loading-screen.md`) (`known_ambiguities/fast-travel.md`); then custom markers on the
-     map and the journal's Show on Map; quest targets updating while the map
-     stays open; distant LOD around the loaded cells on by default (the
-     blocks are now placed right: `VRM_LOD=1`). Plans: `plans/map-menu.md` (the
-     controls, custom markers, Show on Map and markers refreshing while open),
-     then `plans/local-map.md`.
+     screen is done: `plans/loading-screen.md`) (`known_ambiguities/fast-travel.md`);
+     distant LOD around the loaded cells on by default (the blocks are now
+     placed right: `VRM_LOD=1`). Controls, custom markers, Show on Map and
+     marker refresh are done (`plans/map-menu.md`). The local map follows
+     `plans/local-map.md`. Show on Map's precise vanilla opening zoom remains
+     an open observation (`known_ambiguities/journal.md` records the current choice).
    - The inventory's rest: the item's model beside the card (`UpdateItem3D`,
      rotating and zooming it), including crafting previews; independent per-hand
      selection for two differently modified copies of the same weapon base;
@@ -2155,12 +2159,12 @@ The note's follow-up list needs `test-mod autotest23`.
      display or refresh already-expanded tutorial messages and journal/objective
      text after a rebind or reset. Input dispatch and button art already remap.
      Plan: `plans/control-text-tags.md`.
-   - The journal's rest: Show on Map; gamepad input and its Controller/Vibration
+   - The journal's rest: gamepad input and its Controller/Vibration
      options; DDOF's option once depth of field renders. Creations/Installed Content remain
      excluded from the vanilla runtime. The statistics
      whose systems aren't there yet (dragon souls collected, horses
      stolen)
-   - The HUD's compass: the player's own marker (with the map), location
+   - The HUD's compass: location
      aliases as quest targets (research-gated: no direct examples found in
      the inspected Bethesda plugins; `known_ambiguities/quest-targets.md`); the charge and
      survival meters, load door info, favor mode
