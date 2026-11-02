@@ -62,6 +62,18 @@ pub(crate) fn row_action(rows: &[MapRow], index: f64) -> RowAction {
     }
 }
 
+/// Stable row identity across rebuilds. Location references survive renaming;
+/// the one custom destination survives moving; quest overlays use kind/place/name.
+pub(crate) fn same_row(a: &MapRow, b: &MapRow) -> bool {
+    if a.marker.is_some() || b.marker.is_some() {
+        return a.marker == b.marker;
+    }
+    a.kind == b.kind
+        && (a.kind == PLAYER_SET_ICON
+            || a.kind == PLAYER_ICON
+            || (a.pos == b.pos && a.name == b.name))
+}
+
 pub struct MapView {
     /// The worldspace whose map data this is (a child worldspace shows its
     /// parent's).

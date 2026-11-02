@@ -592,6 +592,7 @@ impl SwfUi {
         let Some(map) = &mut self.map else { return };
         if map.journal {
             map.show_journal(false);
+            map.refresh_rows(engine);
         }
         if std::mem::take(&mut map.close) {
             engine.menu = None;
@@ -1355,6 +1356,12 @@ impl SwfUi {
                 return;
             }
             stats.popup_press();
+        }
+        if self.message_box.shown.is_none()
+            && self.journal.is_none()
+            && let Some(map) = &mut self.map
+        {
+            map.test_click();
         }
         let menu = self.top();
         if let Some(dialogue) = &self.dialogue

@@ -58,6 +58,8 @@ pub(super) struct MapMenu {
     pointer: Vec2,
     /// The marker told to the movie as selected.
     selected: Option<usize>,
+    restore_selected: Option<usize>,
+    synthetic_release: bool,
     /// Markers are still being created (`CreateMarkers`).
     creating: bool,
     /// Esc, Tab or the map key: close.
@@ -99,6 +101,8 @@ impl MapMenu {
             marker_snapshot: engine.player_marker,
             pointer: Vec2::splat(0.5),
             selected: None,
+            restore_selected: None,
+            synthetic_release: false,
             creating: false,
             close: false,
             journal: false,
@@ -119,6 +123,32 @@ impl MapMenu {
         self.click = false;
         self.released = false;
         self.wheel = 0.0;
+    }
+
+    pub fn refresh_rows(&mut self, engine: &mut Engine) {
+        let old = engine
+            .map_view
+            .as_ref()
+            .and_then(|v| self.selected.and_then(|i| v.rows.get(i)))
+            .cloned();
+        engine.map_view_rows();
+        let selected = old.and_then(|old| {
+            engine
+                .map_view
+                .as_ref()?
+                .rows
+                .iter()
+                .position(|row| crate::map_view::same_row(&old, row))
+        });
+        self.give_markers(engine);
+        self.restore_selected = selected;
+        self.marker_snapshot = engine.player_marker;
+    }
+
+    /// A complete synthetic click still waits for the movie's ClickCallback,
+    /// so the bottom bar gets the same exclusion as interactive mouse input.
+    pub fn test_click(&mut self) {
+        self.synthetic_release = true;
     }
 
     /// Tells the movie the markers, to create.
@@ -216,6 +246,7 @@ impl MapMenu {
             &self.mouse,
         ) {
             if pressed {
+                self.click = false;
                 self.drag = Some((at, 0.0));
             } else if let Some((_, moved)) = self.drag.take()
                 && std::mem::take(&mut self.click)
@@ -281,9 +312,7 @@ impl MapMenu {
             self.place_at_pointer(engine);
         }
         if self.marker_snapshot != engine.player_marker {
-            engine.map_view_rows();
-            self.give_markers(engine);
-            self.marker_snapshot = engine.player_marker;
+            self.refresh_rows(engine);
         }
         engine.update_map_view();
         if self.creating {
@@ -306,10 +335,12 @@ impl MapMenu {
         self.menu.set(&format!("{M}.MarkerData"), Value::List(data));
         self.menu.invoke(&format!("{M}.RefreshMarkers"), &[]);
         let aspect = w as f32 / h as f32;
-        let under = engine.map_view.as_ref().and_then(|v| {
-            let at = Vec2::new((pointer.0 / w) as f32, (pointer.1 / h) as f32);
-            v.marker_at(at, aspect, REACH)
-                .filter(|&i| screen.get(i).is_some_and(|s| s.0))
+        let under = self.restore_selected.take().or_else(|| {
+            engine.map_view.as_ref().and_then(|v| {
+                let at = Vec2::new((pointer.0 / w) as f32, (pointer.1 / h) as f32);
+                v.marker_at(at, aspect, REACH)
+                    .filter(|&i| screen.get(i).is_some_and(|s| s.0))
+            })
         });
         if under != self.selected {
             self.selected = under;
@@ -351,7 +382,13 @@ impl MapMenu {
     /// menus' shared ones.
     pub fn answer(&mut self, engine: &mut Engine, call: &GameCall) -> bool {
         match call.name.as_str() {
-            "ClickCallback" => self.click = true,
+            "ClickCallback" => {
+                if std::mem::take(&mut self.synthetic_release) {
+                    self.released = true;
+                } else {
+                    self.click = self.drag.is_some();
+                }
+            }
             "MarkerClick" => {
                 if let Some(Value::Number(i)) = call.args.first() {
                     match engine
