@@ -130,6 +130,7 @@ pub fn perks_camera(angle: f32) -> Camera {
         yaw: angle.to_radians(),
         pitch: PERKS_PITCH.to_radians(),
         fov_y: PERKS_FOV.to_radians(),
+        projection: crate::render::Projection::Perspective,
     }
 }
 
@@ -190,6 +191,7 @@ impl StatsView {
             yaw: self.angle.to_radians(),
             pitch: 0.0,
             fov_y: RING_FOV.to_radians(),
+            projection: crate::render::Projection::Perspective,
         }
     }
 

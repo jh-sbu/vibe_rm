@@ -952,7 +952,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             let path = args.join(" ");
             let r = &mut engine.renderer;
             let (w, h) = (r.width, r.height);
-            let pixels = r.render_to_image(&engine.scene, &engine.camera, |_, _| {});
+            let pixels = r.render_to_image(&engine.scene, &engine.camera, (w, h), |_, _| {});
             match crate::app::write_png(&path, w, h, &pixels) {
                 Ok(()) => vec![format!("wrote {path} ({w}x{h}, {:?})", engine.renderer.color_format)],
                 Err(e) => vec![format!("error: {e:#}")],

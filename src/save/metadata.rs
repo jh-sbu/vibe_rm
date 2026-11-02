@@ -400,9 +400,10 @@ impl Engine {
     /// preview needs it, rather than on every journal opening/gameplay frame.
     pub fn capture_save_thumbnail(&mut self) {
         let camera = self.view_camera();
+        let size = (self.renderer.width, self.renderer.height);
         let pixels = self
             .renderer
-            .render_to_image(&self.scene, &camera, |_, _| {});
+            .render_to_image(&self.scene, &camera, size, |_, _| {});
         self.save_thumbnail =
             Thumbnail::downscale(&pixels, self.renderer.width, self.renderer.height);
     }

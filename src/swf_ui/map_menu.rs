@@ -515,7 +515,9 @@ mod integration_tests {
         let (scene, camera) = crate::map_view::frame_parts(&engine.map_view, engine.menu).unwrap();
         let pixels = engine
             .renderer
-            .render_to_image(scene, &camera, |_, target| swf.draw(target, false));
+            .render_to_image(scene, &camera, (1280, 720), |_, target| {
+                swf.draw(target, false)
+            });
         let file = std::fs::File::create(out.join(format!("{name}.png"))).unwrap();
         let mut encoder = png::Encoder::new(file, 1280, 720);
         encoder.set_color(png::ColorType::Rgba);

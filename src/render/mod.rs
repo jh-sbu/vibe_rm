@@ -1009,11 +1009,24 @@ pub(crate) fn pick_lights(lights: &[GpuLight], center: Vec3, radius: f32) -> [u1
     out
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub enum Projection {
+    #[default]
+    Perspective,
+    /// Half extents and the distance to the far clipping plane.
+    Orthographic {
+        half_width: f32,
+        half_height: f32,
+        far: f32,
+    },
+}
+
 pub struct Camera {
     pub position: Vec3,
     pub yaw: f32,
     pub pitch: f32,
     pub fov_y: f32,
+    pub projection: Projection,
 }
 
 impl Camera {
@@ -1028,10 +1041,36 @@ impl Camera {
         Vec3::new(self.yaw.cos(), -self.yaw.sin(), 0.0)
     }
     pub fn view(&self) -> Mat4 {
-        glam::camera::rh::view::look_to_mat4(self.position, self.forward(), Vec3::Z)
+        let forward = self.forward();
+        let up = if matches!(self.projection, Projection::Orthographic { .. })
+            && forward.z.abs() > 0.9999
+        {
+            self.right().cross(forward)
+        } else {
+            Vec3::Z
+        };
+        glam::camera::rh::view::look_to_mat4(self.position, forward, up)
     }
     pub fn proj(&self, aspect: f32) -> Mat4 {
-        glam::camera::rh::proj::directx::perspective_infinite_reverse(self.fov_y, aspect, 5.0)
+        match self.projection {
+            Projection::Perspective => {
+                glam::camera::rh::proj::directx::perspective_infinite_reverse(
+                    self.fov_y, aspect, 5.0,
+                )
+            }
+            Projection::Orthographic {
+                half_width,
+                half_height,
+                far,
+            } => glam::camera::rh::proj::directx::orthographic(
+                -half_width,
+                half_width,
+                -half_height,
+                half_height,
+                far,
+                5.0,
+            ),
+        }
     }
 }
 
@@ -3071,8 +3110,14 @@ impl Renderer {
         &mut self,
         scene: &Scene,
         camera: &Camera,
+        size: (u32, u32),
         overlay: impl FnOnce(&mut Self, &wgpu::TextureView),
     ) -> Vec<u8> {
+        let previous_size = (self.width, self.height);
+        assert!(size.0 > 0 && size.1 > 0);
+        if size != previous_size {
+            self.resize(size.0, size.1);
+        }
         let tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("offscreen"),
             size: wgpu::Extent3d {
@@ -3150,6 +3195,11 @@ impl Renderer {
                 out.extend_from_slice(&[rgb[0], rgb[1], rgb[2], 255]);
             }
         }
+        drop(data);
+        buf.unmap();
+        if size != previous_size {
+            self.resize(previous_size.0, previous_size.1);
+        }
         out
     }
 }
@@ -3192,5 +3242,36 @@ fn blend_factor(f: u16) -> wgpu::BlendFactor {
         9 => B::OneMinusDstAlpha,
         10 => B::SrcAlphaSaturated,
         _ => B::One,
+    }
+}
+
+#[cfg(test)]
+mod camera_projection_tests {
+    use super::*;
+
+    #[test]
+    fn orthographic_camera_maps_corners_and_reverse_depth() {
+        let camera = Camera {
+            position: Vec3::new(0.0, 0.0, 100.0),
+            yaw: 0.0,
+            pitch: -std::f32::consts::FRAC_PI_2,
+            fov_y: 1.0,
+            projection: Projection::Orthographic {
+                half_width: 40.0,
+                half_height: 20.0,
+                far: 200.0,
+            },
+        };
+        let matrix = camera.proj(2.0) * camera.view();
+        for (point, expected) in [
+            (Vec3::new(-40.0, -20.0, 95.0), Vec3::new(-1.0, -1.0, 1.0)),
+            (Vec3::new(40.0, 20.0, -100.0), Vec3::new(1.0, 1.0, 0.0)),
+        ] {
+            let actual = matrix.project_point3(point);
+            assert!(
+                actual.abs_diff_eq(expected, 0.0001),
+                "{actual:?} != {expected:?}"
+            );
+        }
     }
 }

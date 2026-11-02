@@ -147,6 +147,7 @@ impl MapView {
             yaw,
             pitch: -p,
             fov_y: self.fov_y,
+            projection: crate::render::Projection::Perspective,
         }
     }
 

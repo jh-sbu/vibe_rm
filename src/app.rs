@@ -280,7 +280,12 @@ pub fn run(opts: Options) -> Result<()> {
                         },
                         engine.view_camera(),
                     );
-                    let pixels = engine.renderer.render_to_image(scene, &camera, |_, _| {});
+                    let pixels = engine.renderer.render_to_image(
+                        scene,
+                        &camera,
+                        (opts.width, opts.height),
+                        |_, _| {},
+                    );
                     let stem = path.with_extension("");
                     write_png(
                         &format!("{}_{i:05}.png", stem.display()),
@@ -452,15 +457,20 @@ pub fn run(opts: Options) -> Result<()> {
             },
             engine.view_camera(),
         );
-        let pixels = engine.renderer.render_to_image(scene, &camera, |r, view| {
-            if let Some(swf) = &mut swf {
-                swf.draw(view, hud_visible);
-            }
-            ui.paint(&r.device, &r.queue, view, out, size);
-            if let Some(swf) = &mut swf {
-                swf.draw_cursor(view, true);
-            }
-        });
+        let pixels = engine.renderer.render_to_image(
+            scene,
+            &camera,
+            (opts.width, opts.height),
+            |r, view| {
+                if let Some(swf) = &mut swf {
+                    swf.draw(view, hud_visible);
+                }
+                ui.paint(&r.device, &r.queue, view, out, size);
+                if let Some(swf) = &mut swf {
+                    swf.draw_cursor(view, true);
+                }
+            },
+        );
         log::info!("render stats: {:?}", engine.renderer.stats);
         write_png(
             &path.display().to_string(),

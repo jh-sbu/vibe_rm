@@ -69,6 +69,7 @@ impl LoadingView {
             yaw: c.yaw,
             pitch: c.pitch,
             fov_y: c.fov_y,
+            projection: c.projection,
         }
     }
 
@@ -224,6 +225,7 @@ impl Engine {
                 yaw: 0.0,
                 pitch: 0.0,
                 fov_y: FOV.to_radians(),
+                projection: crate::render::Projection::Perspective,
             },
             model,
             mist_instance,

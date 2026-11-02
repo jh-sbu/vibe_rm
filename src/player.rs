@@ -274,6 +274,7 @@ mod swimming_tests {
             yaw: 0.0,
             pitch: 0.0,
             fov_y: 1.0,
+            projection: crate::render::Projection::Perspective,
         };
         let mut player = Player::new(Vec3::Z * 100.0);
         player.swimming = true;

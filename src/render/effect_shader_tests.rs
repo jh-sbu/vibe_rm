@@ -96,8 +96,9 @@ fn centre(r: &mut Renderer, grey: f32, palette: bool) -> [u8; 4] {
         yaw: 0.0,
         pitch: 0.0,
         fov_y: 1.0,
+        projection: crate::render::Projection::Perspective,
     };
-    let pixels = r.render_to_image(&scene, &camera, |_, _| {});
+    let pixels = r.render_to_image(&scene, &camera, (r.width, r.height), |_, _| {});
     let i = ((SIZE / 2 * SIZE + SIZE / 2) * 4) as usize;
     pixels[i..i + 4].try_into().unwrap()
 }

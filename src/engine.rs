@@ -484,6 +484,7 @@ impl Engine {
                 yaw: 0.0,
                 pitch: 0.0,
                 fov_y: 65f32.to_radians(),
+                projection: crate::render::Projection::Perspective,
             },
             hour,
             weather: Default::default(),
@@ -692,6 +693,7 @@ impl Engine {
             yaw: self.camera.yaw,
             pitch: self.camera.pitch,
             fov_y: self.camera.fov_y,
+            projection: self.camera.projection,
         }
     }
 
