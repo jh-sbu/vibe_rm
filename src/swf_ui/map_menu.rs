@@ -25,6 +25,7 @@ use crate::map_view::PLAYER_ICON;
 use super::{Buttons, num, text};
 
 const M: &str = "_root.WorldMap";
+const LOCAL: &str = "_root.WorldMap.LocalMapMenu";
 
 /// Screen heights a second the arrow keys pan, and zoom a second the keys
 /// zoom. Mouse look is degrees per screen height.
@@ -81,6 +82,9 @@ pub(super) struct MapMenu {
     controls_generation: u64,
     /// Markers are still being created (`CreateMarkers`).
     creating: bool,
+    local: Option<crate::local_map::LocalMap>,
+    local_shown: bool,
+    local_extents: Option<[f64; 4]>,
     /// Esc, Tab or the map key: close.
     pub close: bool,
     pub journal: bool,
@@ -121,12 +125,59 @@ impl MapMenu {
             release_waiting: false,
             controls_generation: u64::MAX,
             creating: false,
+            local: None,
+            local_shown: false,
+            local_extents: None,
             close: false,
             journal: false,
         };
         m.refresh_controls();
         m.give_markers(engine);
         Ok(m)
+    }
+
+    fn toggle_local(&mut self, engine: &mut Engine) {
+        if !self.local_shown && self.local.is_none() {
+            let Some(local) = crate::local_map::LocalMap::new(engine) else {
+                log::warn!("local map: no area bounds available");
+                return;
+            };
+            local.serve(&mut engine.renderer, &self.menu);
+            self.menu.invoke(&format!("{LOCAL}.InitMap"), &[]);
+            self.local = Some(local);
+        }
+        self.local_shown = !self.local_shown;
+        self.menu
+            .invoke(&format!("{LOCAL}.Show"), &[Value::Bool(self.local_shown)]);
+        if self.local_shown {
+            let count = engine.map_view.as_ref().map_or(0, |v| v.rows.len());
+            let hidden = (0..count)
+                .flat_map(|_| [Value::Bool(false), num(0.0), num(0.0), num(0.0)])
+                .collect();
+            self.menu
+                .set(&format!("{M}.MarkerData"), Value::List(hidden));
+            self.menu.invoke(&format!("{M}.RefreshMarkers"), &[]);
+        }
+        if self.local_shown {
+            let location = engine.current_location();
+            let name = location
+                .map(|id| engine.form_name(id))
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| engine.location_name());
+            let cleared = location
+                .filter(|&id| engine.is_cleared(id))
+                .map(|_| {
+                    text(
+                        &engine
+                            .gmst_string("sCleared")
+                            .unwrap_or_else(|| "Cleared".into()),
+                    )
+                })
+                .unwrap_or(Value::Undefined);
+            self.menu
+                .invoke(&format!("{LOCAL}.SetTitle"), &[text(&name), cleared]);
+        }
+        self.clear_input();
     }
 
     pub fn show_journal(&mut self, show: bool) {
@@ -334,8 +385,13 @@ impl MapMenu {
                     }
                 }
                 "Journal" => engine.menu = Some(Shown::Journal),
+                "LocalMap" => self.toggle_local(engine),
                 _ => {}
             }
+        }
+        if self.local_shown {
+            self.pointer_px = pointer;
+            return;
         }
         let bindings = self.bindings.read().unwrap();
         let held = |event| bindings.held_in("Map Menu", event, &self.keys, &self.mouse);
@@ -464,6 +520,7 @@ impl MapMenu {
                     self.click = self.drag.is_some();
                 }
             }
+            "MarkerClick" if self.local_shown => {}
             "MarkerClick" => {
                 if let Some(Value::Number(i)) = call.args.first() {
                     match engine
@@ -489,7 +546,19 @@ impl MapMenu {
                     view.center = p;
                 }
             }
-            "ToggleMapCallback" | "SetLocalMapExtents" => {}
+            "ToggleMapCallback" => self.toggle_local(engine),
+            "SetLocalMapExtents" => {
+                if let [
+                    Value::Number(left),
+                    Value::Number(top),
+                    Value::Number(right),
+                    Value::Number(bottom),
+                    ..,
+                ] = call.args.as_slice()
+                {
+                    self.local_extents = Some([*left, *top, *right, *bottom]);
+                }
+            }
             _ => return false,
         }
         true
@@ -739,6 +808,21 @@ mod integration_tests {
         map.key(KeyCode::KeyP, false);
         assert!(e.player_marker.is_some());
         assert!(e.messages.boxes.is_empty());
+        swf.press(KeyCode::KeyL);
+        tick(&mut swf, &mut e);
+        let map = swf.map.as_ref().unwrap();
+        assert!(map.local_shown);
+        assert!(
+            map.local_extents.is_some(),
+            "movie supplies texture extents"
+        );
+        assert_eq!(
+            map.menu.get("_root.WorldMap.Markers.0._visible"),
+            Value::Bool(false)
+        );
+        swf.press(KeyCode::KeyL);
+        tick(&mut swf, &mut e);
+        assert!(!swf.map.as_ref().unwrap().local_shown);
         swf.press(KeyCode::KeyM);
         tick(&mut swf, &mut e);
         assert_eq!(e.menu, None);
