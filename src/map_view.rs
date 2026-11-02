@@ -154,6 +154,28 @@ impl MapView {
         Some(Vec2::new((ndc.x + 1.0) / 2.0, (1.0 - ndc.y) / 2.0))
     }
 
+    /// Inverse marker projection: intersect the pointer ray with marker z=0.
+    pub fn ground_at(&self, screen: Vec2, aspect: f32) -> Option<Vec2> {
+        if !screen.is_finite() || !aspect.is_finite() || aspect <= 0.0 {
+            return None;
+        }
+        let camera = self.camera();
+        let eye = camera.position;
+        let forward = camera.forward();
+        let right = camera.right();
+        let up = right.cross(forward);
+        let half = (camera.fov_y / 2.0).tan();
+        let ray = forward
+            + right * ((screen.x * 2.0 - 1.0) * half * aspect)
+            + up * ((1.0 - screen.y * 2.0) * half);
+        if !ray.is_finite() || ray.z >= -f32::EPSILON {
+            return None;
+        }
+        let t = -eye.z / ray.z;
+        let point = (eye + ray * t).truncate();
+        (t >= 0.0 && point.is_finite()).then_some(point)
+    }
+
     /// Where the camera's centre is over the world, as a fraction of the
     /// screen's height: how far one screen fraction is, world units, at the
     /// centre.
@@ -409,7 +431,7 @@ mod tests {
     use super::*;
     use esp::worldspace::CameraLimits;
 
-    fn view(pitch: f32) -> MapView {
+    pub(super) fn view(pitch: f32) -> MapView {
         MapView {
             world: FormId(0x3C),
             data: WorldMapData {
@@ -787,5 +809,35 @@ mod tests {
         // The player's marker isn't picked.
         assert_eq!(v.marker_at(Vec2::splat(0.5), 1.0, 0.0001), None);
         assert_eq!(v.marker_at(Vec2::new(0.9, 0.9), 1.0, 0.05), None);
+    }
+}
+
+#[cfg(test)]
+mod inverse_tests {
+    use super::*;
+    #[test]
+    fn ground_projection_round_trips_tilt_turn_and_aspect() {
+        for pitch in [25.0, 50.0, 89.0] {
+            let mut v = super::tests::view(pitch);
+            for heading in [0.0, 80.0, 200.0] {
+                v.heading = heading;
+                for aspect in [1.0, 16.0 / 9.0] {
+                    for p in [
+                        Vec2::ZERO,
+                        Vec2::new(1200.0, -3400.0),
+                        Vec2::new(-5000.0, 2000.0),
+                    ] {
+                        let screen = v.screen_of(p, aspect).unwrap();
+                        let actual = v.ground_at(screen, aspect).unwrap();
+                        assert!(
+                            actual.distance(p) < 0.1,
+                            "pitch={pitch}, heading={heading}: {actual} vs {p}"
+                        );
+                    }
+                }
+            }
+            assert_eq!(v.ground_at(Vec2::splat(f32::NAN), 1.0), None);
+            assert_eq!(v.ground_at(Vec2::ZERO, 0.0), None);
+        }
     }
 }
