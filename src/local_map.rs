@@ -58,6 +58,58 @@ pub fn interior_bounds(lo: &LoadOrder, cell: &CellReferences) -> Option<Bounds> 
     result
 }
 
+/// A scene containing only the static environment for the local-map pass.
+/// GPU handles are shared; no game scene state is changed.
+pub fn map_scene(lo: &LoadOrder, source: &crate::render::Scene) -> crate::render::Scene {
+    use crate::render::{Environment, Instance, RenderCell, Scene};
+    let mut scene = Scene {
+        local_map: true,
+        env: Environment {
+            clear_color: Vec3::splat(0.05),
+            sun_dir: Vec3::new(0.3, 0.4, 0.85).normalize(),
+            sun_color: Vec3::splat(0.7),
+            ambient: Vec3::splat(0.4),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    for (&key, source_cell) in &source.cells {
+        let instances = source_cell
+            .instances
+            .iter()
+            .filter_map(|object| {
+                if object.hidden {
+                    return None;
+                }
+                let base = lo.get(esp::FormId(object.base))?;
+                if !matches!(
+                    &base.tag().0,
+                    b"STAT" | b"MSTT" | b"ACTI" | b"TACT" | b"DOOR" | b"FURN" | b"CONT" | b"TREE"
+                ) || base.flags() & 0x0080_0000 != 0
+                    || (matches!(&base.tag().0, b"STAT" | b"MSTT" | b"ACTI" | b"TACT")
+                        && base.flags() & 0x200 != 0)
+                {
+                    return None;
+                }
+                let mut instance = Instance::new(object.model.clone(), object.transform);
+                instance.ref_id = object.ref_id;
+                instance.base = object.base;
+                Some(instance)
+            })
+            .collect();
+        scene.cells.insert(
+            key,
+            RenderCell {
+                instances,
+                terrain: source_cell.terrain.clone(),
+                water: source_cell.water.clone(),
+                ..Default::default()
+            },
+        );
+    }
+    scene
+}
+
 /// Heading of an interior's NorthMarker; exteriors are aligned to true north.
 /// Reference angles turn clockwise about Z, as does Camera::yaw. The marker's
 /// +Y facing is therefore camera-up at the same angle. The UESP map export

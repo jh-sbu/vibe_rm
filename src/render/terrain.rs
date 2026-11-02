@@ -21,6 +21,7 @@ pub struct TerrainVertex {
     w1: [f32; 4],
 }
 
+#[derive(Clone)]
 pub struct TerrainChunk {
     pub vbuf: wgpu::Buffer,
     pub bind_group: wgpu::BindGroup,

@@ -27,6 +27,7 @@ struct WaterUniform {
     params: [f32; 4],
 }
 
+#[derive(Clone)]
 pub struct WaterPlane {
     pub vbuf: wgpu::Buffer,
     pub bind_group: wgpu::BindGroup,

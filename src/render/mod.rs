@@ -842,6 +842,8 @@ pub struct RenderCell {
 
 #[derive(Default)]
 pub struct Scene {
+    /// Local maps ignore material double-sided flags when looking down.
+    pub local_map: bool,
     pub cells: HashMap<CellKey, RenderCell>,
     /// The player's body, outside any cell.
     pub player: Option<ActorInstance>,
@@ -2607,8 +2609,14 @@ impl Renderer {
             .flat_map(|b| b.model.parts.iter().map(move |p| (p, b)))
             .collect();
         // Make sure all pipelines exist before borrowing them in the pass.
+        let map_key = |mut key: PipelineKey| {
+            if scene.local_map {
+                key.double_sided = false;
+            }
+            key
+        };
         for (d, _) in &draws {
-            self.pipeline(d.material().key);
+            self.pipeline(map_key(d.material().key));
         }
         for (part, _) in &grass {
             self.pipeline(part.material.key);
@@ -2714,9 +2722,10 @@ impl Renderer {
             let particle_vbuf = &self.particle_vbuf;
             let mut draw = |pass: &mut wgpu::RenderPass, d: &Draw, range: std::ops::Range<u32>| {
                 let material = d.material();
-                if current.get() != Some(material.key) {
-                    pass.set_pipeline(&self.pipelines[&material.key]);
-                    current.set(Some(material.key));
+                let key = map_key(material.key);
+                if current.get() != Some(key) {
+                    pass.set_pipeline(&self.pipelines[&key]);
+                    current.set(Some(key));
                 }
                 pass.set_bind_group(1, &material.bind_group, &[]);
                 match d {
