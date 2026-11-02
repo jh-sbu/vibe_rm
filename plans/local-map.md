@@ -112,6 +112,9 @@ These are names and layouts only, used as leads, not as behaviour.
 
 ## Steps
 
+Steps 1, 2a and 2b are implemented. The rendering, menu and explored-area
+steps remain to be implemented; the local map is not usable yet.
+
 - **Step 1. An orthographic camera.**
   - `render::Camera` gets a projection choice: the current perspective, or
     orthographic with half-width and half-height.

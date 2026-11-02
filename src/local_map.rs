@@ -58,6 +58,21 @@ pub fn interior_bounds(lo: &LoadOrder, cell: &CellReferences) -> Option<Bounds> 
     result
 }
 
+/// Heading of an interior's NorthMarker; exteriors are aligned to true north.
+/// Reference angles turn clockwise about Z, as does Camera::yaw. The marker's
+/// +Y facing is therefore camera-up at the same angle. The UESP map export
+/// tutorial identifies the same marker angle as the export rotation.
+pub fn north_rotation(cell: &CellReferences) -> f32 {
+    if !cell.interior {
+        return 0.0;
+    }
+    cell.entries
+        .iter()
+        .map(|entry| &entry.reference)
+        .find(|reference| reference.base == esp::FormId(3) && !reference.deleted())
+        .map_or(0.0, |reference| reference.rotation.z)
+}
+
 /// Exterior grid square loaded around the player, in world units.
 pub fn exterior_bounds(location: Location, radius: i32) -> Option<Bounds> {
     let Location::Exterior { center: (x, y), .. } = location else {
@@ -110,6 +125,9 @@ mod tests {
             Node::top(
                 b"STAT",
                 vec![
+                    RecordBuilder::new(b"STAT", FormId(3))
+                        .flags(0x0080_0000)
+                        .field(b"OBND", &bounds),
                     RecordBuilder::new(b"STAT", FormId(0x810)).field(b"OBND", &bounds),
                     RecordBuilder::new(b"STAT", FormId(0x811))
                         .flags(0x200)
@@ -134,6 +152,7 @@ mod tests {
                                 reference(0x820, 0x810, 100.0, std::f32::consts::FRAC_PI_2),
                                 reference(0x821, 0x811, 1000.0, 0.0),
                                 reference(0x822, 0x812, -1000.0, 0.0),
+                                reference(0x823, 3, -2000.0, 1.25),
                             ],
                         }],
                     },
@@ -147,6 +166,7 @@ mod tests {
         .unwrap();
         let lo = LoadOrder::load(&dir, &["Map.esp".into()]).unwrap();
         let cell = ReferenceCache::default().get(&lo, FormId(0x800));
+        assert!((north_rotation(&cell) - 1.25).abs() < 0.0001);
         let bounds = interior_bounds(&lo, &cell).unwrap();
         assert!(bounds.min.abs_diff_eq(Vec3::new(80.0, -10.0, -5.0), 0.001));
         assert!(bounds.max.abs_diff_eq(Vec3::new(120.0, 10.0, 5.0), 0.001));
