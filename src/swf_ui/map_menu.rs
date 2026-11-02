@@ -229,7 +229,11 @@ impl MapMenu {
     pub fn key(&mut self, code: KeyCode, pressed: bool) -> bool {
         use crate::input_map::Button;
         if pressed {
-            self.keys.insert(code);
+            // Key repeat: the press already counted. Repeating would place a
+            // marker and then at once ask to move it.
+            if !self.keys.insert(code) {
+                return true;
+            }
         } else {
             self.keys.remove(&code);
         }
@@ -723,6 +727,16 @@ mod integration_tests {
             map.key(KeyCode::KeyP, false);
             assert_eq!(e.player_marker.is_some(), placed, "P at {at:?}");
         }
+        // Holding P: the repeated press neither places again nor asks.
+        e.player_marker = None;
+        let map = swf.map.as_mut().unwrap();
+        for _ in 0..3 {
+            map.key(KeyCode::KeyP, true);
+            map.update(&mut e, 1.0 / 60.0, (960.0, 300.0), (1920, 1080));
+        }
+        map.key(KeyCode::KeyP, false);
+        assert!(e.player_marker.is_some());
+        assert!(e.messages.boxes.is_empty());
         swf.press(KeyCode::KeyM);
         tick(&mut swf, &mut e);
         assert_eq!(e.menu, None);

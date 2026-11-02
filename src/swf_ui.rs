@@ -911,7 +911,8 @@ impl SwfUi {
                 WindowEvent::KeyboardInput { event, .. }
                     if let PhysicalKey::Code(code) = event.physical_key
                         && code != KeyCode::Backquote
-                        && map.key(code, event.state == ElementState::Pressed) =>
+                        && (event.repeat
+                            || map.key(code, event.state == ElementState::Pressed)) =>
                 {
                     return true;
                 }
