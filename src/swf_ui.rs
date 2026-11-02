@@ -601,6 +601,9 @@ impl SwfUi {
             map.show_journal(false);
             map.refresh_rows(engine);
         }
+        if engine.map_focus.is_some() {
+            map.show_world(engine);
+        }
         engine.apply_map_focus();
         if std::mem::take(&mut map.close) {
             engine.menu = None;

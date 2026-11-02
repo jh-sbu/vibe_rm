@@ -544,8 +544,9 @@ pub(crate) mod tests {
             r
         };
         let worlds = vec![
+            // Interior map requests look up the vanilla world by editor ID.
             world(0x800, None, 1.0, 0.0, 0.0)
-                .zstring(b"EDID", "SyntheticMap")
+                .zstring(b"EDID", "Tamriel")
                 .field(b"MNAM", &[0; 16]),
             world(0x801, Some(0x800), 2.0, 100.0, 200.0),
             world(0x802, Some(0x801), 0.5, -100.0, -200.0),

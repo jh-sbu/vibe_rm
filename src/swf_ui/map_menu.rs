@@ -147,6 +147,12 @@ impl MapMenu {
         Ok(m)
     }
 
+    pub(super) fn show_world(&mut self, engine: &mut Engine) {
+        if self.local_shown {
+            self.toggle_local(engine);
+        }
+    }
+
     pub(super) fn toggle_local(&mut self, engine: &mut Engine) {
         if !self.local_shown && self.local.is_none() {
             let Some(local) = crate::local_map::LocalMap::new(engine) else {
@@ -930,6 +936,8 @@ mod integration_tests {
         tick(&mut swf, &mut e);
         assert_eq!(e.menu, Some(Shown::Map));
         assert!(swf.journal.is_none());
+        assert!(!swf.map.as_ref().unwrap().local_shown);
+        assert!(e.map_focus.is_none());
         assert!(
             e.map_view
                 .as_ref()
@@ -1182,6 +1190,31 @@ mod integration_tests {
         swf.press(KeyCode::KeyL);
         tick(&mut swf, &mut e);
         assert!(!swf.map.as_ref().unwrap().local_shown);
+        // An interior has a separate local map, while Show on Map resolves
+        // its objective on Tamriel and reuses the map beneath the journal.
+        e.location = Location::Interior(FormId(0xD00));
+        let mut map = MapMenu::open(&swf.ui, swf.size, &e, swf.buttons.clone()).unwrap();
+        map.toggle_local(&mut e);
+        assert!(map.local_shown);
+        swf.map = Some(map);
+        swf.press(KeyCode::KeyJ);
+        tick(&mut swf, &mut e);
+        assert!(swf.map.as_ref().unwrap().journal);
+        assert!(swf.map.as_ref().unwrap().local_shown);
+        swf.press(KeyCode::Escape);
+        tick(&mut swf, &mut e);
+        assert_eq!(e.menu, Some(Shown::Map));
+        assert!(swf.map.as_ref().unwrap().local_shown);
+        swf.press(KeyCode::KeyJ);
+        tick(&mut swf, &mut e);
+        swf.press(KeyCode::KeyM);
+        tick(&mut swf, &mut e);
+        assert_eq!(e.menu, Some(Shown::Map));
+        assert!(swf.journal.is_none());
+        assert!(!swf.map.as_ref().unwrap().local_shown);
+        assert_eq!(e.map_view.as_ref().unwrap().center, Vec2::new(120.0, 240.0));
+        assert_eq!(e.map_view.as_ref().unwrap().zoom, 1.0);
+        assert!(e.map_focus.is_none());
         swf.press(KeyCode::KeyM);
         tick(&mut swf, &mut e);
         assert_eq!(e.menu, None);
