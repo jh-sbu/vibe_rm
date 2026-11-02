@@ -6589,3 +6589,63 @@ fn crafting_first_use_help_round_trip_and_legacy() {
     s.crafting_help.insert(*b"XXXX");
     assert!(Snapshot::read(&s.write()).is_err());
 }
+
+#[test]
+fn durable_player_marker_payload() {
+    use crate::map_markers::PlayerMarker;
+    let mut s = Snapshot::default();
+    let marker = PlayerMarker {
+        world: FormId(0x3c),
+        pos: glam::Vec3::new(100.0, -200.0, 40.0),
+    };
+    s.continuity.player_marker = Some(marker);
+    s.continuity.map_heading = 123.0;
+    let file = s.write();
+    check_continuity_payload(&file, b"PMRK");
+    let read = Snapshot::read(&file).unwrap();
+    assert_eq!(read.continuity.player_marker, Some(marker));
+    assert_eq!(read.continuity.map_heading, 123.0);
+    assert_eq!(read.write().to_bytes(), file.to_bytes());
+    let mut legacy = file.clone();
+    legacy
+        .sections
+        .retain(|(tag, _)| tag != b"PMRK" && tag != b"MHED");
+    let read = Snapshot::read(&legacy).unwrap();
+    assert_eq!(read.continuity.player_marker, None);
+    assert_eq!(read.continuity.map_heading, 0.0);
+    for bad in [
+        PlayerMarker {
+            world: FormId::NULL,
+            ..marker
+        },
+        PlayerMarker {
+            pos: glam::Vec3::splat(f32::NAN),
+            ..marker
+        },
+    ] {
+        s.continuity.player_marker = Some(bad);
+        assert!(Snapshot::read(&s.write()).is_err());
+    }
+    s.continuity.player_marker = None;
+    s.continuity.map_heading = f32::NAN;
+    assert!(Snapshot::read(&s.write()).is_err());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn durable_player_marker_apply() {
+    let (_fixture, mut e) = engine("durable-player-marker");
+    let marker = crate::map_markers::PlayerMarker {
+        world: FormId(0x3c),
+        pos: glam::Vec3::new(100.0, 200.0, 30.0),
+    };
+    e.player_marker = Some(marker);
+    let file = Snapshot::capture(&e).write();
+    e.player_marker = None;
+    Snapshot::read(&file).unwrap().apply(&mut e).unwrap();
+    assert_eq!(e.player_marker, Some(marker));
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"PMRK");
+    Snapshot::read(&legacy).unwrap().apply(&mut e).unwrap();
+    assert_eq!(e.player_marker, None);
+}

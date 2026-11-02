@@ -13,6 +13,8 @@ use std::collections::HashMap;
 pub(crate) struct Continuity {
     pub script_fade: Option<crate::imagespace::GameFade>,
     pub image_modifiers: Vec<crate::imagespace::Active>,
+    pub player_marker: Option<crate::map_markers::PlayerMarker>,
+    pub map_heading: f32,
     pub map_camera: Option<(glam::Vec2, f32, f32)>,
     pub attack_recovery: f32,
     pub sneaking: bool,
@@ -473,6 +475,8 @@ impl Continuity {
         Self {
             script_fade: e.imagespace.fade,
             image_modifiers: e.imagespace.active.clone(),
+            player_marker: e.player_marker,
+            map_heading: e.map_view.as_ref().map_or(e.map_heading, |v| v.heading),
             map_camera: e
                 .map_view
                 .as_ref()
@@ -598,6 +602,19 @@ impl Continuity {
             w.f32(pitch);
         }
         file.add(b"MCAM", w.0);
+        let mut w = Writer::default();
+        w.bool(self.player_marker.is_some());
+        if let Some(marker) = self.player_marker {
+            w.form(marker.world);
+            w.f32(marker.pos.x);
+            w.f32(marker.pos.y);
+            w.f32(marker.pos.z);
+        }
+        file.add(b"PMRK", w.0);
+        let mut w = Writer::default();
+        w.f32(self.map_heading);
+        file.add(b"MHED", w.0);
+
         let mut w = Writer::default();
         w.f32(self.attack_recovery);
         file.add(b"ATRC", w.0);
@@ -1028,6 +1045,19 @@ impl Continuity {
                     cross_fade: r.bool()?,
                 });
             }
+            r.finish()?;
+        }
+        if let Some(mut r) = optional(file, b"PMRK")? {
+            if r.bool()? {
+                s.player_marker = Some(crate::map_markers::PlayerMarker {
+                    world: r.form()?,
+                    pos: glam::Vec3::new(r.f32()?, r.f32()?, r.f32()?),
+                });
+            }
+            r.finish()?;
+        }
+        if let Some(mut r) = optional(file, b"MHED")? {
+            s.map_heading = r.f32()?;
             r.finish()?;
         }
         if let Some(mut r) = optional(file, b"MCAM")? {
@@ -1678,6 +1708,15 @@ impl Continuity {
         if cross_fades > 1 {
             return Err(Corrupt("multiple current cross-fade modifiers".into()));
         }
+        if let Some(marker) = self.player_marker {
+            nonnull(marker.world)?;
+            if !marker.pos.is_finite() {
+                return Err(Corrupt("invalid custom destination".into()));
+            }
+        }
+        if !self.map_heading.is_finite() || !(0.0..360.0).contains(&self.map_heading) {
+            return Err(Corrupt("invalid map heading".into()));
+        }
         if let Some((at, zoom, pitch)) = self.map_camera {
             if !at.is_finite()
                 || !(0.0..=1.0).contains(&zoom)
@@ -1819,8 +1858,10 @@ impl Continuity {
         e.imagespace.fade = self.script_fade;
         e.clear_image_shakes_for_load();
         e.imagespace.active = self.image_modifiers;
-        e.map_start = self.map_camera;
         e.close_map_view();
+        e.map_start = self.map_camera;
+        e.map_heading = self.map_heading;
+        e.player_marker = self.player_marker;
         if e.menu == Some(crate::items::Menu::Map) {
             e.menu = None;
         }

@@ -312,6 +312,8 @@ pub struct Engine {
     pub stats_view: Option<crate::stats_view::StatsView>,
     /// The view the next opening of the map starts from (console `map`):
     /// the position looked at, zoom and pitch.
+    pub player_marker: Option<crate::map_markers::PlayerMarker>,
+    pub map_heading: f32,
     pub map_start: Option<(glam::Vec2, f32, f32)>,
     /// Where the tracked quests' objectives point (`crate::quest_targets`).
     pub quest_targets: crate::quest_targets::QuestTargets,
@@ -554,6 +556,8 @@ impl Engine {
             map_markers: Default::default(),
             map_view: None,
             stats_view: None,
+            player_marker: None,
+            map_heading: 0.0,
             map_start: None,
             quest_targets: Default::default(),
             harvests: Default::default(),

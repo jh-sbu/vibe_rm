@@ -51,3 +51,20 @@ mine's, 40 Whiterun's); the CK wiki (`AddToMap`, `EnableFastTravel`,
 - **`AddToMap`**: "Map updated." shows when a marker wasn't on the map yet.
   One added with travel isn't discovered: coming near it later discovers
   it (the banner, the statistic) as any other.
+
+## Custom destination
+
+The map movie supplies icon 65 and the compass movie frame 3. The public
+CommonLibSSE-NG `PlayerCharacter::playerMapMarker` handle (MIT; layout lead
+only, see `plans/map-menu.md`) suggests a reference in Skyrim. This engine
+stores one optional `(map owner worldspace, position)` as plain state: vanilla
+Papyrus declares no native that exposes this reference. The representation
+is a choice, not a claim about Skyrim's save format. Native saves use the
+optional PMRK section; absent means no destination. Invalid worlds (null) and
+nonfinite coordinates are rejected before applying the snapshot.
+
+The user observed in vanilla Skyrim SE (2026-11-01) that reaching the custom
+destination does not remove it. Replacement occurs only after another map
+click and the Move It answer, immediately at that click position. Empty-map
+placement without an existing marker is immediate. These are observed behavior,
+not unresolved choices (`research/ui/map-menu.md`).

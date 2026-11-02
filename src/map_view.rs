@@ -268,7 +268,7 @@ impl Engine {
             center,
             zoom: 1.0,
             pitch: data.camera.initial_pitch.clamp(MIN_PITCH, MAX_PITCH),
-            heading: 0.0,
+            heading: self.map_heading,
             fov_y,
             lod,
             scene,
@@ -287,7 +287,10 @@ impl Engine {
     }
 
     pub fn close_map_view(&mut self) {
-        self.map_view = None;
+        if let Some(view) = self.map_view.take() {
+            self.map_start = Some((view.center, view.zoom, view.pitch));
+            self.map_heading = view.heading;
+        }
     }
 
     /// Visible destination markers, including children that inherit this map.

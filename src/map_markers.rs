@@ -39,6 +39,13 @@ pub mod frame {
     pub const LAST_LOCATION_TYPE: u8 = 60;
 }
 
+/// One custom destination, expressed in the owning map's coordinates.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlayerMarker {
+    pub world: FormId,
+    pub pos: Vec3,
+}
+
 /// A marker the data places.
 #[derive(Debug, Clone)]
 pub struct MapMarker {
