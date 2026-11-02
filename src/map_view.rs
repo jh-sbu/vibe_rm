@@ -44,11 +44,22 @@ pub struct MapRow {
 
 /// Movie callback indices are untrusted floating-point values. Never truncate a
 /// fractional or negative index into another row.
-pub(crate) fn row_destination(rows: &[MapRow], index: f64) -> Option<FormId> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RowAction {
+    Travel(FormId),
+    PlayerMarker,
+    None,
+}
+
+pub(crate) fn row_action(rows: &[MapRow], index: f64) -> RowAction {
     if !index.is_finite() || index < 0.0 || index.fract() != 0.0 {
-        return None;
+        return RowAction::None;
     }
-    rows.get(index as usize)?.marker
+    match rows.get(index as usize) {
+        Some(row) if row.kind == PLAYER_SET_ICON => RowAction::PlayerMarker,
+        Some(row) => row.marker.map_or(RowAction::None, RowAction::Travel),
+        None => RowAction::None,
+    }
 }
 
 pub struct MapView {
@@ -660,7 +671,7 @@ mod tests {
         let door = rows.iter().find(|r| r.kind == 61).unwrap();
         assert_eq!(door.pos, Vec2::new(30.0, 40.0));
         for i in 0..rows.len() {
-            assert_eq!(row_destination(&rows, i as f64), None);
+            assert_eq!(row_action(&rows, i as f64), RowAction::None);
         }
         e.update_quest_targets(1.0);
         assert_eq!(e.quest_targets.spots.len(), 1);
@@ -707,9 +718,12 @@ mod tests {
                 rotation: 0.0,
             },
         ];
-        assert_eq!(row_destination(&rows, 0.0), Some(FormId(0x900)));
+        assert_eq!(row_action(&rows, 0.0), RowAction::Travel(FormId(0x900)));
+        let mut custom = rows[1].clone();
+        custom.kind = PLAYER_SET_ICON;
+        assert_eq!(row_action(&[custom], 0.0), RowAction::PlayerMarker);
         for index in [-1.0, 0.5, 1.0, 2.0, f64::NAN, f64::INFINITY, f64::MAX] {
-            assert_eq!(row_destination(&rows, index), None);
+            assert_eq!(row_action(&rows, index), RowAction::None);
         }
     }
 

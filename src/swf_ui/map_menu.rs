@@ -298,10 +298,10 @@ impl MapMenu {
             "ClickCallback" => self.click = true,
             "MarkerClick" => {
                 if let Some(Value::Number(i)) = call.args.first()
-                    && let Some(marker) = engine
+                    && let Some(crate::map_view::RowAction::Travel(marker)) = engine
                         .map_view
                         .as_ref()
-                        .and_then(|v| crate::map_view::row_destination(&v.rows, *i))
+                        .map(|v| crate::map_view::row_action(&v.rows, *i))
                 {
                     engine.request_map_travel(marker);
                 }
