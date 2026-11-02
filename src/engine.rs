@@ -3153,18 +3153,24 @@ impl Engine {
         let cam = self.camera_copy();
         let mut input = input;
         self.encumber_player(&mut input);
-        if input.sprint && (input.forward != 0.0 || input.right != 0.0) && !self.player.noclip {
-            input.sprint = self.player_start_sprint(dt);
-        }
         self.update_player_attack(dt);
         self.update_casting(dt);
         self.update_shouts(dt);
         self.update_lockpick(dt);
-        let (run, sprint, before) = (input.run, input.sprint, self.player.position);
         if self.test_jump && self.player.grounded {
             input.jump = true;
             self.test_jump = false;
         }
+        if self.player_scroll_held() {
+            input.forward = 0.0;
+            input.right = 0.0;
+            input.sprint = false;
+            input.jump = false;
+        }
+        if input.sprint && (input.forward != 0.0 || input.right != 0.0) && !self.player.noclip {
+            input.sprint = self.player_start_sprint(dt);
+        }
+        let (run, sprint, before) = (input.run, input.sprint, self.player.position);
         let sneak_speed = self.player_sneak_speed();
         let armor_speed = self.armor_speed_mult(PLAYER_REF);
         if self.player.swimming {

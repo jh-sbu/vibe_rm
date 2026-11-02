@@ -291,6 +291,19 @@ impl Engine {
         self.unequip_if_gone(PLAYER_REF, spell);
     }
 
+    /// Scroll casting holds movement through charging and the wait for SpellFire,
+    /// but not through the remainder of the release animation.
+    pub(crate) fn player_scroll_held(&self) -> bool {
+        let scroll = |spell| self.lo.tag_of(spell).is_some_and(|tag| tag.0 == *b"SCRL");
+        self.casting.hands.iter().flatten().any(|h| scroll(h.spell))
+            || self
+                .casting
+                .firing
+                .iter()
+                .flatten()
+                .any(|f| !f.fired && scroll(f.spell))
+    }
+
     /// A hand's attack button went down: casting starts if it holds a spell
     /// (true), else it does what it does with a weapon (false).
     pub fn player_cast_press(&mut self, hand: usize) -> bool {
