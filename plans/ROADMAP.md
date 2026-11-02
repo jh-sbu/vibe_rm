@@ -5,6 +5,13 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- **Local map** (`plans/local-map.md`): an orthographic image of interiors
+  and loaded exterior cells, with load doors, tracked quest targets, the
+  player and custom destination, pan and zoom, and saved explored squares.
+  M opens it in interiors. Vanilla observations, remaining questions and
+  provisional rendering and reveal choices are recorded in the plan and
+  `known_ambiguities/local-map.md`; implementation captures are documented in
+  `research/ui/local-map.md`.
 - **autotest21 and autotest22's differences** (`research/autotest21.md`,
   `research/autotest22.md`, both run 2026-11-01): location ref-type counts
   (not looking inside child locations), inverse trig and string casts,
@@ -2164,14 +2171,13 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
    - The map's rest (the world map and `map.swf` are done: see Done; markers, discovery
      and travel permission are in `src/map_markers.rs`, the view in
      `src/map_view.rs`), in order: the map's clouds, lighting, sea and fog
-     (research-gated); the local map for interiors and nearby cells
-     (`SetLocalMapExtents`, the movie's `img://Local_Map`); fast travel: unloaded-follower continuity, exact SE timing and cross-space
+     (research-gated); fast travel: unloaded-follower continuity, exact SE timing and cross-space
      time, mounted/Survival restrictions and autosave timing (the loading
      screen is done: `plans/loading-screen.md`) (`known_ambiguities/fast-travel.md`);
      distant LOD around the loaded cells on by default (the blocks are now
      placed right: `VRM_LOD=1`). Controls, custom markers, Show on Map and
-     marker refresh are done (`plans/map-menu.md`). The local map follows
-     `plans/local-map.md`. Show on Map's precise vanilla opening zoom remains
+     marker refresh are done (`plans/map-menu.md`); the local map is done
+     (`plans/local-map.md`). Show on Map's precise vanilla opening zoom remains
      an open observation (`known_ambiguities/journal.md` records the current choice).
    - The inventory's rest: the item's model beside the card (`UpdateItem3D`,
      rotating and zooming it), including crafting previews; independent per-hand

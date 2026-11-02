@@ -1,6 +1,6 @@
 # Plan: the local map
 
-**Status: in progress** (2026-11-02). ROADMAP Next item 6 (UI), "The map's rest":
+**Status: implemented** (2026-11-02). ROADMAP Done (UI):
 "the local map for interiors and nearby cells (`SetLocalMapExtents`, the
 movie's `img://Local_Map`)". The local map is a top-down picture of the
 player's area, with the doors, quest targets, the custom marker and the player
@@ -112,8 +112,11 @@ These are names and layouts only, used as leads, not as behaviour.
 
 ## Steps
 
-Steps 1, 2a and 2b are implemented. The rendering, menu and explored-area
-steps remain to be implemented; the local map is not usable yet.
+Steps 1–4 are implemented. The user observations L1, L2, L3 and L5 are
+incorporated; L4's range remains provisional, as does the world-map player
+marker position when leaving an interior. Choices are documented in
+`known_ambiguities/local-map.md`, and captures and validation in
+`research/ui/local-map.md`.
 
 - **Step 1. An orthographic camera.**
   - `render::Camera` gets a projection choice: the current perspective, or
@@ -207,8 +210,9 @@ steps remain to be implemented; the local map is not usable yet.
       (L4); the exact range remains unverified.
     - Lights or line of sight aren't considered.
   - **4c.** Drawing: unrevealed squares are covered in the local map image
-    (dark, at the texture's alpha the movie shows behind). Doors, quest targets and the player remain visible over unrevealed parts
-    (L5, observed in vanilla).
+    (dark, at the texture's alpha the movie shows behind). Doors, quest
+    targets and the player remain visible over unrevealed parts (L5, observed
+    in vanilla).
   - **4d.** Saved: the revealed squares of each cell, in `Continuity`,
     as bitsets keyed by cell (interior form id, or world and grid).
     Round-trip and corrupt-payload tests. Size: Skyrim has about 11,000

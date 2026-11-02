@@ -27,3 +27,11 @@ VRM_SETTINGS=/tmp/vrm-local-map-settings.ini VRM_SAVES=/tmp/vrm-local-map-saves 
 
 The final captures show the explored area and a door marker over unrevealed
 space. These are implementation captures, not evidence of vanilla appearance.
+
+Validation: the application suite passed on the host GPU (600 passed, 394
+opt-in tests skipped). The installed `map.swf` integration test passed for
+toggling, extents, marker creation and coordinates, drag, zoom, reload and
+recentering. The local-map save tests passed for round trips, legacy saves,
+truncated and malformed payloads, and runtime restoration. The sandbox's
+software GPU has too few texture bindings for the renderer, so renderer-backed
+tests were run on the host GPU.

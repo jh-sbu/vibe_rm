@@ -9,6 +9,10 @@ For exteriors, we use the square of cells loaded around the player. The
 interior rule, in particular, may include references the game does not use or
 miss geometry outside an authored OBND.
 
+If an interior has no usable reference bounds, we centre a 512-unit fallback
+box on the player so its local map can still open. The game's behavior for
+such a cell is unknown.
+
 ## Appearance and visible geometry
 
 The movie requests an engine-rendered image, and the public camera layouts
@@ -20,6 +24,24 @@ many downward-facing ceilings. It is unknown whether the game uses this
 method or exactly which objects and materials it includes. The user's vanilla
 observation establishes that higher levels obscure lower levels in the fixed
 projection.
+
+A Bleak Falls Barrow capture exposed effects with full-range signed 16-bit
+OBND values (for example, `FXDrips01tall` and `FXAmbBlowingFog01`). Those
+boxes expand far beyond the dungeon, so the map omits objects with that exact
+sentinel box when fitting and drawing. This is a practical filter based on the
+installed assets; other effects may use different bounds.
+
+## North and interior exit
+
+The [UESP map export tutorial](https://en.uesp.net/w/index.php?oldid=2395286)
+identifies NorthMarker's Z angle as the rotation for the local map export.
+Our camera uses the same clockwise heading as the reference, putting the
+marker facing up; exteriors use true north as observed by the user. If an
+interior has no NorthMarker we assume zero rotation; that fallback is not
+verified. When the world map is shown from an interior, we place the player
+at the exterior door reached by a shortest load-door route, preferring the
+nearest first door. The user observed the local map opens first, but the
+world-map marker position remains unverified.
 
 ## Fit
 
@@ -36,12 +58,6 @@ again at most four times per second during motion and on drag release. Render
 cost is logged at info level. This keeps the image and marker projection in
 step; the game's actual update frequency is unknown.
 
-A Bleak Falls Barrow capture exposed effects with full-range signed 16-bit
-OBND values (for example, `FXDrips01tall` and `FXAmbBlowingFog01`). Those
-boxes expand far beyond the dungeon, so the map omits objects with that exact
-sentinel box when fitting and drawing. This is a practical filter based on the
-installed assets; other effects may use different bounds.
-
 ## Exploration and reveal
 
 UESP's [map bugs](https://en.uesp.net/w/index.php?oldid=3651114) describe
@@ -56,8 +72,5 @@ exact rule for those factors.
 
 Unrevealed pixels are black in the generated image; markers remain a separate
 movie layer. The user observed that doors and quest targets remain visible in
-unexplored areas. The game's exact fog colour and opacity are not established.
-
-If an interior has no usable reference bounds, we centre a 512-unit fallback
-box on the player so its local map can still open. The game's behavior for
-such a cell is unknown.
+unexplored areas. We hide the custom destination in unexplored squares; its
+vanilla visibility there, and the exact fog colour and opacity, are unverified.
