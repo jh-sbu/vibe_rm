@@ -211,6 +211,8 @@ pub struct Engine {
     pub(crate) critically_hit: std::collections::HashSet<FormId>,
     /// Seen from behind the player rather than through their eyes.
     pub third_person: bool,
+    /// Active FFFP furniture and the view to restore on leaving it.
+    pub(crate) first_person_furniture: Option<(FormId, bool)>,
     /// How far behind the eye the third-person camera sits.
     pub third_person_distance: f32,
     /// How far the third-person camera has moved to its weapon-drawn place
@@ -622,6 +624,7 @@ impl Engine {
             advancing_skill: Default::default(),
             critically_hit: Default::default(),
             third_person: false,
+            first_person_furniture: None,
             third_person_distance: crate::player_body::THIRD_PERSON_DEFAULT,
             third_person_combat: 0.0,
             grab: Default::default(),
@@ -3077,6 +3080,7 @@ impl Engine {
         self.scripts.wall_time += dt as f64;
         self.frame_seconds = dt;
         self.apply_pending_load();
+        self.update_furniture_view();
         if self.loading.is_some() {
             self.update_loading(dt);
             return;

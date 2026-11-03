@@ -1500,6 +1500,9 @@ impl Engine {
 
     /// Switch between first and third person.
     pub fn set_third_person(&mut self, on: bool) {
+        if on && self.first_person_furniture.is_some() {
+            return;
+        }
         if self.third_person != on {
             log::info!("{} person", if on { "third" } else { "first" });
         }
@@ -1513,11 +1516,74 @@ impl Engine {
         self.sync_first_person();
     }
 
-    /// Move the third-person camera nearer (negative) or farther.
-    pub fn zoom_third_person(&mut self, by: f32) {
-        self.third_person_distance =
-            (self.third_person_distance + by).clamp(THIRD_PERSON_MIN, THIRD_PERSON_MAX);
+    /// User POV input respects the independent script camera locks.
+    pub fn toggle_player_view(&mut self) {
+        if !self.disabled_controls.camera_switch_disabled() && self.first_person_furniture.is_none()
+        {
+            self.set_third_person(!self.third_person);
+        }
     }
+
+    /// Scroll through the closest third-person distance into first person,
+    /// and out from first person to the closest third-person distance.
+    pub fn zoom_third_person(&mut self, by: f32) {
+        if self.disabled_controls.camera_switch_disabled() || self.first_person_furniture.is_some()
+        {
+            return;
+        }
+        let (third, distance) = zoom_view(self.third_person, self.third_person_distance, by);
+        self.third_person_distance = distance;
+        self.set_third_person(third);
+    }
+
+    /// The player currently uses crafting furniture through its menu. As
+    /// other furniture becomes playable it should call this same lifecycle.
+    pub(crate) fn update_furniture_view(&mut self) {
+        let station = match self.menu {
+            Some(crate::items::Menu::Crafting { station, .. }) => Some(station),
+            _ => None,
+        };
+        if let Some((active, previous)) = self.first_person_furniture
+            && station != Some(active)
+        {
+            self.first_person_furniture = None;
+            self.set_third_person(previous);
+        }
+        if self.first_person_furniture.is_none()
+            && let Some(station) = station
+        {
+            let keyword = self
+                .lo
+                .default_objects()
+                .get(b"FFFP")
+                .copied()
+                .filter(|f| !f.is_null());
+            let first = keyword.is_some_and(|keyword| self.has_keyword(station, keyword));
+            if first {
+                let previous = self.third_person;
+                self.set_third_person(false);
+                self.first_person_furniture = Some((station, previous));
+            }
+        }
+    }
+}
+
+fn zoom_view(third: bool, distance: f32, by: f32) -> (bool, f32) {
+    if !by.is_finite() || by == 0.0 {
+        return (third, distance);
+    }
+    if !third {
+        return if by > 0.0 {
+            (true, THIRD_PERSON_MIN)
+        } else {
+            (false, distance)
+        };
+    }
+    let want = distance + by;
+    (
+        want >= THIRD_PERSON_MIN,
+        want.clamp(THIRD_PERSON_MIN, THIRD_PERSON_MAX),
+    )
 }
 
 #[cfg(test)]

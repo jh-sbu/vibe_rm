@@ -535,7 +535,11 @@ impl Continuity {
                 e.scripts.fill_seq.max(fill_floor),
             )),
             magic_usage: e.scripts.magic_usage.saved(),
-            camera: Some((e.third_person, e.third_person_distance)),
+            camera: Some((
+                e.first_person_furniture
+                    .map_or(e.third_person, |(_, previous)| previous),
+                e.third_person_distance,
+            )),
             harvested: e.harvests.harvested.clone(),
             active_effects: e.saved_active_effects(),
             tapers: e.saved_tapers(),
@@ -1958,6 +1962,7 @@ impl Continuity {
         let (third, distance) = self
             .camera
             .unwrap_or((false, crate::player_body::THIRD_PERSON_DEFAULT));
+        e.first_person_furniture = None;
         e.set_third_person(third);
         e.third_person_distance = distance;
         e.third_person_combat = 0.0;

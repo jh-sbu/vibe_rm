@@ -4458,11 +4458,15 @@ fn continuity_camera_runtime() {
     e.set_third_person(true);
     e.zoom_third_person(150.0);
     let saved = Snapshot::capture(&e).write();
+    e.first_person_furniture = Some((FormId(0x800), true));
+    e.third_person = false;
+    assert_eq!(Snapshot::capture(&e).continuity.camera, Some((true, 350.0)));
     e.set_third_person(false);
     e.third_person_distance = 200.0;
     e.third_person_combat = 1.0;
     Snapshot::read(&saved).unwrap().apply(&mut e).unwrap();
     assert!(e.third_person);
+    assert!(e.first_person_furniture.is_none());
     assert_eq!(e.third_person_distance, 350.0);
     assert_eq!(e.third_person_combat, 0.0);
     e.zoom_third_person(500.0);

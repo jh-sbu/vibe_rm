@@ -889,10 +889,7 @@ impl ApplicationHandler for App {
                     s.dispatch_button(button, true);
                     s.dispatch_button(button, false);
                 }
-                if s.grabbed
-                    && s.engine.third_person
-                    && !s.engine.disabled_controls.camera_switch_disabled()
-                {
+                if s.grabbed {
                     s.engine.zoom_third_person(-lines * 30.0);
                 }
             }
@@ -1121,10 +1118,7 @@ impl WindowState {
                     let draw = !self.engine.player_weapon_drawn();
                     self.engine.player_draw_weapon(draw);
                 }
-                "Toggle POV" if !self.engine.disabled_controls.camera_switch_disabled() => {
-                    let third = !self.engine.third_person;
-                    self.engine.set_third_person(third);
-                }
+                "Toggle POV" => self.engine.toggle_player_view(),
                 "Shout" => self.engine.player_voice_press(),
                 "Sneak"
                     if !self.engine.player.noclip && !self.engine.disabled_controls.sneaking =>

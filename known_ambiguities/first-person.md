@@ -50,3 +50,13 @@ comparison with vanilla Skyrim SE, not deliberate deviations.
   the eye. The skeleton's node names support these attachments, but the
   exact vanilla bow nock, guard geometry and eye-to-hand convergence are
   unmeasured. Shield protection retains the existing camera-facing cone.
+
+- **Wheel and furniture.** Scrolling inward past the nearest third-person
+  distance enters first person; scrolling out of first person selects the
+  nearest third-person distance. Camera input locks block both wheel and
+  toggle, while script Force calls still bypass input locks. Furniture using
+  the keyword named by DOBJ FFFP forces first person for its supported
+  crafting-menu session, restoring the prior view on exit. Saves preserve
+  the underlying view rather than the transient furniture override. The
+  assets identify the keyword, not view restoration/wheel edge behavior;
+  those choices await the SE probe.

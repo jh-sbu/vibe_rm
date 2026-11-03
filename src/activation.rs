@@ -108,6 +108,7 @@ impl Engine {
             station,
             kind: bench.kind,
         });
+        self.update_furniture_view();
         true
     }
     /// Note the activate parents of a loaded cell's references.

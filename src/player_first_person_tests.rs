@@ -207,6 +207,26 @@ fn first_person_instance_is_excluded_from_world_queries_and_has_its_own_projecti
 }
 
 #[test]
+fn wheel_crosses_view_boundary_and_preserves_saved_distance_until_scrolling_out() {
+    assert_eq!(zoom_view(false, 300.0, -30.0), (false, 300.0));
+    assert_eq!(zoom_view(false, 300.0, 30.0), (true, THIRD_PERSON_MIN));
+    assert_eq!(
+        zoom_view(true, THIRD_PERSON_MIN, -30.0),
+        (false, THIRD_PERSON_MIN)
+    );
+    assert_eq!(
+        zoom_view(true, THIRD_PERSON_MIN + 30.0, -30.0),
+        (true, THIRD_PERSON_MIN)
+    );
+    assert_eq!(zoom_view(true, 300.0, 30.0), (true, 330.0));
+    assert_eq!(
+        zoom_view(true, THIRD_PERSON_MAX, 30.0),
+        (true, THIRD_PERSON_MAX)
+    );
+    assert_eq!(zoom_view(false, 300.0, f32::NAN), (false, 300.0));
+}
+
+#[test]
 #[ignore = "requires installed Skyrim SE assets and a headless GPU adapter"]
 fn first_person_draw_binds_the_character_rig_and_puts_the_sword_in_hand() {
     let data = vfs::locate_data_dir().unwrap();
@@ -242,4 +262,74 @@ fn first_person_draw_binds_the_character_rig_and_puts_the_sword_in_hand() {
         (at - e.player.eye()).dot(e.camera.forward()) > 1.0,
         "{at:?}"
     );
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn camera_locks_and_forced_furniture_restore_the_previous_view() {
+    use esp::writer::{Node, RecordBuilder, write_plugin};
+    let dir = std::env::temp_dir().join(format!("vrm-first-person-camera-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let groups = [
+        Node::top(b"KYWD", vec![RecordBuilder::new(b"KYWD", FormId(0x800))]),
+        Node::top(
+            b"DOBJ",
+            vec![
+                RecordBuilder::new(b"DOBJ", FormId(0x31))
+                    .field(b"DNAM", &[b'F', b'F', b'F', b'P', 0, 8, 0, 0]),
+            ],
+        ),
+        Node::top(
+            b"FURN",
+            vec![
+                RecordBuilder::new(b"FURN", FormId(0x801))
+                    .field(b"WBDT", &[1, 0xff])
+                    .form(b"KWDA", FormId(0x800)),
+            ],
+        ),
+        Node::top(
+            b"REFR",
+            vec![RecordBuilder::new(b"REFR", FormId(0x802)).form(b"NAME", FormId(0x801))],
+        ),
+    ];
+    std::fs::write(
+        dir.join("Camera.esp"),
+        write_plugin(0, &[], "test", "camera", 0x900, &groups),
+    )
+    .unwrap();
+    let mut e = crate::stats::action_tests::headless_engine(&dir, "Camera.esp");
+    for pov in [0, 1] {
+        e.set_third_person(false);
+        let mut flags = [false; 8];
+        flags[2] = true;
+        e.disabled_controls.apply(true, flags, pov);
+        e.toggle_player_view();
+        e.zoom_third_person(30.0);
+        assert!(!e.third_person);
+        e.set_third_person(true); // Script-forced view bypasses input locks.
+        e.toggle_player_view();
+        e.zoom_third_person(-1000.0);
+        assert!(e.third_person);
+        e.disabled_controls.apply(false, flags, pov);
+    }
+    e.third_person_distance = 300.0;
+    assert!(e.open_crafting_station(FormId(0x802)));
+    assert!(!e.third_person);
+    assert_eq!(e.first_person_furniture, Some((FormId(0x802), true)));
+    e.toggle_player_view();
+    e.zoom_third_person(30.0);
+    e.set_third_person(true);
+    assert!(!e.third_person);
+    assert_eq!(e.third_person_distance, 300.0);
+    e.menu = None;
+    e.update_furniture_view();
+    assert!(e.third_person);
+    assert!(e.first_person_furniture.is_none());
+    e.set_third_person(false);
+    assert!(e.open_crafting_station(FormId(0x802)));
+    e.menu = None;
+    e.update_furniture_view();
+    assert!(!e.third_person);
+    drop(e);
+    std::fs::remove_dir_all(dir).unwrap();
 }
