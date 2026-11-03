@@ -254,6 +254,19 @@ What this shows:
   that art. So the lookup doesn't stop at the first context naming the event
   when it is unbound there. This engine sends `UnknownKey`.
 
+### Round 2 and the rest of round 1 (2026-11-03)
+
+- **Notification B** (round 1 rerun, Activate on E): as written, all brackets.
+- **Rebinding.** NumPad 1–8 can't be bound (the game reserves them), so the
+  user bound Activate to **NumPad9**. Help A had been showing E art for 1 and
+  2. After the rebind it **did not change at all** while it stayed up: SE
+  doesn't redraw a hint already on screen.
+- **Journal after the rebind:** unchanged, every tag still as written.
+- Not observed: a help message shown fresh after the rebind. NumPad9 has
+  exported art anyway, so it can't tell `UnknownKey` from the key table's
+  name for a key without art. A key with no art that can be bound (NumPad
+  Enter, NumLock or Apps) would.
+
 ## Validation
 
 - `cargo test --workspace` passed: core 616 passed / 412 ignored; tools

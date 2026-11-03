@@ -1833,8 +1833,9 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
     an SKSE console command that vanilla SE reports as not found. Rework it
     to vanilla triggers (the `controltags` probe polls a global the user sets
     with `set <global> to <n>`) before the user runs it.
-  - `controltags` (`research/ui/control-tags.md`): round 1 observed
-    (2026-11-03) except notification B; round 2 (rebind) pending.
+  - `controltags` (`research/ui/control-tags.md`): rounds 1 and 2 observed
+    (2026-11-03). Still to see: a hint shown after binding Activate to a key
+    without art (NumPad Enter, NumLock or Apps).
   - autotest20 stays deferred by the user.
   - Candidates for later batches: `plans/autotest-audit.md` sorts every
     open `known_ambiguities/` item by whether a strictly automatic test
