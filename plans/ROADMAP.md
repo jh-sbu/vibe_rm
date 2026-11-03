@@ -5,17 +5,13 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
-- **Control text tags** (implementation complete 2026-11-03;
-  `plans/control-text-tags.md`): live-map labels, display-time resolution,
-  preserved help/art tags and generation-driven refresh after remaps/resets.
-  Review fix `ab41fc1` preserves unknown art tags via an empty callback result
-  and unifies HUD Activate resolution; `df8fa0f` draws art from the movies'
-  exported bitmap names (`Wheel`, `Enter`) rather than the key tables'. Workspace/targeted tests, shipped-map
-  surveys and offscreen box/help E-to-J captures passed. **User Skyrim SE
-  screenshots remain pending** under `research/ui/control-tags.md`'s manual
-  protocol; native labels, unbound/chord behavior and localization remain open,
-  with provisional choices in `known_ambiguities/messages.md`. Implementation
-  completion is not verification of original-game behavior.
+- **Control text tags** (2026-11-03; `plans/control-text-tags.md`): checked
+  against two Skyrim SE probe rounds (`research/ui/control-tags.md`). Only
+  help messages turn `[Event]` tags into button art, through the live input
+  map; message boxes, notifications, objectives, the journal and loading
+  text keep them as written. Open: art for a key without a bitmap, later
+  contexts' precedence, loading screens and other languages (choices in
+  `known_ambiguities/messages.md`).
 - **Local map** (`plans/local-map.md`): an orthographic image of interiors
   and loaded exterior cells, with load doors, tracked quest targets, the
   player and custom destination, pan and zoom, and saved explored squares.

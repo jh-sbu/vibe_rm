@@ -68,18 +68,16 @@ isn't public; the choices below are what the movies' code allows.
   journal or skills menu is up. `SetPlatform(0, false)` (PC).
 - **Key art.** `RefreshActivateButtonArt` gets the Activate event's key and
   `GetButtonFromUserEvent` (a help message's `[Event]`) is answered with the
-  event's key, both as the art the menus export (`E`, `L-Shift`), through
-  the live input map (`InputMap::control`): the keyboard binding (a
-  DirectInput scan code; `!0,Other` refers to another event's; a
-  combination shows its last key), else the mouse binding, read as buttons
-  0 to 7 (`Mouse1` to `Mouse8`), 8 and 9 the wheel (`Wheel`) and 0xA
-  movement (a guess). A bound key with no exported art, or an event with no
-  keyboard or mouse binding, gets `UnknownKey`. The art names are the
-  movies' exported bitmaps, not `keyboard_english.txt`'s names, which differ
-  for some keys (`MouseWheelUp`, `NumPadEnter`). The first context naming an
-  event wins. A tag that is neither an event nor a key name gets an empty
-  answer, so the movie keeps the bracketed text
-  (`known_ambiguities/messages.md`, "Controls in text").
+  event's key, through the live input map (`InputMap::control`): the
+  keyboard binding (a DirectInput scan code; `!0,Other` refers to another
+  event's; a combination gives its last key), else the mouse binding, in
+  the first context that binds the event. The answer is the key's name in
+  `keyboard_english.txt` / `mouse.txt` (`E`, `L-Shift`, `Mouse1`,
+  `MouseWheelUp`); where the movies have no bitmap of that name they keep
+  the bracketed tag, as Skyrim SE does for the wheel. An event bound to
+  neither gets `UnknownKey`; a tag that is neither an event nor a key name
+  gets an empty answer, so the movie keeps it. Observations and the
+  remaining choices: `known_ambiguities/messages.md`, "Controls in text".
 - **Sounds.** A menu's `PlaySound` plays the sound record of that editor ID
   at the camera.
 - **Message boxes.** The box in front goes to `messagebox.swf` as

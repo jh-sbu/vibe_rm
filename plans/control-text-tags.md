@@ -1,10 +1,12 @@
 # Plan: control tags in text through the live input map
 
-**Status: implementation complete** (2026-11-03), including step 5 docs.
-The ROADMAP control text tags item is in Done. **User Skyrim SE screenshots
-remain explicitly pending**; implementation verification is not verification
-of original-game behavior. Native label/chord/localization questions remain
-open below and in `research/ui/control-tags.md`.
+**Status: done, corrected by Skyrim SE observations** (2026-11-03). The
+user's two probe rounds (`research/ui/control-tags.md`, "Skyrim SE
+observations") showed that SE resolves tags only in the help hint, as button
+art. `0b4bc53` follows that: plain text keeps tags as written, message boxes
+drop the title, art uses the key tables' names, later contexts are tried,
+and a hint already up isn't redrawn. The design below is kept as it was
+planned; where it says "label", SE has none.
 
 Message, help, loading and quest text names controls in square brackets
 (`[Activate]`, `[Right Attack/Block]`). Previously this engine replaced them
@@ -119,6 +121,7 @@ All implementation steps are complete (2026-11-03). Commit schedule:
 | 3c: loading and journal text at display | `f4c6de1` |
 | 4: generation-driven refresh | `b4bb90c` |
 | Follow-up review fix | `ab41fc1` |
+| SE observations applied | `0b4bc53` |
 | Art from exported bitmaps; tab-separated key tables | `df8fa0f` |
 
 The follow-up returns an empty result for unknown art tags (so the movie
@@ -222,12 +225,12 @@ Completed 2026-11-03 (this engine only):
 
 ## Open questions
 
-- Whether the game shows key names (`L-Shift`) or other words in plain
-  text, and what it shows for an unbound event and a chord (step 0's SE
-  observation).
-- Movie inspection found no button-art path for notifications or journal
-  quest lists. Native notification preprocessing remains unverified pending
-  the user observation; asset evidence does not establish native behavior.
+- What the hint draws for an event bound to a key without art: the key's
+  name (the movie keeps the tag) or `UnknownKey`. A probe hint with Activate
+  on NumPad Enter, NumLock or Apps would show it (NumPad 1–8 can't be bound).
+- Whether a later context's keyboard binding outranks an earlier context's
+  mouse binding.
+- Loading screens weren't probed.
 - Localised key names for other languages (`keyboard_french.txt`...) when
   the game language isn't English: follow the strings' language setting
   once there is one.

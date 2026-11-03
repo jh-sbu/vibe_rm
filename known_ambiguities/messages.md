@@ -125,39 +125,36 @@ examined and no asset or disassembly is committed.
   `--screenshot --wait` run and the boxes pause the world (the Survival Mode
   prompt comes up at the start), so a box left up two seconds gets its last
   button pressed unless `--hold-boxes`. Not the game's behaviour; a test hook.
-- **Controls in text.** `[Event]` tags resolve through the live input map
-  (`InputMap::control`), so remaps and resets show up. Tags are kept in the
-  stored text and resolved when it is shown. Choices made without an
-  original-game observation:
-  - **Label words.** A plain-text label is the key's name in
-    `Interface/Controls/PC/keyboard_english.txt` or `mouse.txt` (`L-Shift`,
-    `Mouse1`, `MouseWheelUp`). That file's comment says the name "is used to
-    ID events in the code", so whether the game shows these words is unknown.
-    Keyboard comes before mouse, a chord's key names are joined with `+`, and
-    an event with no keyboard or mouse binding (gamepad-only too) shows
-    `UnknownKey`.
-  - **Which event.** An event named in several controlmap contexts uses the
-    first context that names it, following `!ctx,Event` references
-    (`[XButton]` reaches `Ready Weapon` through Item Menus). An exact-case
-    match is tried before a case-insensitive one, and event names win over key
+- **Controls in text.** Observed in Skyrim SE (`research/ui/control-tags.md`,
+  "Skyrim SE observations"): message boxes (text and buttons), notifications,
+  the objective banner and the journal show `[Event]` tags exactly as
+  written, and only the help hint draws them as button art. Message boxes
+  don't show the `MESG` title. A hint already up doesn't change after a
+  rebind. This engine does all of that. Choices still made without an
+  observation:
+  - **Loading screens** keep tags as written too. They weren't in the probe;
+    `loadingmenu.swf` has no art path, like the message box.
+  - **Art for a key without a bitmap.** The art callback answers with the
+    key's name in `keyboard_english.txt` / `mouse.txt` (`MouseWheelUp`,
+    `NumPad5`), and the movie keeps the bracketed tag when it has no such
+    bitmap. That fits SE keeping `[Zoom In]` (wheel) and `[Multi-Screenshot]`
+    (a chord ending in Print Screen), but SE answering with nothing would look
+    the same. Neither was told apart from `UnknownKey` art for a bound key:
+    NumPad9 has art, and NumPad 1–8 can't be bound. An event with no keyboard
+    or mouse binding in any context gets `UnknownKey` art (unobserved).
+  - **Which binding.** Contexts naming the event are tried in file order,
+    keyboard then mouse in each, until one binds it. SE drew `[Move]`
+    (gamepad only in Main Gameplay) with a later context's mouse binding;
+    whether keyboard bindings in later contexts outrank an earlier context's
+    mouse binding is unobserved. An exact-case name is tried before a
+    case-insensitive one (SE matched `[activate]`). Event names win over key
     names (`[F]` is the key only when no event is called `F`).
-  - **Unknown tags.** Bracket text that is neither an event nor a key name
-    (`[Optional]`, `[pagebreak]`, `[Left Thumbstick]`, `[Mouse Move]`,
-    `[ShowOnMap]`) stays as written. The art callback answers it with an empty
-    string, which the text-art holders treat as missing art and keep the tag;
-    an event without keyboard or mouse binding gets `UnknownKey` art.
-  - **Where art is drawn.** Help messages keep their tags for the HUD's
-    tutorial hint, which draws button art. Message boxes, notifications,
-    loading text and the journal's quest names, objectives and log get plain
-    labels: their movies have no bracket scanner or art callback on those
-    paths. Whether native code rewrites notification text before the HUD
-    gets it is unverified.
+  - **Unknown tags** (`[Optional]`, `[Mouse Move]`, `[Left Thumbstick]`) get
+    an empty answer, so the movie keeps them, as SE did.
+  - The egui fallback UI can't draw art, so its help messages show key names
+    (`L-Alt`) instead. Not the game's behaviour.
 
-  Research: [control-tag research](../research/ui/control-tags.md) ("Movie
-  paths", "Missing names and UnknownKey", "Installed-data results"). Still
-  open, and awaiting the manual SE probe described there: the game's
-  plain-text words, what it shows for unbound events and chords, whether
-  notifications draw art, and other languages' key names.
+  Still open: other languages' key names.
 
 ## Already playing audio in menu mode
 

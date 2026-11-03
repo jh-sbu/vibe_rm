@@ -1,10 +1,9 @@
 # Control tags in player-facing text
 
-Research and implementation verification for `plans/control-text-tags.md`,
-2026-11-03. **Implementation, including step 5 docs, is complete; user Skyrim SE
-screenshots are explicitly pending.** Movie behavior below is asset evidence,
-not an observation of native text replacement or of the native binding callback.
-Offscreen captures below verify only this engine, not original-game behavior.
+Research for `plans/control-text-tags.md`, 2026-11-03. Movie behaviour in
+"Movie paths" is asset evidence; what Skyrim SE actually shows is under
+"Skyrim SE observations" (the user's screenshots, two rounds), and where the
+two differ the observations win.
 
 ## Sources and method
 
@@ -116,7 +115,7 @@ Important corrections to the preliminary plan:
   “all tags resolve except gamepad names” is not an appropriate verification
   criterion for an unfiltered record survey.
 
-## Manual Skyrim SE observation (round 2 pending)
+## Manual Skyrim SE observation
 
 Build with `cargo build -p vrm-tools`, then generate:
 
@@ -139,21 +138,21 @@ already has, so no control map needs editing.
 - **A:** `1[Activate] 2[activate] 3[Sprint] 4[Right Attack/Block] 5[Favorites] 6[Mouse1] 7[XButton]`
 - **B:** `8[Zoom In] 9[Multi-Screenshot] 10[Move] 11[Optional] 12[Mouse Move] 13[Left Thumbstick]`
 
-| # | why it's there | this engine: label / art |
-| --- | --- | --- |
-| 1, 2 | an event; 2 tests case-insensitive matching | E / E |
-| 3, 5 | keyboard events | L-Alt, Q |
-| 4 | a mouse-only event | Mouse1 / Mouse1 |
-| 6 | a key name, not an event | Mouse1 / Mouse1 |
-| 7 | an Item Menus event (`!0,Ready Weapon`) | R / R |
-| 8 | mouse wheel only | MouseWheelUp / Wheel |
-| 9 | a chord (L-Ctrl + Print Screen, which has no art) | L-Ctrl+PrintSrc / UnknownKey |
-| 10 | bound on the gamepad only | UnknownKey / UnknownKey |
-| 11–13 | not events or key names | kept as written |
+| # | why it's there |
+| --- | --- |
+| 1, 2 | an event; 2 tests case-insensitive matching |
+| 3, 5 | keyboard events |
+| 4 | a mouse-only event |
+| 6 | a key name, not an event |
+| 7 | an Item Menus event (`!0,Ready Weapon`) |
+| 8 | mouse wheel only |
+| 9 | a chord (L-Ctrl + Print Screen, which has no art) |
+| 10 | gamepad only in Main Gameplay (a later context has the mouse) |
+| 11–13 | not events or key names |
 
-After a rebind of Activate to NumPad5 (a key with no art), this engine shows
-NumPad5 / UnknownKey for 1 and 2. These values were checked against the
-shipped map with the engine's resolver (2026-11-03).
+The probe was written when this engine predicted other results (key names in
+plain text, `Wheel` and `UnknownKey` art). What SE showed is under "Skyrim SE
+observations", and the engine now follows it (`0b4bc53`).
 
 The surfaces are:
 
@@ -268,6 +267,10 @@ What this shows:
   Enter, NumLock or Apps) would.
 
 ## Validation
+
+These checks predate the SE observations: the box and plain-text results
+below (Activate E to J) are from before `0b4bc53`, which shows tags as
+written there instead.
 
 - `cargo test --workspace` passed: core 616 passed / 412 ignored; tools
   53 passed / 3 ignored. Targeted ignored tests passed separately: messages 9,
