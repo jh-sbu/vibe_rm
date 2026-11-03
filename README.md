@@ -86,7 +86,7 @@ picked up too.
 Controls: click to capture the mouse, WASD to move, Space/Ctrl for up/down,
 Shift to go faster, T to fast-forward time, E to activate (talk, open, take, search),
 Tab for the menus, M for the map (WASD or drag to pan, wheel or Q/E to zoom, Page Up/Down to tilt), R to draw or sheathe your weapon, F to switch between first and third person (the wheel
-zooms the third-person camera), Esc to release the mouse or quit.
+zooms and crosses between first and third person), Esc to release the mouse or quit.
 The developer console has a subset of Skyrim's commands (`help` lists them; `tai`
 toggles actor AI).
 

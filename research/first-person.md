@@ -1,8 +1,9 @@
 # First-person character (2026-11-03)
 
 Evidence is from public documentation and installed Skyrim SE plugin, NIF and
-Havok assets only. No engine binary or memory was examined. No external source
-code was used. Reproduce the record/trigger survey with `vrm-tool first-person
+Havok assets only. No engine binary or memory was examined. No external source code was incorporated. The existing xEdit format
+labels are MPL-2.0; no implementation or declarations were copied into this
+MIT project. Reproduce the record/trigger survey with `vrm-tool first-person
 "<Data>"`; use `hkb-vars`, `hkb-run` and `hkb-annotations` on
 `meshes/actors/character/_1stperson/firstperson.hkx` for the graph.
 
@@ -10,7 +11,7 @@ code was used. Reproduce the record/trigger survey with `vrm-tool first-person
 
 The installed base masters plus Creation Club load order contains 1,134 ARMA:
 259 with both MOD4/MOD5, six male-only, three female-only, 866 with neither.
-The omitted slot masks include head/hair/circlets, amulets, rings, feet/calves,
+The initially omitted slot masks include head/hair/circlets, amulets, rings, feet/calves,
 tails and creature bodies, as well as some body/hand parts. The survey prints
 every omitted addon and its mask, rather than assuming all are helmets.
 3,300 WEAP have a non-null WNAM, all resolving to a STAT with an existing
@@ -67,3 +68,41 @@ The `firstperson` test mod is to be run by the user in Skyrim SE. Its saved
 reports, event routing, wheel observations, furniture view restoration,
 shadows and helmet visibility have not yet been observed. These are open
 verification tasks, not established results.
+
+## Implementation follow-up
+
+The record survey identifies DOBJ FFFP as keyword 000A56D7,
+FurnitureForce1stPerson, and FFTP as 000A56D8, FurnitureForce3rdPerson.
+FFFP is a default-object key, not a KYWD subrecord. The probe chair now uses
+Skyrim.esm's actual FFFP keyword. The local
+[KYWD page, revision 3089088](https://en.uesp.net/w/index.php?oldid=3089088)
+explains KWDA keyword membership, but does not describe these default keys.
+
+IronShieldAA (00012EB8) has MOD2 only; many other vanilla shields likewise
+lack MOD4/5. Shield addons therefore use the documented shared-model
+fallback, while explicit first-person pairs still take precedence. Other
+omissions remain a choice pending the probe.
+
+The character asset names characterassets/skeletonfirst.hkx; there is no
+skeleton.hkx adjacent to _1stperson/skeleton.nif. Animation loading now accepts
+that explicit Havok rig path. This matters for clip binding, not just graph
+state transitions: using an adjacent filename leaves the arms in bind pose.
+
+Engine-only offscreen captures use `scripts/first-person-captures.sh` and
+remain under /tmp. They are smoke tests, not vanilla SE observations.
+
+The full-draw bow uses a one-element mask that excludes its root; unlisted
+bones must retain weight one. Treating them as zero dropped the arms to bind
+pose even though the graph advanced normally. This is also described by the
+[Souls Modding author's Havok behavior research](https://www.soulsmodding.com/doku.php?id=topic:havok_behavior_editing)
+(section on half blends). That is cross-game community evidence, corroborated
+by the Skyrim first-person assets and the drawn-bow regression/capture, not
+an original Skyrim SE runtime measurement. Sampling and coverage diagnostics
+now agree on the implicit-one tail.
+
+The dual-rig bow regression also found that changing the third-person rig's
+`i1stPerson` with the view resets its release branch before arrowRelease.
+Keeping its authored identity zero, with IsFirstPerson following the view,
+passes a full draw/release/view-switch fixture and consumes exactly one arrow.
+The first-person rig keeps identity one. This is an implementation choice
+pending the SE probe's variable readings, not a claimed vanilla observation.

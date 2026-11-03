@@ -1,9 +1,23 @@
 # Plan: the first-person view
 
-**Status: draft** (2026-11-03). ROADMAP Next, "The player's body (see Done):
-first-person arms and weapons (the `_1stperson` skeleton, `1stperson*`
-models, its own graph)", and "Engine variables and events still missing: ...
-first person". Each numbered step is one commit; run `cargo fmt` before each.
+**Status: implementation complete; original-game probe awaiting a user run**
+(2026-11-03). Steps 0–7 and 9 are implemented. Step 8's generator and scripts
+are built at `tests/assets/VrmFirstPerson.esp` and
+`tests/assets/Scripts/VrmFirstPersonScript.pex`; no original-game readings
+have been supplied. Each implementation stage has its own formatted commit.
+
+The implemented scope includes both rigs/graphs, record model selection,
+view-selected notifications, camera placement, the separate render pass,
+held spell/enchantment/torch effects, gameplay origins, first-person graph
+footsteps, wheel transitions and camera locks, supported crafting furniture's
+FFFP override, and native camera-save continuity. General player chair/bed
+entry and exit animations remain the existing furniture work in ROADMAP.
+Bow zoom's camera factor/perk mapping remains open, as step 7 permits.
+
+Research and decisions: `research/first-person.md` and
+`known_ambiguities/first-person.md`. Captures can be reproduced with
+`bash scripts/first-person-captures.sh /tmp/vrm-first-person-captures` after
+`cargo build`; they are engine smoke tests, not vanilla parity measurements.
 
 The goal: in first person, draw the player's arms, hands, held weapons,
 shields, torches and spells. Use the game's own first-person skeleton,
@@ -17,7 +31,7 @@ Choices made without a source go in `known_ambiguities/player-body.md` (or a
 new `known_ambiguities/first-person.md` if that file grows too long). Open
 questions stay in this plan.
 
-## What exists (2026-11-03)
+## Starting point (before this implementation)
 
 - `src/player_body.rs`: `PlayerBody` holds the race's third-person skeleton
   and one `GraphAnim` (the race's `defaultmale/female.hkx` project). It is
@@ -80,8 +94,8 @@ Game assets (examined with `vrm-tool`; nothing copied):
   `IsFirstPerson=1 i1stPerson=1 IsPlayer=1` runs it: `weapEquip` raises
   `weaponDraw` / `WeapEquip_Out`, and `attackStart` enters
   `H2H_1stPerson_AttackRight_State` and raises `preHitFrame`, `weaponSwing`
-  and `SoundPlay.WPNSwingUnarmed`. Four bones (44, 45, 97, 98) stay
-  uncovered by any clip in that state.
+  and `SoundPlay.WPNSwingUnarmed`. The original uncovered-bone diagnostic
+  was corrected during implementation to account for implicit-one mask tails.
 - `vrm-tool hkb-vars` lists first-person-only variables: `1stPRot` /
   `1stPRotDamped` (`sind(Direction * 360) * RotMax * clamp(Speed, 0, 1)`),
   `blendMove1stP`, `fIsFirstPerson`, `camerafromx/y/z`, `bowZoom` /
@@ -98,7 +112,7 @@ Records (xEdit's `wbDefinitionsTES5.pas` in `refs/xedit`; UESP
   specifically 3rd person while 4/5 are 1st person"; some records have only
   `MOD2`/`MOD4` or `MOD3`/`MOD5`.
 - WEAP `WNAM` is the "1st Person Model Object" (a `STAT`, or null).
-- KYWD `FFFP` is "Furniture Forces 1st Person". `POPM` / `P3OM` are the
+- DOBJ `FFFP` names the `FurnitureForce1stPerson` keyword (000A56D7). `POPM` / `P3OM` are the
   player's output models.
 - CAMS has a "First Person Camera" flag (camera shots; not in this plan).
 - RACE names no first-person skeleton or behaviour. Nothing found so far
@@ -132,12 +146,16 @@ the player's (third-person) graph.
   speed multipliers are as for the third-person graph. `Speed`, `Direction`
   and `IsSneaking`... are as they are now. Aim: `AimPitchCurrent` /
   `AimHeadingCurrent` from the view (see step 4). Third-person graph:
-  `IsFirstPerson` / `i1stPerson` follow the view, as `autotest2` saw (they
-  are 0 always today).
+  `IsFirstPerson` follows the view, as `autotest2` saw. `i1stPerson` remains
+  the rig identity (0 third, 1 first): changing it with the view resets a
+  pending bow release. This correction to the draft is recorded in the
+  decision note; the SE probe records the variable too.
 - **What is worn in first person.**
   - Each worn ARMA's `MOD4` / `MOD5` (falling back across sex as `MOD2` /
     `MOD3` do), and the skin's (the race skin's `1stperson*hands`).
-  - An ARMA without either is left out, rather than drawing its
+  - Shield ARMA without either fall back to MOD2/MOD3: IronShieldAA and
+    many vanilla shields have only shared models, consistent with UESP.
+  - Other ARMA without either are left out, rather than drawing their
     third-person model over the eye. This goes against UESP's "all
     viewpoints" sentence for helmets, hair and circlets. Step 0 measures
     which addons this drops, and the choice is recorded.
@@ -158,8 +176,9 @@ the player's (third-person) graph.
   - It is drawn after the world in its own pass, with a cleared (or
     range-split) depth, a near plane of about 1 unit, and its own vertical
     FOV, so weapons don't poke into walls or get cut by the near plane.
-  - The FOV's value: `fDefault1stPersonFOV` if a public INI listing gives
-    its default (step 0), else the world's `fov_y` (recorded).
+  - The FOV is 65 degrees vertically (STEP's published default number);
+    SE's angular convention is unmeasured. The near plane is one unit;
+    see the decision note for this projection/depth choice.
 - **Gameplay origins.** In first person, spell hands, projectiles and the
   torch's light come from the first-person skeleton's `NPC L/R MagicNode` /
   `SHIELD` / `WEAPON` nodes. In third person they stay as they are.
@@ -208,8 +227,9 @@ the player's (third-person) graph.
    `set_variable` fan out to both graphs (the turn request and root motion
    stay the third-person graph's). Split notifications:
    `PlayerCombatEvents`, `step_events` and `script_events` come from the
-   view's graph. The other graph's are drained. `IsFirstPerson` /
-   `i1stPerson` in the third-person graph follow the view. Tests:
+   view's graph. The other graph's are drained. `IsFirstPerson`
+   in the third-person graph follows the view; `i1stPerson`
+   remains the rig identity. Tests:
    - a swing in first person lands at the first-person graph's `HitFrame`
      and not twice;
    - a bow shot in first person flies at its `arrowRelease`;
@@ -257,7 +277,7 @@ the player's (third-person) graph.
      and scrolling out in first person goes to third person at the minimum
      distance (from memory of the game; checked in step 8).
    - Disabled camera switching blocks both.
-   - Furniture whose keywords include `FFFP` forces first person while the
+   - Furniture with the keyword named by DOBJ `FFFP` forces first person while the
      player uses it, and restores the view after.
    - `bowZoom`: the graph computes `bowZoomAmt` (blocking with a bow
      drawn). Narrow the first-person FOV by it if step 0 finds the zoom
@@ -301,14 +321,54 @@ the player's (third-person) graph.
 - How the game positions the first-person rig: at the camera, at the feet,
   with pitch at `NPC LookNode` or `Camera Control`. What `Camera Control`
   and the `camerafromx/y/z` variables are for.
-- The first-person FOV and its default; whether the viewmodel has its own
-  depth range.
+- The SE conversion of the published 65-degree first-person FOV default,
+  and the original viewmodel depth algorithm.
 - The ARMA `MOD2`/`MOD3`-only case: UESP says those models are "all
-  viewpoints". Step 0's survey shows which vanilla addons this applies to
-  before deciding.
+  viewpoints". The survey established that shields need the shared-model
+  fallback; suppression of other addons still needs original-game evidence.
 - Bow zoom's factor (`bowZoom` is 1 by default in the graph) and its perk.
 - Mounted first person (`horsebehavior.hkx`) and werewolf / vampire lord
   first person (`ForceThirdPerson` on transform): out of this plan. Horses
   and beast forms aren't playable yet.
 - Killmoves and other camera-controlled sequences (CAMS "First Person
   Camera"): out of this plan.
+
+## Running the SE probe
+
+Use a throwaway save with `VrmFirstPerson.esp` and its generated script.
+The user installs/runs these; the generator never writes to the game's Data.
+Set `VrmFirstPersonStep` to 1–6 to arm first/third-person sword, bow and spell
+windows. Perform one action with normal controls in each window, including
+walking/drawing if testing those events. Each phase keeps at most twenty event
+lines; rearming a phase replaces its earlier report. Times are real seconds
+from arming, with HitFrame also timed relative to weaponSwing. Exact input-key
+timestamps are unavailable through the vanilla APIs used here.
+
+Step 7 spawns a chair using Skyrim.esm's actual FFFP keyword and explains
+`cqf VrmFirstPerson ReadFurniture` while seated and `AfterFurniture` after
+standing. Step 8 saves/stops. Copy saves to `tests/results/` and read
+`vrm-tool test-results tests/results`. Report shadows, wheel transitions,
+sheathed arms and helmet/hood visibility separately. No result has yet been
+recorded as vanilla SE behavior.
+
+## Validation (engine implementation)
+
+- Engine tests: 624 passed, 417 ignored (the existing asset/GPU fixtures are
+  opt-in). Run outside the restricted software-GPU sandbox.
+- First-person opt-in checks: five passed, including actual rig/model loading,
+  retained equipment state, drawn-bow arm poses and exactly one arrow across
+  a view switch, and furniture/control locks.
+- Camera-save continuity runtime check: passed.
+- Havok tests: 127 passed. Tool tests: 55 passed, three ignored; the final
+  probe source also compiled and `test-mod firstperson` generated its ESP/PEX.
+- Eight offscreen Bannered Mare cases rendered and were inspected: sheathed,
+  sword, held bow, two equipped Flames hands, torch, shield, sneaking and
+  looking down. Captures/logs: `/tmp/vrm-first-person-captures-bowfix/`.
+  The final bow-release capture/log confirms nineteen of twenty arrows remain
+  after a release and immediate switch to third person.
+- `cargo fmt --check` and workspace compilation pass. The sandbox's software
+  adapter cannot run the existing terrain pipeline (17 sampled textures,
+  limit 16); GPU tests/captures passed with hardware access. No renderer
+  feature/limit was relaxed to make those checks pass.
+
+Original-game execution and observations remain pending, as documented above.

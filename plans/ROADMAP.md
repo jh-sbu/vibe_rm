@@ -1114,8 +1114,15 @@ game each piece unlocks.
   shoulder, centred and farther back with the weapon drawn (the `[Camera]`
   defaults), stopping short of walls; aim rays from the eye through the
   crosshair,
-  `Game.ForceFirstPerson` / `ForceThirdPerson`; in first person the body only
-  casts its shadow. Open questions: `known_ambiguities/player-body.md`
+  `Game.ForceFirstPerson` / `ForceThirdPerson`. First person has its own
+  `_1stperson` rig, models and running graph, drawing arms, weapons, shields,
+  torches and spell hands after the world with a separate projection/depth.
+  Both graphs receive inputs; the visible one times hits, arrows, casts and
+  script events. First-person footsteps follow authored triggers. The wheel
+  crosses viewpoints, camera locks apply, supported FFFP crafting furniture
+  restores the prior view, and saves retain camera continuity. Original-game
+  comparisons remain pending (`plans/first-person.md`, its `firstperson` probe;
+  `known_ambiguities/first-person.md` and `known_ambiguities/player-body.md`).
 - Loose objects: references whose model has one simulated rigid body
   (`MO_SYS_DYNAMIC`: clutter, food, weapons, baskets) are rapier bodies with the
   NIF's mass, friction and restitution (meshes as their convex hull), lying still
@@ -1876,7 +1883,9 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
    - State-machine outputs: within-update ordering and competing writers
      (`known_ambiguities/state-machine-outputs.md`; autotest17 and autotest18
      confirmed the publication timing, see Done)
-   - Engine variables and events still missing: combat, first person;
+   - Engine variables and events still missing: remaining combat variables;
+     first-person event-routing and camera parity await the SE probe
+     (`plans/first-person.md`);
      generic listener reactions beyond authored LNAM idles
    - Footstep visuals: vanilla impacts name a missing FootImpactDust01 model
      and no footstep decal texture sets; there is no usable vanilla visual to
@@ -2020,13 +2029,14 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
    - Death conditions: `GetCauseofDeath` (the cause's values are unknown,
      `known_ambiguities/death.md`) and `GetKillingBlowLimb` (the killing blow's
      hit limb isn't kept)
-   - The player's body (see Done): first-person arms and weapons (the
-     `_1stperson` skeleton, `1stperson*` models, its own graph; `plans/first-person.md`); casting,
+   - The player's body (see Done): first-person parity observations from
+     `test-mod firstperson` (`plans/first-person.md`); remaining casting,
      Critical Charge, basic attacks by direction and sprinting
      (`attackStartSprint`, the left hand's `...SprintLeftHand`: left out of
      the attack data with the mounted ones), `attackStop`; bashes landing at
-     the graph's `HitFrame` (bashes land at once now); footsteps from the graph's events (now the
-     first-person stride), foot IK and head tracking; a ragdoll when they die;
+     the graph's `HitFrame` (bashes land at once now); third-person land
+     footsteps from the graph (first person and swimming already use events),
+     foot IK and head tracking; a ragdoll when they die;
      the camera stopping short of actors, a vanity camera; the head's morphs
      (`.tri`), tint layers (`TINI` / `TINC`), hair colour (`HCLF`) and
      texture sets (`HDPT` `TNAM`), with character creation
