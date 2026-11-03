@@ -845,10 +845,12 @@ game each piece unlocks.
   The player wields a bow (`player.equipitem`), draws holding the attack button and
   looses on release (weaker and slower before full draw, nothing before the nock),
   using up arrows. Console `pshoot [secs]`, `tcam`
-- Bow ammunition selection rejects bolts, malformed records and exhausted
-  equipped stacks on every path; equipped compatible arrows take precedence,
-  with the existing NPC iron-arrow fallback. Sources and remaining auto-equip
-  questions: `known_ambiguities/archery-ammunition.md`
+- Ammunition: the player's bow or crossbow puts on the weakest arrows or
+  bolts it shoots unless some are worn; they stay worn without it and show as
+  a quiver on the back (the model's `ArrowQuiver`). The player shoots only
+  worn arrows (`sNoArrows` otherwise); NPCs shoot worn, else their best,
+  else iron arrows. `plans/bow-ammunition.md`; the choices awaiting the SE
+  `test-mod ammo` readings: `known_ambiguities/archery-ammunition.md`
 - Death: ragdolls from the skeleton's rigid bodies and constraints (capsules, cone /
   twist / plane and hinge limits as rapier joints); bodies can be searched;
   `GetDead`, `IsDead`, `Kill()`, `OnDying` / `OnDeath`; console `kill`;
@@ -1994,7 +1996,7 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
    shouting, the push throwing actors, "Spend Soul?"), perks (see Done: the entry points
    waiting on casting, barter, attack types;
    `known_ambiguities/perks.md`), inventory (player's, armor from
-   inventory, ammo / quivers (the weakest arrows equipped with a bow, UESP;
+   inventory; ammo: apply the SE `test-mod ammo` readings,
    `plans/bow-ammunition.md`);
    torches in dark interiors, burning out), crime
    (escape routes, yielding, skill loss in jail; witnesses running to the

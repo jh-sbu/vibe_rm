@@ -1,42 +1,58 @@
-# Bow ammunition selection and crossbow groundwork
+# Bow and crossbow ammunition: equipping and selection
 
-`src/ai/archery.rs` checks ammunition compatibility before selecting equipped
-arrows, inventory arrows, or an NPC's default iron arrows. Previously, an
-equipped bolt bypassed the arrow-only inventory search and could be fired by
-a bow. A malformed equipped ammunition record could also suppress usable
-arrows. Synthetic-record tests cover both paths without game assets.
+What equips with a bow or crossbow, what the player's shot takes, and the
+quiver. `src/ai/archery.rs` (`ammo_for`, `weakest_in`, `arrows_in`),
+`src/items.rs` (`equip_in`), `src/world/actor.rs` (`dress`).
+
+The SE observation `vrm-tool test-mod ammo` (`crates/tools/src/test_mods/ammo.rs`)
+was built to settle the choices below; until its readings come in, each is
+the choice recorded here.
 
 ## Public evidence
 
-- Local UESP [Skyrim:Ammunition, revision 3607741](https://en.uesp.net/w/index.php?oldid=3607741),
-  introduction and Arrows/Bolts sections: bows require arrows and crossbows
-  require bolts.
-- Local UESP [Skyrim Mod:Mod File Format/AMMO, revision 2645195](https://en.uesp.net/w/index.php?oldid=2645195),
-  `DATA` layout: projectile FormID, flags, damage; flag `0x00000004` is
-  Non-Bolt. The layout places flags at byte 4 and damage at byte 8 in both
-  the documented original and SSE forms.
 - Local UESP [Skyrim:Archery, revision 3575828](https://en.uesp.net/w/index.php?oldid=3575828),
-  Notes: equipping a bow defaults to the weakest arrows, and the player may
-  manually select stronger ones; crossbows have the analogous bolt behavior.
-  Ammunition can remain equipped when its weapon is unequipped.
+  Notes: equipping a bow equips the weakest arrows in the inventory by
+  default, and stronger ones can be chosen; crossbows do the same with bolts;
+  arrows stay equipped (and on the character's back) when the bow is
+  unequipped.
+- Local UESP [Skyrim:Ammunition, revision 3607741](https://en.uesp.net/w/index.php?oldid=3607741):
+  bows take arrows and crossbows bolts.
+- Local UESP [Skyrim Mod:Mod File Format/AMMO, revision 2645195](https://en.uesp.net/w/index.php?oldid=2645195),
+  `DATA`: projectile, flags (0x2 Non-Playable, 0x4 Non-Bolt), damage, value.
+- Local UESP [Skyrim Mod:Mod File Format/WEAP, revision 3089110](https://en.uesp.net/w/index.php?oldid=3089110),
+  `DNAM` animation type: 7 Bow, 9 Crossbow.
+- Game setting `sNoArrows`: "No arrows equipped."
+- Game assets: arrow and bolt models (`Weapons\Iron\IronArrow.nif`,
+  `DLC01\Weapons\Crossbow\SteelBolt.nif` and others) have root `Prn` =
+  `QUIVER`, an `ArrowQuiver` node (the quiver and its arrows) and a loose
+  `Arrow:0` shape; bolts nest both under an `Arrow` node.
 
-The local index was consulted first. Only public wiki text was used for this
-change; no game assets or engine binary data were examined or added.
+## Choices made
 
-## Current policy and unresolved behavior
+- **Weakest** is the lowest `DATA` damage among carried, playable ammunition
+  the weapon shoots. Value isn't considered. Of equal damage, the first the
+  inventory lists (the order stacks were first added) wins. The test's
+  `Pricey` and `Tie` readings check both.
+- **When.** Only the player's bow or crossbow auto-equips, by any route
+  (menus, hotkeys, `EquipItem`, console), and only when no ammunition it
+  shoots is worn: a stack the player chose stays, and worn bolts give way to
+  arrows when a bow is equipped (`Chosen`, `Switch`, `Incompatible`).
+  Unequipping the weapon leaves the ammunition worn (UESP).
+- **Arrows picked up** while the bow is held don't equip themselves
+  (`Pickup`).
+- **Shots.** The player's shot takes only worn ammunition; with none worn
+  it shows `sNoArrows` and nothing flies, as the setting's wording suggests.
+  When the worn stack is used up, it comes off and no other stack is worn
+  in its place, so the next shot shows `sNoArrows` (`RunOut`, `RemoveHeld`).
+- **NPCs** keep their rule: worn arrows, else their strongest, else iron
+  arrows (they never run out). UESP's note is about the player; NPCs' choice
+  isn't observed and isn't part of the test.
+- **The quiver** is drawn for any actor with ammunition worn and carried:
+  the shapes under the model's `ArrowQuiver` node, hung from its `Prn`
+  bone. It doesn't change with the count left.
 
-- An equipped, carried, valid arrow takes precedence over the strongest
-  carried arrow. This retains the existing selection policy, while excluding
-  bolts on every path. If several compatible arrows are marked equipped, the
-  first in inventory equipment order wins. That tie rule is a local fallback,
-  not verified Skyrim behavior.
-- The player's existing fallback picks the strongest carried arrow at shot
-  time. UESP's weakest-ammunition auto-equip rule describes weapon equipping,
-  a different transition. Exact behavior when compatible ammunition is
-  already equipped, when only incompatible ammunition is equipped, or when an
-  arrow stack is exhausted is not documented publicly.
-- NPCs without usable arrows retain the existing iron-arrow fallback. A mod
-  changing that record into a bolt no longer permits a bow to fire it. The
-  general projectile reader still reads both arrows and bolts; the restriction
-  belongs to bow selection.
-- No crossbow firing or reload timing is inferred from the ammunition flag.
+## Remaining uncertainty
+
+- All the choices above until the `ammo` readings come in.
+- Crossbow firing and reloading aren't implemented; only the equipping of
+  bolts is.

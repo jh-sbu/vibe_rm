@@ -1,6 +1,8 @@
 # Plan: equipped ammunition and quivers
 
-**Status: drafted** (2026-10-30). ROADMAP Next item 5, "inventory ... ammo /
+**Status: steps 0–5 done** (2026-11-03); the SE run of `test-mod ammo`
+is pending, and its readings may change steps 2–3's choices (see "After the
+SE run"). Drafted 2026-10-30. ROADMAP Next item 5, "inventory ... ammo /
 quivers (the weakest arrows equipped with a bow, UESP)". Each numbered step
 is one commit; run `cargo fmt` before each.
 
@@ -124,3 +126,19 @@ is one, else the strongest carried, and no quiver is drawn.
 - Whether NPCs follow the weakest rule. They aren't observed, and their
   combat chooses ammunition differently.
 - Crossbow firing and reloading stay out of this plan.
+
+## After the SE run
+
+`vrm-tool test-results tests/results` reads `VrmAmmoTestScript`'s reports;
+the user's own look at the inventory (which arrows are marked after equipping
+the bow) and any message after the shots come with them. For each reading
+that differs from `known_ambiguities/archery-ammunition.md`'s choices, change
+`equip_in` / `weakest_in` / `player_loose` and their tests, record the result
+in `ammo.rs`'s module doc, and drop the settled choices from
+`known_ambiguities/archery-ammunition.md`.
+
+Verified here: the step 1–3 tests (`cargo test --bin vibe_rm ammo_tests --
+--include-ignored`); offscreen third-person captures with iron arrows worn
+alone, and with steel and elven carried and only the Long Bow equipped
+(steel put on, quiver and bow on the back). Not checked: the bolts' quiver
+(same node layout), the inventory menu's equipped mark.
