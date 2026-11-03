@@ -436,7 +436,9 @@ fn favorite_weapon_tracks_accepted_attacks_and_actual_bow_releases() {
     assert_eq!(e.scripts.weapon_usage.usage.counts.len(), 2);
 
     carry_weapon(&mut e, BOW, 1);
-    e.inventories.get_mut(&PLAYER_REF).unwrap().add(ARROW, 1);
+    let inv = e.inventories.get_mut(&PLAYER_REF).unwrap();
+    inv.add(ARROW, 1);
+    inv.wear(ARROW);
     e.player_loose(0.1); // too short to nock
     assert_eq!(weapon_uses(&e, BOW), 0);
     e.player_loose(1.2);

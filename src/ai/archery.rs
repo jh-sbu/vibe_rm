@@ -170,9 +170,11 @@ fn wears_ammo_for(
         .any(|&f| inv.count(f) > 0 && ammo_for(lo, weapon, f).is_some())
 }
 
-/// Prefer carried, equipped arrows, otherwise the strongest carried arrows.
-/// NPCs with none use iron arrows. Keep the same compatibility check on all
-/// paths: a worn bolt must not suppress a usable arrow or be fired by a bow.
+/// Carried, equipped arrows; for NPCs, otherwise the strongest carried
+/// arrows, or iron ones with none. The player shoots only equipped arrows
+/// (`sNoArrows`, "No arrows equipped."). Keep the same compatibility check on
+/// all paths: a worn bolt must not suppress a usable arrow or be fired by a
+/// bow.
 fn arrows_in(
     lo: &LoadOrder,
     inv: Option<&crate::world::inventory::Inventory>,
@@ -184,6 +186,9 @@ fn arrows_in(
             carried.iter().any(|&(item, n)| item == f && n > 0) && bow_ammo_damage(lo, f).is_some()
         })
     });
+    if !npc {
+        return arrow(lo, equipped?);
+    }
     let best = equipped.or_else(|| {
         carried
             .iter()
@@ -400,8 +405,8 @@ impl ActorRuntime {
 }
 
 impl Engine {
-    /// The arrows an actor (or the player) shoots: its best by damage, or iron
-    /// ones for an NPC that has none (NPCs never run out).
+    /// The arrows an actor shoots: the player its equipped ones; an NPC those,
+    /// else its best by damage, or iron ones with none (NPCs never run out).
     pub(crate) fn arrows_of(&self, actor: FormId) -> Option<Arrow> {
         arrows_in(&self.lo, self.inventories.get(&actor), actor != PLAYER_REF)
     }

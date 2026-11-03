@@ -171,3 +171,24 @@ fn nothing_is_put_on_without_ammunition_or_for_other_weapons_or_npcs() {
     e.equip_item(npc, BOW, true).unwrap();
     assert!(!e.inventories[&npc].is_equipped(IRON), "only the player's");
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn shots_take_the_worn_arrows_until_they_run_out() {
+    let (_f, mut e) = fixture();
+    give(&mut e, &[ELVEN, BOW]);
+    e.add_item(PLAYER_REF, IRON, 1);
+    e.equip_item(PLAYER_REF, BOW, true).unwrap();
+    assert!(worn(&e, IRON));
+    e.player_loose(2.0);
+    assert_eq!(e.projectiles.len(), 1);
+    assert_eq!(e.inventories[&PLAYER_REF].count(IRON), 0);
+    assert_eq!(e.inventories[&PLAYER_REF].count(ELVEN), 10);
+    // None worn now: nothing flies, and the game's "No arrows equipped."
+    assert!(!worn(&e, IRON) && !worn(&e, ELVEN));
+    e.player_loose(2.0);
+    assert_eq!(e.projectiles.len(), 1);
+    assert_eq!(e.inventories[&PLAYER_REF].count(ELVEN), 10);
+    let said = e.scripts.notifications.last().map(|n| n.text.clone());
+    assert_eq!(said.as_deref(), Some("No arrows equipped."));
+}

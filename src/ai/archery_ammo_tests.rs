@@ -105,9 +105,11 @@ fn worn_bolts_never_supply_a_bow() {
     let (_fixture, lo) = fixture(true);
     let mut inv = inventory();
     inv.wear(BOLT);
-    for npc in [false, true] {
-        assert_eq!(arrows_in(&lo, Some(&inv), npc).unwrap().ammo, STRONG);
-    }
+    assert_eq!(arrows_in(&lo, Some(&inv), true).unwrap().ammo, STRONG);
+    assert!(
+        arrows_in(&lo, Some(&inv), false).is_none(),
+        "the player's bolts"
+    );
     // The general projectile reader still supports bolt records.
     assert_eq!(arrow(&lo, BOLT).unwrap().damage, 100.0);
 }
@@ -132,7 +134,8 @@ fn invalid_or_exhausted_equipment_does_not_hide_usable_arrows() {
     for item in [BROKEN, OTHER, STRONG, FormId(0x999)] {
         inv.wear(item);
     }
-    assert_eq!(arrows_in(&lo, Some(&inv), false).unwrap().ammo, WEAK);
+    assert_eq!(arrows_in(&lo, Some(&inv), true).unwrap().ammo, WEAK);
+    assert!(arrows_in(&lo, Some(&inv), false).is_none());
 }
 
 #[test]
@@ -205,4 +208,14 @@ fn worn_ammunition_counts_only_for_its_weapon() {
     assert!(wears_ammo_for(&lo, &inv, CROSSBOW));
     inv.wear(STRONG);
     assert!(wears_ammo_for(&lo, &inv, BOW));
+}
+
+#[test]
+fn the_player_shoots_only_equipped_arrows() {
+    let (_fixture, lo) = fixture(true);
+    let mut inv = inventory();
+    assert!(arrows_in(&lo, Some(&inv), false).is_none());
+    assert_eq!(arrows_in(&lo, Some(&inv), true).unwrap().ammo, STRONG);
+    inv.wear(WEAK);
+    assert_eq!(arrows_in(&lo, Some(&inv), false).unwrap().ammo, WEAK);
 }

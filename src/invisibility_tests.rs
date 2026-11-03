@@ -295,6 +295,7 @@ fn attacks_break_on_a_miss_and_arrows_break_at_release_not_impact() {
     let mut inventory = crate::world::inventory::Inventory::default();
     inventory.add(BOW, 1);
     inventory.add(AMMO, 3);
+    inventory.wear(AMMO);
     inventory.equip(&engine.lo, BOW);
     engine.inventories.insert(PLAYER_REF, inventory);
     cloak(&mut engine, PLAYER_REF);
