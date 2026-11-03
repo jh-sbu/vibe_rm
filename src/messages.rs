@@ -554,7 +554,7 @@ impl Engine {
             .map(|d| self.lo.lstring(&rec, d))
             .unwrap_or_default();
         drop(rec);
-        let text = self.replace_text_tags(&text, None);
+        let text = self.replace_text_tags_preserving_controls(&text, None);
         let now = self.scripts.real_time;
         log::info!("help message for {event:?}: {text:?}");
         // One help message per event.
@@ -662,6 +662,67 @@ fn capitalise(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct Fixture(std::path::PathBuf);
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn fixture() -> (Fixture, Engine) {
+        use esp::writer::{Node, RecordBuilder, write_plugin};
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let f = Fixture(std::env::temp_dir().join(format!("vrm-control-tags-{stamp}")));
+        std::fs::create_dir(&f.0).unwrap();
+        let records = [
+            Node::top(
+                b"GLOB",
+                vec![
+                    RecordBuilder::new(b"GLOB", FormId(0x800))
+                        .zstring(b"EDID", "HintValue")
+                        .f32(b"FLTV", 3.0),
+                ],
+            ),
+            Node::top(
+                b"MESG",
+                vec![
+                    RecordBuilder::new(b"MESG", FormId(0x801))
+                        .zstring(b"DESC", "<Global=HintValue> [Activate] [Optional]"),
+                ],
+            ),
+        ];
+        std::fs::write(
+            f.0.join("Controls.esp"),
+            write_plugin(0, &[], "test", "controls", 0x900, &records),
+        )
+        .unwrap();
+        let e = crate::stats::action_tests::headless_engine(&f.0, "Controls.esp");
+        *e.input_map.write().unwrap() =
+            crate::input_map::InputMap::parse("Activate\t0x12\t0xff\t0xff\t1\t1\t0\n");
+        (f, e)
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn help_retains_controls_and_snapshots_globals() {
+        let (_f, mut e) = fixture();
+        e.show_help_message(FormId(0x801), "Activate", 10.0, 2.0, 2);
+        assert_eq!(e.current_help(), Some("3 [Activate] [Optional]"));
+        e.scripts.globals.insert(FormId(0x800), 9.0);
+        assert!(e.input_map.write().unwrap().remap(
+            "Activate",
+            crate::input_map::Button::Key(winit::keyboard::KeyCode::KeyF),
+        ));
+        assert_eq!(e.current_help(), Some("3 [Activate] [Optional]"));
+        e.scripts.real_time = 12.0;
+        e.update_messages();
+        assert_eq!(e.current_help(), Some("3 [Activate] [Optional]"));
+    }
 
     #[test]
     fn notification_display_time_is_unsigned_integer_seconds() {
