@@ -22,6 +22,7 @@ const TURN_RATE: f32 = 10.0;
 pub struct PlayerBody {
     pub(crate) skeleton: Arc<Skeleton>,
     graph: Option<GraphAnim>,
+    pub(crate) first: Option<FirstPerson>,
     scale: f32,
     /// Facing, clockwise from +Y as the camera's yaw.
     pub heading: f32,
@@ -59,6 +60,18 @@ pub struct PlayerBody {
     bow: PlayerBow,
     /// `Direction` while moving (none standing), and sprinting.
     direction: Option<f32>,
+}
+
+const FIRST_RIG: &str = "meshes/actors/character/_1stperson/skeleton.nif";
+const FIRST_PROJECT: &str = "meshes/actors/character/_1stperson/firstperson.hkx";
+
+pub(crate) struct FirstPerson {
+    pub(crate) skeleton: Arc<Skeleton>,
+    graph: GraphAnim,
+    rigid: Vec<(FormId, String)>,
+    weapon_out: bool,
+    ready: bool,
+    pub(crate) instance: crate::render::ActorInstance,
 }
 
 fn wrap(a: f32) -> f32 {
@@ -179,9 +192,90 @@ impl Engine {
             skin_tone: d.skin_tone,
             weight: d.weight,
         });
+        self.build_first_person(&mut body, &d);
         let script_events = std::mem::take(&mut body.script_events);
         self.player_body = Some(body);
         self.raise_anim_events(PLAYER_REF, &script_events);
+    }
+
+    fn build_first_person(&mut self, body: &mut PlayerBody, d: &crate::world::actor::ActorDesc) {
+        // Beast/creature rigs have no playable first-person body yet.
+        if !d
+            .skeleton
+            .to_ascii_lowercase()
+            .contains("actors/character/")
+        {
+            body.first = None;
+            return;
+        }
+        let Some(skeleton) = self.skeleton(FIRST_RIG) else {
+            body.first = None;
+            return;
+        };
+        let Some(project) = self.graphs.project(&self.vfs, FIRST_PROJECT) else {
+            body.first = None;
+            return;
+        };
+        let previous = body.first.take().filter(|f| {
+            Arc::ptr_eq(&f.skeleton, &skeleton) && f.graph.matches(&project, FIRST_RIG, d.female)
+        });
+        let (mut graph, weapon_out, ready) = match previous {
+            Some(f) => (f.graph, f.weapon_out, f.ready),
+            None => (
+                GraphAnim::new(project, FIRST_RIG, d.female, &skeleton, self.rng),
+                false,
+                false,
+            ),
+        };
+        graph.label = "player first person".into();
+        graph.foot_ik_enabled = false;
+        for (name, value) in [
+            ("IsFirstPerson", 1.0),
+            ("i1stPerson", 1.0),
+            ("fIsFirstPerson", 1.0),
+            ("IsPlayer", 1.0),
+            ("IsNPC", 0.0),
+            ("weapAdj", d.weight),
+        ] {
+            graph.set_variable(name, value);
+        }
+        let speeds = self.weapon_speed_mults(PLAYER_REF);
+        for (name, value) in crate::ai::combat::hand_graph_vars(&self.lo, &d.inventory, speeds) {
+            graph.set_variable(name, value);
+        }
+        let mut desc = d.clone();
+        desc.skeleton = FIRST_RIG.into();
+        desc.models = crate::world::actor::dress_first_person(&self.lo, d);
+        let paths = desc
+            .models
+            .iter()
+            .map(|(m, _)| m.clone())
+            .collect::<Vec<_>>();
+        self.models.load_all(&mut self.renderer, &self.vfs, &paths);
+        let (meshes, _, rigid) = self.actor_meshes(&desc, &skeleton);
+        let (equipment, held_light) =
+            self.rigid_equipment_models(PLAYER_REF, &skeleton, weapon_out, &rigid, true);
+        let pose = skeleton.model_space(&skeleton.bind_locals());
+        body.first = Some(FirstPerson {
+            skeleton,
+            graph,
+            rigid,
+            weapon_out,
+            ready,
+            instance: crate::render::ActorInstance {
+                meshes,
+                attachments: Vec::new(),
+                equipment,
+                held_light,
+                transform: body.transform(self.player_feet()),
+                pose,
+                lights: [0xFFFF; 8],
+                radius: 120.0,
+                shadow_only: false,
+                skin_tone: d.skin_tone,
+                weight: d.weight,
+            },
+        });
     }
 
     /// Place and animate the body after the player moved `moved` this update.
@@ -361,6 +455,7 @@ impl PlayerBody {
         Self {
             skeleton,
             graph: None,
+            first: None,
             scale: 1.0,
             heading,
             graph_heading: f32::NAN,
@@ -1044,6 +1139,33 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requires installed Skyrim SE assets and a headless GPU adapter"]
+    fn first_person_build_reuses_graph_when_equipment_changes() {
+        let data = vfs::locate_data_dir().unwrap();
+        let names = esp::BASE_MASTERS
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
+        let mut e = crate::stats::action_tests::headless_engine_plugins(&data, &names);
+        e.build_player_body();
+        let first = e.player_body.as_mut().unwrap().first.as_mut().unwrap();
+        assert_eq!(first.graph.variable("IsFirstPerson"), Some(1.0));
+        first
+            .graph
+            .update(0.0, &e.vfs, &mut e.anims, &first.skeleton);
+        let states = first.graph.active_states();
+        assert!(!states.is_empty());
+        let project = first.graph.project().clone();
+        first.weapon_out = true;
+        first.ready = true;
+        e.build_player_body();
+        let first = e.player_body.as_ref().unwrap().first.as_ref().unwrap();
+        assert!(Arc::ptr_eq(&project, first.graph.project()));
+        assert_eq!(states, first.graph.active_states());
+        assert!(first.weapon_out && first.ready);
+    }
 
     #[test]
     #[ignore = "requires installed Skyrim SE assets and a headless GPU adapter"]

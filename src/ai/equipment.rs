@@ -308,18 +308,32 @@ impl Engine {
         Vec<(std::sync::Arc<crate::render::GpuModel>, usize, Mat4)>,
         Option<HeldLight>,
     ) {
+        let models = self.rigid_models.get(&actor).cloned().unwrap_or_default();
+        self.rigid_equipment_models(actor, skel, drawn, &models, false)
+    }
+
+    /// Build attachments from either body's own model list without replacing
+    /// the other viewpoint's cached rigid models.
+    pub(crate) fn rigid_equipment_models(
+        &mut self,
+        actor: FormId,
+        skel: &crate::world::skeleton::Skeleton,
+        drawn: bool,
+        rigid: &[(FormId, String)],
+        first: bool,
+    ) -> (
+        Vec<(std::sync::Arc<crate::render::GpuModel>, usize, Mat4)>,
+        Option<HeldLight>,
+    ) {
         let inv = self.inventories.get(&actor).cloned().unwrap_or_default();
         let equipped = inv.equipped().to_vec();
         // (model, the bone to hang it from if not its own, light it gives)
         let mut models: Vec<(String, Option<&'static str>, Option<FormId>)> = Vec::new();
-        for (item, m) in self
-            .rigid_models
-            .get(&actor)
-            .into_iter()
-            .flatten()
-            .filter(|(item, _)| equipped.contains(item))
-        {
+        for (item, m) in rigid.iter().filter(|(item, _)| equipped.contains(item)) {
             let weapon = self.lo.tag_of(*item).map(|t| t.0) == Some(*b"WEAP");
+            if first && weapon && !drawn {
+                continue;
+            }
             // A weapon in the left hand only (not a two-handed one's).
             let left = weapon && inv.held(LEFT) == Some(*item) && !inv.both_hands();
             let right = !left || inv.held(RIGHT) == Some(*item);
@@ -336,7 +350,9 @@ impl Engine {
                         Some(if bow { "SHIELD" } else { "WEAPON" }),
                         None,
                     ));
-                    models.push((format!("{m}#scb"), None, None));
+                    if !first {
+                        models.push((format!("{m}#scb"), None, None));
+                    }
                 }
                 if left {
                     models.push((format!("{m}#blade"), Some("SHIELD"), None));
