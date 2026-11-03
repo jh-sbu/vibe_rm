@@ -1682,7 +1682,6 @@ impl Buttons {
         self.codes.get(event).and_then(|c| c.1)
     }
 
-    /// The art for a user event, `UnknownKey` when it has none.
     fn art(&self, event: &str) -> String {
         if let Some(map) = &self.map {
             return map
@@ -1690,12 +1689,15 @@ impl Buttons {
                 .unwrap()
                 .control(event)
                 .map(|control| control.art().to_string())
-                .unwrap_or_else(|| "UnknownKey".into());
+                .unwrap_or_default();
         }
-        self.art
-            .get(event)
-            .cloned()
-            .unwrap_or_else(|| "UnknownKey".into())
+        self.art.get(event).cloned().unwrap_or_else(|| {
+            if self.codes.contains_key(event) {
+                "UnknownKey".into()
+            } else {
+                String::new()
+            }
+        })
     }
 }
 
@@ -1988,12 +1990,11 @@ impl<M: HudMovie> Hud<M> {
         let map = engine.input_map.read().unwrap();
         let input_changed = self.sent.input_generation != Some(map.generation);
         if input_changed {
-            let art = map
-                .first("Activate", 0)
-                .and_then(keyboard_art)
-                .or_else(|| map.first("Activate", 1).and_then(mouse_art))
-                .unwrap_or_else(|| "UnknownKey".into());
-            self.call("RefreshActivateButtonArt", &[text(&art)]);
+            let control = map.control("Activate");
+            let art = control
+                .as_ref()
+                .map_or("UnknownKey", |control| control.art());
+            self.call("RefreshActivateButtonArt", &[text(art)]);
             self.sent.input_generation = Some(map.generation);
         }
         drop(map);
@@ -2477,10 +2478,18 @@ mod input_tests {
             ),
         )
         .unwrap();
-        let mut engine = crate::stats::action_tests::headless_engine(&fixture.0, "Help.esp");
-        *engine.input_map.write().unwrap() = crate::input_map::InputMap::parse(
+        let controls = fixture.0.join("interface/controls/pc");
+        std::fs::create_dir_all(&controls).unwrap();
+        std::fs::write(
+            controls.join("controlmap.txt"),
             "Activate\t0x12\t0xff\t0xff\t1\t1\t0\nJump\t0x39\t0xff\t0xff\t1\t1\t0\n",
-        );
+        )
+        .unwrap();
+        std::fs::write(controls.join("keyboard_english.txt"), "Use 0x12 69\n").unwrap();
+        let mut engine = crate::stats::action_tests::headless_engine(&fixture.0, "Help.esp");
+        let mut buttons = Buttons::from_controlmap("");
+        buttons.map = Some(engine.input_map.clone());
+        assert_eq!(buttons.art("Activate"), "Use");
         engine.show_help_message(FormId(0x800), "help", 60.0, 0.0, 1);
         engine.scripts.notify("Notification [Activate]");
         let mut hud = Hud {
@@ -2498,8 +2507,8 @@ mod input_tests {
         assert_eq!(
             hud.menu.take_controls(),
             vec![
-                call("RefreshActivateButtonArt", vec![text("E")]),
-                call("ShowMessage", vec![text("Notification E")]),
+                call("RefreshActivateButtonArt", vec![text("Use")]),
+                call("ShowMessage", vec![text("Notification Use")]),
                 hint(),
             ]
         );
@@ -2527,7 +2536,7 @@ mod input_tests {
         hud.update(&engine);
         assert_eq!(
             hud.menu.take_controls(),
-            vec![call("RefreshActivateButtonArt", vec![text("E")]), hint()]
+            vec![call("RefreshActivateButtonArt", vec![text("Use")]), hint()]
         );
         hud.update(&engine);
         assert!(hud.menu.take_controls().is_empty());
@@ -2544,7 +2553,7 @@ mod input_tests {
         hud.update(&engine);
         assert_eq!(
             hud.menu.take_controls(),
-            vec![call("RefreshActivateButtonArt", vec![text("E")])]
+            vec![call("RefreshActivateButtonArt", vec![text("Use")])]
         );
     }
 
@@ -2559,8 +2568,8 @@ mod input_tests {
         assert_eq!(buttons.art("Mouse1"), "Mouse1");
         assert_eq!(buttons.art("F"), "F");
         assert_eq!(buttons.art("Chord"), "G");
-        assert_eq!(buttons.art("Missing"), "UnknownKey");
-        assert_eq!(buttons.art("Left Thumbstick"), "UnknownKey");
+        assert_eq!(buttons.art("Missing"), "");
+        assert_eq!(buttons.art("Left Thumbstick"), "");
         assert!(
             map.write()
                 .unwrap()
@@ -2570,6 +2579,32 @@ mod input_tests {
         assert_eq!(buttons.art("Jump"), "UnknownKey");
         map.write().unwrap().reset();
         assert_eq!(buttons.art("Accept"), "E");
+    }
+
+    #[test]
+    fn button_art_callback_preserves_unknown_tags_but_marks_unbound_events() {
+        let controlmap = "Activate\t0x12\t0xff\t0xff\nUnbound\t0xff\t0xff\t0xff\n";
+        for live in [false, true] {
+            let mut buttons = Buttons::from_controlmap(controlmap);
+            if live {
+                buttons.map = Some(Arc::new(std::sync::RwLock::new(
+                    crate::input_map::InputMap::parse(controlmap),
+                )));
+            }
+            for (tag, art) in [
+                ("Activate", "E"),
+                ("literal text", ""),
+                ("Missing", ""),
+                ("Unbound", "UnknownKey"),
+            ] {
+                let call = GameCall {
+                    name: "GetButtonFromUserEvent".into(),
+                    id: Some(1.0),
+                    args: vec![text(tag)],
+                };
+                assert_eq!(respond(&buttons, &call), Some(vec![text(art)]));
+            }
+        }
     }
 
     #[test]
