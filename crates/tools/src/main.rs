@@ -5,6 +5,7 @@ mod audio_formats;
 mod audio_survey;
 mod control_tags;
 mod crafting_survey;
+mod first_person;
 #[path = "../../../src/condition/functions.rs"]
 #[allow(dead_code)]
 mod functions;
@@ -47,6 +48,7 @@ fn main() -> Result<()> {
     env_logger::init();
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
+        Some("first-person") => first_person::run(&args[1])?,
         Some("crafting-survey") => crafting_survey::run(&args[1])?,
         Some("control-tags") => control_tags::run(&args[1..])?,
         Some("spell-fx") => spell_fx::run(&args[1..])?,
