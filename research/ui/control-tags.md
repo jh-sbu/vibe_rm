@@ -116,7 +116,7 @@ Important corrections to the preliminary plan:
   “all tags resolve except gamepad names” is not an appropriate verification
   criterion for an unfiltered record survey.
 
-## Manual Skyrim SE observation (user action pending)
+## Manual Skyrim SE observation (round 2 pending)
 
 Build with `cargo build -p vrm-tools`, then generate:
 
@@ -214,6 +214,45 @@ text isn't evidence about the tags. Screenshots can go in `tests/results/`;
 there's nothing for `test-results` to read.
 
 The probe doesn't cover loading-screen text or other languages' key names.
+
+## Skyrim SE observations
+
+### Round 1 (2026-11-03, default controls, keyboard and mouse)
+
+Screenshots by the user, English, the probe as of `04ce1ae`. Notification B
+was not captured.
+
+| Surface | What SE showed |
+| --- | --- |
+| Message box | The text exactly as written, every tag in brackets (`1[Activate]`...). The `FULL` title (`Title 1[Activate] 9[Multi-Screenshot]`) was **not shown**: the box began with the text's first line. The button read `OK 1[Activate]`. |
+| Notification A | As written, all brackets. |
+| Objective banner (HUD) | As written: `Obj 1[Activate] 8[Zoom In] 9[Multi-Screenshot] 11[Optional]`. |
+| Journal | Quest name (upper-cased by the movie), log entry and objective all as written. |
+| Help A | Inline art for every token: 1 E, 2 E, 3 Alt (the `L-Alt` art), 4 M1 (`Mouse1`), 5 Q, 6 M1, 7 R. |
+| Help B | 8 `[Zoom In]` and 9 `[Multi-Screenshot]` kept as written; 10 `[Move]` drew the **Mouse** art (`MouseMove`); 11–13 kept as written. |
+
+What this shows:
+
+- **No plain-text resolution.** Message boxes (text and buttons),
+  notifications, the objective banner and the journal show control tags
+  exactly as written. Only the help hint (the movie's own art holder)
+  replaces them. This engine's plain-text labels are wrong for all of these
+  surfaces. Loading screens weren't covered.
+- **Message boxes don't show `MESG` `FULL`.** This engine has prepended the
+  title since `b15647d`.
+- **Art matching.** Lower case (2) matches. A key name (6) draws its art. An
+  Item Menus event (7) follows `!0,Ready Weapon` to R. Sprint's `L-Alt` art is
+  drawn as "Alt".
+- **The wheel (8) gets no art.** This engine sends `Wheel` (since `df8fa0f`),
+  which would draw art. SE's result fits the callback answering with the key
+  table's name (`MouseWheelUp`, for which there is no bitmap, so the movie
+  keeps the tag), or with nothing. It doesn't fit `Wheel`.
+- **The chord (9) gets no art.** That fits PrintSrc's table name (no bitmap)
+  or nothing. It doesn't fit this engine's `UnknownKey`.
+- **Move (10) isn't unbound.** In Main Gameplay, Move has no keyboard or mouse
+  binding. A later context binds it to mouse 0xA (`MouseMove`), and SE drew
+  that art. So the lookup doesn't stop at the first context naming the event
+  when it is unbound there. This engine sends `UnknownKey`.
 
 ## Validation
 
