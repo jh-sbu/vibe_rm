@@ -141,6 +141,12 @@ impl Engine {
 
     /// Papyrus `SetAnimationVariable*`.
     pub(crate) fn set_anim_variable(&mut self, r: FormId, name: &str, value: f32) {
+        if r == crate::engine::PLAYER_REF {
+            if let Some(body) = self.player_body.as_mut() {
+                body.set_script_variable(name, value);
+            }
+            return;
+        }
         match self.graph_mut(r) {
             Some(g) => {
                 if !g.set_script_variable(name, value) {

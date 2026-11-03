@@ -3142,8 +3142,7 @@ impl Engine {
             return self
                 .player_body
                 .as_mut()
-                .and_then(|b| b.graph_mut())
-                .is_some_and(|g| g.set_script_variable(name, value));
+                .is_some_and(|b| b.set_script_variable(name, value));
         }
         let Some(key) = self.actor_cells.get(&r) else {
             return false;

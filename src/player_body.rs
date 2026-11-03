@@ -23,6 +23,7 @@ pub struct PlayerBody {
     pub(crate) skeleton: Arc<Skeleton>,
     graph: Option<GraphAnim>,
     pub(crate) first: Option<FirstPerson>,
+    first_active: bool,
     scale: f32,
     /// Facing, clockwise from +Y as the camera's yaw.
     pub heading: f32,
@@ -72,6 +73,55 @@ pub(crate) struct FirstPerson {
     weapon_out: bool,
     ready: bool,
     pub(crate) instance: crate::render::ActorInstance,
+}
+
+/// Fan out inputs while each graph retains its own animation state. The
+/// visible graph decides whether an action was accepted.
+struct PlayerGraphs<'a> {
+    third: &'a mut GraphAnim,
+    first: Option<&'a mut FirstPerson>,
+    first_active: bool,
+}
+
+impl PlayerGraphs<'_> {
+    fn set_variable(&mut self, name: &str, value: f32) {
+        self.third.set_variable(name, value);
+        if let Some(f) = self.first.as_mut() {
+            f.graph.set_variable(name, value);
+        }
+    }
+    fn event(
+        &mut self,
+        ev: &str,
+        vfs: &vfs::Vfs,
+        anims: &mut crate::world::animation::AnimationLibrary,
+        skeleton: &Skeleton,
+    ) -> bool {
+        let third = PlayerBody::event(self.third, ev, vfs, anims, skeleton);
+        let first = self
+            .first
+            .as_mut()
+            .map(|f| PlayerBody::event(&mut f.graph, ev, vfs, anims, &f.skeleton));
+        if self.first_active {
+            first.unwrap_or(third)
+        } else {
+            third
+        }
+    }
+    fn action(&mut self, actions: &crate::ai::idles::LocomotionActions, action: &str) {
+        actions.send(self.third, action);
+        if let Some(f) = self.first.as_mut() {
+            actions.send(&mut f.graph, action);
+        }
+    }
+    fn changes(&self) -> u64 {
+        self.third
+            .changes()
+            .wrapping_add(self.first.as_ref().map_or(0, |f| f.graph.changes()))
+    }
+    fn rotates_character(&self) -> bool {
+        self.third.rotates_character()
+    }
 }
 
 fn wrap(a: f32) -> f32 {
@@ -151,7 +201,12 @@ impl Engine {
                 .unwrap_or_else(|| GraphAnim::new(project, &d.skeleton, d.female, &skel, self.rng));
             g.label = "player".into();
             g.replace_aux(self.wearer_graph(&d, &skel));
-            for (var, value) in [("IsNPC", 0.0), ("i1stPerson", 0.0), ("IsFirstPerson", 0.0)] {
+            for (var, value) in [
+                ("IsNPC", 0.0),
+                ("IsPlayer", 1.0),
+                ("i1stPerson", (!self.third_person) as u8 as f32),
+                ("IsFirstPerson", (!self.third_person) as u8 as f32),
+            ] {
                 g.set_variable(var, value);
             }
             g.set_variable("weapAdj", d.weight);
@@ -193,6 +248,7 @@ impl Engine {
             weight: d.weight,
         });
         self.build_first_person(&mut body, &d);
+        body.set_view(self.third_person);
         let script_events = std::mem::take(&mut body.script_events);
         self.player_body = Some(body);
         self.raise_anim_events(PLAYER_REF, &script_events);
@@ -293,10 +349,8 @@ impl Engine {
             let vars = crate::ai::combat::hand_graph_vars(&self.lo, inv, speeds);
             let body = self.player_body.as_mut().unwrap();
             body.held = held;
-            if let Some(g) = body.graph.as_mut() {
-                for (var, value) in vars {
-                    g.set_variable(var, value);
-                }
+            for (var, value) in vars {
+                body.set_variable(var, value);
             }
         }
         let feet = self.player_feet();
@@ -322,12 +376,11 @@ impl Engine {
         let Some(body) = self.player_body.as_mut() else {
             return;
         };
+        body.set_view(third);
         let cancel_draw = !can_shoot && body.bow.drawing;
         if !can_shoot && (body.bow.drawing || body.bow.shot.is_some()) {
             body.bow.cancel();
-            if let Some(g) = body.graph.as_mut() {
-                PlayerBody::event(g, "attackStop", &self.vfs, &mut self.anims, &body.skeleton);
-            }
+            body.send_event("attackStop", &self.vfs, &mut self.anims);
         }
         // In first person, and with their weapon out, they face the view;
         // otherwise in third person where they go.
@@ -348,6 +401,7 @@ impl Engine {
             }
         }
         let out = body.weapon_out;
+        let first_out = body.first.as_ref().map(|f| f.weapon_out);
         let world_from_model = body.transform(feet);
         if let Some(g) = body.graph.as_mut() {
             g.world_from_model = world_from_model;
@@ -361,6 +415,11 @@ impl Engine {
             .bow
             .update(events.arrow_release, can_shoot && body.drawn, dt);
         let (skel, weapon_out) = (body.skeleton.clone(), body.weapon_out);
+        let first_equipment = body
+            .first
+            .as_ref()
+            .filter(|f| first_out != Some(f.weapon_out))
+            .map(|f| (f.skeleton.clone(), f.weapon_out, f.rigid.clone()));
         if cancel_draw {
             self.player_attack_held = None;
         }
@@ -373,6 +432,14 @@ impl Engine {
             let (equipment, _) = self.rigid_equipment(PLAYER_REF, &skel, weapon_out);
             if let Some(inst) = self.scene.player.as_mut() {
                 inst.equipment = equipment;
+            }
+        }
+        if let Some((skeleton, drawn, rigid)) = first_equipment {
+            let (equipment, light) =
+                self.rigid_equipment_models(PLAYER_REF, &skeleton, drawn, &rigid, true);
+            if let Some(first) = self.player_body.as_mut().and_then(|b| b.first.as_mut()) {
+                first.instance.equipment = equipment;
+                first.instance.held_light = light;
             }
         }
         self.raise_anim_events(PLAYER_REF, &script_events);
@@ -435,11 +502,81 @@ impl Stance {
 const FALL_AFTER: f32 = 0.3;
 
 impl PlayerBody {
+    fn set_view(&mut self, third: bool) {
+        self.first_active = !third && self.first.is_some();
+        if let Some(g) = self.graph.as_mut() {
+            for name in ["IsFirstPerson", "i1stPerson"] {
+                g.set_variable(name, (!third) as u8 as f32);
+            }
+        }
+    }
+
+    pub(crate) fn set_variable(&mut self, name: &str, value: f32) -> bool {
+        let third = self
+            .graph
+            .as_mut()
+            .is_some_and(|g| g.set_variable(name, value));
+        let first = self
+            .first
+            .as_mut()
+            .is_some_and(|f| f.graph.set_variable(name, value));
+        third || first
+    }
+
+    pub(crate) fn set_script_variable(&mut self, name: &str, value: f32) -> bool {
+        let third = self
+            .graph
+            .as_mut()
+            .is_some_and(|g| g.set_script_variable(name, value));
+        let first = self
+            .first
+            .as_mut()
+            .is_some_and(|f| f.graph.set_script_variable(name, value));
+        third || first
+    }
+
+    fn send_event(
+        &mut self,
+        ev: &str,
+        vfs: &vfs::Vfs,
+        anims: &mut crate::world::animation::AnimationLibrary,
+    ) -> bool {
+        let Some(third) = self.graph.as_mut() else {
+            return false;
+        };
+        PlayerGraphs {
+            third,
+            first: self.first.as_mut(),
+            first_active: self.first_active,
+        }
+        .event(ev, vfs, anims, &self.skeleton)
+    }
+
+    fn weapon_ready(&self) -> bool {
+        self.drawn
+            && if self.first_active {
+                self.first.as_ref().is_some_and(|f| f.ready)
+            } else {
+                self.ready
+            }
+    }
+
+    pub(crate) fn active_graph(&self) -> Option<&GraphAnim> {
+        if self.first_active {
+            self.first.as_ref().map(|f| &f.graph)
+        } else {
+            self.graph.as_ref()
+        }
+    }
     pub(crate) fn graph(&self) -> Option<&GraphAnim> {
-        self.graph.as_ref()
+        self.active_graph()
     }
     pub(crate) fn graph_mut(&mut self) -> Option<&mut GraphAnim> {
-        self.graph.as_mut()
+        if self.first_active {
+            self.first.as_mut().map(|f| &mut f.graph)
+        } else {
+            self.graph.as_mut()
+        }
     }
     pub(crate) fn graph_sneaking(&self) -> bool {
         self.graph
@@ -456,6 +593,7 @@ impl PlayerBody {
             skeleton,
             graph: None,
             first: None,
+            first_active: false,
             scale: 1.0,
             heading,
             graph_heading: f32::NAN,
@@ -503,10 +641,8 @@ impl PlayerBody {
         vfs: &vfs::Vfs,
         anims: &mut crate::world::animation::AnimationLibrary,
     ) {
-        if (swinging || self.bow.drawing || self.bow.shot.is_some())
-            && let Some(g) = self.graph.as_mut()
-        {
-            Self::event(g, "attackStop", vfs, anims, &self.skeleton);
+        if swinging || self.bow.drawing || self.bow.shot.is_some() {
+            self.send_event("attackStop", vfs, anims);
         }
         self.bow.cancel();
         self.combat_events = PlayerCombatEvents::default();
@@ -559,9 +695,13 @@ impl PlayerBody {
         };
         self.graph_heading = self.heading;
         let graph_sneaking = self.graph_sneaking();
-        let g = self.graph.as_mut()?;
+        let mut g = PlayerGraphs {
+            third: self.graph.as_mut()?,
+            first: self.first.as_mut(),
+            first_active: self.first_active,
+        };
         if self.swim_told != m.swimming {
-            actions.send(g, "ActionSwimStateChange");
+            g.action(actions, "ActionSwimStateChange");
             self.swim_told = m.swimming;
             self.airborne = None;
             self.fell = false;
@@ -571,7 +711,7 @@ impl PlayerBody {
                 self.guard = false;
             }
         }
-        g.foot_ik_enabled = !m.swimming;
+        g.third.foot_ik_enabled = !m.swimming;
         let state = if m.sprinting {
             self.sprint_state.or(self.state)
         } else if m.sneaking {
@@ -612,7 +752,7 @@ impl PlayerBody {
         let guard = m.blocking && self.drawn && !m.swimming;
         if guard != self.guard {
             let ev = if guard { "blockStart" } else { "blockStop" };
-            let took = Self::event(g, ev, vfs, anims, &self.skeleton);
+            let took = g.event(ev, vfs, anims, &self.skeleton);
             if took || !guard {
                 self.guard = guard;
                 g.set_variable("IsBlocking", if guard { 1.0 } else { 0.0 });
@@ -628,7 +768,7 @@ impl PlayerBody {
                 "JumpStandingStart"
             };
             // A jump the graph won't play (mid-swing, say) is a fall later.
-            self.fell = Self::event(g, ev, vfs, anims, &self.skeleton);
+            self.fell = g.event(ev, vfs, anims, &self.skeleton);
             self.airborne = Some(0.0);
         } else if let Some(t) = self.airborne.as_mut() {
             *t += dt;
@@ -641,12 +781,12 @@ impl PlayerBody {
                     } else {
                         "JumpLand"
                     };
-                    Self::event(g, ev, vfs, anims, &self.skeleton);
+                    g.event(ev, vfs, anims, &self.skeleton);
                 }
                 self.airborne = None;
             } else if !self.fell && *t >= FALL_AFTER {
                 // Until the graph takes it.
-                self.fell = Self::event(g, "JumpFall", vfs, anims, &self.skeleton);
+                self.fell = g.event("JumpFall", vfs, anims, &self.skeleton);
             }
         } else if !m.grounded {
             self.airborne = Some(0.0);
@@ -669,7 +809,7 @@ impl PlayerBody {
                 if action == "ActionSneak" && graph_sneaking == stance.sneaking {
                     continue;
                 }
-                actions.send(g, action);
+                g.action(actions, action);
             }
             if self.told != Some(stance) {
                 log::debug!("player body: {stance:?}");
@@ -693,22 +833,45 @@ impl PlayerBody {
                 self.heading + (-frame.character_turn).clamp(request.min(0.0), request.max(0.0)),
             );
         }
+        // Each rig moves its own attachments on its own notifications, even
+        // when hidden. Only the visible rig supplies gameplay/script events.
         for r in &frame.raised {
-            if crate::anim_events::script_notification(r) {
-                self.script_events.push(r.event.clone());
-            }
-            let tag = r.event.to_ascii_lowercase();
-            if self.swim_told && !self.step_events.contains(&tag) {
-                self.step_events.push(tag);
-            }
-            log::trace!(target: "player_events", "player raised {}{}", r.event, r.payload.as_deref().map(|p| format!(" ({p})")).unwrap_or_default());
-            self.combat_events.record(&r.event, r.payload.as_deref());
             match r.event.to_ascii_lowercase().as_str() {
                 "weapondraw" => self.weapon_out = true,
                 "weaponsheathe" => self.weapon_out = false,
                 "weapequip_out" => self.ready = self.drawn,
                 _ => {}
             }
+        }
+        let first_frame = self.first.as_mut().map(|f| {
+            let frame = f.graph.update(dt, vfs, anims, &f.skeleton);
+            for r in &frame.raised {
+                match r.event.to_ascii_lowercase().as_str() {
+                    "weapondraw" => f.weapon_out = true,
+                    "weaponsheathe" => f.weapon_out = false,
+                    "weapequip_out" => f.ready = self.drawn,
+                    _ => {}
+                }
+            }
+            f.instance.pose = frame.pose;
+            frame.raised
+        });
+        let raised = if self.first_active {
+            first_frame.as_deref().unwrap_or(&frame.raised)
+        } else {
+            &frame.raised
+        };
+        for r in raised {
+            if crate::anim_events::script_notification(r) {
+                self.script_events.push(r.event.clone());
+            }
+            let tag = r.event.to_ascii_lowercase();
+            if !self.step_events.contains(&tag) {
+                self.step_events.push(tag);
+            }
+            log::trace!(target: "player_events", "player raised {}{}", r.event,
+                r.payload.as_deref().map(|p| format!(" ({p})")).unwrap_or_default());
+            self.combat_events.record(&r.event, r.payload.as_deref());
         }
         Some(frame.pose)
     }
@@ -842,21 +1005,16 @@ impl Engine {
         let Some(body) = self.player_body.as_mut() else {
             return true;
         };
-        let Some(g) = body.graph.as_mut() else {
+        if body.graph.is_none() {
             return true;
-        };
-        if !body.drawn || !body.ready {
+        }
+        if !body.weapon_ready() {
             return false;
         }
-        body.bow.start(|| {
-            PlayerBody::event(
-                g,
-                "bowAttackStart",
-                &self.vfs,
-                &mut self.anims,
-                &body.skeleton,
-            )
-        })
+        let mut bow = std::mem::take(&mut body.bow);
+        let accepted = bow.start(|| body.send_event("bowAttackStart", &self.vfs, &mut self.anims));
+        body.bow = bow;
+        accepted
     }
 
     /// Releasing the button requests the release animation. Its `arrowRelease`
@@ -866,19 +1024,14 @@ impl Engine {
             self.player_loose(held);
             return;
         };
-        let g = body.graph.as_mut().unwrap();
-        let drawing = body.bow.drawing;
-        let released = body.bow.release(held, || {
-            PlayerBody::event(
-                g,
-                "attackRelease",
-                &self.vfs,
-                &mut self.anims,
-                &body.skeleton,
-            )
+        let mut bow = std::mem::take(&mut body.bow);
+        let drawing = bow.drawing;
+        let released = bow.release(held, || {
+            body.send_event("attackRelease", &self.vfs, &mut self.anims)
         });
+        body.bow = bow;
         if drawing && !released {
-            PlayerBody::event(g, "attackStop", &self.vfs, &mut self.anims, &body.skeleton);
+            body.send_event("attackStop", &self.vfs, &mut self.anims);
         }
     }
 
@@ -888,18 +1041,15 @@ impl Engine {
             self.build_player_body();
         }
         self.spell_fx.events.push((PLAYER_REF, ev.to_owned()));
-        self.player_body.as_mut().is_some_and(|b| {
-            let Some(g) = b.graph.as_mut() else {
-                return false;
-            };
-            PlayerBody::event(g, ev, &self.vfs, &mut self.anims, &b.skeleton)
-        })
+        self.player_body
+            .as_mut()
+            .is_some_and(|b| b.send_event(ev, &self.vfs, &mut self.anims))
     }
 
     /// Whether the player's body runs a behaviour graph.
     /// The states the player's body's graph is in (console `gstate`).
     pub(crate) fn player_graph_states(&self) -> Option<Vec<String>> {
-        Some(self.player_body.as_ref()?.graph.as_ref()?.active_states())
+        Some(self.player_body.as_ref()?.active_graph()?.active_states())
     }
 
     pub(crate) fn player_has_graph(&self) -> bool {
@@ -941,9 +1091,7 @@ impl Engine {
     /// Whether the draw is over (the graph's `WeapEquip_Out`): the graph
     /// won't swing before (it takes `attackStart` mid-draw and does nothing).
     pub(crate) fn player_weapon_ready(&self) -> bool {
-        self.player_body
-            .as_ref()
-            .is_some_and(|b| b.drawn && b.ready)
+        self.player_body.as_ref().is_some_and(|b| b.weapon_ready())
     }
 
     /// Draw (or sheathe) the player's weapon: the graph plays it and the
@@ -961,14 +1109,14 @@ impl Engine {
         if body.drawn == draw {
             return true;
         }
-        let Some(g) = body.graph.as_mut() else {
-            return false;
-        };
         let ev = if draw { "WeapEquip" } else { "Unequip" };
-        let took = PlayerBody::event(g, ev, &self.vfs, &mut self.anims, &body.skeleton);
+        let took = body.send_event(ev, &self.vfs, &mut self.anims);
         if took {
             body.drawn = draw;
             body.ready = false;
+            if let Some(f) = body.first.as_mut() {
+                f.ready = false;
+            }
             if !draw {
                 body.bow.cancel();
             }
@@ -1127,6 +1275,9 @@ impl Engine {
             log::info!("{} person", if on { "third" } else { "first" });
         }
         self.third_person = on;
+        if let Some(body) = self.player_body.as_mut() {
+            body.set_view(on);
+        }
     }
 
     /// Move the third-person camera nearer (negative) or farther.
@@ -1226,7 +1377,7 @@ mod tests {
         }
     }
 
-    fn equipment_body() -> PlayerBody {
+    pub(super) fn equipment_body() -> PlayerBody {
         use havok::behavior::runtime::Shared;
         use havok::behavior::{
             BehaviorGraph, EventProperty, Generator, Project, State, Transition,
@@ -1570,3 +1721,7 @@ mod tests {
         assert_eq!(releases, [None, Some(0.9), None]);
     }
 }
+
+#[cfg(test)]
+#[path = "player_first_person_tests.rs"]
+mod first_person_tests;
