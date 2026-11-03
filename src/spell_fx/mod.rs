@@ -202,10 +202,7 @@ impl Engine {
             return None;
         }
         let (inst, skeleton) = if actor == PLAYER_REF {
-            (
-                self.scene.player.as_ref()?,
-                &self.player_body.as_ref()?.skeleton,
-            )
+            self.player_render_body()?
         } else {
             if !self.actor_cells.contains_key(&actor) {
                 let inst = self
@@ -256,6 +253,8 @@ impl Engine {
     }
     pub(crate) fn update_spell_fx(&mut self, dt: f32) {
         self.scene.membranes.clear();
+        self.scene.first_person_effects.clear();
+        self.scene.first_person_membranes.clear();
         if !enabled() {
             self.spell_fx = SpellFx::default();
             return;
@@ -558,7 +557,16 @@ impl Engine {
                 }
                 self.spell_fx.tails.push(art.effect);
             } else {
+                let start = self.scene.dynamic.len();
                 art.effect.draw(&mut self.scene);
+                if key.0 == PLAYER_REF
+                    && !self.third_person
+                    && matches!(key.1, ArtKey::Hand(..) | ArtKey::Enchant(..))
+                {
+                    self.scene
+                        .first_person_effects
+                        .extend(self.scene.dynamic.drain(start..));
+                }
                 self.spell_fx.art.insert(key, art);
             }
         }
@@ -610,6 +618,7 @@ impl Engine {
         up: Vec3,
         batches: &mut Vec<crate::render::particles::ParticleBatch>,
     ) {
+        self.scene.first_person_particles.clear();
         if !enabled() {
             return;
         }
@@ -632,7 +641,10 @@ impl Engine {
                 ));
             }
             let actor = if target == PLAYER_REF {
-                self.scene.player.as_ref()
+                self.scene
+                    .first_person
+                    .as_ref()
+                    .or(self.scene.player.as_ref())
             } else {
                 self.actor_cells.get(&target).and_then(|key| {
                     self.cells
@@ -656,6 +668,11 @@ impl Engine {
                 &mut vertices,
             );
             if !vertices.is_empty() {
+                let batches = if target == PLAYER_REF && !self.third_person {
+                    &mut self.scene.first_person_particles
+                } else {
+                    &mut *batches
+                };
                 batches.push(crate::render::particles::ParticleBatch {
                     material: fx.particle_material.as_ref().unwrap().clone(),
                     vertices,
@@ -668,7 +685,15 @@ impl Engine {
                 fx.step(dt, right, up, batches);
             }
         }
-        for art in self.spell_fx.art.values_mut() {
+        for ((actor, key), art) in &mut self.spell_fx.art {
+            let batches = if *actor == PLAYER_REF
+                && !self.third_person
+                && matches!(key, ArtKey::Hand(..) | ArtKey::Enchant(..))
+            {
+                &mut self.scene.first_person_particles
+            } else {
+                &mut *batches
+            };
             art.effect.step(dt, right, up, batches);
         }
         for effect in &mut self.spell_fx.tails {
@@ -706,7 +731,10 @@ impl Engine {
             self.renderer.update_membrane_material(rigid, &desc);
             self.renderer.update_membrane_material(skin, &desc);
             let actor = if target == PLAYER_REF {
-                self.scene.player.as_ref()
+                self.scene
+                    .first_person
+                    .as_ref()
+                    .or(self.scene.player.as_ref())
             } else {
                 self.actor_cells.get(&target).and_then(|key| {
                     self.cells
@@ -716,15 +744,18 @@ impl Engine {
                 })
             };
             if let Some(actor) = actor {
-                self.scene
-                    .membranes
-                    .push(crate::render::membrane::overlay_actor(
-                        actor,
-                        rigid,
-                        skin,
-                        fx.shader.flags(),
-                        fx.weapon.as_ref(),
-                    ));
+                let overlays = if target == PLAYER_REF && !self.third_person {
+                    &mut self.scene.first_person_membranes
+                } else {
+                    &mut self.scene.membranes
+                };
+                overlays.push(crate::render::membrane::overlay_actor(
+                    actor,
+                    rigid,
+                    skin,
+                    fx.shader.flags(),
+                    fx.weapon.as_ref(),
+                ));
             } else {
                 for cell in self.scene.cells.values() {
                     for inst in &cell.instances {

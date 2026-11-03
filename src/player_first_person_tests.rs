@@ -5,6 +5,7 @@ fn first_rig(graph: GraphAnim) -> FirstPerson {
         skeleton: Arc::new(Skeleton::default()),
         graph,
         rigid: Vec::new(),
+        particles: Default::default(),
         weapon_out: false,
         ready: false,
         instance: crate::render::ActorInstance {
@@ -203,4 +204,42 @@ fn first_person_instance_is_excluded_from_world_queries_and_has_its_own_projecti
     let near = p.project_point3(Vec3::new(0.0, 0.0, -1.0));
     assert!((near.z - 1.0).abs() < 0.0001);
     assert_ne!(p, camera.proj(16.0 / 9.0));
+}
+
+#[test]
+#[ignore = "requires installed Skyrim SE assets and a headless GPU adapter"]
+fn first_person_draw_binds_the_character_rig_and_puts_the_sword_in_hand() {
+    let data = vfs::locate_data_dir().unwrap();
+    let names = esp::BASE_MASTERS
+        .iter()
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>();
+    let mut e = crate::stats::action_tests::headless_engine_plugins(&data, &names);
+    let sword = e.lo.find_editor_id("IronSword").unwrap();
+    e.inventory_mut(PLAYER_REF).add(sword, 1);
+    e.equip_item(PLAYER_REF, sword, true).unwrap();
+    e.player.grounded = true;
+    e.update_player_body(Vec3::ZERO, 0.0);
+    assert!(e.player_draw_weapon(true));
+    for _ in 0..120 {
+        e.update_player_body(Vec3::ZERO, 1.0 / 60.0);
+    }
+    let first = e.player_body.as_ref().unwrap().first.as_ref().unwrap();
+    assert!(first.ready && first.weapon_out);
+    assert!(!first.instance.meshes.is_empty());
+    assert!(!first.instance.equipment.is_empty());
+    let bind = first.skeleton.model_space(&first.skeleton.bind_locals());
+    let hand = first.skeleton.find("NPC R Hand [RHnd]").unwrap();
+    assert!(
+        first.instance.pose[hand]
+            .w_axis
+            .truncate()
+            .distance(bind[hand].w_axis.truncate())
+            > 10.0
+    );
+    let at = e.player_node("WEAPON").unwrap().w_axis.truncate();
+    assert!(
+        (at - e.player.eye()).dot(e.camera.forward()) > 1.0,
+        "{at:?}"
+    );
 }

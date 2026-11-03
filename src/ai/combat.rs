@@ -2513,7 +2513,12 @@ impl Engine {
             let f = self.camera.forward();
             let skill = self.actor_value(PLAYER_REF, esp::actor_value::BLOCK);
             (
-                self.player.position,
+                if !self.third_person && self.equipped_shield(PLAYER_REF).is_some() {
+                    self.player_node("SHIELD")
+                        .map_or(self.player.position, |m| m.w_axis.truncate())
+                } else {
+                    self.player.position
+                },
                 glam::Vec2::new(f.x, f.y).normalize_or_zero(),
                 skill,
             )

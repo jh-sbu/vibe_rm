@@ -5,7 +5,10 @@ Supporting research: [the asset survey](../research/first-person.md) and
 comparison with vanilla Skyrim SE, not deliberate deviations.
 
 - **Armor without MOD4/MOD5.** Use only explicit first-person models, falling
-  across sex when necessary. Omit addons with neither, even though
+  across sex when necessary. Rigid shield addons fall back to MOD2/3: the
+  asset survey found IronShieldAA and most ordinary shields have no MOD4/5,
+  and UESP explicitly documents shared models. Omit other addons with neither,
+  even though
   [UESP ARMA revision 3089062](https://en.uesp.net/w/index.php?oldid=3089062)
   describes MOD2/3 as serving all viewpoints. The survey finds headgear,
   jewelry, feet and creature parts among the 866 omitted addons, but also
@@ -38,3 +41,12 @@ comparison with vanilla Skyrim SE, not deliberate deviations.
   documents the number, not its SE vertical conversion or the depth
   algorithm. This keeps the arms from intersecting walls or being clipped
   by the world's five-unit near plane; visual parity is still unmeasured.
+
+- **Gameplay origins.** Use the visible rig's magic nodes for hand art and
+  first-person spell projectiles, the midpoint for dual casts, SHIELD for
+  bow release and a shield's guard origin, and the torch model's AttachLight
+  transformed by its held bone for illumination. Projectile directions
+  converge on the eye ray's world hit (or far point); aiming itself stays at
+  the eye. The skeleton's node names support these attachments, but the
+  exact vanilla bow nock, guard geometry and eye-to-hand convergence are
+  unmeasured. Shield protection retains the existing camera-facing cone.

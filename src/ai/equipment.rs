@@ -430,6 +430,12 @@ impl Engine {
             .cells
             .values()
             .flat_map(|c| c.actors.iter())
+            .chain(
+                self.scene
+                    .first_person
+                    .as_ref()
+                    .or(self.scene.player.as_ref()),
+            )
             .filter_map(|a| {
                 let l = a.held_light?;
                 let p = a.held_light_pos()?;

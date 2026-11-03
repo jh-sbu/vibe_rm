@@ -710,8 +710,22 @@ impl Engine {
             + arrow.damage)
             * power;
         let (eye, dir) = self.player_aim();
-        let from = eye + dir * 20.0 - Vec3::Z * 6.0;
-        self.spawn_arrow(PLAYER_REF, arrow, from, dir, power.max(0.5), damage);
+        let from = if !self.third_person {
+            self.player_node("SHIELD").map(|m| m.w_axis.truncate())
+        } else {
+            None
+        }
+        .unwrap_or(eye + dir * 20.0 - Vec3::Z * 6.0);
+        let aim = if !self.third_person {
+            let reach = self
+                .physics
+                .raycast(eye, dir, 10_000.0)
+                .map_or(10_000.0, |(t, _)| t);
+            (eye + dir * reach - from).normalize_or(dir)
+        } else {
+            dir
+        };
+        self.spawn_arrow(PLAYER_REF, arrow, from, aim, power.max(0.5), damage);
     }
 
     /// Arrows fly on under gravity: into an actor (a hit, as a blow; it may end

@@ -1298,6 +1298,10 @@ impl Engine {
         self.scene.lights.clear();
         self.scene.dynamic.clear();
         self.scene.membranes.clear();
+        self.scene.first_person = None;
+        self.scene.first_person_effects.clear();
+        self.scene.first_person_particles.clear();
+        self.scene.first_person_membranes.clear();
         self.scene.far.clear();
         self.scene.particles.clear();
         self.projectiles.clear();
@@ -3211,6 +3215,7 @@ impl Engine {
         let right = forward.cross(Vec3::Z).normalize_or(Vec3::X);
         let mut batches = std::mem::take(&mut self.scene.particles);
         self.step_spell_fx(world_dt, right, right.cross(forward), &mut batches);
+        self.step_first_person_equipment(world_dt, right, right.cross(forward));
         self.scene.particles = batches;
         self.update_lod();
         self.update_look_target();

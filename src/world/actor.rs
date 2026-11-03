@@ -524,6 +524,26 @@ fn armor_models(
                 a.get(fallback)
                     .filter(|d| !esp::decode_zstring(d).is_empty())
             });
+        // Rigid shields commonly have a single model for both viewpoints
+        // (IronShieldAA has MOD2 only). Unlike head/body meshes, they cannot
+        // surround the eye; UESP's all-viewpoints fallback applies here.
+        let model = model.or_else(|| {
+            (view == Viewpoint::First && slots & (1 << 9) != 0)
+                .then(|| {
+                    let (preferred, fallback) = if female {
+                        (b"MOD3", b"MOD2")
+                    } else {
+                        (b"MOD2", b"MOD3")
+                    };
+                    a.get(preferred)
+                        .filter(|d| !esp::decode_zstring(d).is_empty())
+                        .or_else(|| {
+                            a.get(fallback)
+                                .filter(|d| !esp::decode_zstring(d).is_empty())
+                        })
+                })
+                .flatten()
+        });
         if let Some(m) = model {
             let s = esp::decode_zstring(m);
             if !s.is_empty() {

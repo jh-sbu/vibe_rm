@@ -67,12 +67,15 @@ impl Engine {
             }
             if !shader.is_null() {
                 let key = (actor, shader, u64::MAX - hand as u64);
-                let Some(path) = self
-                    .rigid_models
-                    .get(&actor)
-                    .and_then(|models| models.iter().find(|(form, _)| *form == weapon))
-                    .map(|(_, path)| format!("{path}#blade"))
-                else {
+                let model = if actor == PLAYER_REF && !self.third_person {
+                    crate::world::actor::weapon_first_person_model(&self.lo, weapon)
+                } else {
+                    self.rigid_models
+                        .get(&actor)
+                        .and_then(|models| models.iter().find(|(form, _)| *form == weapon))
+                        .map(|(_, path)| path.clone())
+                };
+                let Some(path) = model.map(|path| format!("{path}#blade")) else {
                     continue;
                 };
                 let bow = self
@@ -86,7 +89,7 @@ impl Engine {
                     "WEAPON"
                 };
                 let skeleton = if actor == PLAYER_REF {
-                    self.player_body.as_ref().map(|body| &body.skeleton)
+                    self.player_render_body().map(|(_, skeleton)| skeleton)
                 } else {
                     self.actor_ref(actor).map(|actor| &actor.skeleton)
                 };

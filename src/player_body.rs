@@ -1,7 +1,7 @@
 //! The player's body: their race's skeleton, skin, head parts and what they
 //! wear, running the race's behaviour graph as the player moves. Drawn in the
-//! third-person view; seen from inside it in first person, it only casts a
-//! shadow.
+//! third-person view, where its shadow also remains in first person. A separate
+//! arms rig runs the game's first-person graph and models in both views.
 
 use std::sync::Arc;
 
@@ -72,6 +72,7 @@ pub(crate) struct FirstPerson {
     pub(crate) skeleton: Arc<Skeleton>,
     graph: GraphAnim,
     rigid: Vec<(FormId, String)>,
+    particles: std::collections::HashMap<String, Vec<crate::render::particles::ParticleState>>,
     weapon_out: bool,
     ready: bool,
     pub(crate) instance: crate::render::ActorInstance,
@@ -230,7 +231,7 @@ impl Engine {
             inventory.weapon_in(&self.lo, crate::world::inventory::LEFT),
         );
         body.held = inventory.held_all();
-        let mut pose = skel.model_space(&skel.bind_locals());
+        let pose = skel.model_space(&skel.bind_locals());
         if let Some(project) = project {
             let character = project
                 .shared
@@ -265,15 +266,10 @@ impl Engine {
                 g.set_variable(var, value);
             }
             body.graph = Some(g);
-            // Consume notifications even at zero time (e.g. a draw committed
-            // just before the menu opened), keeping attachment/ready state in sync.
-            if let Some(frame) = body.sample(0.0, &self.vfs, &mut self.anims) {
-                pose = frame;
-            }
         }
         let (meshes, _, rigid) = self.actor_meshes(&d, &skel);
         self.rigid_models.insert(PLAYER_REF, rigid);
-        let (equipment, _) = self.rigid_equipment(PLAYER_REF, &skel, body.weapon_out);
+        let (equipment, held_light) = self.rigid_equipment(PLAYER_REF, &skel, body.weapon_out);
         log::info!(
             "player body: {} meshes, {} rigid, {}",
             meshes.len(),
@@ -288,7 +284,7 @@ impl Engine {
             meshes,
             attachments: Vec::new(),
             equipment,
-            held_light: None,
+            held_light,
             transform: body.transform(self.player_feet()),
             pose,
             lights: [0xFFFF; 8],
@@ -299,6 +295,35 @@ impl Engine {
         });
         self.build_first_person(&mut body, &d);
         body.set_view(self.third_person);
+        let out = body.weapon_out;
+        let first_out = body.first.as_ref().map(|f| f.weapon_out);
+        // Re-sample retained graphs at zero time after both rigs exist. An
+        // equipment refresh in a paused menu keeps the current animated pose.
+        if let Some(pose) = body.sample(0.0, &self.vfs, &mut self.anims)
+            && let Some(inst) = self.scene.player.as_mut()
+        {
+            inst.pose = pose;
+        }
+        if out != body.weapon_out {
+            let (equipment, light) = self.rigid_equipment(PLAYER_REF, &skel, body.weapon_out);
+            if let Some(inst) = self.scene.player.as_mut() {
+                inst.equipment = equipment;
+                inst.held_light = light;
+            }
+        }
+        if let Some(first) = body.first.as_mut() {
+            if first_out != Some(first.weapon_out) {
+                let (equipment, light) = self.rigid_equipment_models(
+                    PLAYER_REF,
+                    &first.skeleton,
+                    first.weapon_out,
+                    &first.rigid,
+                    true,
+                );
+                first.instance.equipment = equipment;
+                first.instance.held_light = light;
+            }
+        }
         if let Some(f) = body.first.as_mut() {
             f.place(
                 self.player.eye(),
@@ -335,12 +360,13 @@ impl Engine {
             Arc::ptr_eq(&f.skeleton, &skeleton)
                 && f.graph.matches(&project, FIRST_ANIMATION_RIG, d.female)
         });
-        let (mut graph, weapon_out, ready) = match previous {
-            Some(f) => (f.graph, f.weapon_out, f.ready),
+        let (mut graph, weapon_out, ready, particles) = match previous {
+            Some(f) => (f.graph, f.weapon_out, f.ready, f.particles),
             None => (
                 GraphAnim::new(project, FIRST_ANIMATION_RIG, d.female, &skeleton, self.rng),
                 false,
                 false,
+                Default::default(),
             ),
         };
         graph.label = "player first person".into();
@@ -372,10 +398,17 @@ impl Engine {
         let (equipment, held_light) =
             self.rigid_equipment_models(PLAYER_REF, &skeleton, weapon_out, &rigid, true);
         let pose = skeleton.model_space(&skeleton.bind_locals());
+        log::debug!(
+            "first person: {} meshes, {} equipment, {} bones",
+            meshes.len(),
+            equipment.len(),
+            skeleton.bones.len()
+        );
         body.first = Some(FirstPerson {
             skeleton,
             graph,
             rigid,
+            particles,
             weapon_out,
             ready,
             instance: crate::render::ActorInstance {
@@ -392,6 +425,64 @@ impl Engine {
                 weight: d.weight,
             },
         });
+    }
+
+    /// The carried torch's authored particle systems, posed on the same
+    /// attachment as its mesh. Keep simulation state across ordinary frames.
+    pub(crate) fn step_first_person_equipment(&mut self, dt: f32, right: Vec3, up: Vec3) {
+        let Some(first) = self.player_body.as_mut().and_then(|b| b.first.as_mut()) else {
+            return;
+        };
+        let mut used = std::collections::HashSet::new();
+        for (model, bone, local) in &first.instance.equipment {
+            if model.particles.is_empty() {
+                continue;
+            }
+            used.insert(model.path.clone());
+            let xf = first.instance.transform
+                * first
+                    .instance
+                    .pose
+                    .get(*bone)
+                    .copied()
+                    .unwrap_or(Mat4::IDENTITY)
+                * *local;
+            let fresh = !first.particles.contains_key(&model.path);
+            let states = first
+                .particles
+                .entry(model.path.clone())
+                .or_insert_with(|| {
+                    model
+                        .particles
+                        .iter()
+                        .enumerate()
+                        .map(|(i, _)| crate::render::particles::ParticleState::new(i as u32 + 1))
+                        .collect()
+                });
+            for (state, system) in states.iter_mut().zip(&model.particles) {
+                let inverse = glam::Mat3::from_mat4(xf).inverse();
+                if fresh {
+                    for _ in 0..60 {
+                        state.step(&system.desc, 0.05, inverse);
+                    }
+                }
+                state.step(&system.desc, dt, inverse);
+                if !self.third_person {
+                    let mut vertices = Vec::new();
+                    state.quads(&system.desc, xf, right, up, &mut vertices);
+                    if !vertices.is_empty() {
+                        self.scene.first_person_particles.push(
+                            crate::render::particles::ParticleBatch {
+                                material: system.material.clone(),
+                                vertices,
+                                center: xf.transform_point3(system.desc.bound_center),
+                            },
+                        );
+                    }
+                }
+            }
+        }
+        first.particles.retain(|path, _| used.contains(path));
     }
 
     fn sync_first_person(&mut self) {
@@ -495,6 +586,19 @@ impl Engine {
         let pose = body.animate(dt, &motion, &actions, &self.vfs, &mut self.anims);
         if let Some(f) = body.first.as_mut() {
             f.place(eye, yaw, pitch, body.scale);
+            if log::log_enabled!(log::Level::Trace) {
+                for name in [
+                    "Camera1st [Cam1]",
+                    "NPC LookNode [Look]",
+                    "NPC R Hand [RHnd]",
+                    "WEAPON",
+                    "SHIELD",
+                ] {
+                    if let Some(i) = f.skeleton.find(name) {
+                        log::trace!(target: "first_person_pose", "{name}: {:?}; eye {eye:?}, pitch {pitch}", f.instance.transform.transform_point3(f.instance.pose[i].w_axis.truncate()));
+                    }
+                }
+            }
         }
         let transform = body.transform(feet);
         let events = std::mem::take(&mut body.combat_events);
@@ -518,9 +622,10 @@ impl Engine {
                 if weapon_out { "in hand" } else { "put away" }
             );
             // The weapon goes from its sheath to the hand, or back.
-            let (equipment, _) = self.rigid_equipment(PLAYER_REF, &skel, weapon_out);
+            let (equipment, light) = self.rigid_equipment(PLAYER_REF, &skel, weapon_out);
             if let Some(inst) = self.scene.player.as_mut() {
                 inst.equipment = equipment;
+                inst.held_light = light;
             }
         }
         if let Some((skeleton, drawn, rigid)) = first_equipment {
@@ -531,13 +636,6 @@ impl Engine {
                 first.instance.held_light = light;
             }
         }
-        self.raise_anim_events(PLAYER_REF, &script_events);
-        self.player_swim_steps(&step_events);
-        self.update_player_swing(events.hit_frames, events.attack_stop, dt);
-        self.player_spell_events(events.spell_fire, events.hand_equipped, dt);
-        if let Some(held) = shot {
-            self.player_loose(held);
-        }
         if let Some(inst) = self.scene.player.as_mut() {
             inst.transform = transform;
             inst.shadow_only = !third;
@@ -546,6 +644,13 @@ impl Engine {
             }
         }
         self.sync_first_person();
+        self.raise_anim_events(PLAYER_REF, &script_events);
+        self.player_graph_steps(&step_events);
+        self.update_player_swing(events.hit_frames, events.attack_stop, dt);
+        self.player_spell_events(events.spell_fire, events.hand_equipped, dt);
+        if let Some(held) = shot {
+            self.player_loose(held);
+        }
     }
 }
 
@@ -1339,6 +1444,40 @@ impl Engine {
         } else {
             (k - step).max(goal)
         };
+    }
+
+    pub(crate) fn player_render_body(
+        &self,
+    ) -> Option<(&crate::render::ActorInstance, &Arc<Skeleton>)> {
+        let body = self.player_body.as_ref()?;
+        if !self.third_person
+            && let (Some(instance), Some(first)) = (&self.scene.first_person, &body.first)
+        {
+            Some((instance, &first.skeleton))
+        } else {
+            Some((self.scene.player.as_ref()?, &body.skeleton))
+        }
+    }
+
+    pub(crate) fn player_node(&self, name: &str) -> Option<Mat4> {
+        let (instance, skeleton) = self.player_render_body()?;
+        Some(instance.transform * *instance.pose.get(skeleton.find(name)?)?)
+    }
+
+    pub(crate) fn player_cast_origin(&self, source: crate::casting::CastSource) -> Option<Vec3> {
+        if self.third_person {
+            return None;
+        }
+        use crate::casting::CastSource;
+        let node = |n| self.player_node(n).map(|m| m.w_axis.truncate());
+        match source {
+            CastSource::Left => node("NPC L MagicNode [LMag]"),
+            CastSource::Right => node("NPC R MagicNode [RMag]"),
+            CastSource::Dual => {
+                Some((node("NPC L MagicNode [LMag]")? + node("NPC R MagicNode [RMag]")?) * 0.5)
+            }
+            CastSource::Other => None,
+        }
     }
 
     /// The player's aim: from the eye along the view in first person. In third

@@ -27,6 +27,11 @@ fn first_person_models_use_skin_armor_and_weapon_record_pairs() {
         models.iter().any(|(m, _)| m.contains("1stperson")),
         "{models:?}"
     );
+    let shield = lo.find_editor_id("ArmorIronShield").unwrap();
+    let first = armor_models(&lo, shield, race("ImperialRace"), false, Viewpoint::First);
+    let third = armor_models(&lo, shield, race("ImperialRace"), false, Viewpoint::Third);
+    assert!(!first.is_empty());
+    assert_eq!(first, third);
     let weapon = lo.find_editor_id("IronSword").unwrap();
     let r = lo.get(weapon).unwrap();
     let stat = lo.get(fid_at(&r, r.get(b"WNAM").unwrap())).unwrap();

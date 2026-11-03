@@ -1,6 +1,6 @@
 //! Footstep sounds: actors' graphs raise their footstep events (`FootLeft`,
-//! `FootRight`, `FootFront`...) as feet come down; the player's steps are paced by
-//! the distance walked. Each sounds as the walker's footstep set has it on the
+//! `FootRight`, `FootFront`...) as feet come down. The first-person player's
+//! steps also follow their graph; third-person land steps retain the stride. Each sounds as the walker's footstep set has it on the
 //! material of the ground below.
 
 use std::collections::HashMap;
@@ -135,12 +135,13 @@ impl Engine {
         }
     }
 
-    /// The player's footsteps: one each stride walked on the ground (`moved`:
+    /// Fallback land footsteps (third person, or without a first-person graph):
+    /// one each stride walked on the ground (`moved`:
     /// horizontal distance this frame), and their jumps and landings. The character
     /// controller loses the ground for a frame now and then going over uneven
     /// meshes; only a while in the air (a jump, a fall) starts the stride over.
     pub(crate) fn update_player_footsteps(&mut self, dt: f32, moved: f32, run: bool, sprint: bool) {
-        if self.player.swimming {
+        if self.player.swimming || self.player_uses_graph_steps() {
             self.footsteps.stride = 0.0;
             self.footsteps.airborne = 0.0;
             return;
@@ -205,16 +206,31 @@ impl Engine {
         }
     }
 
-    /// Swimming strokes follow the clip annotations, rather than land strides.
-    pub(crate) fn player_swim_steps(&mut self, events: &[String]) {
-        if !self.player.swimming {
+    fn player_uses_graph_steps(&self) -> bool {
+        !self.third_person && self.player_body.as_ref().is_some_and(|b| b.first.is_some())
+    }
+
+    /// Swimming strokes and first-person land steps follow clip annotations.
+    pub(crate) fn player_graph_steps(&mut self, events: &[String]) {
+        if self.player.noclip || (!self.player.swimming && !self.player_uses_graph_steps()) {
             return;
         }
         let Some(set) = self.player_footstep_set() else {
             return;
         };
+        let gait = if self.player.swimming {
+            Gait::Swim
+        } else if self.player.sneaking {
+            Gait::Sneak
+        } else if self.player.sprinting {
+            Gait::Sprint
+        } else if self.player.running {
+            Gait::Run
+        } else {
+            Gait::Walk
+        };
         for tag in events.iter().filter(|t| set.has_tag(t)) {
-            self.player_step(tag, Gait::Swim);
+            self.player_step(tag, gait);
         }
     }
 

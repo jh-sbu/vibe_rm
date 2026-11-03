@@ -1527,8 +1527,21 @@ impl Engine {
                         }
                     }
                     Some((_, shot)) => {
-                        let from = eye + dir * 20.0 - Vec3::Z * 6.0;
-                        self.spawn_spell_projectile(caster, spell, shot, from, dir, dual);
+                        let from = if caster == PLAYER_REF {
+                            self.player_cast_origin(source)
+                        } else {
+                            None
+                        }
+                        .unwrap_or(eye + dir * 20.0 - Vec3::Z * 6.0);
+                        let aim = if caster == PLAYER_REF && !self.third_person {
+                            let reach = self
+                                .spell_ray(eye, dir, shot.range, caster)
+                                .map_or(shot.range, |(t, _)| t);
+                            (eye + dir * reach - from).normalize_or(dir)
+                        } else {
+                            dir
+                        };
+                        self.spawn_spell_projectile(caster, spell, shot, from, aim, dual);
                     }
                     None => {
                         if let Some((t, owner)) = self.spell_ray(eye, dir, LOCATION_RANGE, caster) {

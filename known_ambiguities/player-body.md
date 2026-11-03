@@ -71,8 +71,8 @@ variable names; the race's attack data (`ATKE`) for attack events.
   the standing one, then any); the left hand's add `LeftHand`
   (`attackPowerStartBackLeftHand` going back). The names suggest this; no
   source states it. The hands' attacks: `known_ambiguities/hands.md`.
-- **Blows at `HitFrame`**, timed by the third-person graph in first person
-  too (the game runs a first-person graph there). A swing whose `HitFrame`
+- **Blows at `HitFrame`**, timed by the visible viewpoint's graph (the
+  separate first-person graph in first person). A swing whose `HitFrame`
   hasn't come within 1.5 s (of its start, or its last blow) is dropped; the
   limit is chosen. It is over at `attackStop` once it has landed, and the
   next attack waits 0.4 s (the graphs' blend out of an attack): the clip
@@ -85,8 +85,8 @@ variable names; the race's attack data (`ATKE`) for attack events.
   hold duration. PolarRobotFrog's public
   [first-person animation modding guide](https://www.nexusmods.com/skyrimspecialedition/mods/97555)
   identifies `arrowRelease` as the annotation that fires the arrow/bolt. The
-  third-person graph still supplies this timing in both views until a separate
-  first-person body exists. Installed `Skyrim - Animations.bsa`'s
+  visible viewpoint's graph supplies this timing; both rigs share one pending
+  release. Installed `Skyrim - Animations.bsa`'s
   `meshes/animationdata/defaultmale.txt` confirms `arrowRelease` in `Bow_Release`
   at 0.0333333 s, and `SneakBow_Release` at 0.0666667 s. The project's `hkb-run`
   tool also confirms accepted `bowAttackStart` / `attackRelease` transitions
