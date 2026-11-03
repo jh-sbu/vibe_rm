@@ -592,7 +592,9 @@ impl Engine {
     /// equip slot (`ETYP`) gives it, in place of what they hold: `hand`
     /// (`RIGHT` / `LEFT`) for a one-handed weapon (any of them, though most
     /// name only the right hand), else the right hand if it may go there;
-    /// all its hands for a two-handed one (a bow puts the shield away).
+    /// all its hands for a two-handed one (a bow puts the shield away). The
+    /// player's bow or crossbow also puts on the weakest ammunition it
+    /// shoots when none it shoots is worn.
     pub fn equip_in(&mut self, r: FormId, item: FormId, hand: Option<usize>) -> Result<(), String> {
         let tag = self.lo.tag_of(item).map(|t| t.0);
         let slot = equip_slot(&self.lo, item);
@@ -615,10 +617,18 @@ impl Engine {
             Some(s) => {
                 inv.hold(lo, item, &s.hands(hand, weapon));
             }
-            None => {
-                inv.take_off_where(|f| f != item && lo.tag_of(f).map(|t| t.0) == Some(*b"AMMO"));
-                inv.wear(item);
-            }
+            None => wear_ammo(lo, inv, item),
+        }
+        // The player's bow or crossbow puts on the weakest ammunition it
+        // shoots, unless some is worn already (UESP Skyrim:Archery).
+        if r == PLAYER_REF
+            && weapon
+            && crate::ai::archery::shoots_ammo(lo, item)
+            && !self.wears_ammo_for(r, item)
+            && let Some(ammo) = self.weakest_ammo(r, item)
+            && let Some(inv) = self.inventories.get_mut(&r)
+        {
+            wear_ammo(&self.lo, inv, ammo);
         }
         Ok(())
     }
@@ -901,3 +911,12 @@ fn without_survival(text: &str) -> String {
 
 #[cfg(test)]
 mod faction_tests;
+
+#[cfg(test)]
+mod ammo_tests;
+
+/// Ammunition worn in place of any other.
+fn wear_ammo(lo: &esp::LoadOrder, inv: &mut crate::world::inventory::Inventory, ammo: FormId) {
+    inv.take_off_where(|f| f != ammo && lo.tag_of(f).map(|t| t.0) == Some(*b"AMMO"));
+    inv.wear(ammo);
+}
