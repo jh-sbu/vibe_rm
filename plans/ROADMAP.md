@@ -2021,7 +2021,7 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      `known_ambiguities/death.md`) and `GetKillingBlowLimb` (the killing blow's
      hit limb isn't kept)
    - The player's body (see Done): first-person arms and weapons (the
-     `_1stperson` skeleton, `1stperson*` models, its own graph); casting,
+     `_1stperson` skeleton, `1stperson*` models, its own graph; `plans/first-person.md`); casting,
      Critical Charge, basic attacks by direction and sprinting
      (`attackStartSprint`, the left hand's `...SprintLeftHand`: left out of
      the attack data with the mounted ones), `attackStop`; bashes landing at
