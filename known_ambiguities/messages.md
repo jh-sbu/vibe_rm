@@ -141,6 +141,19 @@ examined and no asset or disassembly is committed.
   text labels for chords or unbound events. These label choices remain
   provisional pending the prepared manual Skyrim SE observation; they are
   not claimed as verified original-game behavior.
+  Implementation is complete as of 2026-11-03: controls stay unresolved until
+  plain-text display; help/art paths keep brackets, and live help refreshes on
+  map generation changes. Follow-up review fix `ab41fc1` returns an empty art
+  callback result for unknown tags, allowing the movie to retain them, and
+  routes HUD Activate through the same control-art resolver. This does not
+  establish the native callback's result. Workspace and targeted tests passed;
+  this engine's offscreen box labels and help art changed Activate E to J with
+  a custom map (captures and counts in the research note). **User Skyrim SE
+  screenshots remain pending** under that note's manual protocol. Native plain
+  labels, unbound/chord results and localization remain open; implementation
+  captures do not settle them. The survey also includes unresolved `Mouse Move`,
+  `ShowOnMap`, `Modded`, thumbstick names, and non-control book/prose brackets;
+  unknown plain-text candidates are intentionally left as written.
 
 ## Already playing audio in menu mode
 

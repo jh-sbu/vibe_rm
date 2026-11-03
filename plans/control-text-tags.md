@@ -1,16 +1,18 @@
 # Plan: control tags in text through the live input map
 
-**Status: drafted** (2026-10-30). ROADMAP Next item 6 (UI), "Control text
-tags". Each numbered step (or lettered sub-step) is one commit; run
-`cargo fmt` before each.
+**Status: implementation complete** (2026-11-03), including step 5 docs.
+The ROADMAP control text tags item is in Done. **User Skyrim SE screenshots
+remain explicitly pending**; implementation verification is not verification
+of original-game behavior. Native label/chord/localization questions remain
+open below and in `research/ui/control-tags.md`.
 
 Message, help, loading and quest text names controls in square brackets
-(`[Activate]`, `[Right Attack/Block]`). This engine replaces them with fixed
-labels from `messages::control_key`, so a rebound key still shows its default
-name, and the HUD gets plain text where its movie would draw button art. This
-plan resolves every tag through the live input map (`Engine::input_map`),
-keeps tags in text until it is shown, and leaves them for the movies that
-draw art themselves.
+(`[Activate]`, `[Right Attack/Block]`). Previously this engine replaced them
+with fixed labels from `messages::control_key`, so a rebound key still showed
+its default name, and the HUD got plain text where its movie would draw button
+art. The implementation resolves recognized tags through the live input map
+(`Engine::input_map`), keeps tags in text until it is shown, and leaves them
+for the movies that draw art themselves.
 
 Rules as for all work here (AGENTS.md): public sources and game assets only.
 Describe the movies' behaviour in prose; don't copy their bytecode into the
@@ -76,8 +78,9 @@ open questions in this plan.
   bracketed name. An event in any context resolves to its bindings: the
   first context naming it wins, as `Buttons` does, and `!ctx,Event`
   references are followed. Otherwise a name in the key-name tables resolves
-  to that key. Otherwise the result is `None` and the tag stays as written,
-  which keeps gamepad names until a gamepad exists.
+  to that key. Otherwise the result is `None` and the plain-text tag stays as
+  written, which keeps unknown gamepad names until a gamepad exists. The art
+  callback returns an empty result for unknown tags so the movie retains them.
 - **Two renderings.** Movies that draw art get the tag unchanged; the art
   comes from `GetButtonFromUserEvent`, which already reads the live map.
   Plain-text movies get a text label: keyboard first, else mouse, from the
@@ -102,6 +105,26 @@ open questions in this plan.
   reset shows up in text that is already up.
 
 ## Steps
+
+All implementation steps are complete (2026-11-03). Commit schedule:
+
+| Step | Commit |
+| --- | --- |
+| 0: research, survey and manual probe | `6dae9fc` |
+| 1a: cross-context event lookup | `e8e5225` |
+| 1b: key names and resolver | `8e42960` |
+| 2: text through the resolver | `4ae3768` |
+| 3a: help tags for art | `b104bf6` |
+| 3b: message boxes and notifications at display | `b15647d` |
+| 3c: loading and journal text at display | `f4c6de1` |
+| 4: generation-driven refresh | `b4bb90c` |
+| Follow-up review fix | `ab41fc1` |
+
+The follow-up returns an empty result for unknown art tags (so the movie
+retains their brackets) and unifies HUD Activate with the control-art resolver.
+Step 5 is this documentation finalization; the user-run SE observation is still
+pending, not a prerequisite silently treated as completed. The original work
+breakdown follows for traceability.
 
 0. **Research and a survey tool.**
    - In `hudmenu.swf`, find what calls `CreateButtonArt`: the tutorial hint,
@@ -167,28 +190,42 @@ open questions in this plan.
    timeline has no refresh call. The journal's lists are filled when they
    open, so they need nothing more. Engine test: show a help message, call
    `remap` and check the text the HUD gets next.
-5. **Docs.** Update `known_ambiguities/messages.md` "Controls in text"
-   with the choices and the SE observation once it's in. Mark this plan
-   done and move the ROADMAP item to Done.
+5. **Docs — complete (2026-11-03).** Updated the choices and implementation
+   evidence in the ambiguity/research notes and moved the ROADMAP item to Done.
+   The SE observation remains pending; add user screenshots and findings when
+   supplied, without treating implementation captures as original-game evidence.
 
 ## Verification
 
-- `cargo test` for the resolver, the text replacement and the
-  generation-driven refresh.
-- Offscreen run with `VRM_CONTROLS` pointing at a custom controlmap that
-  moves Activate. Use a help message (`--console` with a quest that shows
-  one, or the Survival Mode box for a message box) and capture the HUD
-  hint and a message box, before and after.
-- `vrm-tool control-tags` before and after: every tag the data uses
-  resolves, except the gamepad names.
+Completed 2026-11-03 (this engine only):
+
+- `cargo test --workspace` passed: core 616 passed / 412 ignored; tools
+  53 passed / 3 ignored. Targeted ignored tests also passed: messages 9,
+  loading 3, resets 4, save 1, HUD 1.
+- Actual offscreen runs succeeded using external assets and a custom
+  `VRM_CONTROLS` map rebinding Activate from E to J (`0x24`). Captures are
+  `/tmp/vrm-control-tags-verification/{box,hint}-{before,after}.png`.
+  The plain box changed E to J; other labels stayed L-Alt, Mouse1, Q,
+  Mouse1, R. The help hint's Activate art also changed E to J.
+  The generated probe is under that `/tmp` directory. No game assets were
+  copied and no original-game runs were performed.
+- Before/after shipped-map surveys were identical: 4,889 records, 43 HMPC
+  help forms, 130 candidates (45 events, 7 keys, 78 unmatched). Expected
+  exceptions include `Mouse Move`, `ShowOnMap`, `Modded`, thumbstick names,
+  `[Optional]`, book markup such as `[pagebreak]`, and editorial prose.
+  Not every bracket candidate is a control; “all tags resolve except
+  gamepad” is not the verification criterion. See the research survey.
+- User Skyrim SE screenshots remain pending under the manual protocol in
+  `research/ui/control-tags.md` (“Manual Skyrim SE observation”).
 
 ## Open questions
 
 - Whether the game shows key names (`L-Shift`) or other words in plain
   text, and what it shows for an unbound event and a chord (step 0's SE
   observation).
-- Whether notifications and journal lists draw button art (step 0, from the
-  movies).
+- Movie inspection found no button-art path for notifications or journal
+  quest lists. Native notification preprocessing remains unverified pending
+  the user observation; asset evidence does not establish native behavior.
 - Localised key names for other languages (`keyboard_french.txt`...) when
   the game language isn't English: follow the strings' language setting
   once there is one.

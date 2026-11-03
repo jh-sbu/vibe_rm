@@ -1,8 +1,10 @@
 # Control tags in player-facing text
 
-Step 0 of `plans/control-text-tags.md`, researched 2026-11-03. **Original-game
-screenshots are pending.** Movie behavior below is asset evidence, not an
-observation of native text replacement or of the native binding callback.
+Research and implementation verification for `plans/control-text-tags.md`,
+2026-11-03. **Implementation, including step 5 docs, is complete; user Skyrim SE
+screenshots are explicitly pending.** Movie behavior below is asset evidence,
+not an observation of native text replacement or of the native binding callback.
+Offscreen captures below verify only this engine, not original-game behavior.
 
 ## Sources and method
 
@@ -168,10 +170,29 @@ behavior choice has been made on those questions here.
 
 ## Validation
 
-- `cargo test -p vrm-tools`: 53 passed, three existing asset-dependent tests ignored.
+- `cargo test --workspace` passed: core 616 passed / 412 ignored; tools
+  53 passed / 3 ignored. Targeted ignored tests passed separately: messages 9,
+  loading 3, resets 4, save 1, HUD 1.
 - Tools-local tests cover context order/event precedence, references retained in
   classification, literal keys, unknown names and bracket extraction.
 - The probe PEX builds, parses and is checked against the existing vanilla native
   signature table; the plugin was successfully generated after the required build.
 - The survey completed against the external installation; missing arguments
-  return a usage error rather than indexing past the argument list.
+  return a usage error rather than indexing past the argument list. Before/after
+  surveys were identical: 4,889 records, 43 HMPC help forms, 130 candidates
+  (45 events, 7 keys, 78 unmatched). The exceptions documented above, including
+  `Mouse Move`, `ShowOnMap`, `Modded` and book markup, remain expected.
+- Actual offscreen runs succeeded using external assets and a custom
+  `VRM_CONTROLS` map changing Activate E to J (`0x24`). PNGs are at
+  `/tmp/vrm-control-tags-verification/{box,hint}-{before,after}.png`.
+  Plain box Activate changed E to J; the other labels stayed L-Alt, Mouse1, Q,
+  Mouse1, R. The help hint's Activate art changed E to J too. The generated probe
+  is under that `/tmp` directory; no game assets were copied and no original
+  game runs were performed.
+- Follow-up review fix `ab41fc1` returns an empty result for unknown art tags,
+  allowing the movie to preserve the original brackets, and unifies HUD Activate
+  with the control-art resolver. This implementation policy is not evidence of
+  the native callback result. The full step/commit schedule is in the plan.
+- The manual Skyrim SE protocol above remains pending user screenshots. Native
+  plain labels, unbound/unknown callback behavior, notification preprocessing,
+  chords and localization remain unanswered by these implementation checks.

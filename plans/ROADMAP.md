@@ -5,6 +5,16 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- **Control text tags** (implementation complete 2026-11-03;
+  `plans/control-text-tags.md`): live-map labels, display-time resolution,
+  preserved help/art tags and generation-driven refresh after remaps/resets.
+  Review fix `ab41fc1` preserves unknown art tags via an empty callback result
+  and unifies HUD Activate resolution. Workspace/targeted tests, shipped-map
+  surveys and offscreen box/help E-to-J captures passed. **User Skyrim SE
+  screenshots remain pending** under `research/ui/control-tags.md`'s manual
+  protocol; native labels, unbound/chord behavior and localization remain open,
+  with provisional choices in `known_ambiguities/messages.md`. Implementation
+  completion is not verification of original-game behavior.
 - **Local map** (`plans/local-map.md`): an orthographic image of interiors
   and loaded exterior cells, with load doors, tracked quest targets, the
   player and custom destination, pan and zoom, and saved explored squares.
@@ -2203,12 +2213,6 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      FloatingQuestMarker_mc clips with in-world tracked objectives and gate
      them with bShowFloatingQuestMarkers (stored now; compass targets already
      work)
-   - Control text tags: resolve `[Activate]` and other `[Control]` tags through
-     the live input map instead of messages::control_key's fixed labels. Cover
-     keyboard/mouse bindings, chords and unbound controls; preserve tags until
-     display or refresh already-expanded tutorial messages and journal/objective
-     text after a rebind or reset. Input dispatch and button art already remap.
-     Plan: `plans/control-text-tags.md`.
    - The journal's rest: gamepad input and its Controller/Vibration
      options; DDOF's option once depth of field renders. Creations/Installed Content remain
      excluded from the vanilla runtime. The statistics
