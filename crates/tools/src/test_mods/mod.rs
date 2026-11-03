@@ -39,6 +39,7 @@ mod autotest9;
 mod controltags;
 mod crafting1;
 mod dualcast;
+mod firstperson;
 mod loadscreens;
 mod pex;
 mod places;
@@ -81,6 +82,7 @@ pub const NAMES: &[&str] = &[
     "spell-visuals",
     "loadscreens",
     "ammo",
+    "firstperson",
 ];
 
 /// A test mod's files: the plugin, and its compiled scripts by name.
@@ -98,6 +100,7 @@ pub fn own(object_id: u32) -> FormId {
 /// The files of a test mod (one of [`NAMES`]), with Skyrim.esm loaded.
 pub fn build(name: &str, lo: &LoadOrder) -> Result<TestMod> {
     match name {
+        "firstperson" => firstperson::build(lo),
         "ammo" => ammo::build(lo),
         "controltags" => controltags::build(),
         "crafting1" => crafting1::build(lo),

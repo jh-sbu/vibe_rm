@@ -66,6 +66,15 @@ pub fn run(data: &str) -> Result<()> {
         };
         *counts.entry(status.into()).or_default() += 1;
     }
+    for key in [b"FFFP", b"FFTP"] {
+        if let Some(&id) = lo.default_objects().get(key) {
+            println!(
+                "DOBJ {} {id} {}",
+                String::from_utf8_lossy(key),
+                lo.get(id).and_then(|r| r.editor_id()).unwrap_or_default()
+            );
+        }
+    }
     // Search plugin subrecords only, never executables or engine memory.
     for tag in [b"RACE", b"ARMA", b"WEAP", b"STAT", b"IDLE", b"GMST"] {
         for &id in lo.ids_of_type(tag) {
