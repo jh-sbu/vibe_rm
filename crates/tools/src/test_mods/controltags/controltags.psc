@@ -8,10 +8,30 @@ Message Property NoteA Auto
 Message Property NoteB Auto
 Message Property HelpA Auto
 Message Property HelpB Auto
+GlobalVariable Property Run Auto
 
 Bool Logged = false
 
-; cqf VrmControlTagsQuest Probe: the box, two notifications, the objective
+; The console's `set VrmControlTagsRun to 1` runs Probe, `to 2` Hint (vanilla
+; has no command to call a script function). Checked once a second.
+Event OnInit()
+    RegisterForSingleUpdate(1.0)
+EndEvent
+
+Event OnUpdate()
+    Int Request = Run.GetValueInt()
+    If Request != 0
+        Run.SetValue(0.0)
+        If Request == 1
+            Probe()
+        ElseIf Request == 2
+            Hint()
+        EndIf
+    EndIf
+    RegisterForSingleUpdate(1.0)
+EndEvent
+
+; Probe: the box, two notifications, the objective
 ; (and, the first time, the log entry), then the two help messages.
 Function Probe()
     Utility.Wait(5.0)
@@ -32,7 +52,7 @@ Function Probe()
     ShowHelp(HelpB, "VrmControlTagsB", 15.0)
 EndFunction
 
-; cqf VrmControlTagsQuest Hint: help A for 90 seconds, to rebind under.
+; Hint: help A for 90 seconds, to rebind under.
 Function Hint()
     Utility.Wait(3.0)
     ShowHelp(HelpA, "VrmControlTagsA", 90.0)

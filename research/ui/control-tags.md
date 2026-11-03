@@ -169,10 +169,14 @@ The surfaces are:
 
 Use a throwaway save, keyboard and mouse, and default controls. Make sure
 tutorials/help messages are on in the game's settings. If the quest isn't
-running, start it with `startquest VrmControlTagsQuest`. Each `cqf` below:
-close the console right after it, and don't start another until it ends.
+running, start it with `startquest VrmControlTagsQuest`. Vanilla's console
+can't call a script function (`cqf` is SKSE's), so the probe is started with
+the console's `set` command on a global, which the quest checks once a second
+(UESP, [Skyrim:Console](https://en.uesp.net/w/index.php?oldid=3628513),
+`set <global> to <value>`). After each `set` below, close the console right
+away, and don't start another run until the last one ends.
 
-**Round 1: default controls.** Run `cqf VrmControlTagsQuest Probe`.
+**Round 1: default controls.** Run `set VrmControlTagsRun to 1`.
 1. After 5 s, a message box: screenshot it, then press its button.
 2. After 2 s, notification A, then 3 s later notification B: screenshot each.
 3. After 8 s, the objective banner: screenshot it.
@@ -180,7 +184,7 @@ close the console right after it, and don't start another until it ends.
 5. Open the journal on the quest: screenshot its name, objective and log
    entry.
 
-**Round 2: rebinding.** Run `cqf VrmControlTagsQuest Hint`. Help A comes up
+**Round 2: rebinding.** Run `set VrmControlTagsRun to 2`. Help A comes up
 for 90 s.
 1. Screenshot help A.
 2. While it is still up, open the Controls settings and rebind Activate to
@@ -190,7 +194,7 @@ for 90 s.
    art change, or does it keep E until the hint is shown again?
 4. Open the journal on the quest: screenshot it again. Does text written
    under E now show NumPad5?
-5. Run `cqf VrmControlTagsQuest Probe` again and screenshot every surface as
+5. Run `set VrmControlTagsRun to 1` again and screenshot every surface as
    in round 1. The objective banner shows again; the log entry is written
    only once.
 

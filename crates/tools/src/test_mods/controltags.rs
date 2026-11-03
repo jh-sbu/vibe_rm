@@ -24,20 +24,25 @@
 //! | 12 | `[Mouse Move]` | not a name (the key is `MouseMove`) | kept / kept |
 //! | 13 | `[Left Thumbstick]` | not a name | kept / kept |
 //!
+//! Vanilla's console can't call a script function (`cqf` is SKSE's), so
+//! `set VrmControlTagsRun to 1` runs the probe and `to 2` the long hint;
+//! the quest's script checks the global once a second.
+//!
 //! Surfaces: a message box (title, text, button), two notifications, the
 //! quest's objective (HUD banner and journal), its name and log entry in the
 //! journal, and two help messages (the HUD's tutorial hint). Round 2 rebinds
 //! Activate to NumPad5, a key with no button art: its label and art, and
 //! whether text already in the journal or a hint already up changes.
 
-use super::{TestMod, own, script};
+use super::{TestMod, own, records, script};
 use anyhow::Result;
 use esp::writer::{AttachedScript, Node, PropertyValue, RecordBuilder, vmad, write_plugin};
 
 const SCRIPT: &str = "VrmControlTagsScript";
 const SOURCE: &str = include_str!("controltags/controltags.psc");
 const QUEST: u32 = 0x800;
-const NEXT_OBJECT_ID: u32 = 0x806;
+const RUN: u32 = 0x806;
+const NEXT_OBJECT_ID: u32 = 0x807;
 
 const A: &str =
     "A: 1[Activate] 2[activate] 3[Sprint] 4[Right Attack/Block] 5[Favorites] 6[Mouse1] 7[XButton]";
@@ -65,6 +70,7 @@ pub fn build() -> Result<TestMod> {
         properties: messages()
             .iter()
             .map(|(name, id, ..)| (name.to_string(), PropertyValue::Object(own(*id))))
+            .chain([("Run".to_string(), PropertyValue::Object(own(RUN)))])
             .collect(),
     };
     // DNAM: flags (start game enabled, starts enabled), priority, form
@@ -115,9 +121,13 @@ pub fn build() -> Result<TestMod> {
             0,
             &["Skyrim.esm"],
             "vibe_rm",
-            "Control tags (visual): cqf VrmControlTagsQuest Probe, close the console.",
+            "Control tags (visual): set VrmControlTagsRun to 1, close the console.",
             NEXT_OBJECT_ID,
             &[
+                Node::top(
+                    b"GLOB",
+                    vec![records::global(RUN, "VrmControlTagsRun", 0.0)],
+                ),
                 Node::top(b"QUST", vec![quest]),
                 Node::top(b"MESG", messages),
             ],
@@ -138,5 +148,24 @@ mod tests {
         assert!(!m.plugin.is_empty());
         assert_eq!(super::A.matches('[').count(), 7);
         assert_eq!(super::B.matches('[').count(), 6);
+    }
+
+    #[test]
+    fn polls_without_showing_until_asked() {
+        use super::super::script::dry_run::{form, run};
+        let mut properties: Vec<_> = super::messages()
+            .iter()
+            .map(|(name, id, ..)| (name.to_string(), form(super::own(*id).0, "Message")))
+            .collect();
+        properties.push((
+            "Run".into(),
+            form(super::own(super::RUN).0, "GlobalVariable"),
+        ));
+        let shown = run(
+            super::scripts().unwrap(),
+            &[(super::own(super::QUEST).0, super::SCRIPT, properties)],
+            0,
+        );
+        assert!(shown.boxes.is_empty());
     }
 }
