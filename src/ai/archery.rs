@@ -12,7 +12,8 @@ use super::{ActorRuntime, State, World, uniform};
 use crate::engine::{Engine, PLAYER_REF};
 use crate::render::{GpuModel, Instance};
 
-/// AMMO `DATA` flag: an arrow (not a bolt).
+/// AMMO `DATA` flags: not playable; an arrow (not a bolt).
+const AMMO_NON_PLAYABLE: u32 = 0x2;
 const AMMO_NON_BOLT: u32 = 0x4;
 /// Iron arrows: what archers without arrows of their own shoot.
 const IRON_ARROW: FormId = FormId(0x1397D);
@@ -39,8 +40,9 @@ const CAPSULE_CENTRE: f32 = 60.0;
 /// How far behind its point an arrow is drawn (flight models are 58 units long,
 /// head to nock): the head sinks into what it strikes.
 const ARROW_EMBED: f32 = 40.0;
-/// Bow animation type (`WEAP` `DNAM`).
+/// Bow and crossbow animation types (`WEAP` `DNAM`).
 const ANIM_BOW: u8 = 7;
+const ANIM_CROSSBOW: u8 = 9;
 
 #[cfg(test)]
 #[path = "archery_ammo_tests.rs"]
@@ -98,14 +100,74 @@ pub fn arrow(lo: &LoadOrder, ammo: FormId) -> Option<Arrow> {
     Some(a)
 }
 
+/// An `AMMO` record's flags and damage (`DATA`).
+fn ammo_data(lo: &LoadOrder, ammo: FormId) -> Option<(u32, f32)> {
+    let rec = lo.get(ammo).filter(|r| r.tag().0 == *b"AMMO")?;
+    let d = rec.get(b"DATA").filter(|d| d.len() >= 12)?;
+    Some((
+        u32::from_le_bytes(d[4..8].try_into().unwrap()),
+        f32_at(d, 8),
+    ))
+}
+
 /// Only non-bolt `AMMO` records can supply a bow, including explicitly worn
 /// ammunition. `arrow` also reads bolts for projectile users, so it deliberately
 /// does not impose this restriction itself.
 fn bow_ammo_damage(lo: &LoadOrder, ammo: FormId) -> Option<f32> {
-    let rec = lo.get(ammo).filter(|r| r.tag().0 == *b"AMMO")?;
-    let d = rec.get(b"DATA").filter(|d| d.len() >= 12)?;
-    let flags = u32::from_le_bytes(d[4..8].try_into().unwrap());
-    (flags & AMMO_NON_BOLT != 0).then(|| f32_at(d, 8))
+    ammo_data(lo, ammo).and_then(|(flags, damage)| (flags & AMMO_NON_BOLT != 0).then_some(damage))
+}
+
+/// The damage of ammunition `weapon` shoots: arrows for a bow, bolts (no
+/// non-bolt flag) for a crossbow; `None` for other ammunition or weapons.
+pub(crate) fn ammo_for(lo: &LoadOrder, weapon: FormId, ammo: FormId) -> Option<f32> {
+    let arrows = match lo
+        .get(weapon)
+        .filter(|r| r.tag().0 == *b"WEAP")
+        .and_then(|r| r.get(b"DNAM").and_then(|d| d.first().copied()))?
+    {
+        ANIM_BOW => true,
+        ANIM_CROSSBOW => false,
+        _ => return None,
+    };
+    let (flags, damage) = ammo_data(lo, ammo)?;
+    ((flags & AMMO_NON_BOLT != 0) == arrows).then_some(damage)
+}
+
+/// Whether a weapon shoots ammunition (a bow or crossbow).
+pub fn shoots_ammo(lo: &LoadOrder, weapon: FormId) -> bool {
+    lo.get(weapon)
+        .filter(|r| r.tag().0 == *b"WEAP")
+        .and_then(|r| r.get(b"DNAM").and_then(|d| d.first().copied()))
+        .is_some_and(|t| t == ANIM_BOW || t == ANIM_CROSSBOW)
+}
+
+/// The weakest playable ammunition carried that `weapon` shoots (lowest
+/// `DATA` damage); of equals, the first the inventory lists.
+fn weakest_in(
+    lo: &LoadOrder,
+    inv: &crate::world::inventory::Inventory,
+    weapon: FormId,
+) -> Option<FormId> {
+    inv.items
+        .iter()
+        .filter(|&&(_, n)| n > 0)
+        .filter(|&&(f, _)| {
+            ammo_data(lo, f).is_some_and(|(flags, _)| flags & AMMO_NON_PLAYABLE == 0)
+        })
+        .filter_map(|&(f, _)| ammo_for(lo, weapon, f).map(|damage| (f, damage)))
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|a| a.0)
+}
+
+/// Whether any ammunition `weapon` shoots is worn and carried.
+fn wears_ammo_for(
+    lo: &LoadOrder,
+    inv: &crate::world::inventory::Inventory,
+    weapon: FormId,
+) -> bool {
+    inv.equipped()
+        .iter()
+        .any(|&f| inv.count(f) > 0 && ammo_for(lo, weapon, f).is_some())
 }
 
 /// Prefer carried, equipped arrows, otherwise the strongest carried arrows.
@@ -342,6 +404,19 @@ impl Engine {
     /// ones for an NPC that has none (NPCs never run out).
     pub(crate) fn arrows_of(&self, actor: FormId) -> Option<Arrow> {
         arrows_in(&self.lo, self.inventories.get(&actor), actor != PLAYER_REF)
+    }
+
+    /// The weakest ammunition the actor carries that `weapon` shoots: what
+    /// equipping a bow or crossbow puts on (UESP Skyrim:Archery).
+    pub(crate) fn weakest_ammo(&self, actor: FormId, weapon: FormId) -> Option<FormId> {
+        weakest_in(&self.lo, self.inventories.get(&actor)?, weapon)
+    }
+
+    /// Whether the actor wears ammunition `weapon` shoots, and carries it.
+    pub(crate) fn wears_ammo_for(&self, actor: FormId, weapon: FormId) -> bool {
+        self.inventories
+            .get(&actor)
+            .is_some_and(|inv| wears_ammo_for(&self.lo, inv, weapon))
     }
 
     /// Whether each archer has a clear shot at its target's body: nothing but the
