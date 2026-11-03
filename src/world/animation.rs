@@ -468,6 +468,16 @@ fn bones_key(skeleton: &Skeleton) -> u64 {
     h.finish()
 }
 
+/// Most rigs have matching NIF/HKX names; characters such as first person
+/// name a different Havok skeleton in their character asset.
+fn havok_rig_path(path: &str) -> Option<String> {
+    if path.ends_with(".hkx") {
+        Some(path.to_owned())
+    } else {
+        path.strip_suffix(".nif").map(|p| format!("{p}.hkx"))
+    }
+}
+
 /// Loads and caches clips per (clip path, skeleton path, the skeleton's bones).
 #[derive(Default)]
 pub struct AnimationLibrary {
@@ -502,9 +512,7 @@ impl AnimationLibrary {
         nif_skeleton_path: &str,
         skeleton: &Skeleton,
     ) -> Vec<Option<usize>> {
-        let hk = nif_skeleton_path
-            .strip_suffix(".nif")
-            .and_then(|s| self.havok_skeleton(vfs, &format!("{s}.hkx")));
+        let hk = havok_rig_path(nif_skeleton_path).and_then(|p| self.havok_skeleton(vfs, &p));
         hk.map(|hk| hk.bones.iter().map(|b| skeleton.find(&b.name)).collect())
             .unwrap_or_default()
     }
@@ -582,9 +590,7 @@ impl AnimationLibrary {
         if let Some(c) = self.clips.get(&key) {
             return c.clone();
         }
-        let hkx_skel = nif_skeleton_path
-            .strip_suffix(".nif")
-            .map(|s| format!("{s}.hkx"));
+        let hkx_skel = havok_rig_path(nif_skeleton_path);
         let hk = hkx_skel.and_then(|p| self.havok_skeleton(vfs, &p));
         let result = (|| {
             let bytes = vfs.read(clip)?;

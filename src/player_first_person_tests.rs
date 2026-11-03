@@ -185,3 +185,22 @@ fn pitched_rig_anchors_camera_at_eye_with_yaw_scale_and_crouch() {
         }
     }
 }
+
+#[test]
+fn first_person_instance_is_excluded_from_world_queries_and_has_its_own_projection() {
+    let mut scene = crate::render::Scene::default();
+    scene.first_person = Some(first_rig(notifications("HitFrame")).instance);
+    assert_eq!(scene.actors().count(), 0);
+    assert!(scene.pick(Vec3::ZERO, Vec3::Y).is_empty());
+    let camera = crate::render::Camera {
+        position: Vec3::ZERO,
+        yaw: 0.0,
+        pitch: 0.0,
+        fov_y: 1.0,
+        projection: crate::render::Projection::Perspective,
+    };
+    let p = camera.first_person_proj(16.0 / 9.0);
+    let near = p.project_point3(Vec3::new(0.0, 0.0, -1.0));
+    assert!((near.z - 1.0).abs() < 0.0001);
+    assert_ne!(p, camera.proj(16.0 / 9.0));
+}

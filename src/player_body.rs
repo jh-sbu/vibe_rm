@@ -64,6 +64,8 @@ pub struct PlayerBody {
 }
 
 const FIRST_RIG: &str = "meshes/actors/character/_1stperson/skeleton.nif";
+const FIRST_ANIMATION_RIG: &str =
+    "meshes/actors/character/_1stperson/characterassets/skeletonfirst.hkx";
 const FIRST_PROJECT: &str = "meshes/actors/character/_1stperson/firstperson.hkx";
 
 pub(crate) struct FirstPerson {
@@ -202,6 +204,7 @@ impl Engine {
         self.player_swing = None;
         let heading = previous.as_ref().map_or(self.camera.yaw, |b| b.heading);
         self.scene.player = None;
+        self.scene.first_person = None;
         let inventory = self.inventory_mut(PLAYER_REF).clone();
         let Some(d) =
             crate::world::actor::describe_player(&self.lo, PLAYER_REF, PLAYER_NPC, &inventory)
@@ -306,6 +309,7 @@ impl Engine {
         }
         let script_events = std::mem::take(&mut body.script_events);
         self.player_body = Some(body);
+        self.sync_first_person();
         self.raise_anim_events(PLAYER_REF, &script_events);
     }
 
@@ -328,12 +332,13 @@ impl Engine {
             return;
         };
         let previous = body.first.take().filter(|f| {
-            Arc::ptr_eq(&f.skeleton, &skeleton) && f.graph.matches(&project, FIRST_RIG, d.female)
+            Arc::ptr_eq(&f.skeleton, &skeleton)
+                && f.graph.matches(&project, FIRST_ANIMATION_RIG, d.female)
         });
         let (mut graph, weapon_out, ready) = match previous {
             Some(f) => (f.graph, f.weapon_out, f.ready),
             None => (
-                GraphAnim::new(project, FIRST_RIG, d.female, &skeleton, self.rng),
+                GraphAnim::new(project, FIRST_ANIMATION_RIG, d.female, &skeleton, self.rng),
                 false,
                 false,
             ),
@@ -387,6 +392,23 @@ impl Engine {
                 weight: d.weight,
             },
         });
+    }
+
+    fn sync_first_person(&mut self) {
+        self.scene.first_person = if self.third_person {
+            None
+        } else {
+            self.player_body
+                .as_ref()
+                .and_then(|b| b.first.as_ref())
+                .map(|f| {
+                    let mut instance = f.instance.clone();
+                    let (center, radius) = instance.bounds();
+                    instance.lights =
+                        crate::render::pick_lights(&self.scene.lights, center, radius);
+                    instance
+                })
+        };
     }
 
     /// Place and animate the body after the player moved `moved` this update.
@@ -523,6 +545,7 @@ impl Engine {
                 inst.pose = pose;
             }
         }
+        self.sync_first_person();
     }
 }
 
@@ -1348,6 +1371,7 @@ impl Engine {
         if let Some(inst) = self.scene.player.as_mut() {
             inst.shadow_only = !on;
         }
+        self.sync_first_person();
     }
 
     /// Move the third-person camera nearer (negative) or farther.

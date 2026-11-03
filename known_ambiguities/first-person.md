@@ -32,3 +32,9 @@ comparison with vanilla Skyrim SE, not deliberate deviations.
   pending bow release prevent duplicate damage/shots across a view switch.
   Public assets establish two graphs and differing trigger times, but not
   which graph vanilla script listeners hear. The probe must settle routing.
+
+- **Projection and depth.** Draw arms after the world with fresh reverse-Z
+  depth, near=1 unit and vertical FOV=65 degrees. The STEP INI reference
+  documents the number, not its SE vertical conversion or the depth
+  algorithm. This keeps the arms from intersecting walls or being clipped
+  by the world's five-unit near plane; visual parity is still unmeasured.

@@ -1673,6 +1673,11 @@ impl Engine {
                         equipment.push((model.clone(), bone, glam::Mat4::IDENTITY));
                         rigid.push((*item, m.clone()));
                     }
+                    None if self.lo.tag_of(*item).is_some_and(|t| t.0 == *b"WEAP") => {
+                        // First-person weapon STATs need no sheath/Prn node;
+                        // the drawn equipment path supplies WEAPON/SHIELD.
+                        rigid.push((*item, m.clone()));
+                    }
                     None => log::debug!(
                         "{}: rigid model {m} has no parent bone in {}",
                         d.name,

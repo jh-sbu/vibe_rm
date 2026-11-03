@@ -754,6 +754,7 @@ impl Default for Environment {
 }
 
 /// One skinned shape of an actor, with its bones mapped onto the actor's skeleton.
+#[derive(Clone)]
 pub struct ActorMesh {
     pub model: Arc<GpuModel>,
     pub part: usize,
@@ -772,6 +773,7 @@ pub struct HeldLight {
 }
 
 /// A posed, skinned character.
+#[derive(Clone)]
 pub struct ActorInstance {
     pub meshes: Vec<ActorMesh>,
     /// Rigid (non-skinned) models attached to skeleton bones, e.g. weapons.
@@ -848,6 +850,12 @@ pub struct Scene {
     pub cells: HashMap<CellKey, RenderCell>,
     /// The player's body, outside any cell.
     pub player: Option<ActorInstance>,
+    /// Arms and held equipment, rendered after the world with their own depth.
+    /// Kept out of actors(): no shadows, world culling, or ray picking.
+    pub first_person: Option<ActorInstance>,
+    pub first_person_effects: Vec<Instance>,
+    pub first_person_particles: Vec<particles::ParticleBatch>,
+    pub first_person_membranes: Vec<ActorInstance>,
     /// Distant LOD instances.
     pub lod: Vec<Instance>,
     /// Moving instances outside any cell (arrows), rebuilt each frame.
@@ -951,6 +959,7 @@ impl Scene {
             .values_mut()
             .flat_map(|c| c.actors.iter_mut())
             .chain(self.player.iter_mut())
+            .chain(self.first_person.iter_mut())
         {
             let (center, radius) = a.bounds();
             a.lights = pick_lights(lights, center, radius);
@@ -984,6 +993,7 @@ impl Scene {
             .values_mut()
             .flat_map(|c| c.actors.iter_mut())
             .chain(self.player.iter_mut())
+            .chain(self.first_person.iter_mut())
         {
             let (center, radius) = a.bounds();
             if touched(center, radius, &a.lights) {
@@ -1053,6 +1063,15 @@ impl Camera {
             Vec3::Z
         };
         glam::camera::rh::view::look_to_mat4(self.position, forward, up)
+    }
+    /// fDefault1stPersonFOV=65 in the public INI reference. The vertical
+    /// convention and one-unit near plane are choices pending SE comparison.
+    pub fn first_person_proj(&self, aspect: f32) -> Mat4 {
+        glam::camera::rh::proj::directx::perspective_infinite_reverse(
+            65.0f32.to_radians(),
+            aspect,
+            1.0,
+        )
     }
     pub fn proj(&self, aspect: f32) -> Mat4 {
         match self.projection {
@@ -2334,6 +2353,20 @@ impl Renderer {
         let mut blended: Vec<(f32, Draw, InstanceData)> = Vec::new();
         // Particles: their quads in one vertex buffer, drawn among the blended.
         let mut quads: Vec<model::Vertex> = Vec::new();
+        let mut first_quads = Vec::new();
+        for b in &scene.first_person_particles {
+            let start = quads.len() as u32;
+            quads.extend_from_slice(&b.vertices);
+            first_quads.push((
+                Draw::Quads(&b.material, start..quads.len() as u32),
+                InstanceData {
+                    model: Mat4::IDENTITY.to_cols_array_2d(),
+                    lights: [0xffff_ffff; 4],
+                    tint: [1.0; 4],
+                    params: [1.0, 0.0, 0.0, 0.0],
+                },
+            ));
+        }
         for b in &scene.particles {
             let start = quads.len() as u32;
             quads.extend_from_slice(&b.vertices);
@@ -2488,12 +2521,28 @@ impl Renderer {
         let mut skin_inst: Vec<SkinInstanceData> = Vec::new();
         let mut skin_draws: Vec<(&GpuSkinnedPart, u32)> = Vec::new();
         let mut shadow_skin: Vec<(&GpuSkinnedPart, u32, Vec3, f32)> = Vec::new();
-        for actor in scene.actors().chain(&scene.membranes) {
+        let mut first_skin = Vec::new();
+        for (actor, first) in scene
+            .actors()
+            .chain(&scene.membranes)
+            .map(|a| (a, false))
+            .chain(
+                scene
+                    .first_person
+                    .iter()
+                    .chain(&scene.first_person_membranes)
+                    .map(|a| (a, true)),
+            )
+        {
             let (center, radius) = actor.bounds();
-            let fade = self
-                .distances
-                .actor(center.distance(camera.position), radius);
-            let visible = fade > 0. && !actor.shadow_only && frustum.sphere_visible(center, radius);
+            let fade = if first {
+                1.0
+            } else {
+                self.distances
+                    .actor(center.distance(camera.position), radius)
+            };
+            let visible = first
+                || (fade > 0. && !actor.shadow_only && frustum.sphere_visible(center, radius));
             if !visible {
                 stats.culled += 1;
                 if !shadowed {
@@ -2527,10 +2576,12 @@ impl Renderer {
                     fade,
                 });
                 let i = skin_inst.len() as u32 - 1;
-                if visible {
+                if first {
+                    first_skin.push((part, i));
+                } else if visible {
                     skin_draws.push((part, i));
                 }
-                if part.material.key.blend == BlendMode::Opaque {
+                if !first && part.material.key.blend == BlendMode::Opaque {
                     shadow_skin.push((part, i, center, radius));
                 }
             }
@@ -2563,7 +2614,7 @@ impl Renderer {
             self.queue
                 .write_buffer(&self.skin_instance_buf, 0, bytemuck::cast_slice(&skin_inst));
         }
-        for (part, _) in &skin_draws {
+        for (part, _) in skin_draws.iter().chain(&first_skin) {
             self.pipeline(part.material.key);
         }
 
@@ -2583,6 +2634,52 @@ impl Renderer {
             let start = all.len() as u32;
             all.push(*data);
             draws.push((d.clone(), start..start + 1));
+        }
+        let mut first_draws = Vec::new();
+        for actor in scene
+            .first_person
+            .iter()
+            .chain(&scene.first_person_membranes)
+        {
+            for (model, bone, local) in actor.attachments.iter().chain(&actor.equipment) {
+                let xf = actor.transform
+                    * actor.pose.get(*bone).copied().unwrap_or(Mat4::IDENTITY)
+                    * *local;
+                let start = all.len() as u32;
+                all.push(InstanceData {
+                    model: xf.to_cols_array_2d(),
+                    lights: pack_lights(actor.lights),
+                    tint: [1.0; 4],
+                    params: [1.0, 0.0, 0.0, 0.0],
+                });
+                for part in &model.parts {
+                    first_draws.push((Draw::Part(part), start..start + 1));
+                }
+            }
+        }
+        for inst in &scene.first_person_effects {
+            if inst.hidden {
+                continue;
+            }
+            let start = all.len() as u32;
+            all.push(InstanceData {
+                model: inst.transform.to_cols_array_2d(),
+                lights: pack_lights(inst.lights),
+                tint: inst.tint.to_array(),
+                params: [1.0, 0.0, 0.0, 0.0],
+            });
+            for part in &inst.model.parts {
+                first_draws.push((Draw::Part(part), start..start + 1));
+            }
+        }
+        for (draw, data) in first_quads {
+            let start = all.len() as u32;
+            all.push(data);
+            first_draws.push((draw, start..start + 1));
+        }
+        first_draws.sort_by_key(|(d, _)| d.material().key.blend != BlendMode::Opaque);
+        for (draw, _) in &first_draws {
+            self.pipeline(draw.material().key);
         }
         if all.len() > self.instance_cap {
             self.instance_cap = all.len().next_power_of_two();
@@ -2877,6 +2974,82 @@ impl Renderer {
             stats.instances += grass_instances;
             if env.sky {
                 self.precip.draw(&self.queue, &mut pass, self.time);
+            }
+        }
+        if scene.first_person.is_some() && (!first_skin.is_empty() || !first_draws.is_empty()) {
+            let projection = camera.first_person_proj(self.width as f32 / self.height as f32);
+            let vp = projection * camera.view();
+            let mut first_uniform = fu;
+            first_uniform.view_proj = vp.to_cols_array_2d();
+            first_uniform.inv_view_proj = vp.inverse().to_cols_array_2d();
+            // A distinct buffer is required: queue writes to the world uniform
+            // would change both passes before either executes.
+            let first_buffer = self
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("first person frame"),
+                    contents: bytemuck::bytes_of(&first_uniform),
+                    usage: wgpu::BufferUsages::UNIFORM,
+                });
+            let first_bg = Self::make_frame_bg(
+                &self.device,
+                &self.frame_bgl,
+                &first_buffer,
+                &self.light_buf,
+                &self.palette_buf,
+                &self.shadows,
+            );
+            let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("first person"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: pre_post.as_ref().unwrap_or(target),
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(0.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_bind_group(0, &first_bg, &[]);
+            pass.set_bind_group(2, &self.soft_bg, &[]);
+            pass.set_vertex_buffer(1, self.skin_instance_buf.slice(..));
+            for (part, i) in &first_skin {
+                pass.set_pipeline(&self.pipelines[&part.material.key]);
+                pass.set_bind_group(1, &part.material.bind_group, &[]);
+                pass.set_vertex_buffer(0, part.vbuf.slice(..));
+                pass.set_index_buffer(part.ibuf.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..part.index_count, 0, *i..*i + 1);
+                stats.draws += 1;
+            }
+            pass.set_vertex_buffer(1, self.instance_buf.slice(..));
+            for (draw, range) in &first_draws {
+                let material = draw.material();
+                pass.set_pipeline(&self.pipelines[&material.key]);
+                pass.set_bind_group(1, &material.bind_group, &[]);
+                match draw {
+                    Draw::Part(part) => {
+                        pass.set_vertex_buffer(0, part.vbuf.slice(..));
+                        pass.set_index_buffer(part.ibuf.slice(..), wgpu::IndexFormat::Uint32);
+                        pass.draw_indexed(0..part.index_count, 0, range.clone());
+                    }
+                    Draw::Quads(_, vertices) => {
+                        pass.set_vertex_buffer(0, self.particle_vbuf.slice(..));
+                        pass.draw(vertices.clone(), range.clone());
+                    }
+                }
+                stats.draws += 1;
             }
         }
         if pre_post.is_some() {
