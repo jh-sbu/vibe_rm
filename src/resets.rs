@@ -63,7 +63,7 @@ impl Engine {
         shown.sort();
         for obj in shown {
             let raw = self.objective_text(q, obj);
-            let text = self.replace_text_tags(&raw, Some(q));
+            let text = self.replace_text_tags_preserving_controls(&raw, Some(q));
             self.scripts
                 .quests
                 .entry(q)

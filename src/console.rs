@@ -344,7 +344,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
                 objs.sort();
                 for o in objs {
                     let state = if st.objectives_completed.contains(&o) { " (completed)" } else { "" };
-                    let text = st.objective_texts.get(&o).cloned().unwrap_or_default();
+                    let text = engine.resolve_controls(st.objective_texts.get(&o).map_or("", String::as_str));
                     out.push(format!("{q} {o}: {text}{state}"));
                 }
             }

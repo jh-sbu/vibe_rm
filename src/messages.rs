@@ -713,6 +713,34 @@ mod tests {
                         .zstring(b"ITXT", "Use [Activate]"),
                 ],
             ),
+            Node::top(
+                b"QUST",
+                vec![
+                    RecordBuilder::new(b"QUST", FormId(0x803))
+                        .zstring(b"FULL", "Quest [Activate]")
+                        .field(b"DNAM", &[0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0])
+                        .form(b"QTGL", FormId(0x800))
+                        .field(b"INDX", &10u16.to_le_bytes())
+                        .field(b"QSDT", &[0])
+                        .zstring(b"CNAM", "Log <Alias=Friend> <Global=HintValue> [Activate]")
+                        .field(b"QOBJ", &1u16.to_le_bytes())
+                        .zstring(b"NNAM", "Find <Alias=Friend> <Global=HintValue> [Activate]")
+                        .u32(b"ALST", 0)
+                        .zstring(b"ALID", "Friend")
+                        .field(b"ALED", &[]),
+                ],
+            ),
+            Node::top(
+                b"MISC",
+                vec![RecordBuilder::new(b"MISC", FormId(0x804)).zstring(b"FULL", "Friend")],
+            ),
+            Node::top(
+                b"LSCR",
+                vec![
+                    RecordBuilder::new(b"LSCR", FormId(0x805))
+                        .zstring(b"DESC", "Load [Activate] [Optional]"),
+                ],
+            ),
         ];
         std::fs::write(
             f.0.join("Controls.esp"),
@@ -775,6 +803,61 @@ mod tests {
         let saved = e.messages.boxes.clone();
         e.restore_message_boxes(saved, 1);
         assert_eq!(e.displayed_message_box().unwrap().text, "Old E");
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn journal_and_loading_use_live_controls_without_replacing_retained_tags() {
+        let (_f, mut e) = fixture();
+        let q = FormId(0x803);
+        let st = e.scripts.quests.entry(q).or_default();
+        st.running = true;
+        st.aliases.insert(0, FormId(0x804));
+        e.set_objective_displayed(q, 1, true, false);
+        assert_eq!(e.add_log_entries(q, 10), Some(vec![0]));
+        assert_eq!(
+            e.scripts.quests[&q].objective_texts[&1],
+            "Find Friend 3 [Activate]"
+        );
+        assert_eq!(e.journal()[0].objectives[0].1, "Find Friend 3 E");
+        e.scripts.quests.get_mut(&q).unwrap().aliases.clear();
+        e.scripts.globals.insert(FormId(0x800), 9.0);
+        assert!(e.input_map.write().unwrap().remap(
+            "Activate",
+            crate::input_map::Button::Key(winit::keyboard::KeyCode::KeyF),
+        ));
+        let j = &e.journal()[0];
+        assert_eq!(j.name, "Quest F");
+        assert_eq!(j.objectives[0].1, "Find Friend 3 F");
+        assert_eq!(j.log, ["Log Friend 3 F"]);
+        assert!(e.update_quest_global(q, FormId(0x800)));
+        assert_eq!(
+            e.scripts.quests[&q].objective_texts[&1],
+            "Find  9 [Activate]"
+        );
+        assert_eq!(e.journal()[0].objectives[0].1, "Find  9 F");
+        assert_eq!(e.journal()[0].log, ["Log Friend 3 F"]);
+        let objectives = crate::console::execute(&mut e, "sqo");
+        assert!(objectives.iter().any(|line| line.contains("Find  9 F")));
+        assert!(objectives.iter().all(|line| !line.contains("[Activate]")));
+        e.loading = Some(crate::loading::Loading {
+            request: crate::loading::LoadRequest::save("unused".into()),
+            phase: crate::loading::Phase::Hold,
+            t: 0.0,
+            shown: 0.0,
+            screens: crate::load_screens::Choice {
+                first: Some(0),
+                pool: vec![0],
+            },
+            last_text: None,
+            texts_given: 0,
+        });
+        assert_eq!(e.next_loading_text().as_deref(), Some("Load F [Optional]"));
+        e.input_map.write().unwrap().reset();
+        e.loading.as_mut().unwrap().texts_given = 0;
+        assert_eq!(e.next_loading_text().as_deref(), Some("Load E [Optional]"));
+        assert_eq!(e.journal()[0].log, ["Log Friend 3 E"]);
+        assert_eq!(e.scripts.quests[&q].log, ["Log Friend 3 [Activate]"]);
     }
 
     #[test]

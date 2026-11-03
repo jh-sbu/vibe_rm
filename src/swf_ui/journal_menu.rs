@@ -125,7 +125,7 @@ impl Data {
         let mut active = HashMap::new();
         for j in engine.journal() {
             active.insert(j.id.0, j.active);
-            let name = engine.replace_text_tags(&j.name, Some(j.id));
+            let name = &j.name;
             if j.kind == QUEST_TYPE_MISC {
                 // The running ones' objectives still to do, under one entry.
                 if j.completed || j.failed {

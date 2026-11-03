@@ -168,7 +168,7 @@ impl Engine {
         l.last_text = next;
         self.loading = Some(l);
         let text = next.map(|i| self.load_screens()[i].text.clone())?;
-        Some(self.replace_text_tags_preserving_controls(&text, None))
+        Some(self.replace_text_tags(&text, None))
     }
 
     /// Whether the loading state is up (the game paused behind it).

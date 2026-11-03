@@ -144,7 +144,7 @@ impl Engine {
             }
             passed.push(index);
             if !text.is_empty() {
-                let text = self.replace_text_tags(&text, Some(q));
+                let text = self.replace_text_tags_preserving_controls(&text, Some(q));
                 self.announce_quest(q);
                 self.touch_quest(q).log.push(text);
             }
@@ -243,7 +243,7 @@ impl Engine {
             return;
         }
         let raw = self.objective_text(q, obj);
-        let text = self.replace_text_tags(&raw, Some(q));
+        let text = self.replace_text_tags_preserving_controls(&raw, Some(q));
         self.announce_quest(q);
         let st = self.touch_quest(q);
         st.objectives_displayed.insert(obj);
@@ -291,7 +291,7 @@ impl Engine {
 
     /// The quests the journal lists, the latest updated first: the running
     /// and finished ones with a type and something to show.
-    pub fn journal(&self) -> Vec<JournalQuest> {
+    pub fn journal(&mut self) -> Vec<JournalQuest> {
         let mut out: Vec<(u64, JournalQuest)> = Vec::new();
         for (&q, st) in &self.scripts.quests {
             let kind = self.quest_type(q);
@@ -312,7 +312,9 @@ impl Engine {
                     };
                     (
                         o,
-                        st.objective_texts.get(&o).cloned().unwrap_or_default(),
+                        self.resolve_controls(
+                            st.objective_texts.get(&o).map_or("", String::as_str),
+                        ),
                         state,
                     )
                 })
@@ -332,12 +334,21 @@ impl Engine {
                     completed: st.completed,
                     failed: st.failed,
                     active: st.active,
-                    log: st.log.clone(),
+                    log: st
+                        .log
+                        .iter()
+                        .map(|text| self.resolve_controls(text))
+                        .collect(),
                     objectives,
                 },
             ));
         }
         out.sort_by(|a, b| b.0.cmp(&a.0));
-        out.into_iter().map(|(_, j)| j).collect()
+        out.into_iter()
+            .map(|(_, mut j)| {
+                j.name = self.replace_text_tags(&j.name, Some(j.id));
+                j
+            })
+            .collect()
     }
 }
