@@ -440,7 +440,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             vec![format!("closed {menu:?}")]
         }
         "msgbox" => {
-            let Some(b) = engine.messages.boxes.front().cloned() else {
+            let Some(b) = engine.displayed_message_box() else {
                 return vec!["no message box up".into()];
             };
             match args.first().and_then(|a| a.parse::<i32>().ok()) {

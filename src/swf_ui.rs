@@ -1823,11 +1823,14 @@ impl MessageBoxMenu {
 
     /// Shows the box in front when it's a new one.
     fn update(&mut self, engine: &Engine) {
-        let front = engine
-            .messages
-            .boxes
-            .front()
-            .map(|b| (b.text.replace("\r\n", "\n"), b.buttons.clone()));
+        let front = engine.displayed_message_box().map(|b| {
+            let message = if b.title.is_empty() {
+                b.text
+            } else {
+                format!("{}\n\n{}", b.title, b.text)
+            };
+            (message.replace("\r\n", "\n"), b.buttons)
+        });
         if front == self.shown {
             return;
         }
@@ -2167,7 +2170,10 @@ impl Hud {
                 // The asset's ShowMessage accepts only text. Its animation
                 // controls display duration; see known_ambiguities/messages.md.
                 if notification.is_active(engine.scripts.real_time) {
-                    self.call("ShowMessage", &[text(&notification.text)]);
+                    self.call(
+                        "ShowMessage",
+                        &[text(&engine.resolve_controls(&notification.text))],
+                    );
                 }
                 newest = newest.max(notification.id);
             }

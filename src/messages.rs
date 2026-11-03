@@ -208,6 +208,16 @@ impl Engine {
     ) -> String {
         self.replace_tags(text, quest, false)
     }
+    pub fn displayed_message_box(&self) -> Option<MessageBox> {
+        let mut b = self.messages.boxes.front()?.clone();
+        b.title = self.resolve_controls(&b.title);
+        b.text = self.resolve_controls(&b.text);
+        for (_, label) in &mut b.buttons {
+            *label = self.resolve_controls(label);
+        }
+        Some(b)
+    }
+
     pub fn resolve_controls(&self, text: &str) -> String {
         resolve_controls(text, &self.input_map.read().unwrap())
     }
@@ -355,14 +365,14 @@ impl Engine {
             }
         }
         drop(rec);
-        let text = self.replace_text_tags(&format_floats(&text, args), quest);
+        let text = self.replace_text_tags_preserving_controls(&format_floats(&text, args), quest);
         if !message_box {
             if !text.is_empty() {
                 self.scripts.notify_for(text, duration);
             }
             return NativeResult::Value(Value::Int(0));
         }
-        let title = self.replace_text_tags(&title, quest);
+        let title = self.replace_text_tags_preserving_controls(&title, quest);
         let ctx = crate::condition::Context {
             subject: Some(PLAYER_REF),
             quest,
@@ -371,7 +381,10 @@ impl Engine {
         let mut shown = Vec::new();
         for (i, (label, conds)) in buttons.into_iter().enumerate() {
             if crate::condition::evaluate(self, &conds, ctx) {
-                shown.push((i as i32, self.replace_text_tags(&label, quest)));
+                shown.push((
+                    i as i32,
+                    self.replace_text_tags_preserving_controls(&label, quest),
+                ));
             }
         }
         if shown.is_empty() {
@@ -693,6 +706,11 @@ mod tests {
                 vec![
                     RecordBuilder::new(b"MESG", FormId(0x801))
                         .zstring(b"DESC", "<Global=HintValue> [Activate] [Optional]"),
+                    RecordBuilder::new(b"MESG", FormId(0x802))
+                        .field(b"DNAM", &1u32.to_le_bytes())
+                        .zstring(b"FULL", "Title [Activate]")
+                        .zstring(b"DESC", "<Global=HintValue> [Activate] %.0f")
+                        .zstring(b"ITXT", "Use [Activate]"),
                 ],
             ),
         ];
@@ -722,6 +740,41 @@ mod tests {
         e.scripts.real_time = 12.0;
         e.update_messages();
         assert_eq!(e.current_help(), Some("3 [Activate] [Optional]"));
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn queued_and_restored_messages_resolve_only_for_display() {
+        let (_f, mut e) = fixture();
+        e.show_message(FormId(0x802), &[7.0]);
+        e.show_message(FormId(0x801), &[]);
+        assert_eq!(e.messages.boxes[0].text, "3 [Activate] 7");
+        assert_eq!(e.displayed_message_box().unwrap().title, "Title E");
+        let mut saved = e.messages.boxes.clone();
+        saved[0].key = None;
+        e.messages.boxes.clear();
+        e.scripts.globals.insert(FormId(0x800), 9.0);
+        assert!(e.input_map.write().unwrap().remap(
+            "Activate",
+            crate::input_map::Button::Key(winit::keyboard::KeyCode::KeyF),
+        ));
+        e.restore_message_boxes(saved, 1);
+        assert_eq!(e.messages.boxes[0].text, "3 [Activate] 7");
+        let b = e.displayed_message_box().unwrap();
+        assert_eq!(b.title, "Title F");
+        assert_eq!(b.text, "3 F 7");
+        assert_eq!(b.buttons, vec![(0, "Use F".into())]);
+        assert_eq!(e.scripts.notifications[0].text, "3 [Activate] [Optional]");
+        assert_eq!(
+            e.resolve_controls(&e.scripts.notifications[0].text),
+            "3 F [Optional]"
+        );
+        e.input_map.write().unwrap().reset();
+        assert_eq!(e.displayed_message_box().unwrap().buttons[0].1, "Use E");
+        e.messages.boxes[0].text = "Old E".into();
+        let saved = e.messages.boxes.clone();
+        e.restore_message_boxes(saved, 1);
+        assert_eq!(e.displayed_message_box().unwrap().text, "Old E");
     }
 
     #[test]

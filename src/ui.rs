@@ -457,7 +457,7 @@ impl Ui {
             painter.text(
                 Pos2::new(rect.left() + 30.0, y),
                 Align2::LEFT_TOP,
-                &notification.text,
+                engine.resolve_controls(&notification.text),
                 FontId::proportional(17.0),
                 col,
             );
@@ -465,7 +465,7 @@ impl Ui {
         // Help messages (bottom centre) and quest banners (top centre).
         if let Some(help) = engine.current_help().filter(|_| !engine.menu_up()) {
             let galley = painter.layout(
-                help.to_owned(),
+                engine.resolve_controls(help),
                 FontId::proportional(18.0),
                 Color32::from_gray(240),
                 (rect.width() * 0.6).max(200.0),
@@ -561,7 +561,7 @@ impl Ui {
 
     /// The message box in front: its text and buttons.
     fn message_box(&mut self, ctx: &egui::Context, engine: &mut Engine) {
-        let Some(b) = engine.messages.boxes.front() else {
+        let Some(b) = engine.displayed_message_box() else {
             return;
         };
         let mut pressed = None;
