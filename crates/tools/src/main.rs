@@ -3,6 +3,7 @@ use anyhow::{Context, Result, bail};
 mod animation_survey;
 mod audio_formats;
 mod audio_survey;
+mod control_tags;
 mod crafting_survey;
 #[path = "../../../src/condition/functions.rs"]
 #[allow(dead_code)]
@@ -47,6 +48,7 @@ fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("crafting-survey") => crafting_survey::run(&args[1])?,
+        Some("control-tags") => control_tags::run(&args[1..])?,
         Some("spell-fx") => spell_fx::run(&args[1..])?,
         Some("bsa-list") => {
             let a = bsa::Archive::open(&args[1])?;

@@ -36,6 +36,7 @@ mod autotest6;
 mod autotest7;
 mod autotest8;
 mod autotest9;
+mod controltags;
 mod crafting1;
 mod dualcast;
 mod loadscreens;
@@ -73,6 +74,7 @@ pub const NAMES: &[&str] = &[
     "autotest22",
     "dualcast",
     "crafting1",
+    "controltags",
     "pex",
     "taper",
     "venv",
@@ -97,6 +99,7 @@ pub fn own(object_id: u32) -> FormId {
 pub fn build(name: &str, lo: &LoadOrder) -> Result<TestMod> {
     match name {
         "ammo" => ammo::build(lo),
+        "controltags" => controltags::build(),
         "crafting1" => crafting1::build(lo),
         "autotest" => autotest::build(lo),
         "autotest2" => autotest2::build(lo),
