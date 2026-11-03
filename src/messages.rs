@@ -120,29 +120,21 @@ fn notification_duration(tnam: Option<&[u8]>) -> f64 {
         .unwrap_or(crate::script::NOTIFICATION_SECONDS)
 }
 
-/// The key or button a control (as message text names it in brackets) is
-/// bound to here.
-pub fn control_key(control: &str) -> Option<&'static str> {
-    Some(match control.to_ascii_lowercase().as_str() {
-        "forward" => "W",
-        "back" => "S",
-        "strafe left" => "A",
-        "strafe right" => "D",
-        "move" => "W, A, S, D",
-        "look" => "Mouse",
-        "activate" => "E",
-        "jump" => "Space",
-        "sprint" => "Left Shift",
-        "sneak" => "Left Ctrl",
-        "run" => "Left Alt",
-        "tween menu" => "Tab",
-        "journal" => "J",
-        "right attack/block" => "Left Mouse Button",
-        "left attack/block" => "Right Mouse Button",
-        "accept" => "Enter",
-        "cancel" => "Escape",
-        _ => return None,
-    })
+fn resolve_controls(text: &str, map: &crate::input_map::InputMap) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find('[') {
+        out.push_str(&rest[..start]);
+        rest = &rest[start..];
+        let Some(end) = rest.find(']') else { break };
+        match map.control(&rest[1..end]) {
+            Some(control) => out.push_str(control.label()),
+            None => out.push_str(&rest[..=end]),
+        }
+        rest = &rest[end + 1..];
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Papyrus-style `printf` of `Show`'s float arguments: `%.0f`, `%g`, `%d`...;
@@ -216,6 +208,10 @@ impl Engine {
     ) -> String {
         self.replace_tags(text, quest, false)
     }
+    pub fn resolve_controls(&self, text: &str) -> String {
+        resolve_controls(text, &self.input_map.read().unwrap())
+    }
+
     fn replace_tags(&mut self, text: &str, quest: Option<FormId>, controls: bool) -> String {
         let mut out = String::with_capacity(text.len());
         let mut rest = text;
@@ -230,7 +226,11 @@ impl Engine {
             let Some(end) = rest.find(close) else { break };
             let inner = &rest[1..end];
             let replaced = if close == ']' {
-                control_key(inner).map(str::to_owned)
+                self.input_map
+                    .read()
+                    .unwrap()
+                    .control(inner)
+                    .map(|control| control.label().to_owned())
             } else {
                 self.text_tag(inner, quest)
             };
@@ -733,9 +733,38 @@ mod tests {
     }
 
     #[test]
-    fn controls_have_keys() {
-        assert_eq!(control_key("Activate"), Some("E"));
-        assert_eq!(control_key("Right Attack/Block"), Some("Left Mouse Button"));
-        assert_eq!(control_key("XButton"), None);
+    fn control_text_follows_remap_and_reset() {
+        use crate::input_map::{Button, InputMap};
+        use winit::keyboard::KeyCode;
+
+        let mut map = InputMap::parse(
+            "Activate\t0x12\t0xff\t0xff\t1\t1\t0\nJump\t0x39\t0xff\t0xff\t1\t1\t0\nRight Attack/Block\t0xff\t0x0\t0xff\n\nAccept\t!0,Activate\t0xff\t0xff\n\nOther\t0xff\t0xff\t0xff\n\nXButton\t!0,Activate\t0xff\t0xff\n",
+        );
+        let text = "[Activate] [Jump] [Accept] [XButton] [Right Attack/Block] [Mouse1]";
+        assert_eq!(resolve_controls(text, &map), "E Space E E Mouse1 Mouse1");
+        assert!(map.remap("Activate", Button::Key(KeyCode::Space)));
+        assert_eq!(
+            resolve_controls(text, &map),
+            "Space UnknownKey Space Space Mouse1 Mouse1"
+        );
+        map.reset();
+        assert_eq!(resolve_controls(text, &map), "E Space E E Mouse1 Mouse1");
+    }
+
+    #[test]
+    fn control_text_preserves_other_tags_and_unknown_brackets() {
+        let map = crate::input_map::InputMap::parse(
+            "Activate\t0x12\t0xff\t0xff\nChord\t0x1d+0x22\t0xff\t0xff\nUnbound\t0xff\t0xff\t0xff\n",
+        );
+        let text = "<Alias=Friend> <Global=Gold> [Activate] [Optional] [Left Thumbstick] [] [pagebreak] [unfinished";
+        assert_eq!(
+            resolve_controls(text, &map),
+            "<Alias=Friend> <Global=Gold> E [Optional] [Left Thumbstick] [] [pagebreak] [unfinished"
+        );
+        assert_eq!(
+            resolve_controls("[Chord] [Unbound]", &map),
+            "L-Ctrl+G UnknownKey"
+        );
+        assert_eq!(resolve_controls("雪 [activate] café", &map), "雪 E café");
     }
 }

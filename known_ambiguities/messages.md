@@ -125,9 +125,22 @@ examined and no asset or disassembly is committed.
   `--screenshot --wait` run and the boxes pause the world (the Survival Mode
   prompt comes up at the start), so a box left up two seconds gets its last
   button pressed unless `--hold-boxes`. Not the game's behaviour; a test hook.
-- **Controls in text.** `[Activate]` and the rest show this engine's keys
-  (`messages::control_key`); gamepad-only names (`[XButton]`...) stay as
-  written.
+- **Controls in text.** Control labels now use the live `InputMap::control`
+  and `Control::label`, including remaps and resets, rather than a fixed key
+  table. Provisional choices are keyboard before mouse, chord key names joined
+  with `+`, and `UnknownKey` for an event with no keyboard/mouse binding
+  (including a gamepad-only binding). Unknown gamepad names and other unknown
+  bracket text remain as written. `[XButton]` is an event, not an unknown
+  gamepad name: its menu-context reference resolves to `Ready Weapon` in the
+  shipped map. Alias/global substitution is unchanged; the controls-only
+  `Engine::resolve_controls` helper leaves those tags untouched.
+  Supporting asset inspection and the shipped-map survey are recorded in
+  [control-tag research](../research/ui/control-tags.md), especially “Missing
+  names and UnknownKey” and “Installed-data results”. The movies retain
+  unknown tags and export `UnknownKey` art, but do not establish native plain
+  text labels for chords or unbound events. These label choices remain
+  provisional pending the prepared manual Skyrim SE observation; they are
+  not claimed as verified original-game behavior.
 
 ## Already playing audio in menu mode
 
