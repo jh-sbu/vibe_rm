@@ -23,6 +23,9 @@ pub struct Event {
 pub struct InputMap {
     pub contexts: Vec<Vec<Event>>,
     defaults: String,
+    /// Only maps loaded from the user's configuration may persist there.
+    /// Parsed maps (including synthetic test maps) remain in memory.
+    save_path: Option<PathBuf>,
     pub generation: u64,
 }
 impl InputMap {
@@ -64,6 +67,7 @@ impl InputMap {
         Self {
             contexts,
             defaults: text.into(),
+            save_path: None,
             generation: 0,
         }
     }
@@ -73,7 +77,12 @@ impl InputMap {
             .map(|b| String::from_utf8_lossy(&b).into_owned())
             .unwrap_or_default();
         let mut map = Self::parse(&default);
-        if let Some(text) = path().and_then(|p| std::fs::read_to_string(p).ok()) {
+        map.save_path = path();
+        if let Some(text) = map
+            .save_path
+            .as_ref()
+            .and_then(|p| std::fs::read_to_string(p).ok())
+        {
             let custom = Self::parse(&text);
             for changed in custom.events() {
                 if let Some(event) = map.contexts[0].iter_mut().find(|e| e.name == changed.name) {
@@ -260,11 +269,13 @@ impl InputMap {
     }
     pub fn reset(&mut self) {
         let generation = self.generation + 1;
+        let save_path = self.save_path.take();
         *self = Self::parse(&self.defaults.clone());
+        self.save_path = save_path;
         self.generation = generation;
     }
     pub fn save(&self) -> io::Result<()> {
-        if let Some(path) = path() {
+        if let Some(path) = &self.save_path {
             if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent)?;
             }
@@ -542,5 +553,36 @@ mod context_tests {
             &HashSet::new()
         ));
         assert!(m.context_bindings("Missing", "Up", 0).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod persistence_tests {
+    use super::*;
+
+    #[test]
+    fn parsed_maps_are_transient_and_reset_preserves_explicit_save_destination() {
+        let mut map = InputMap::parse("Forward\t0x11\t0xff\t0xff\t1\t1\t0\n");
+        assert!(map.save_path.is_none());
+        assert!(map.remap("Forward", Button::Key(K::KeyG)));
+        map.save().unwrap(); // A synthetic map must not write the user's controls.
+        assert!(map.save_path.is_none());
+
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("vrm-controls-{}-{stamp}", std::process::id()));
+        let file = dir.join("controls.txt");
+        map.save_path = Some(file.clone());
+        map.save().unwrap();
+        let saved = InputMap::parse(&std::fs::read_to_string(&file).unwrap());
+        assert_eq!(saved.first("Forward", 0), Some(0x22));
+        map.reset();
+        assert_eq!(map.save_path.as_ref(), Some(&file));
+        map.save().unwrap();
+        let saved = InputMap::parse(&std::fs::read_to_string(&file).unwrap());
+        assert_eq!(saved.first("Forward", 0), Some(0x11));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }
