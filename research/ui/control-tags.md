@@ -118,55 +118,98 @@ Important corrections to the preliminary plan:
 
 ## Manual Skyrim SE observation (user action pending)
 
-Generated with `cargo build -p vrm-tools` **before** running:
+Build with `cargo build -p vrm-tools`, then generate:
 
 ```sh
 target/debug/vrm-tool test-mod controltags "<Skyrim SE>/Data" tests/assets/VrmControlTags.esp
 ```
 
-Outputs are the generated plugin and `tests/assets/Scripts/VrmControlTagsScript.pex`.
-They are authored test artifacts, not copied game assets. The generator does
-not install anything or run the game. Only vanilla Papyrus natives are used;
-there is no rendered-text readback and no claimed automated visual result.
+This writes the plugin and `tests/assets/Scripts/VrmControlTagsScript.pex`
+(source: `crates/tools/src/test_mods/controltags/controltags.psc`). They are
+authored test files, not copied game assets, and use only vanilla Papyrus
+natives. The generator installs nothing and doesn't run the game. Papyrus
+can't read rendered text, so the results are screenshots.
 
-Use a disposable save and keyboard/mouse mode. The user installs the generated
-files by their normal test procedure. Start the quest if necessary:
+### What it shows
 
-```text
-startquest VrmControlTagsQuest
-cqf VrmControlTagsQuest Probe
-```
+Every token is numbered, so a screenshot can be read even where art replaces
+the tag. Set A is ordinary bindings; set B is edge cases that the shipped map
+already has, so no control map needs editing.
 
-Close the console immediately. After five seconds a **MESG message box** appears;
-screenshot it, then dismiss it. Two seconds later a **MESG notification** appears;
-screenshot promptly. Eight seconds later a **ShowAsHelpMessage** hint appears for
-20 seconds; screenshot it. Each surface contains exactly these same six tags:
-`[Activate] [Sprint] [Right Attack/Block] [Favorites] [Mouse1] [XButton]`.
-The probe is manual and repeatable, not an automatic startup interruption.
+- **A:** `1[Activate] 2[activate] 3[Sprint] 4[Right Attack/Block] 5[Favorites] 6[Mouse1] 7[XButton]`
+- **B:** `8[Zoom In] 9[Multi-Screenshot] 10[Move] 11[Optional] 12[Mouse Move] 13[Left Thumbstick]`
 
-After all hints expire, rebind Activate to one unused, chord-free keyboard key
-and remove Sprint's keyboard binding, leaving its keyboard mapping unbound
-rather than merely moving it. Record the actual final mappings and how they
-were obtained. If vanilla's controls UI cannot make a binding unbound, report
-that limitation; **do not use SKSE** and do not substitute a different experiment
-without recording it. Run the same `cqf ... Probe` command again and close the
-console. The help-message event is reset on every invocation so its maximum
-count does not suppress the second run. Do not overlap invocations.
+| # | why it's there | this engine: label / art |
+| --- | --- | --- |
+| 1, 2 | an event; 2 tests case-insensitive matching | E / E |
+| 3, 5 | keyboard events | L-Alt, Q |
+| 4 | a mouse-only event | Mouse1 / Mouse1 |
+| 6 | a key name, not an event | Mouse1 / Mouse1 |
+| 7 | an Item Menus event (`!0,Ready Weapon`) | R / R |
+| 8 | mouse wheel only | MouseWheelUp / Wheel |
+| 9 | a chord (L-Ctrl + Print Screen, which has no art) | L-Ctrl+PrintSrc / UnknownKey |
+| 10 | bound on the gamepad only | UnknownKey / UnknownKey |
+| 11–13 | not events or key names | kept as written |
 
-For each before/after screenshot, record each token's visible text/art or
-unchanged brackets, clipping, the selected input device, and the new Activate
-key / Sprint state. In particular: does the box show labels or art; does the
-notification contain images; does the hint draw inline art; what does unbound
-Sprint show; does XButton resolve to the keyboard Ready Weapon control? Restore
-the user's controls afterwards. If a hint is suppressed by game settings or
-another tutorial, report that rather than treating absence as evidence about
-its tags. Screenshots can be placed in `tests/results/`; this visual-only probe
-has no numeric Papyrus report for `test-results` to extract.
+After a rebind of Activate to NumPad5 (a key with no art), this engine shows
+NumPad5 / UnknownKey for 1 and 2. These values were checked against the
+shipped map with the engine's resolver (2026-11-03).
 
-Unresolved pending observation: native plain-text labels, unknown/unbound native
-callback results, engine-side notification preprocessing, and chord labels. The
-six-tag chord-free probe does not settle chords or localization. No engine
-behavior choice has been made on those questions here.
+The surfaces are:
+
+- a message box: the title (`1`, `9`), the text (A and B) and the button (`OK 1`);
+- notifications A and B;
+- the quest objective (`Obj 1 8 9 11`), shown as the HUD's objective banner and
+  in the journal;
+- in the journal (the quest is a side quest named `Quest 1 9 11`), its log
+  entry with A and B;
+- help messages A and B, shown as the HUD's tutorial hint.
+
+### Protocol
+
+Use a throwaway save, keyboard and mouse, and default controls. Make sure
+tutorials/help messages are on in the game's settings. If the quest isn't
+running, start it with `startquest VrmControlTagsQuest`. Each `cqf` below:
+close the console right after it, and don't start another until it ends.
+
+**Round 1: default controls.** Run `cqf VrmControlTagsQuest Probe`.
+1. After 5 s, a message box: screenshot it, then press its button.
+2. After 2 s, notification A, then 3 s later notification B: screenshot each.
+3. After 8 s, the objective banner: screenshot it.
+4. After 8 s, help A for 15 s, then help B for 15 s: screenshot each.
+5. Open the journal on the quest: screenshot its name, objective and log
+   entry.
+
+**Round 2: rebinding.** Run `cqf VrmControlTagsQuest Hint`. Help A comes up
+for 90 s.
+1. Screenshot help A.
+2. While it is still up, open the Controls settings and rebind Activate to
+   NumPad5. If NumPad5 can't be bound, use another numpad key (1–8) and
+   write down which one.
+3. Back in the game: screenshot help A again, if it's still up. Does 1's
+   art change, or does it keep E until the hint is shown again?
+4. Open the journal on the quest: screenshot it again. Does text written
+   under E now show NumPad5?
+5. Run `cqf VrmControlTagsQuest Probe` again and screenshot every surface as
+   in round 1. The objective banner shows again; the log entry is written
+   only once.
+
+Afterwards, restore Activate to E.
+
+**For each screenshot, note:** each number's text, art, or unchanged brackets,
+and any clipping. In particular:
+- Do boxes and notifications show words or art?
+- What words: the key table's names (`L-Alt`, `MouseWheelUp`) or others?
+- What do 8, 9 and 10 show?
+- Do 11–13 keep their brackets?
+- Does 2 match 1?
+- Does 7 show R?
+
+If a hint doesn't appear (tutorial setting, another hint up), say so. Missing
+text isn't evidence about the tags. Screenshots can go in `tests/results/`;
+there's nothing for `test-results` to read.
+
+The probe doesn't cover loading-screen text or other languages' key names.
 
 ## Validation
 
@@ -175,8 +218,10 @@ behavior choice has been made on those questions here.
   loading 3, resets 4, save 1, HUD 1.
 - Tools-local tests cover context order/event precedence, references retained in
   classification, literal keys, unknown names and bracket extraction.
-- The probe PEX builds, parses and is checked against the existing vanilla native
-  signature table; the plugin was successfully generated after the required build.
+- The probe's Papyrus source compiles against the vanilla native declarations
+  and its calls are checked against them; the plugin was generated after
+  rebuilding `vrm-tool` (revised 2026-11-03: journal text, edge-case events,
+  unknown tags and the rebind round).
 - The survey completed against the external installation; missing arguments
   return a usage error rather than indexing past the argument list. Before/after
   surveys were identical: 4,889 records, 43 HMPC help forms, 130 candidates
