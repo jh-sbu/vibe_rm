@@ -120,6 +120,8 @@ fn notification_duration(tnam: Option<&[u8]>) -> f64 {
         .unwrap_or(crate::script::NOTIFICATION_SECONDS)
 }
 
+/// `[Control]` tags as key names, for the egui fallback's help messages,
+/// which can't draw the game's button art.
 fn resolve_controls(text: &str, map: &crate::input_map::InputMap) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
@@ -196,55 +198,18 @@ impl Engine {
 
     /// Replace the tags of message or quest text: `<Alias=Name>` (and its
     /// `.ShortName` / pronoun forms) by what quest `quest`'s alias holds,
-    /// `<Global=EditorId>` by the global's value, `[Control]` by the key it is
-    /// bound to.
+    /// `<Global=EditorId>` by the global's value. `[Control]` tags stay as
+    /// written: Skyrim SE shows them so in message boxes, notifications,
+    /// objectives and the journal, and only the help hint's movie turns them
+    /// into button art (`research/ui/control-tags.md`).
     pub fn replace_text_tags(&mut self, text: &str, quest: Option<FormId>) -> String {
-        self.replace_tags(text, quest, true)
-    }
-    pub fn replace_text_tags_preserving_controls(
-        &mut self,
-        text: &str,
-        quest: Option<FormId>,
-    ) -> String {
-        self.replace_tags(text, quest, false)
-    }
-    pub fn displayed_message_box(&self) -> Option<MessageBox> {
-        let mut b = self.messages.boxes.front()?.clone();
-        b.title = self.resolve_controls(&b.title);
-        b.text = self.resolve_controls(&b.text);
-        for (_, label) in &mut b.buttons {
-            *label = self.resolve_controls(label);
-        }
-        Some(b)
-    }
-
-    pub fn resolve_controls(&self, text: &str) -> String {
-        resolve_controls(text, &self.input_map.read().unwrap())
-    }
-
-    fn replace_tags(&mut self, text: &str, quest: Option<FormId>, controls: bool) -> String {
         let mut out = String::with_capacity(text.len());
         let mut rest = text;
-        while let Some(i) = if controls {
-            rest.find(['<', '['])
-        } else {
-            rest.find('<')
-        } {
+        while let Some(i) = rest.find('<') {
             out.push_str(&rest[..i]);
             rest = &rest[i..];
-            let close = if rest.starts_with('<') { '>' } else { ']' };
-            let Some(end) = rest.find(close) else { break };
-            let inner = &rest[1..end];
-            let replaced = if close == ']' {
-                self.input_map
-                    .read()
-                    .unwrap()
-                    .control(inner)
-                    .map(|control| control.label().to_owned())
-            } else {
-                self.text_tag(inner, quest)
-            };
-            match replaced {
+            let Some(end) = rest.find('>') else { break };
+            match self.text_tag(&rest[1..end], quest) {
                 Some(s) => out.push_str(&s),
                 None => out.push_str(&rest[..=end]),
             }
@@ -252,6 +217,11 @@ impl Engine {
         }
         out.push_str(rest);
         out
+    }
+
+    /// [`resolve_controls`] through the live input map.
+    pub fn resolve_controls(&self, text: &str) -> String {
+        resolve_controls(text, &self.input_map.read().unwrap())
     }
 
     fn text_tag(&mut self, tag: &str, quest: Option<FormId>) -> Option<String> {
@@ -365,14 +335,14 @@ impl Engine {
             }
         }
         drop(rec);
-        let text = self.replace_text_tags_preserving_controls(&format_floats(&text, args), quest);
+        let text = self.replace_text_tags(&format_floats(&text, args), quest);
         if !message_box {
             if !text.is_empty() {
                 self.scripts.notify_for(text, duration);
             }
             return NativeResult::Value(Value::Int(0));
         }
-        let title = self.replace_text_tags_preserving_controls(&title, quest);
+        let title = self.replace_text_tags(&title, quest);
         let ctx = crate::condition::Context {
             subject: Some(PLAYER_REF),
             quest,
@@ -381,10 +351,7 @@ impl Engine {
         let mut shown = Vec::new();
         for (i, (label, conds)) in buttons.into_iter().enumerate() {
             if crate::condition::evaluate(self, &conds, ctx) {
-                shown.push((
-                    i as i32,
-                    self.replace_text_tags_preserving_controls(&label, quest),
-                ));
+                shown.push((i as i32, self.replace_text_tags(&label, quest)));
             }
         }
         if shown.is_empty() {
@@ -567,7 +534,7 @@ impl Engine {
             .map(|d| self.lo.lstring(&rec, d))
             .unwrap_or_default();
         drop(rec);
-        let text = self.replace_text_tags_preserving_controls(&text, None);
+        let text = self.replace_text_tags(&text, None);
         let now = self.scripts.real_time;
         log::info!("help message for {event:?}: {text:?}");
         // One help message per event.
@@ -772,42 +739,31 @@ mod tests {
 
     #[test]
     #[ignore = "needs a headless GPU adapter; synthetic records only"]
-    fn queued_and_restored_messages_resolve_only_for_display() {
+    fn messages_keep_control_tags_as_written() {
         let (_f, mut e) = fixture();
         e.show_message(FormId(0x802), &[7.0]);
         e.show_message(FormId(0x801), &[]);
-        assert_eq!(e.messages.boxes[0].text, "3 [Activate] 7");
-        assert_eq!(e.displayed_message_box().unwrap().title, "Title E");
-        let mut saved = e.messages.boxes.clone();
-        saved[0].key = None;
-        e.messages.boxes.clear();
-        e.scripts.globals.insert(FormId(0x800), 9.0);
+        let b = e.messages.boxes[0].clone();
+        assert_eq!(b.title, "Title [Activate]");
+        assert_eq!(b.text, "3 [Activate] 7");
+        assert_eq!(b.buttons, vec![(0, "Use [Activate]".into())]);
+        assert_eq!(e.scripts.notifications[0].text, "3 [Activate] [Optional]");
+        // A rebind changes none of it.
         assert!(e.input_map.write().unwrap().remap(
             "Activate",
             crate::input_map::Button::Key(winit::keyboard::KeyCode::KeyF),
         ));
-        e.restore_message_boxes(saved, 1);
         assert_eq!(e.messages.boxes[0].text, "3 [Activate] 7");
-        let b = e.displayed_message_box().unwrap();
-        assert_eq!(b.title, "Title F");
-        assert_eq!(b.text, "3 F 7");
-        assert_eq!(b.buttons, vec![(0, "Use F".into())]);
-        assert_eq!(e.scripts.notifications[0].text, "3 [Activate] [Optional]");
+        // Only the egui fallback's help resolves them, to key names.
         assert_eq!(
             e.resolve_controls(&e.scripts.notifications[0].text),
             "3 F [Optional]"
         );
-        e.input_map.write().unwrap().reset();
-        assert_eq!(e.displayed_message_box().unwrap().buttons[0].1, "Use E");
-        e.messages.boxes[0].text = "Old E".into();
-        let saved = e.messages.boxes.clone();
-        e.restore_message_boxes(saved, 1);
-        assert_eq!(e.displayed_message_box().unwrap().text, "Old E");
     }
 
     #[test]
     #[ignore = "needs a headless GPU adapter; synthetic records only"]
-    fn journal_and_loading_use_live_controls_without_replacing_retained_tags() {
+    fn journal_and_loading_keep_control_tags_as_written() {
         let (_f, mut e) = fixture();
         let q = FormId(0x803);
         let st = e.scripts.quests.entry(q).or_default();
@@ -815,31 +771,20 @@ mod tests {
         st.aliases.insert(0, FormId(0x804));
         e.set_objective_displayed(q, 1, true, false);
         assert_eq!(e.add_log_entries(q, 10), Some(vec![0]));
-        assert_eq!(
-            e.scripts.quests[&q].objective_texts[&1],
-            "Find Friend 3 [Activate]"
-        );
-        assert_eq!(e.journal()[0].objectives[0].1, "Find Friend 3 E");
+        let j = &e.journal()[0];
+        assert_eq!(j.name, "Quest [Activate]");
+        assert_eq!(j.objectives[0].1, "Find Friend 3 [Activate]");
+        assert_eq!(j.log, ["Log Friend 3 [Activate]"]);
         e.scripts.quests.get_mut(&q).unwrap().aliases.clear();
         e.scripts.globals.insert(FormId(0x800), 9.0);
-        assert!(e.input_map.write().unwrap().remap(
-            "Activate",
-            crate::input_map::Button::Key(winit::keyboard::KeyCode::KeyF),
-        ));
-        let j = &e.journal()[0];
-        assert_eq!(j.name, "Quest F");
-        assert_eq!(j.objectives[0].1, "Find Friend 3 F");
-        assert_eq!(j.log, ["Log Friend 3 F"]);
         assert!(e.update_quest_global(q, FormId(0x800)));
-        assert_eq!(
-            e.scripts.quests[&q].objective_texts[&1],
-            "Find  9 [Activate]"
-        );
-        assert_eq!(e.journal()[0].objectives[0].1, "Find  9 F");
-        assert_eq!(e.journal()[0].log, ["Log Friend 3 F"]);
+        assert_eq!(e.journal()[0].objectives[0].1, "Find  9 [Activate]");
         let objectives = crate::console::execute(&mut e, "sqo");
-        assert!(objectives.iter().any(|line| line.contains("Find  9 F")));
-        assert!(objectives.iter().all(|line| !line.contains("[Activate]")));
+        assert!(
+            objectives
+                .iter()
+                .any(|line| line.contains("Find  9 [Activate]"))
+        );
         e.loading = Some(crate::loading::Loading {
             request: crate::loading::LoadRequest::save("unused".into()),
             phase: crate::loading::Phase::Hold,
@@ -852,12 +797,10 @@ mod tests {
             last_text: None,
             texts_given: 0,
         });
-        assert_eq!(e.next_loading_text().as_deref(), Some("Load F [Optional]"));
-        e.input_map.write().unwrap().reset();
-        e.loading.as_mut().unwrap().texts_given = 0;
-        assert_eq!(e.next_loading_text().as_deref(), Some("Load E [Optional]"));
-        assert_eq!(e.journal()[0].log, ["Log Friend 3 E"]);
-        assert_eq!(e.scripts.quests[&q].log, ["Log Friend 3 [Activate]"]);
+        assert_eq!(
+            e.next_loading_text().as_deref(),
+            Some("Load [Activate] [Optional]")
+        );
     }
 
     #[test]

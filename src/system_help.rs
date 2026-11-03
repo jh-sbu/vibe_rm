@@ -34,7 +34,7 @@ impl Engine {
                 .get(b"QNAM")
                 .and_then(|d| d.get(..4))
                 .map(|d| rec.fid(esp::FormId(u32::from_le_bytes(d.try_into().unwrap()))));
-            let body = self.replace_text_tags_preserving_controls(&body, quest);
+            let body = self.replace_text_tags(&body, quest);
             topics.push(Topic { title, body });
         }
         topics

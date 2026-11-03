@@ -144,7 +144,7 @@ impl Engine {
             }
             passed.push(index);
             if !text.is_empty() {
-                let text = self.replace_text_tags_preserving_controls(&text, Some(q));
+                let text = self.replace_text_tags(&text, Some(q));
                 self.announce_quest(q);
                 self.touch_quest(q).log.push(text);
             }
@@ -243,7 +243,7 @@ impl Engine {
             return;
         }
         let raw = self.objective_text(q, obj);
-        let text = self.replace_text_tags_preserving_controls(&raw, Some(q));
+        let text = self.replace_text_tags(&raw, Some(q));
         self.announce_quest(q);
         let st = self.touch_quest(q);
         st.objectives_displayed.insert(obj);
@@ -312,9 +312,7 @@ impl Engine {
                     };
                     (
                         o,
-                        self.resolve_controls(
-                            st.objective_texts.get(&o).map_or("", String::as_str),
-                        ),
+                        st.objective_texts.get(&o).cloned().unwrap_or_default(),
                         state,
                     )
                 })
@@ -334,11 +332,7 @@ impl Engine {
                     completed: st.completed,
                     failed: st.failed,
                     active: st.active,
-                    log: st
-                        .log
-                        .iter()
-                        .map(|text| self.resolve_controls(text))
-                        .collect(),
+                    log: st.log.clone(),
                     objectives,
                 },
             ));

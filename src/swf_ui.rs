@@ -1825,14 +1825,13 @@ impl MessageBoxMenu {
 
     /// Shows the box in front when it's a new one.
     fn update(&mut self, engine: &Engine) {
-        let front = engine.displayed_message_box().map(|b| {
-            let message = if b.title.is_empty() {
-                b.text
-            } else {
-                format!("{}\n\n{}", b.title, b.text)
-            };
-            (message.replace("\r\n", "\n"), b.buttons)
-        });
+        // Skyrim SE shows the text alone, not the MESG title
+        // (research/ui/control-tags.md, round 1).
+        let front = engine
+            .messages
+            .boxes
+            .front()
+            .map(|b| (b.text.replace("\r\n", "\n"), b.buttons.clone()));
         if front == self.shown {
             return;
         }
@@ -1988,8 +1987,7 @@ impl<M: HudMovie> Hud<M> {
 
     fn update(&mut self, engine: &Engine) {
         let map = engine.input_map.read().unwrap();
-        let input_changed = self.sent.input_generation != Some(map.generation);
-        if input_changed {
+        if self.sent.input_generation != Some(map.generation) {
             let control = map.control("Activate");
             let art = control
                 .as_ref()
@@ -2013,7 +2011,7 @@ impl<M: HudMovie> Hud<M> {
         self.crosshair(engine);
         self.subtitle(engine);
         self.notifications(engine);
-        self.help(engine, input_changed);
+        self.help(engine);
         self.banners(engine);
         self.sneak(engine);
         self.enemy(engine);
@@ -2194,10 +2192,7 @@ impl<M: HudMovie> Hud<M> {
                 // The asset's ShowMessage accepts only text. Its animation
                 // controls display duration; see known_ambiguities/messages.md.
                 if notification.is_active(engine.scripts.real_time) {
-                    self.call(
-                        "ShowMessage",
-                        &[text(&engine.resolve_controls(&notification.text))],
-                    );
+                    self.call("ShowMessage", &[text(&notification.text)]);
                 }
                 newest = newest.max(notification.id);
             }
@@ -2206,12 +2201,14 @@ impl<M: HudMovie> Hud<M> {
     }
 
     /// The help message up (`Message.ShowAsHelpMessage`), as a tutorial hint.
-    fn help(&mut self, engine: &Engine, input_changed: bool) {
+    /// Its button art is drawn when it is shown: Skyrim SE leaves a hint
+    /// already up as it is after a rebind (`research/ui/control-tags.md`).
+    fn help(&mut self, engine: &Engine) {
         let help = engine
             .current_help()
             .filter(|_| !engine.menu_up())
             .map(str::to_owned);
-        if help == self.sent.help && !(input_changed && help.is_some()) {
+        if help == self.sent.help {
             return;
         }
         match &help {
@@ -2444,7 +2441,7 @@ mod input_tests {
 
     #[test]
     #[ignore = "needs a headless GPU adapter; synthetic records only"]
-    fn hud_update_resends_help_after_remap_and_reset_without_replaying_notifications() {
+    fn hud_keeps_help_and_notifications_as_sent_after_remap_and_reset() {
         use esp::writer::{Node, RecordBuilder, write_plugin};
 
         struct Fixture(std::path::PathBuf);
@@ -2489,7 +2486,7 @@ mod input_tests {
         let mut engine = crate::stats::action_tests::headless_engine(&fixture.0, "Help.esp");
         let mut buttons = Buttons::from_controlmap("");
         buttons.map = Some(engine.input_map.clone());
-        assert_eq!(buttons.art("Activate"), "E");
+        assert_eq!(buttons.art("Activate"), "Use");
         engine.show_help_message(FormId(0x800), "help", 60.0, 0.0, 1);
         engine.scripts.notify("Notification [Activate]");
         let mut hud = Hud {
@@ -2507,8 +2504,8 @@ mod input_tests {
         assert_eq!(
             hud.menu.take_controls(),
             vec![
-                call("RefreshActivateButtonArt", vec![text("E")]),
-                call("ShowMessage", vec![text("Notification Use")]),
+                call("RefreshActivateButtonArt", vec![text("Use")]),
+                call("ShowMessage", vec![text("Notification [Activate]")]),
                 hint(),
             ]
         );
@@ -2526,7 +2523,7 @@ mod input_tests {
             hud.update(&engine);
             assert_eq!(
                 hud.menu.take_controls(),
-                vec![call("RefreshActivateButtonArt", vec![text(art)]), hint()]
+                vec![call("RefreshActivateButtonArt", vec![text(art)])]
             );
             hud.update(&engine);
             assert!(hud.menu.take_controls().is_empty());
@@ -2536,7 +2533,7 @@ mod input_tests {
         hud.update(&engine);
         assert_eq!(
             hud.menu.take_controls(),
-            vec![call("RefreshActivateButtonArt", vec![text("E")]), hint()]
+            vec![call("RefreshActivateButtonArt", vec![text("Use")])]
         );
         hud.update(&engine);
         assert!(hud.menu.take_controls().is_empty());
@@ -2553,7 +2550,7 @@ mod input_tests {
         hud.update(&engine);
         assert_eq!(
             hud.menu.take_controls(),
-            vec![call("RefreshActivateButtonArt", vec![text("E")])]
+            vec![call("RefreshActivateButtonArt", vec![text("Use")])]
         );
     }
 

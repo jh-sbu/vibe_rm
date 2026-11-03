@@ -344,7 +344,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
                 objs.sort();
                 for o in objs {
                     let state = if st.objectives_completed.contains(&o) { " (completed)" } else { "" };
-                    let text = engine.resolve_controls(st.objective_texts.get(&o).map_or("", String::as_str));
+                    let text = st.objective_texts.get(&o).cloned().unwrap_or_default();
                     out.push(format!("{q} {o}: {text}{state}"));
                 }
             }
@@ -440,7 +440,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             vec![format!("closed {menu:?}")]
         }
         "msgbox" => {
-            let Some(b) = engine.displayed_message_box() else {
+            let Some(b) = engine.messages.boxes.front().cloned() else {
                 return vec!["no message box up".into()];
             };
             match args.first().and_then(|a| a.parse::<i32>().ok()) {

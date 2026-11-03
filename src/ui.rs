@@ -457,7 +457,7 @@ impl Ui {
             painter.text(
                 Pos2::new(rect.left() + 30.0, y),
                 Align2::LEFT_TOP,
-                engine.resolve_controls(&notification.text),
+                &notification.text,
                 FontId::proportional(17.0),
                 col,
             );
@@ -561,7 +561,7 @@ impl Ui {
 
     /// The message box in front: its text and buttons.
     fn message_box(&mut self, ctx: &egui::Context, engine: &mut Engine) {
-        let Some(b) = engine.displayed_message_box() else {
+        let Some(b) = engine.messages.boxes.front().cloned() else {
             return;
         };
         let mut pressed = None;

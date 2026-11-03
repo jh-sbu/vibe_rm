@@ -214,11 +214,39 @@ impl InputMap {
     pub fn bindings(&self, event: &str, device: usize) -> Vec<Vec<u32>> {
         self.resolve(0, event, device, 0)
     }
+    /// A bracketed control tag (`Activate`, `Mouse1`): an event's first
+    /// keyboard, else mouse, binding, or a key name. Contexts naming the event
+    /// are tried in file order until one binds it to the keyboard or mouse:
+    /// Skyrim SE draws `[Move]`, unbound in Main Gameplay, with a later
+    /// context's mouse binding (`research/ui/control-tags.md`).
     pub fn control(&self, tag: &str) -> Option<Control> {
-        if let Some((context, row)) = self.event_of(tag) {
-            for device in 0..2 {
-                if let Some(chord) = self.resolve(context, &row.name, device, 0).first() {
-                    return Some(self.control_for(device, chord));
+        let named = |ignore_case: bool| -> Vec<(usize, &Event)> {
+            self.contexts
+                .iter()
+                .enumerate()
+                .filter_map(|(i, rows)| {
+                    rows.iter()
+                        .find(|row| {
+                            if ignore_case {
+                                row.name.eq_ignore_ascii_case(tag)
+                            } else {
+                                row.name == tag
+                            }
+                        })
+                        .map(|row| (i, row))
+                })
+                .collect()
+        };
+        let mut events = named(false);
+        if events.is_empty() {
+            events = named(true);
+        }
+        if !events.is_empty() {
+            for (context, row) in events {
+                for device in 0..2 {
+                    if let Some(chord) = self.resolve(context, &row.name, device, 0).first() {
+                        return Some(self.control_for(device, chord));
+                    }
                 }
             }
             return Some(Control {
@@ -236,6 +264,10 @@ impl InputMap {
                     .map(|code| self.control_for(device, &[*code]))
             })
     }
+    /// The key tables' names: joined for a chord's label; the last key's for
+    /// its art. A name the movies export no bitmap for (`MouseWheelUp`,
+    /// `PrintSrc`) makes them keep the bracketed tag, as Skyrim SE does for
+    /// `[Zoom In]` and `[Multi-Screenshot]`.
     fn control_for(&self, device: usize, chord: &[u32]) -> Control {
         let name = |code: &u32| {
             self.key_names[device]
@@ -244,16 +276,9 @@ impl InputMap {
                 .map(String::as_str)
                 .unwrap_or("UnknownKey")
         };
-        // The art is the bitmap the movies export, which the text tables'
-        // names don't always match (`MouseWheelUp` is drawn as `Wheel`,
-        // `NumPadEnter` as `Enter`); a key without art draws `UnknownKey`.
-        let art = [crate::swf_ui::keyboard_art, crate::swf_ui::mouse_art][device];
         Control {
             label: chord.iter().map(name).collect::<Vec<_>>().join("+"),
-            art: chord
-                .last()
-                .and_then(|&code| art(code))
-                .unwrap_or_else(|| "UnknownKey".into()),
+            art: chord.last().map(name).unwrap_or("UnknownKey").into(),
         }
     }
     pub fn bindings_of(&self, event: &str, device: usize) -> Vec<Vec<u32>> {
@@ -581,7 +606,7 @@ mod tests {
         assert!(map.control("NotAnEvent").is_none());
         assert!(map.remap("Activate", Button::Key(K::Space)));
         assert_eq!(map.control("Activate").unwrap().label(), "JumpKey");
-        assert_eq!(map.control("XButton").unwrap().art(), "Space");
+        assert_eq!(map.control("XButton").unwrap().art(), "JumpKey");
         assert_eq!(map.control("Jump").unwrap().label(), "UnknownKey");
         assert_eq!(map.control("Use").unwrap().label(), "Use");
         assert!(map.remap("Activate", Button::Mouse(0)));
@@ -618,7 +643,6 @@ mod tests {
         let mut map = shared.write().unwrap();
         assert_eq!(map.control("Probe").unwrap().label(), "CustomKey");
         assert_eq!(map.control("MouseProbe").unwrap().label(), "CustomMouse");
-        assert_eq!(map.control("MouseProbe").unwrap().art(), "Mouse1");
         assert_eq!(map.control("customkey").unwrap().label(), "CustomKey");
         assert_eq!(map.control("F").unwrap().label(), "F");
         map.reset();
@@ -626,7 +650,7 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
-    fn control_art_uses_exported_bitmaps_not_table_names() {
+    fn control_art_uses_key_table_names() {
         let mut map = InputMap::parse(
             "Wheel\t0xff\t0x8\t0xff\nPadEnter\t0x9c\t0xff\t0xff\nPad5\t0x4c\t0xff\t0xff\nTrack\t0x90\t0xff\t0xff\n",
         );
@@ -635,13 +659,24 @@ mod tests {
         map.key_names[1].load("MouseWheelUp\t0x8\t\n");
         let control = |tag| map.control(tag).unwrap();
         assert_eq!(control("Wheel").label(), "MouseWheelUp");
-        assert_eq!(control("Wheel").art(), "Wheel");
+        assert_eq!(control("Wheel").art(), "MouseWheelUp");
         assert_eq!(control("PadEnter").label(), "NumPadEnter");
-        assert_eq!(control("PadEnter").art(), "Enter");
+        assert_eq!(control("PadEnter").art(), "NumPadEnter");
         assert_eq!(control("Pad5").label(), "NumPad5");
-        assert_eq!(control("Pad5").art(), "UnknownKey");
+        assert_eq!(control("Pad5").art(), "NumPad5");
         assert_eq!(control("Track").label(), "Prev Track");
         assert_eq!(control("prev track").label(), "Prev Track");
+    }
+    #[test]
+    fn control_tries_later_contexts_when_unbound() {
+        // As the shipped Move: gamepad only in Main Gameplay, the mouse
+        // later; an event bound nowhere stays UnknownKey.
+        let map = InputMap::parse(
+            "Move\t0xff\t0xff\t0x000b\nIdle\t0xff\t0xff\t0xff\n\nMove\t0xff\t0xa\t0x000b\nIdle\t0xff\t0xff\t0xff\n\nMove\t0x11\t0xff\t0xff\n",
+        );
+        assert_eq!(map.control("Move").unwrap().art(), "MouseMove");
+        assert_eq!(map.control("move").unwrap().art(), "MouseMove");
+        assert_eq!(map.control("Idle").unwrap().art(), "UnknownKey");
     }
     #[test]
     fn control_event_names_take_precedence_over_raw_keys() {
