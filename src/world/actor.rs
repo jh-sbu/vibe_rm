@@ -489,16 +489,41 @@ pub fn footstep_set(lo: &LoadOrder, worn: &[FormId], skin: FormId, race: FormId)
     first
 }
 
+/// Model pair used when dressing an actor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Viewpoint {
+    Third,
+    First,
+}
+
 /// Armor addon models for an armor on a given race: (model path, biped slot mask).
-fn armor_models(lo: &LoadOrder, armo: FormId, race: FormId, female: bool) -> Vec<(String, u32)> {
+fn armor_models(
+    lo: &LoadOrder,
+    armo: FormId,
+    race: FormId,
+    female: bool,
+    view: Viewpoint,
+) -> Vec<(String, u32)> {
     let mut out = Vec::new();
     for a in race_addons(lo, armo, race) {
         let slots = super::inventory::armor_slots(&a);
-        let model = if female {
-            a.get(b"MOD3").or_else(|| a.get(b"MOD2"))
-        } else {
-            a.get(b"MOD2").or_else(|| a.get(b"MOD3"))
+        let (male, female_tag) = match view {
+            Viewpoint::Third => (b"MOD2", b"MOD3"),
+            Viewpoint::First => (b"MOD4", b"MOD5"),
         };
+        let (preferred, fallback) = if female {
+            (female_tag, male)
+        } else {
+            (male, female_tag)
+        };
+        // Empty model fields are absent too, including when falling across sex.
+        let model = a
+            .get(preferred)
+            .filter(|d| !esp::decode_zstring(d).is_empty())
+            .or_else(|| {
+                a.get(fallback)
+                    .filter(|d| !esp::decode_zstring(d).is_empty())
+            });
         if let Some(m) = model {
             let s = esp::decode_zstring(m);
             if !s.is_empty() {
@@ -507,6 +532,42 @@ fn armor_models(lo: &LoadOrder, armo: FormId, race: FormId, female: bool) -> Vec
         }
     }
     out
+}
+
+/// WNAM names the first-person STAT; an absent/invalid model uses the weapon's MODL.
+pub fn weapon_first_person_model(lo: &LoadOrder, weapon: FormId) -> Option<String> {
+    let rec = lo.get(weapon).filter(|r| r.tag().0 == *b"WEAP")?;
+    rec.get(b"WNAM")
+        .map(|d| fid_at(&rec, d))
+        .and_then(|f| lo.get(f))
+        .filter(|r| r.tag().0 == *b"STAT")
+        .and_then(|r| super::records::model_path(&r))
+        .or_else(|| super::inventory::weapon_model(lo, weapon))
+}
+
+/// Explicit first-person skin/armor pairs, weapons, and carried lights. Head
+/// parts and quivers do not belong to the rig surrounding the eye. See
+/// known_ambiguities/first-person.md for addons without MOD4/MOD5.
+pub fn dress_first_person(lo: &LoadOrder, d: &ActorDesc) -> Vec<(String, FormId)> {
+    let Some(traits) = npc_traits(lo, &d.templates) else {
+        return Vec::new();
+    };
+    let skin = if traits.skin.is_null() {
+        race_info(lo, d.race, d.female)
+            .map(|(_, s, _)| s)
+            .unwrap_or_default()
+    } else {
+        traits.skin
+    };
+    dress(
+        lo,
+        &d.inventory,
+        skin,
+        d.race,
+        d.female,
+        Vec::new(),
+        Viewpoint::First,
+    )
 }
 
 /// Equipment worn by default: armors from the outfit, resolving leveled item lists.
@@ -560,6 +621,7 @@ fn dress(
     race: FormId,
     female: bool,
     head: Vec<String>,
+    view: Viewpoint,
 ) -> Vec<(String, FormId)> {
     let mut models: Vec<(String, FormId)> = Vec::new();
     // Worn armors conflict by their own slots; their addons' slots (which can
@@ -574,18 +636,18 @@ fn dress(
             continue;
         }
         worn |= armo_slots;
-        for (m, slots) in armor_models(lo, armo, race, female) {
+        for (m, slots) in armor_models(lo, armo, race, female, view) {
             covered |= slots;
             models.push((m, armo));
         }
     }
-    for (m, slots) in armor_models(lo, skin, race, female) {
+    for (m, slots) in armor_models(lo, skin, race, female, view) {
         if slots & covered == 0 {
             covered |= slots;
             models.push((m, FormId::NULL));
         }
     }
-    if covered & SLOT_HEAD == 0 || covered & SLOT_HAIR == 0 {
+    if view == Viewpoint::Third && (covered & SLOT_HEAD == 0 || covered & SLOT_HAIR == 0) {
         models.extend(head.into_iter().map(|m| (m, FormId::NULL)));
     }
     let mut weapons: Vec<FormId> = [super::inventory::RIGHT, super::inventory::LEFT]
@@ -594,16 +656,22 @@ fn dress(
         .collect();
     weapons.dedup();
     for w in weapons {
-        if let Some(m) = super::inventory::weapon_model(lo, w) {
+        let model = match view {
+            Viewpoint::Third => super::inventory::weapon_model(lo, w),
+            Viewpoint::First => weapon_first_person_model(lo, w),
+        };
+        if let Some(m) = model {
             models.push((m, w));
         }
     }
     // Ammunition worn shows as its quiver, with the bow or without (UESP
     // Skyrim:Archery).
-    if let Some((ammo, m)) = inventory.equipped().iter().find_map(|&f| {
-        let rec = lo.get(f).filter(|r| r.tag().0 == *b"AMMO")?;
-        (inventory.count(f) > 0).then_some((f, super::records::model_path(&rec)?))
-    }) {
+    if view == Viewpoint::Third
+        && let Some((ammo, m)) = inventory.equipped().iter().find_map(|&f| {
+            let rec = lo.get(f).filter(|r| r.tag().0 == *b"AMMO")?;
+            (inventory.count(f) > 0).then_some((f, super::records::model_path(&rec)?))
+        })
+    {
         models.push((format!("{m}#quiver"), ammo));
     }
     models
@@ -701,7 +769,15 @@ pub fn describe_player(
         traits.skin
     };
     let head = head_part_models(lo, traits.npc_for_face, traits.race, traits.female);
-    let models = dress(lo, inventory, skin, traits.race, traits.female, head);
+    let models = dress(
+        lo,
+        inventory,
+        skin,
+        traits.race,
+        traits.female,
+        head,
+        Viewpoint::Third,
+    );
     Some(ActorDesc {
         ref_id: player,
         npc,
@@ -796,7 +872,7 @@ pub fn best_weapon(
 /// wear (children have none of the adults' armor).
 pub fn can_wear(lo: &LoadOrder, r: &records::Reference, globals: &Globals, armo: FormId) -> bool {
     reference_traits(lo, r, globals)
-        .is_some_and(|t| !armor_models(lo, armo, t.race, t.female).is_empty())
+        .is_some_and(|t| !armor_models(lo, armo, t.race, t.female, Viewpoint::Third).is_empty())
 }
 
 /// Biped slot for the head (30) and hair (31) etc.
@@ -838,7 +914,15 @@ pub fn describe_reference(
     };
 
     let face = facegen_path(lo, traits.npc_for_face).into_iter().collect();
-    let models = dress(lo, &inventory, skin, traits.race, traits.female, face);
+    let models = dress(
+        lo,
+        &inventory,
+        skin,
+        traits.race,
+        traits.female,
+        face,
+        Viewpoint::Third,
+    );
     let name = traits.name.clone();
     let scale = r.scale * traits.height * race_height;
     let transform = Mat4::from_scale_rotation_translation(
@@ -865,3 +949,7 @@ pub fn describe_reference(
         weight: traits.weight,
     })
 }
+
+#[cfg(test)]
+#[path = "first_person_tests.rs"]
+mod first_person_tests;
