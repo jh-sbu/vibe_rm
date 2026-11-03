@@ -159,6 +159,27 @@ impl InputMap {
     pub fn bindings(&self, event: &str, device: usize) -> Vec<Vec<u32>> {
         self.resolve(0, event, device, 0)
     }
+    pub fn bindings_of(&self, event: &str, device: usize) -> Vec<Vec<u32>> {
+        self.event_of(event)
+            .map_or_else(Vec::new, |(context, row)| {
+                self.resolve(context, &row.name, device, 0)
+            })
+    }
+    fn event_of(&self, event: &str) -> Option<(usize, &Event)> {
+        [false, true].into_iter().find_map(|ignore_case| {
+            self.contexts.iter().enumerate().find_map(|(i, rows)| {
+                rows.iter()
+                    .find(|row| {
+                        if ignore_case {
+                            row.name.eq_ignore_ascii_case(event)
+                        } else {
+                            row.name == event
+                        }
+                    })
+                    .map(|row| (i, row))
+            })
+        })
+    }
     fn resolve(&self, context: usize, event: &str, device: usize, depth: u8) -> Vec<Vec<u32>> {
         if depth > 8 || device >= 3 {
             return Vec::new();
@@ -420,6 +441,23 @@ pub fn mouse_code(button: winit::event::MouseButton) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn any_context_bindings_preserve_gameplay_dispatch() {
+        let map = InputMap::parse(
+            "Activate\t0x12\t0xff\t0xff\nCase\t0x21\t0xff\t0xff\n\nAccept\t!0,Activate\t0x0\t0xff\nActivate\t0x22\t0xff\t0xff\ncase\t0x23\t0xff\t0xff\nUnbound\t0xff\t0xff\t0xff\n\nUnbound\t0x39\t0xff\t0xff\n",
+        );
+        assert_eq!(map.bindings_of("Accept", 0), vec![vec![0x12]]);
+        assert_eq!(map.bindings_of("accept", 1), vec![vec![0]]);
+        assert_eq!(map.bindings_of("ACTIVATE", 0), vec![vec![0x12]]);
+        assert_eq!(map.bindings_of("case", 0), vec![vec![0x23]]);
+        assert_eq!(map.bindings_of("CASE", 0), vec![vec![0x21]]);
+        assert!(map.bindings_of("Unbound", 0).is_empty());
+        assert!(map.bindings_of("Missing", 0).is_empty());
+        assert!(map.bindings_of("Accept", 3).is_empty());
+        assert!(map.bindings("Accept", 0).is_empty());
+        assert!(map.bindings("activate", 0).is_empty());
+        assert_eq!(map.first("Activate", 0), Some(0x12));
+    }
     #[test]
     fn alternatives_references_chords_and_round_trip() {
         let m = InputMap::parse(
