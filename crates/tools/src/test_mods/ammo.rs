@@ -39,6 +39,23 @@
 //! fire three arrows. The items come back and the game saves before the
 //! "done" box. Read with `vrm-tool test-results`; also say which arrows
 //! the inventory showed equipped and any message on screen after the shots.
+//!
+//! **Run 2026-11-03** (a fresh level 1 character, Dawnguard loaded): the
+//! design's predictions held, and the open ones read:
+//!
+//! - `Default`, `Menu`: iron (the user saw iron marked in the inventory);
+//!   `Pricey`: pricey, so the weakest is by damage, not value.
+//! - `Chosen`, `Switch`: a chosen stack stays through the bow coming off and
+//!   on and a bow swapped for another; with none worn, iron goes on.
+//! - `RemoveHeld`, `RemoveAway`, `Pickup`: removing the worn stack or adding
+//!   arrows with the bow held puts nothing on; equipping the bow then does.
+//! - `OnlyBolts`: nothing worn. `Incompatible`: worn bolts give way to iron.
+//! - `Tie`: the stack added first wins, whatever its form id or name.
+//! - `Crossbow`: steel bolts (the weaker); the bow then iron arrows, the
+//!   crossbow steel bolts again; dwarven bolts worn give way to iron.
+//! - `RunOut`: after the second shot used up the worn iron, steel (the
+//!   weakest left, not elven) was worn at once and the third shot took it;
+//!   the user saw no message.
 
 use anyhow::{Context, Result};
 use esp::writer::{AttachedScript, Node, PropertyValue, write_plugin};

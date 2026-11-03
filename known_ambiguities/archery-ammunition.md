@@ -4,9 +4,13 @@ What equips with a bow or crossbow, what the player's shot takes, and the
 quiver. `src/ai/archery.rs` (`ammo_for`, `weakest_in`, `arrows_in`),
 `src/items.rs` (`equip_in`), `src/world/actor.rs` (`dress`).
 
-The SE observation `vrm-tool test-mod ammo` (`crates/tools/src/test_mods/ammo.rs`)
-was built to settle the choices below; until its readings come in, each is
-the choice recorded here.
+Most of the rules were observed in Skyrim SE with `vrm-tool test-mod ammo`
+(run 2026-11-03; readings in `crates/tools/src/test_mods/ammo.rs`): the
+weakest by damage, the first-added stack of equals, auto-equip only when
+nothing the weapon shoots is worn, worn bolts giving way to arrows, nothing
+put on by pickups or a removed stack, and the weakest left put on silently
+when shots use up the worn stack. This file keeps only the choices that run
+didn't settle.
 
 ## Public evidence
 
@@ -29,30 +33,17 @@ the choice recorded here.
 
 ## Choices made
 
-- **Weakest** is the lowest `DATA` damage among carried, playable ammunition
-  the weapon shoots. Value isn't considered. Of equal damage, the first the
-  inventory lists (the order stacks were first added) wins. The test's
-  `Pricey` and `Tie` readings check both.
-- **When.** Only the player's bow or crossbow auto-equips, by any route
-  (menus, hotkeys, `EquipItem`, console), and only when no ammunition it
-  shoots is worn: a stack the player chose stays, and worn bolts give way to
-  arrows when a bow is equipped (`Chosen`, `Switch`, `Incompatible`).
-  Unequipping the weapon leaves the ammunition worn (UESP).
-- **Arrows picked up** while the bow is held don't equip themselves
-  (`Pickup`).
-- **Shots.** The player's shot takes only worn ammunition; with none worn
-  it shows `sNoArrows` and nothing flies, as the setting's wording suggests.
-  When the worn stack is used up, it comes off and no other stack is worn
-  in its place, so the next shot shows `sNoArrows` (`RunOut`, `RemoveHeld`).
 - **NPCs** keep their rule: worn arrows, else their strongest, else iron
-  arrows (they never run out). UESP's note is about the player; NPCs' choice
-  isn't observed and isn't part of the test.
+  arrows (they never run out). UESP's note and the test are about the
+  player; NPCs' choice isn't observed.
+- **List order** for ties is the order stacks were first added to the
+  inventory (`Inventory::items`). The test added each stack once; whether a
+  stack that ran out and came back keeps its old place isn't observed.
 - **The quiver** is drawn for any actor with ammunition worn and carried:
   the shapes under the model's `ArrowQuiver` node, hung from its `Prn`
-  bone. It doesn't change with the count left.
+  bone. It doesn't change with the count left; that wasn't observed.
 
 ## Remaining uncertainty
 
-- All the choices above until the `ammo` readings come in.
 - Crossbow firing and reloading aren't implemented; only the equipping of
   bolts is.

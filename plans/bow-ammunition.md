@@ -1,8 +1,7 @@
 # Plan: equipped ammunition and quivers
 
-**Status: steps 0–5 done** (2026-11-03); the SE run of `test-mod ammo`
-is pending, and its readings may change steps 2–3's choices (see "After the
-SE run"). Drafted 2026-10-30. ROADMAP Next item 5, "inventory ... ammo /
+**Status: done** (2026-11-03): steps 0–5, and the SE run's readings
+applied (the worn stack shot to the last puts on the weakest left). Drafted 2026-10-30. ROADMAP Next item 5, "inventory ... ammo /
 quivers (the weakest arrows equipped with a bow, UESP)". Each numbered step
 is one commit; run `cargo fmt` before each.
 
@@ -127,15 +126,12 @@ is one, else the strongest carried, and no quiver is drawn.
   combat chooses ammunition differently.
 - Crossbow firing and reloading stay out of this plan.
 
-## After the SE run
+## SE run (2026-11-03)
 
-`vrm-tool test-results tests/results` reads `VrmAmmoTestScript`'s reports;
-the user's own look at the inventory (which arrows are marked after equipping
-the bow) and any message after the shots come with them. For each reading
-that differs from `known_ambiguities/archery-ammunition.md`'s choices, change
-`equip_in` / `weakest_in` / `player_loose` and their tests, record the result
-in `ammo.rs`'s module doc, and drop the settled choices from
-`known_ambiguities/archery-ammunition.md`.
+Every reading matched steps 2–3 except `RunOut`: the game put on the
+weakest arrows left when shots used up the worn stack, silently.
+`player_loose` now does the same; removing the stack by other means still
+puts nothing on (`RemoveHeld`). Readings: `crates/tools/src/test_mods/ammo.rs`.
 
 Verified here: the step 1–3 tests (`cargo test --bin vibe_rm ammo_tests --
 --include-ignored`); offscreen third-person captures with iron arrows worn
