@@ -1783,7 +1783,6 @@ game each piece unlocks.
 ## Next
 **Test results to act on.** autotest21 and autotest22's differing
 readings are applied (see Done). autotest22 reran autotest21's faults.
-`tests/results/` holds only autotest22's save.
 
 - From autotest21 (`research/autotest21.md`): the rule sharing
   auto-calculated skills past 100. The game matches the stored `DNAM`s, e.g.
@@ -2078,7 +2077,12 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      and enchanted weapons' charge use, and whether NPCs' worn school cost
      reductions do (the player's do: see Done; `known_ambiguities/staffs.md`); individual staff copies
      selectable in the menus and hands (`known_ambiguities/staffs.md`); NPCs casting
-     scrolls; charges interrupted by blows or shouts (spells and scrolls)
+     scrolls; charges interrupted by blows or shouts (spells and scrolls);
+     scrolls not yet observed in SE: Telekinesis's concentration scroll,
+     mixed effect casting types, authored against effect charge times, and
+     learned-spell / other-hand limits airborne or swimming
+     (`plans/scroll-casting-hold.md`); the console's `player.equipitem` uses
+     up magic items, scrolls among them, instead of equipping them
    - Pickpocket retry resets beyond the two-day gate (see Done): guards sent
      off by bribes, Thanes or guild payment, and Harmony
      (`known_ambiguities/crime.md`)
@@ -2182,7 +2186,9 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      distant LOD around the loaded cells on by default (the blocks are now
      placed right: `VRM_LOD=1`). Controls, custom markers, Show on Map and
      marker refresh are done (`plans/map-menu.md`); the local map is done
-     (`plans/local-map.md`). Show on Map's precise vanilla opening zoom remains
+     (`plans/local-map.md`; still to observe: the world map's player marker
+     when toggled from an interior, and the explored radius indoors and out).
+     Show on Map's precise vanilla opening zoom remains
      an open observation (`known_ambiguities/journal.md` records the current choice).
    - The inventory's rest: the item's model beside the card (`UpdateItem3D`,
      rotating and zooming it), including crafting previews; independent per-hand
@@ -2260,7 +2266,9 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
    roots (including projectile poison) before reclaiming forms; saving must
    preserve live plugin/cache state. Original collection timing is still an open
    research question.
-10. **Performance**: async loading, GPU-driven culling
+10. **Performance**: async loading, GPU-driven culling; the local map's
+   image served without its PNG encode / decode round trip
+   (`plans/local-map.md`)
    - Plugin loading: record form versions. A copy of `FXspiderWebKitDestructible`
      (activator with destruction data, form version 39) crashed Skyrim SE while it
      loaded plugins when marked version 44, and loaded marked 39 (autotest21's
