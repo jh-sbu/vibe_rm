@@ -1720,10 +1720,7 @@ fn main() -> Result<()> {
                 let mut cover = vec![0.0f32; 99];
                 for s in &samples {
                     for (b, c) in cover.iter_mut().enumerate() {
-                        *c += s.weight
-                            * s.mask
-                                .as_ref()
-                                .map_or(1.0, |m| m.get(b).copied().unwrap_or(0.0));
+                        *c += s.weight * s.bone_weight(b);
                     }
                 }
                 let bare: Vec<usize> = cover

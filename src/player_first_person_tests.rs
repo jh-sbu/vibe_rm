@@ -265,6 +265,48 @@ fn first_person_draw_binds_the_character_rig_and_puts_the_sword_in_hand() {
 }
 
 #[test]
+#[ignore = "requires installed Skyrim SE assets and a headless GPU adapter"]
+fn drawn_bow_keeps_arm_pose_with_short_bone_masks_and_releases_once_across_view_switch() {
+    let data = vfs::locate_data_dir().unwrap();
+    let names = esp::BASE_MASTERS
+        .iter()
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>();
+    let mut e = crate::stats::action_tests::headless_engine_plugins(&data, &names);
+    let bow = e.lo.find_editor_id("LongBow").unwrap();
+    let arrow = e.lo.find_editor_id("IronArrow").unwrap();
+    e.inventory_mut(PLAYER_REF).add(bow, 1);
+    e.inventory_mut(PLAYER_REF).add(arrow, 20);
+    e.equip_item(PLAYER_REF, bow, true).unwrap();
+    e.player.grounded = true;
+    e.update_player_body(Vec3::ZERO, 0.0);
+    assert!(e.player_draw_weapon(true));
+    for _ in 0..120 {
+        e.update_player_body(Vec3::ZERO, 1.0 / 60.0);
+    }
+    assert!(e.player_begin_bow_draw());
+    for _ in 0..90 {
+        e.update_player_body(Vec3::ZERO, 1.0 / 60.0);
+    }
+    let held = e.player_node("SHIELD").unwrap().w_axis.truncate();
+    assert!(
+        (held - e.player.eye()).dot(e.camera.forward()) > 15.0,
+        "{held:?}"
+    );
+    e.player_release_bow(1.5);
+    e.set_third_person(true);
+    for _ in 0..120 {
+        e.update_player_body(Vec3::ZERO, 1.0 / 60.0);
+    }
+    assert_eq!(e.inventories[&PLAYER_REF].count(arrow), 19);
+    e.set_third_person(false);
+    for _ in 0..30 {
+        e.update_player_body(Vec3::ZERO, 1.0 / 60.0);
+    }
+    assert_eq!(e.inventories[&PLAYER_REF].count(arrow), 19);
+}
+
+#[test]
 #[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn camera_locks_and_forced_furniture_restore_the_previous_view() {
     use esp::writer::{Node, RecordBuilder, write_plugin};

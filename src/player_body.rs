@@ -255,7 +255,7 @@ impl Engine {
             for (var, value) in [
                 ("IsNPC", 0.0),
                 ("IsPlayer", 1.0),
-                ("i1stPerson", (!self.third_person) as u8 as f32),
+                ("i1stPerson", 0.0),
                 ("IsFirstPerson", (!self.third_person) as u8 as f32),
             ] {
                 g.set_variable(var, value);
@@ -700,9 +700,11 @@ impl PlayerBody {
     fn set_view(&mut self, third: bool) {
         self.first_active = !third && self.first.is_some();
         if let Some(g) = self.graph.as_mut() {
-            for name in ["IsFirstPerson", "i1stPerson"] {
-                g.set_variable(name, (!third) as u8 as f32);
-            }
+            g.set_variable("IsFirstPerson", (!third) as u8 as f32);
+            // i1stPerson selects this rig's perspective-specific subgraphs.
+            // Changing it on a view switch resets the third-person bow graph
+            // before its pending arrowRelease can arrive.
+            g.set_variable("i1stPerson", 0.0);
         }
     }
 

@@ -60,3 +60,12 @@ comparison with vanilla Skyrim SE, not deliberate deviations.
   the underlying view rather than the transient furniture override. The
   assets identify the keyword, not view restoration/wheel edge behavior;
   those choices await the SE probe.
+
+- **Rig identity versus view.** Keep i1stPerson at zero on the third-person
+  rig and one on the first-person rig, matching their authored defaults;
+  IsFirstPerson follows the view on the third-person rig (confirmed by
+  autotest2). Making both variables follow the view, as the draft proposed,
+  resets the third-person bow branch on a mid-release switch and loses its
+  arrowRelease. Fixed rig identity keeps both draw/release sequences running.
+  This is an asset-supported functionality choice; the vanilla probe also
+  records animation-variable reads to investigate i1stPerson's exact contract.

@@ -681,7 +681,7 @@ impl GraphAnim {
                     continue;
                 };
                 let factor = match (&s.mask, clip.track_to_hk.get(track).copied().flatten()) {
-                    (Some(m), Some(hk)) => m.get(hk).copied().unwrap_or(0.0),
+                    (Some(_), Some(hk)) => s.bone_weight(hk),
                     _ => 1.0,
                 };
                 let w = s.weight * factor;
@@ -760,7 +760,7 @@ impl GraphAnim {
                     continue;
                 };
                 let factor = match (&s.mask, clip.track_to_hk.get(track).copied().flatten()) {
-                    (Some(m), Some(hk)) => m.get(hk).copied().unwrap_or(0.0),
+                    (Some(_), Some(hk)) => s.bone_weight(hk),
                     _ => 1.0,
                 };
                 // Relative to the layer it sits in: normalised per bone like the poses.

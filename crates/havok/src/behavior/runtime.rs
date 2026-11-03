@@ -57,6 +57,18 @@ pub struct Sample {
     pub mask: Option<Arc<[f32]>>,
 }
 
+impl Sample {
+    /// Authored hkbBoneWeightArray entries omitted after its last element
+    /// have weight one. A short mask can, for example, exclude only the root.
+    pub fn bone_weight(&self, bone: usize) -> f32 {
+        self.mask
+            .as_ref()
+            .and_then(|m| m.get(bone))
+            .copied()
+            .unwrap_or(1.0)
+    }
+}
+
 /// An event the graph raised, for the engine (anim objects, sounds, head tracking...).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Raised {
