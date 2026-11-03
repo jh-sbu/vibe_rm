@@ -124,6 +124,53 @@ impl PlayerGraphs<'_> {
     }
 }
 
+impl FirstPerson {
+    /// Pitch only the LookNode subtree. Camera1st is a sibling, so its
+    /// authored anchor remains fixed while the arms follow the view.
+    fn place(&mut self, eye: Vec3, yaw: f32, pitch: f32, scale: f32) {
+        let rotation = Mat4::from_scale_rotation_translation(
+            Vec3::splat(scale),
+            Quat::from_rotation_z(-yaw),
+            Vec3::ZERO,
+        );
+        let anchor = self
+            .skeleton
+            .find("Camera1st [Cam1]")
+            .and_then(|i| self.instance.pose.get(i))
+            .map_or(Vec3::ZERO, |m| m.w_axis.truncate());
+        self.instance.transform =
+            Mat4::from_translation(eye - rotation.transform_point3(anchor)) * rotation;
+        pitch_first_person(&self.skeleton, &mut self.instance.pose, pitch);
+        self.graph.world_from_model = self.instance.transform;
+    }
+}
+
+fn pitch_first_person(skeleton: &Skeleton, pose: &mut [Mat4], pitch: f32) {
+    let Some(look) = skeleton
+        .find("NPC LookNode [Look]")
+        .or_else(|| skeleton.find("NPC LookNode"))
+    else {
+        return;
+    };
+    let Some(&at) = pose.get(look) else { return };
+    let origin = at.w_axis.truncate();
+    let delta = Mat4::from_translation(origin)
+        * Mat4::from_quat(Quat::from_axis_angle(
+            at.x_axis.truncate().normalize_or(Vec3::X),
+            pitch,
+        ))
+        * Mat4::from_translation(-origin);
+    let mut descendants = vec![false; skeleton.bones.len()];
+    for (i, bone) in skeleton.bones.iter().enumerate() {
+        descendants[i] = i == look || bone.parent.is_some_and(|p| descendants[p]);
+        if descendants[i]
+            && let Some(m) = pose.get_mut(i)
+        {
+            *m = delta * *m;
+        }
+    }
+}
+
 fn wrap(a: f32) -> f32 {
     (a + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI
 }
@@ -249,6 +296,14 @@ impl Engine {
         });
         self.build_first_person(&mut body, &d);
         body.set_view(self.third_person);
+        if let Some(f) = body.first.as_mut() {
+            f.place(
+                self.player.eye(),
+                self.camera.yaw,
+                self.camera.pitch,
+                body.scale,
+            );
+        }
         let script_events = std::mem::take(&mut body.script_events);
         self.player_body = Some(body);
         self.raise_anim_events(PLAYER_REF, &script_events);
@@ -356,6 +411,8 @@ impl Engine {
         let feet = self.player_feet();
         let third = self.third_person;
         let yaw = self.camera.yaw;
+        let pitch = self.camera.pitch;
+        let eye = self.player.eye();
         let can_shoot =
             !self.player_dead() && self.conversation.is_none() && !self.disabled_controls.fighting;
         let flat = moved.truncate();
@@ -406,7 +463,17 @@ impl Engine {
         if let Some(g) = body.graph.as_mut() {
             g.world_from_model = world_from_model;
         }
+        if let Some(f) = body.first.as_mut() {
+            f.graph.set_variable("AimPitchCurrent", pitch.to_degrees());
+            f.graph.set_variable("AimHeadingCurrent", 0.0);
+            // The whole rig follows view pitch; there is no extra aim offset.
+            f.graph.set_variable("BowAimOffsetPitch", 0.0);
+            f.graph.set_variable("MagicAimOffsetPitch", 0.0);
+        }
         let pose = body.animate(dt, &motion, &actions, &self.vfs, &mut self.anims);
+        if let Some(f) = body.first.as_mut() {
+            f.place(eye, yaw, pitch, body.scale);
+        }
         let transform = body.transform(feet);
         let events = std::mem::take(&mut body.combat_events);
         let step_events = std::mem::take(&mut body.step_events);
@@ -1277,6 +1344,9 @@ impl Engine {
         self.third_person = on;
         if let Some(body) = self.player_body.as_mut() {
             body.set_view(on);
+        }
+        if let Some(inst) = self.scene.player.as_mut() {
+            inst.shadow_only = !on;
         }
     }
 

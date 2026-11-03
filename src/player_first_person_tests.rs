@@ -131,3 +131,57 @@ fn hidden_rig_draws_and_sheathes_and_view_switch_preserves_one_pending_shot() {
     body.sample(0.0, &vfs, &mut anims);
     assert!(!body.weapon_out && !body.first.as_ref().unwrap().weapon_out);
 }
+
+#[test]
+fn pitched_rig_anchors_camera_at_eye_with_yaw_scale_and_crouch() {
+    use crate::world::skeleton::Bone;
+    let bones = [
+        ("root", None, Vec3::ZERO),
+        ("Camera1st [Cam1]", Some(0), Vec3::Z * 120.5),
+        ("NPC LookNode [Look]", Some(0), Vec3::Z * 120.5),
+        ("hand", Some(2), Vec3::new(12.0, 30.0, -18.0)),
+    ]
+    .into_iter()
+    .map(|(name, parent, translation)| Bone {
+        name: name.into(),
+        parent,
+        bind: nif::Transform {
+            translation,
+            ..Default::default()
+        },
+    })
+    .collect::<Vec<_>>();
+    let skeleton = Skeleton {
+        by_name: bones
+            .iter()
+            .enumerate()
+            .map(|(i, b)| (b.name.to_ascii_lowercase(), i))
+            .collect(),
+        bones,
+        ..Default::default()
+    };
+    let bind = skeleton.model_space(&skeleton.bind_locals());
+    let mut rig = first_rig(notifications("HitFrame"));
+    rig.skeleton = Arc::new(skeleton);
+    for scale in [0.95, 1.0, 1.08] {
+        for pitch in [-1.4, 0.0, 1.4] {
+            for drop in [0.0, 25.0] {
+                let eye = Vec3::new(100.0, -600.0, 130.0 - drop);
+                rig.instance.pose = bind.clone();
+                rig.place(eye, 0.8, pitch, scale);
+                let camera = rig
+                    .instance
+                    .transform
+                    .transform_point3(rig.instance.pose[1].w_axis.truncate());
+                assert!(camera.distance(eye) < 0.0001);
+                let look = rig
+                    .instance
+                    .transform
+                    .transform_point3(rig.instance.pose[2].w_axis.truncate());
+                assert!(look.distance(eye) < 0.0001);
+                let delta = rig.instance.pose[3].w_axis.truncate() - bind[3].w_axis.truncate();
+                assert_eq!(delta.length() > 1.0, pitch != 0.0);
+            }
+        }
+    }
+}
