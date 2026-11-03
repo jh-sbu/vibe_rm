@@ -671,7 +671,8 @@ impl Engine {
     /// `arrowRelease` notification, or directly by the console. The stored
     /// button hold determines draw strength. An arrow loosed before the bow is
     /// fully drawn flies slower and strikes softer, in proportion; loosed
-    /// straight away, it isn't nocked and nothing flies.
+    /// straight away, it isn't nocked and nothing flies. Only worn arrows are
+    /// shot; the last of them puts on the weakest left.
     pub fn player_loose(&mut self, held: f32) {
         if self.disabled_controls.fighting {
             return;
@@ -693,6 +694,17 @@ impl Engine {
         self.count_weapon_use(bow);
         let power = (held / full).min(1.0);
         self.remove_item(PLAYER_REF, arrow.ammo, 1, None);
+        // A worn stack shot to the last puts on the weakest left, silently
+        // (test-mod ammo's RunOut in Skyrim SE).
+        if self
+            .inventories
+            .get(&PLAYER_REF)
+            .is_some_and(|i| i.count(arrow.ammo) <= 0)
+            && let Some(next) = self.weakest_ammo(PLAYER_REF, bow)
+            && let Err(e) = self.equip_item(PLAYER_REF, next, true)
+        {
+            log::debug!("next arrows {next}: {e}");
+        }
         let damage = (crate::ai::combat::weapon_damage(&self.lo, bow)
             + self.tempering_bonus(PLAYER_REF, bow)
             + arrow.damage)

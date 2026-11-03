@@ -174,21 +174,52 @@ fn nothing_is_put_on_without_ammunition_or_for_other_weapons_or_npcs() {
 
 #[test]
 #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
-fn shots_take_the_worn_arrows_until_they_run_out() {
+fn the_last_worn_arrow_shot_puts_on_the_weakest_left() {
+    // test-mod ammo's RunOut in SE: iron 2 worn, steel and elven carried;
+    // after the second shot steel is worn and the third takes it.
     let (_f, mut e) = fixture();
-    give(&mut e, &[ELVEN, BOW]);
-    e.add_item(PLAYER_REF, IRON, 1);
+    give(&mut e, &[ELVEN, STEEL, BOW]);
+    e.add_item(PLAYER_REF, IRON, 2);
     e.equip_item(PLAYER_REF, BOW, true).unwrap();
     assert!(worn(&e, IRON));
     e.player_loose(2.0);
-    assert_eq!(e.projectiles.len(), 1);
+    assert!(worn(&e, IRON));
+    e.player_loose(2.0);
     assert_eq!(e.inventories[&PLAYER_REF].count(IRON), 0);
+    assert!(worn(&e, STEEL) && !worn(&e, ELVEN));
+    e.player_loose(2.0);
+    assert_eq!(e.projectiles.len(), 3);
+    assert_eq!(e.inventories[&PLAYER_REF].count(STEEL), 9);
     assert_eq!(e.inventories[&PLAYER_REF].count(ELVEN), 10);
-    // None worn now: nothing flies, and the game's "No arrows equipped."
-    assert!(!worn(&e, IRON) && !worn(&e, ELVEN));
+    assert!(e.scripts.notifications.is_empty(), "silently");
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn with_no_arrows_left_nothing_flies() {
+    let (_f, mut e) = fixture();
+    give(&mut e, &[BOLT, BOW]);
+    e.add_item(PLAYER_REF, IRON, 1);
+    e.equip_item(PLAYER_REF, BOW, true).unwrap();
     e.player_loose(2.0);
     assert_eq!(e.projectiles.len(), 1);
-    assert_eq!(e.inventories[&PLAYER_REF].count(ELVEN), 10);
+    assert!(!worn(&e, IRON) && !worn(&e, BOLT));
+    e.player_loose(2.0);
+    assert_eq!(e.projectiles.len(), 1);
     let said = e.scripts.notifications.last().map(|n| n.text.clone());
     assert_eq!(said.as_deref(), Some("No arrows equipped."));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn arrows_picked_up_or_a_stack_taken_away_put_nothing_on() {
+    // SE's Pickup and RemoveHeld.
+    let (_f, mut e) = fixture();
+    give(&mut e, &[BOW]);
+    e.equip_item(PLAYER_REF, BOW, true).unwrap();
+    give(&mut e, &[STEEL, IRON]);
+    assert!(!worn(&e, STEEL) && !worn(&e, IRON));
+    e.equip_item(PLAYER_REF, STEEL, true).unwrap();
+    e.remove_item(PLAYER_REF, STEEL, 10, None);
+    assert!(!worn(&e, IRON));
 }
