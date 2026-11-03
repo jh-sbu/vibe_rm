@@ -14,6 +14,7 @@
 use anyhow::{Result, bail};
 use esp::{FormId, LoadOrder};
 
+mod ammo;
 mod autotest;
 mod autotest10;
 mod autotest11;
@@ -77,6 +78,7 @@ pub const NAMES: &[&str] = &[
     "venv",
     "spell-visuals",
     "loadscreens",
+    "ammo",
 ];
 
 /// A test mod's files: the plugin, and its compiled scripts by name.
@@ -94,6 +96,7 @@ pub fn own(object_id: u32) -> FormId {
 /// The files of a test mod (one of [`NAMES`]), with Skyrim.esm loaded.
 pub fn build(name: &str, lo: &LoadOrder) -> Result<TestMod> {
     match name {
+        "ammo" => ammo::build(lo),
         "crafting1" => crafting1::build(lo),
         "autotest" => autotest::build(lo),
         "autotest2" => autotest2::build(lo),
