@@ -2229,14 +2229,15 @@ impl Engine {
         }
     }
 
-    /// The bone a rigid model (weapon, shield, anim object) hangs from: its root's
-    /// `Prn` string.
+    /// The bone a rigid model (weapon, shield, quiver, anim object) hangs
+    /// from: its root's `Prn` string (of the file, for a `path#variant`).
     pub(crate) fn parent_bone(&mut self, model: &str) -> Option<String> {
         if let Some(r) = self.parent_bones.get(model) {
             return r.clone();
         }
         let r = (|| {
-            let nif = nif::Nif::parse(&self.vfs.read(model)?).ok()?;
+            let file = model.split('#').next().unwrap_or(model);
+            let nif = nif::Nif::parse(&self.vfs.read(file)?).ok()?;
             let root = nif
                 .roots
                 .first()

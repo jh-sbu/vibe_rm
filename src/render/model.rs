@@ -1276,6 +1276,40 @@ fn is_tree(nif: &Nif) -> bool {
     matches!(nif.roots.first().and_then(|&r| nif.get(Ref(r as i32))), Some(Block::Node(n)) if n.kind == NodeKind::Tree)
 }
 
+/// The names of the shapes beneath the first node named `node` (a worn
+/// arrow's `ArrowQuiver`: the quiver without the loose arrow).
+pub fn shapes_under(nif: &Nif, node: &str) -> std::collections::HashSet<String> {
+    fn collect(
+        nif: &Nif,
+        r: Ref,
+        inside: bool,
+        node: &str,
+        out: &mut std::collections::HashSet<String>,
+        depth: u32,
+    ) {
+        let Some(block) = nif.get(r) else { return };
+        let Some(av) = block.av() else { return };
+        let inside = inside || av.net.name.eq_ignore_ascii_case(node);
+        match block {
+            Block::Node(n) if depth < 64 => {
+                for &c in &n.children {
+                    collect(nif, c, inside, node, out, depth + 1);
+                }
+            }
+            Block::Node(_) => {}
+            _ if inside => {
+                out.insert(av.net.name.clone());
+            }
+            _ => {}
+        }
+    }
+    let mut out = std::collections::HashSet::new();
+    for &root in &nif.roots {
+        collect(nif, Ref(root as i32), false, node, &mut out, 0);
+    }
+    out
+}
+
 /// Model-space rest transforms of the named nodes.
 pub fn node_transforms(nif: &Nif) -> std::collections::HashMap<String, Mat4> {
     fn visit(

@@ -598,6 +598,14 @@ fn dress(
             models.push((m, w));
         }
     }
+    // Ammunition worn shows as its quiver, with the bow or without (UESP
+    // Skyrim:Archery).
+    if let Some((ammo, m)) = inventory.equipped().iter().find_map(|&f| {
+        let rec = lo.get(f).filter(|r| r.tag().0 == *b"AMMO")?;
+        (inventory.count(f) > 0).then_some((f, super::records::model_path(&rec)?))
+    }) {
+        models.push((format!("{m}#quiver"), ammo));
+    }
     models
 }
 

@@ -164,6 +164,8 @@ impl ModelCache {
                 // `path#rigid`: skinned shapes posed at rest (sky models);
                 // `path#without=a|b`: without the shapes so named (menu models
                 // whose art isn't installed);
+                // `path#quiver`: ammunition worn, its `ArrowQuiver` node's
+                // shapes (not the loose arrow);
                 // `path#grass`: drawn as grass ([`crate::world::grass`]);
                 // `path#effect`: an effect's, its nodes' controllers kept
                 // ([`model::convert_effect`]); `path#world`: placed objects'
@@ -222,6 +224,10 @@ impl ModelCache {
                                     model::convert_filtered(&n, &|name| {
                                         !hidden.iter().any(|h| h.eq_ignore_ascii_case(name))
                                     })
+                                }
+                                Some("quiver") => {
+                                    let keep = model::shapes_under(&n, "ArrowQuiver");
+                                    model::convert_filtered(&n, &|name| keep.contains(name))
                                 }
                                 Some("scb") => model::convert_filtered(&n, &|name| {
                                     name.to_ascii_lowercase().starts_with("scb")
