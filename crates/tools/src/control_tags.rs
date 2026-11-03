@@ -44,8 +44,11 @@ fn events(text: &str) -> Vec<Event> {
 fn key_names(text: &str) -> BTreeMap<String, String> {
     text.lines()
         .filter_map(|line| {
-            let line = line.split("//").next()?.trim();
-            let mut cols = line.split_whitespace();
+            // Tab-separated: some names hold spaces (`Prev Track`).
+            if line.trim_start().starts_with("//") {
+                return None;
+            }
+            let mut cols = line.split('\t').map(str::trim).filter(|c| !c.is_empty());
             Some((cols.next()?.to_ascii_lowercase(), cols.next()?.to_owned()))
         })
         .collect()
@@ -186,13 +189,14 @@ mod tests {
             "// main\nActivate\t0x12\t0xff\t0x1000\n\n// item\nXButton\t!0,Activate\t0xff\t0x4000\nActivate\t0xff\t0xff\t0xff\n",
         );
         let keys = [
-            key_names("E 0x12 69\nXButton 0x99"),
-            key_names("Mouse1 0x0 0"),
+            key_names("E\t0x12\t69\nXButton\t0x99\nPrev Track\t0x90"),
+            key_names("// Mouse\tCode\nMouse1\t0x0\t0"),
         ];
         assert!(classify("activate", &events, &keys).contains("context=0 (all=0,1)"));
         assert!(classify("XButton", &events, &keys).starts_with("event context=1"));
         assert_eq!(classify("Mouse1", &events, &keys), "key mouse 0x0");
         assert_eq!(classify("E", &events, &keys), "key keyboard 0x12");
+        assert_eq!(classify("Prev Track", &events, &keys), "key keyboard 0x90");
         assert_eq!(classify("Left Thumbstick", &events, &keys), "nothing");
     }
     #[test]

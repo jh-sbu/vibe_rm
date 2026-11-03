@@ -48,9 +48,11 @@ impl KeyNames {
         }
         table
     }
+    /// The shipped tables are tab-separated, and some names hold spaces
+    /// (`Prev Track`, `My Computer`).
     fn load(&mut self, text: &str) {
-        for line in text.lines() {
-            let mut fields = line.split_whitespace();
+        for line in text.lines().filter(|l| !l.trim_start().starts_with("//")) {
+            let mut fields = line.split('\t').map(str::trim).filter(|f| !f.is_empty());
             let (Some(name), Some(code)) = (fields.next(), fields.next()) else {
                 continue;
             };
@@ -242,9 +244,16 @@ impl InputMap {
                 .map(String::as_str)
                 .unwrap_or("UnknownKey")
         };
+        // The art is the bitmap the movies export, which the text tables'
+        // names don't always match (`MouseWheelUp` is drawn as `Wheel`,
+        // `NumPadEnter` as `Enter`); a key without art draws `UnknownKey`.
+        let art = [crate::swf_ui::keyboard_art, crate::swf_ui::mouse_art][device];
         Control {
             label: chord.iter().map(name).collect::<Vec<_>>().join("+"),
-            art: chord.last().map(name).unwrap_or("UnknownKey").into(),
+            art: chord
+                .last()
+                .and_then(|&code| art(code))
+                .unwrap_or_else(|| "UnknownKey".into()),
         }
     }
     pub fn bindings_of(&self, event: &str, device: usize) -> Vec<Vec<u32>> {
@@ -553,8 +562,8 @@ mod tests {
         let mut map = InputMap::parse(
             "Activate\t0x12\t0xff\t0xff\t1\t1\t0\nJump\t0x39\t0xff\t0xff\t1\t1\t0\nChord\t0x1d+0x22,0x12\t0xff\t0xff\nMouse\t0xff\t0x1\t0xff\nUnbound\t0xff\t0xff\t0xff\nPadOnly\t0xff\t0xff\t0x1000\n\nAccept\t!0,Activate\t0xff\t0xff\n\nOther\t0xff\t0xff\t0xff\n\nXButton\t!0,Activate\t0xff\t0xff\n",
         );
-        map.key_names[0].load("// Name Code Flash\nUse 0x12 69\nJumpKey 0x39 32\nControl 0x1d 17\nG 0x22 71\nmalformed\nBad nope 1\n");
-        map.key_names[1].load("Mouse2 0x1 0\n");
+        map.key_names[0].load("// Name\tCode\tFlash\nUse\t0x12\t69\nJumpKey\t0x39\t32\nControl\t0x1d\t17\nG\t0x22\t71\nmalformed\nBad\tnope\t1\n");
+        map.key_names[1].load("Mouse2\t0x1\t0\n");
         assert_eq!(map.control("activate").unwrap().label(), "Use");
         assert_eq!(map.control("Accept").unwrap().label(), "Use");
         assert_eq!(map.control("Chord").unwrap().label(), "Control+G");
@@ -572,7 +581,7 @@ mod tests {
         assert!(map.control("NotAnEvent").is_none());
         assert!(map.remap("Activate", Button::Key(K::Space)));
         assert_eq!(map.control("Activate").unwrap().label(), "JumpKey");
-        assert_eq!(map.control("XButton").unwrap().art(), "JumpKey");
+        assert_eq!(map.control("XButton").unwrap().art(), "Space");
         assert_eq!(map.control("Jump").unwrap().label(), "UnknownKey");
         assert_eq!(map.control("Use").unwrap().label(), "Use");
         assert!(map.remap("Activate", Button::Mouse(0)));
@@ -598,18 +607,41 @@ mod tests {
             "Probe\t0x12\t0xff\t0xff\nMouseProbe\t0xff\t0x0\t0xff\n",
         )
         .unwrap();
-        std::fs::write(controls.join("keyboard_english.txt"), "CustomKey 0x12 69\n").unwrap();
-        std::fs::write(controls.join("mouse.txt"), "CustomMouse 0x0 0\n").unwrap();
+        std::fs::write(
+            controls.join("keyboard_english.txt"),
+            "CustomKey\t0x12\t69\n",
+        )
+        .unwrap();
+        std::fs::write(controls.join("mouse.txt"), "CustomMouse\t0x0\t0\n").unwrap();
         let vfs = vfs::Vfs::new(&root, &[]);
         let shared = InputMap::load(&vfs);
         let mut map = shared.write().unwrap();
         assert_eq!(map.control("Probe").unwrap().label(), "CustomKey");
-        assert_eq!(map.control("MouseProbe").unwrap().art(), "CustomMouse");
+        assert_eq!(map.control("MouseProbe").unwrap().label(), "CustomMouse");
+        assert_eq!(map.control("MouseProbe").unwrap().art(), "Mouse1");
         assert_eq!(map.control("customkey").unwrap().label(), "CustomKey");
         assert_eq!(map.control("F").unwrap().label(), "F");
         map.reset();
         assert_eq!(map.control("Probe").unwrap().label(), "CustomKey");
         std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn control_art_uses_exported_bitmaps_not_table_names() {
+        let mut map = InputMap::parse(
+            "Wheel\t0xff\t0x8\t0xff\nPadEnter\t0x9c\t0xff\t0xff\nPad5\t0x4c\t0xff\t0xff\nTrack\t0x90\t0xff\t0xff\n",
+        );
+        map.key_names[0]
+            .load("NumPadEnter\t0x9c\t13\r\nNumPad5\t0x4c\t101\r\nPrev Track\t0x90\r\n");
+        map.key_names[1].load("MouseWheelUp\t0x8\t\n");
+        let control = |tag| map.control(tag).unwrap();
+        assert_eq!(control("Wheel").label(), "MouseWheelUp");
+        assert_eq!(control("Wheel").art(), "Wheel");
+        assert_eq!(control("PadEnter").label(), "NumPadEnter");
+        assert_eq!(control("PadEnter").art(), "Enter");
+        assert_eq!(control("Pad5").label(), "NumPad5");
+        assert_eq!(control("Pad5").art(), "UnknownKey");
+        assert_eq!(control("Track").label(), "Prev Track");
+        assert_eq!(control("prev track").label(), "Prev Track");
     }
     #[test]
     fn control_event_names_take_precedence_over_raw_keys() {

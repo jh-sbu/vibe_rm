@@ -2485,11 +2485,11 @@ mod input_tests {
             "Activate\t0x12\t0xff\t0xff\t1\t1\t0\nJump\t0x39\t0xff\t0xff\t1\t1\t0\n",
         )
         .unwrap();
-        std::fs::write(controls.join("keyboard_english.txt"), "Use 0x12 69\n").unwrap();
+        std::fs::write(controls.join("keyboard_english.txt"), "Use\t0x12\t69\n").unwrap();
         let mut engine = crate::stats::action_tests::headless_engine(&fixture.0, "Help.esp");
         let mut buttons = Buttons::from_controlmap("");
         buttons.map = Some(engine.input_map.clone());
-        assert_eq!(buttons.art("Activate"), "Use");
+        assert_eq!(buttons.art("Activate"), "E");
         engine.show_help_message(FormId(0x800), "help", 60.0, 0.0, 1);
         engine.scripts.notify("Notification [Activate]");
         let mut hud = Hud {
@@ -2507,7 +2507,7 @@ mod input_tests {
         assert_eq!(
             hud.menu.take_controls(),
             vec![
-                call("RefreshActivateButtonArt", vec![text("Use")]),
+                call("RefreshActivateButtonArt", vec![text("E")]),
                 call("ShowMessage", vec![text("Notification Use")]),
                 hint(),
             ]
@@ -2536,7 +2536,7 @@ mod input_tests {
         hud.update(&engine);
         assert_eq!(
             hud.menu.take_controls(),
-            vec![call("RefreshActivateButtonArt", vec![text("Use")]), hint()]
+            vec![call("RefreshActivateButtonArt", vec![text("E")]), hint()]
         );
         hud.update(&engine);
         assert!(hud.menu.take_controls().is_empty());
@@ -2553,7 +2553,7 @@ mod input_tests {
         hud.update(&engine);
         assert_eq!(
             hud.menu.take_controls(),
-            vec![call("RefreshActivateButtonArt", vec![text("Use")])]
+            vec![call("RefreshActivateButtonArt", vec![text("E")])]
         );
     }
 
