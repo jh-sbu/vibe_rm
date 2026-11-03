@@ -1899,9 +1899,29 @@ struct Sent {
     shout_flashes: u32,
 }
 
-struct Hud {
-    menu: Menu,
+struct Hud<M = Menu> {
+    menu: M,
     sent: Sent,
+}
+
+trait HudMovie {
+    fn invoke(&self, path: &str, args: &[Value]) -> Value;
+    fn set(&self, path: &str, value: Value);
+    fn get(&self, path: &str) -> Value;
+}
+
+impl HudMovie for Menu {
+    fn invoke(&self, path: &str, args: &[Value]) -> Value {
+        Menu::invoke(self, path, args)
+    }
+
+    fn set(&self, path: &str, value: Value) {
+        Menu::set(self, path, value);
+    }
+
+    fn get(&self, path: &str) -> Value {
+        Menu::get(self, path)
+    }
 }
 
 /// The enemy name brackets' frame leaving room for a name `width` pixels
@@ -1957,14 +1977,17 @@ impl Hud {
             sent: Sent::default(),
         })
     }
+}
 
+impl<M: HudMovie> Hud<M> {
     fn call(&self, method: &str, args: &[Value]) -> Value {
         self.menu.invoke(&format!("{H}.{method}"), args)
     }
 
     fn update(&mut self, engine: &Engine) {
         let map = engine.input_map.read().unwrap();
-        if self.sent.input_generation != Some(map.generation) {
+        let input_changed = self.sent.input_generation != Some(map.generation);
+        if input_changed {
             let art = map
                 .first("Activate", 0)
                 .and_then(keyboard_art)
@@ -1989,7 +2012,7 @@ impl Hud {
         self.crosshair(engine);
         self.subtitle(engine);
         self.notifications(engine);
-        self.help(engine);
+        self.help(engine, input_changed);
         self.banners(engine);
         self.sneak(engine);
         self.enemy(engine);
@@ -2182,12 +2205,12 @@ impl Hud {
     }
 
     /// The help message up (`Message.ShowAsHelpMessage`), as a tutorial hint.
-    fn help(&mut self, engine: &Engine) {
+    fn help(&mut self, engine: &Engine, input_changed: bool) {
         let help = engine
             .current_help()
             .filter(|_| !engine.menu_up())
             .map(str::to_owned);
-        if help == self.sent.help {
+        if help == self.sent.help && !(input_changed && help.is_some()) {
             return;
         }
         match &help {
@@ -2381,6 +2404,149 @@ pub fn key_code(name: &str) -> Option<winit::keyboard::KeyCode> {
 mod input_tests {
     use super::*;
     use winit::keyboard::KeyCode as K;
+
+    #[derive(Default)]
+    struct RecordingHud {
+        calls: std::cell::RefCell<Vec<(String, Vec<Value>)>>,
+    }
+
+    impl HudMovie for RecordingHud {
+        fn invoke(&self, path: &str, args: &[Value]) -> Value {
+            self.calls.borrow_mut().push((path.into(), args.to_vec()));
+            Value::Undefined
+        }
+
+        fn set(&self, _path: &str, _value: Value) {}
+
+        fn get(&self, _path: &str) -> Value {
+            Value::Undefined
+        }
+    }
+
+    impl RecordingHud {
+        fn take_controls(&self) -> Vec<(String, Vec<Value>)> {
+            self.calls
+                .take()
+                .into_iter()
+                .filter(|(path, _)| {
+                    [
+                        "RefreshActivateButtonArt",
+                        "ShowTutorialHintText",
+                        "ShowMessage",
+                    ]
+                    .iter()
+                    .any(|method| path == &format!("{H}.{method}"))
+                })
+                .collect()
+        }
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn hud_update_resends_help_after_remap_and_reset_without_replaying_notifications() {
+        use esp::writer::{Node, RecordBuilder, write_plugin};
+
+        struct Fixture(std::path::PathBuf);
+        impl Drop for Fixture {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let fixture = Fixture(std::env::temp_dir().join(format!("vrm-hud-controls-{stamp}")));
+        std::fs::create_dir(&fixture.0).unwrap();
+        std::fs::write(
+            fixture.0.join("Help.esp"),
+            write_plugin(
+                0,
+                &[],
+                "test",
+                "help",
+                0x801,
+                &[Node::top(
+                    b"MESG",
+                    vec![
+                        RecordBuilder::new(b"MESG", FormId(0x800))
+                            .zstring(b"DESC", "Press [Activate] [Jump]"),
+                    ],
+                )],
+            ),
+        )
+        .unwrap();
+        let mut engine = crate::stats::action_tests::headless_engine(&fixture.0, "Help.esp");
+        *engine.input_map.write().unwrap() = crate::input_map::InputMap::parse(
+            "Activate\t0x12\t0xff\t0xff\t1\t1\t0\nJump\t0x39\t0xff\t0xff\t1\t1\t0\n",
+        );
+        engine.show_help_message(FormId(0x800), "help", 60.0, 0.0, 1);
+        engine.scripts.notify("Notification [Activate]");
+        let mut hud = Hud {
+            menu: RecordingHud::default(),
+            sent: Sent::default(),
+        };
+        let call = |method: &str, args: Vec<Value>| (format!("{H}.{method}"), args);
+        let hint = || {
+            call(
+                "ShowTutorialHintText",
+                vec![text("Press [Activate] [Jump]"), Value::Bool(true)],
+            )
+        };
+        hud.update(&engine);
+        assert_eq!(
+            hud.menu.take_controls(),
+            vec![
+                call("RefreshActivateButtonArt", vec![text("E")]),
+                call("ShowMessage", vec![text("Notification E")]),
+                hint(),
+            ]
+        );
+        hud.update(&engine);
+        assert!(hud.menu.take_controls().is_empty());
+
+        for (event, key, art) in [("Activate", K::KeyF, "F"), ("Jump", K::KeyG, "F")] {
+            assert!(
+                engine
+                    .input_map
+                    .write()
+                    .unwrap()
+                    .remap(event, crate::input_map::Button::Key(key),)
+            );
+            hud.update(&engine);
+            assert_eq!(
+                hud.menu.take_controls(),
+                vec![call("RefreshActivateButtonArt", vec![text(art)]), hint()]
+            );
+            hud.update(&engine);
+            assert!(hud.menu.take_controls().is_empty());
+        }
+
+        engine.input_map.write().unwrap().reset();
+        hud.update(&engine);
+        assert_eq!(
+            hud.menu.take_controls(),
+            vec![call("RefreshActivateButtonArt", vec![text("E")]), hint()]
+        );
+        hud.update(&engine);
+        assert!(hud.menu.take_controls().is_empty());
+        engine.scripts.real_time = 61.0;
+        hud.update(&engine);
+        assert_eq!(
+            hud.menu.take_controls(),
+            vec![call(
+                "ShowTutorialHintText",
+                vec![text(""), Value::Bool(false)]
+            )]
+        );
+        engine.input_map.write().unwrap().reset();
+        hud.update(&engine);
+        assert_eq!(
+            hud.menu.take_controls(),
+            vec![call("RefreshActivateButtonArt", vec![text("E")])]
+        );
+    }
 
     #[test]
     fn live_button_art_resolves_menu_events_raw_keys_and_remaps() {
