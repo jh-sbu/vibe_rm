@@ -1684,11 +1684,12 @@ impl Buttons {
 
     /// The art for a user event, `UnknownKey` when it has none.
     fn art(&self, event: &str) -> String {
-        if self.map.is_some() {
-            return self
-                .key(event)
-                .and_then(keyboard_art)
-                .or_else(|| self.mouse(event).and_then(mouse_art))
+        if let Some(map) = &self.map {
+            return map
+                .read()
+                .unwrap()
+                .control(event)
+                .map(|control| control.art().to_string())
                 .unwrap_or_else(|| "UnknownKey".into());
         }
         self.art
@@ -1699,7 +1700,7 @@ impl Buttons {
 }
 
 /// A keyboard key's art by its DirectInput scan code.
-fn keyboard_art(code: u32) -> Option<String> {
+pub(crate) fn keyboard_art(code: u32) -> Option<String> {
     const LETTERS: &[(u32, &str)] = &[
         (0x10, "Q"),
         (0x11, "W"),
@@ -1792,7 +1793,7 @@ fn keyboard_art(code: u32) -> Option<String> {
 
 /// A mouse button's art: buttons 0..7 as Mouse1..8, then the wheel and
 /// movement (the controlmap's mouse column; 0xff, none).
-fn mouse_art(code: u32) -> Option<String> {
+pub(crate) fn mouse_art(code: u32) -> Option<String> {
     match code {
         0..=7 => Some(format!("Mouse{}", code + 1)),
         8 | 9 => Some("Wheel".into()),
@@ -2374,6 +2375,30 @@ pub fn key_code(name: &str) -> Option<winit::keyboard::KeyCode> {
 mod input_tests {
     use super::*;
     use winit::keyboard::KeyCode as K;
+
+    #[test]
+    fn live_button_art_resolves_menu_events_raw_keys_and_remaps() {
+        let map = Arc::new(std::sync::RwLock::new(crate::input_map::InputMap::parse(
+            "Activate\t0x12\t0xff\t0xff\t1\t1\t0\nJump\t0x39\t0xff\t0xff\t1\t1\t0\nChord\t0x1d+0x22\t0xff\t0xff\n\nAccept\t!0,Activate\t0xff\t0xff\n",
+        )));
+        let mut buttons = Buttons::from_controlmap("");
+        buttons.map = Some(map.clone());
+        assert_eq!(buttons.art("accept"), "E");
+        assert_eq!(buttons.art("Mouse1"), "Mouse1");
+        assert_eq!(buttons.art("F"), "F");
+        assert_eq!(buttons.art("Chord"), "G");
+        assert_eq!(buttons.art("Missing"), "UnknownKey");
+        assert_eq!(buttons.art("Left Thumbstick"), "UnknownKey");
+        assert!(
+            map.write()
+                .unwrap()
+                .remap("Activate", crate::input_map::Button::Key(K::Space))
+        );
+        assert_eq!(buttons.art("Accept"), "Space");
+        assert_eq!(buttons.art("Jump"), "UnknownKey");
+        map.write().unwrap().reset();
+        assert_eq!(buttons.art("Accept"), "E");
+    }
 
     #[test]
     fn favorites_accept_alternatives_and_custom_bindings() {

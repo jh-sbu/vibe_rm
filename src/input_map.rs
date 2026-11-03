@@ -1,6 +1,6 @@
 //! Main Gameplay user events and the original controlmap column format.
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     io,
     path::PathBuf,
     sync::{Arc, RwLock},
@@ -19,10 +19,54 @@ pub struct Event {
     pub remappable: [bool; 3],
     pub flags: String,
 }
+#[derive(Clone, Debug)]
+pub struct Control {
+    label: String,
+    art: String,
+}
+impl Control {
+    pub fn label(&self) -> &str {
+        &self.label
+    }
+    pub fn art(&self) -> &str {
+        &self.art
+    }
+}
+#[derive(Clone, Debug, Default)]
+struct KeyNames {
+    names: HashMap<u32, String>,
+    codes: HashMap<String, u32>,
+}
+impl KeyNames {
+    fn fallback(art: fn(u32) -> Option<String>) -> Self {
+        let mut table = Self::default();
+        for code in 0..0xff {
+            if let Some(name) = art(code) {
+                table.codes.entry(name.to_ascii_lowercase()).or_insert(code);
+                table.names.insert(code, name);
+            }
+        }
+        table
+    }
+    fn load(&mut self, text: &str) {
+        for line in text.lines() {
+            let mut fields = line.split_whitespace();
+            let (Some(name), Some(code)) = (fields.next(), fields.next()) else {
+                continue;
+            };
+            let Ok(code) = u32::from_str_radix(code.trim_start_matches("0x"), 16) else {
+                continue;
+            };
+            self.names.insert(code, name.into());
+            self.codes.insert(name.to_ascii_lowercase(), code);
+        }
+    }
+}
 #[derive(Clone, Debug, Default)]
 pub struct InputMap {
     pub contexts: Vec<Vec<Event>>,
     defaults: String,
+    key_names: [KeyNames; 2],
     /// Only maps loaded from the user's configuration may persist there.
     /// Parsed maps (including synthetic test maps) remain in memory.
     save_path: Option<PathBuf>,
@@ -67,6 +111,10 @@ impl InputMap {
         Self {
             contexts,
             defaults: text.into(),
+            key_names: [
+                KeyNames::fallback(crate::swf_ui::keyboard_art),
+                KeyNames::fallback(crate::swf_ui::mouse_art),
+            ],
             save_path: None,
             generation: 0,
         }
@@ -77,6 +125,11 @@ impl InputMap {
             .map(|b| String::from_utf8_lossy(&b).into_owned())
             .unwrap_or_default();
         let mut map = Self::parse(&default);
+        for (device, file) in ["keyboard_english.txt", "mouse.txt"].iter().enumerate() {
+            if let Some(bytes) = vfs.read(&format!("interface/controls/pc/{file}")) {
+                map.key_names[device].load(&String::from_utf8_lossy(&bytes));
+            }
+        }
         map.save_path = path();
         if let Some(text) = map
             .save_path
@@ -158,6 +211,41 @@ impl InputMap {
     }
     pub fn bindings(&self, event: &str, device: usize) -> Vec<Vec<u32>> {
         self.resolve(0, event, device, 0)
+    }
+    pub fn control(&self, tag: &str) -> Option<Control> {
+        if let Some((context, row)) = self.event_of(tag) {
+            for device in 0..2 {
+                if let Some(chord) = self.resolve(context, &row.name, device, 0).first() {
+                    return Some(self.control_for(device, chord));
+                }
+            }
+            return Some(Control {
+                label: "UnknownKey".into(),
+                art: "UnknownKey".into(),
+            });
+        }
+        self.key_names
+            .iter()
+            .enumerate()
+            .find_map(|(device, names)| {
+                names
+                    .codes
+                    .get(&tag.to_ascii_lowercase())
+                    .map(|code| self.control_for(device, &[*code]))
+            })
+    }
+    fn control_for(&self, device: usize, chord: &[u32]) -> Control {
+        let name = |code: &u32| {
+            self.key_names[device]
+                .names
+                .get(code)
+                .map(String::as_str)
+                .unwrap_or("UnknownKey")
+        };
+        Control {
+            label: chord.iter().map(name).collect::<Vec<_>>().join("+"),
+            art: chord.last().map(name).unwrap_or("UnknownKey").into(),
+        }
     }
     pub fn bindings_of(&self, event: &str, device: usize) -> Vec<Vec<u32>> {
         self.event_of(event)
@@ -291,8 +379,10 @@ impl InputMap {
     pub fn reset(&mut self) {
         let generation = self.generation + 1;
         let save_path = self.save_path.take();
+        let key_names = std::mem::take(&mut self.key_names);
         *self = Self::parse(&self.defaults.clone());
         self.save_path = save_path;
+        self.key_names = key_names;
         self.generation = generation;
     }
     pub fn save(&self) -> io::Result<()> {
@@ -457,6 +547,74 @@ mod tests {
         assert!(map.bindings("Accept", 0).is_empty());
         assert!(map.bindings("activate", 0).is_empty());
         assert_eq!(map.first("Activate", 0), Some(0x12));
+    }
+    #[test]
+    fn control_labels_follow_live_bindings_and_preserve_key_tables() {
+        let mut map = InputMap::parse(
+            "Activate\t0x12\t0xff\t0xff\t1\t1\t0\nJump\t0x39\t0xff\t0xff\t1\t1\t0\nChord\t0x1d+0x22,0x12\t0xff\t0xff\nMouse\t0xff\t0x1\t0xff\nUnbound\t0xff\t0xff\t0xff\nPadOnly\t0xff\t0xff\t0x1000\n\nAccept\t!0,Activate\t0xff\t0xff\n\nOther\t0xff\t0xff\t0xff\n\nXButton\t!0,Activate\t0xff\t0xff\n",
+        );
+        map.key_names[0].load("// Name Code Flash\nUse 0x12 69\nJumpKey 0x39 32\nControl 0x1d 17\nG 0x22 71\nmalformed\nBad nope 1\n");
+        map.key_names[1].load("Mouse2 0x1 0\n");
+        assert_eq!(map.control("activate").unwrap().label(), "Use");
+        assert_eq!(map.control("Accept").unwrap().label(), "Use");
+        assert_eq!(map.control("Chord").unwrap().label(), "Control+G");
+        assert_eq!(map.control("Chord").unwrap().art(), "G");
+        assert_eq!(map.control("Mouse").unwrap().label(), "Mouse2");
+        assert_eq!(map.control("Unbound").unwrap().label(), "UnknownKey");
+        assert_eq!(map.control("PadOnly").unwrap().label(), "UnknownKey");
+        assert_eq!(map.control("XButton").unwrap().label(), "Use");
+        assert_eq!(map.control("mouse1").unwrap().label(), "Mouse1");
+        assert_eq!(map.control("f").unwrap().label(), "F");
+        assert_eq!(map.control("Use").unwrap().label(), "Use");
+        assert!(map.control("Left Thumbstick").is_none());
+        assert!(map.control("Right Thumbstick").is_none());
+        assert!(map.control("Mouse Move").is_none());
+        assert!(map.control("NotAnEvent").is_none());
+        assert!(map.remap("Activate", Button::Key(K::Space)));
+        assert_eq!(map.control("Activate").unwrap().label(), "JumpKey");
+        assert_eq!(map.control("XButton").unwrap().art(), "JumpKey");
+        assert_eq!(map.control("Jump").unwrap().label(), "UnknownKey");
+        assert_eq!(map.control("Use").unwrap().label(), "Use");
+        assert!(map.remap("Activate", Button::Mouse(0)));
+        assert_eq!(map.control("Activate").unwrap().label(), "Mouse1");
+        assert_eq!(map.control("Accept").unwrap().label(), "UnknownKey");
+        map.reset();
+        assert_eq!(map.control("Activate").unwrap().label(), "Use");
+        assert_eq!(map.control("Jump").unwrap().label(), "JumpKey");
+        assert_eq!(map.control("Chord").unwrap().label(), "Control+G");
+    }
+    #[test]
+    fn control_names_load_from_vfs() {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root =
+            std::env::temp_dir().join(format!("vrm-key-names-{}-{stamp}", std::process::id()));
+        let controls = root.join("interface/controls/pc");
+        std::fs::create_dir_all(&controls).unwrap();
+        std::fs::write(
+            controls.join("controlmap.txt"),
+            "Probe\t0x12\t0xff\t0xff\nMouseProbe\t0xff\t0x0\t0xff\n",
+        )
+        .unwrap();
+        std::fs::write(controls.join("keyboard_english.txt"), "CustomKey 0x12 69\n").unwrap();
+        std::fs::write(controls.join("mouse.txt"), "CustomMouse 0x0 0\n").unwrap();
+        let vfs = vfs::Vfs::new(&root, &[]);
+        let shared = InputMap::load(&vfs);
+        let mut map = shared.write().unwrap();
+        assert_eq!(map.control("Probe").unwrap().label(), "CustomKey");
+        assert_eq!(map.control("MouseProbe").unwrap().art(), "CustomMouse");
+        assert_eq!(map.control("customkey").unwrap().label(), "CustomKey");
+        assert_eq!(map.control("F").unwrap().label(), "F");
+        map.reset();
+        assert_eq!(map.control("Probe").unwrap().label(), "CustomKey");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn control_event_names_take_precedence_over_raw_keys() {
+        let map = InputMap::parse("F\t0xff\t0x0\t0xff\n");
+        assert_eq!(map.control("f").unwrap().label(), "Mouse1");
     }
     #[test]
     fn alternatives_references_chords_and_round_trip() {
