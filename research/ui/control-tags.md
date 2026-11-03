@@ -14,8 +14,8 @@ namespaces). No specification was found; the last search returned a user-talk
 script fragment, not authoritative behavior. No public source code was imported
 or used as a behavior specification (including no SKSE source).
 
-The installed external Data directory was
-`/home/frieren/.local/share/Steam/steamapps/common/Skyrim Special Edition/Data`.
+The installed Skyrim SE Data directory (`<Skyrim SE>/Data`, outside the
+repository) was used.
 Only game assets were examined: Interface archive movies and control tables,
 plugin records and localized English strings. No engine executable, library or
 memory was inspected. Existing `spike/swf/swfspike` disassembly and `fold.py`
@@ -183,16 +183,21 @@ behavior choice has been made on those questions here.
   (45 events, 7 keys, 78 unmatched). The exceptions documented above, including
   `Mouse Move`, `ShowOnMap`, `Modded` and book markup, remain expected.
 - Actual offscreen runs succeeded using external assets and a custom
-  `VRM_CONTROLS` map changing Activate E to J (`0x24`). PNGs are at
-  `/tmp/vrm-control-tags-verification/{box,hint}-{before,after}.png`.
-  Plain box Activate changed E to J; the other labels stayed L-Alt, Mouse1, Q,
-  Mouse1, R. The help hint's Activate art changed E to J too. The generated probe
-  is under that `/tmp` directory; no game assets were copied and no original
+  `VRM_CONTROLS` map changing Activate E to J (`0x24`). The plain box's
+  Activate changed E to J; the other labels stayed L-Alt, Mouse1, Q, Mouse1,
+  R. The help hint's Activate art changed E to J too. The captures were
+  scratch output and are not kept; no game assets were copied and no original
   game runs were performed.
 - Follow-up review fix `ab41fc1` returns an empty result for unknown art tags,
   allowing the movie to preserve the original brackets, and unifies HUD Activate
   with the control-art resolver. This implementation policy is not evidence of
   the native callback result. The full step/commit schedule is in the plan.
+- Follow-up fix `df8fa0f`: button art uses the names the movies export
+  (`Wheel`, `Enter`, `UnknownKey` for keys without art) rather than the key
+  tables' names (`MouseWheelUp`, `NumPadEnter`), which have no bitmap and made
+  the movie keep the tag. All three art movies export `Wheel.png` and none
+  exports `MouseWheelUp`, `MouseWheelDown` or `NumPadEnter`. The tables are
+  read by tab, so names with spaces (`Prev Track`) load.
 - The manual Skyrim SE protocol above remains pending user screenshots. Native
   plain labels, unbound/unknown callback behavior, notification preprocessing,
   chords and localization remain unanswered by these implementation checks.

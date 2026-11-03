@@ -125,35 +125,39 @@ examined and no asset or disassembly is committed.
   `--screenshot --wait` run and the boxes pause the world (the Survival Mode
   prompt comes up at the start), so a box left up two seconds gets its last
   button pressed unless `--hold-boxes`. Not the game's behaviour; a test hook.
-- **Controls in text.** Control labels now use the live `InputMap::control`
-  and `Control::label`, including remaps and resets, rather than a fixed key
-  table. Provisional choices are keyboard before mouse, chord key names joined
-  with `+`, and `UnknownKey` for an event with no keyboard/mouse binding
-  (including a gamepad-only binding). Unknown gamepad names and other unknown
-  bracket text remain as written. `[XButton]` is an event, not an unknown
-  gamepad name: its menu-context reference resolves to `Ready Weapon` in the
-  shipped map. Alias/global substitution is unchanged; the controls-only
-  `Engine::resolve_controls` helper leaves those tags untouched.
-  Supporting asset inspection and the shipped-map survey are recorded in
-  [control-tag research](../research/ui/control-tags.md), especially “Missing
-  names and UnknownKey” and “Installed-data results”. The movies retain
-  unknown tags and export `UnknownKey` art, but do not establish native plain
-  text labels for chords or unbound events. These label choices remain
-  provisional pending the prepared manual Skyrim SE observation; they are
-  not claimed as verified original-game behavior.
-  Implementation is complete as of 2026-11-03: controls stay unresolved until
-  plain-text display; help/art paths keep brackets, and live help refreshes on
-  map generation changes. Follow-up review fix `ab41fc1` returns an empty art
-  callback result for unknown tags, allowing the movie to retain them, and
-  routes HUD Activate through the same control-art resolver. This does not
-  establish the native callback's result. Workspace and targeted tests passed;
-  this engine's offscreen box labels and help art changed Activate E to J with
-  a custom map (captures and counts in the research note). **User Skyrim SE
-  screenshots remain pending** under that note's manual protocol. Native plain
-  labels, unbound/chord results and localization remain open; implementation
-  captures do not settle them. The survey also includes unresolved `Mouse Move`,
-  `ShowOnMap`, `Modded`, thumbstick names, and non-control book/prose brackets;
-  unknown plain-text candidates are intentionally left as written.
+- **Controls in text.** `[Event]` tags resolve through the live input map
+  (`InputMap::control`), so remaps and resets show up. Tags are kept in the
+  stored text and resolved when it is shown. Choices made without an
+  original-game observation:
+  - **Label words.** A plain-text label is the key's name in
+    `Interface/Controls/PC/keyboard_english.txt` or `mouse.txt` (`L-Shift`,
+    `Mouse1`, `MouseWheelUp`). That file's comment says the name "is used to
+    ID events in the code", so whether the game shows these words is unknown.
+    Keyboard comes before mouse, a chord's key names are joined with `+`, and
+    an event with no keyboard or mouse binding (gamepad-only too) shows
+    `UnknownKey`.
+  - **Which event.** An event named in several controlmap contexts uses the
+    first context that names it, following `!ctx,Event` references
+    (`[XButton]` reaches `Ready Weapon` through Item Menus). An exact-case
+    match is tried before a case-insensitive one, and event names win over key
+    names (`[F]` is the key only when no event is called `F`).
+  - **Unknown tags.** Bracket text that is neither an event nor a key name
+    (`[Optional]`, `[pagebreak]`, `[Left Thumbstick]`, `[Mouse Move]`,
+    `[ShowOnMap]`) stays as written. The art callback answers it with an empty
+    string, which the text-art holders treat as missing art and keep the tag;
+    an event without keyboard or mouse binding gets `UnknownKey` art.
+  - **Where art is drawn.** Help messages keep their tags for the HUD's
+    tutorial hint, which draws button art. Message boxes, notifications,
+    loading text and the journal's quest names, objectives and log get plain
+    labels: their movies have no bracket scanner or art callback on those
+    paths. Whether native code rewrites notification text before the HUD
+    gets it is unverified.
+
+  Research: [control-tag research](../research/ui/control-tags.md) ("Movie
+  paths", "Missing names and UnknownKey", "Installed-data results"). Still
+  open, and awaiting the manual SE probe described there: the game's
+  plain-text words, what it shows for unbound events and chords, whether
+  notifications draw art, and other languages' key names.
 
 ## Already playing audio in menu mode
 

@@ -119,9 +119,12 @@ All implementation steps are complete (2026-11-03). Commit schedule:
 | 3c: loading and journal text at display | `f4c6de1` |
 | 4: generation-driven refresh | `b4bb90c` |
 | Follow-up review fix | `ab41fc1` |
+| Art from exported bitmaps; tab-separated key tables | `df8fa0f` |
 
 The follow-up returns an empty result for unknown art tags (so the movie
 retains their brackets) and unifies HUD Activate with the control-art resolver.
+`df8fa0f` keeps labels from the key tables but takes art from the movies'
+exported bitmap names, and reads the tables by tab.
 Step 5 is this documentation finalization; the user-run SE observation is still
 pending, not a prerequisite silently treated as completed. The original work
 breakdown follows for traceability.
@@ -203,12 +206,11 @@ Completed 2026-11-03 (this engine only):
   53 passed / 3 ignored. Targeted ignored tests also passed: messages 9,
   loading 3, resets 4, save 1, HUD 1.
 - Actual offscreen runs succeeded using external assets and a custom
-  `VRM_CONTROLS` map rebinding Activate from E to J (`0x24`). Captures are
-  `/tmp/vrm-control-tags-verification/{box,hint}-{before,after}.png`.
-  The plain box changed E to J; other labels stayed L-Alt, Mouse1, Q,
-  Mouse1, R. The help hint's Activate art also changed E to J.
-  The generated probe is under that `/tmp` directory. No game assets were
-  copied and no original-game runs were performed.
+  `VRM_CONTROLS` map rebinding Activate from E to J (`0x24`). The plain
+  box changed E to J; other labels stayed L-Alt, Mouse1, Q, Mouse1, R. The
+  help hint's Activate art also changed E to J. The captures were scratch
+  output and are not kept. No game assets were copied and no original-game
+  runs were performed.
 - Before/after shipped-map surveys were identical: 4,889 records, 43 HMPC
   help forms, 130 candidates (45 events, 7 keys, 78 unmatched). Expected
   exceptions include `Mouse Move`, `ShowOnMap`, `Modded`, thumbstick names,

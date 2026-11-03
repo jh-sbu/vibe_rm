@@ -9,7 +9,8 @@ game each piece unlocks.
   `plans/control-text-tags.md`): live-map labels, display-time resolution,
   preserved help/art tags and generation-driven refresh after remaps/resets.
   Review fix `ab41fc1` preserves unknown art tags via an empty callback result
-  and unifies HUD Activate resolution. Workspace/targeted tests, shipped-map
+  and unifies HUD Activate resolution; `df8fa0f` draws art from the movies'
+  exported bitmap names (`Wheel`, `Enter`) rather than the key tables'. Workspace/targeted tests, shipped-map
   surveys and offscreen box/help E-to-J captures passed. **User Skyrim SE
   screenshots remain pending** under `research/ui/control-tags.md`'s manual
   protocol; native labels, unbound/chord behavior and localization remain open,
