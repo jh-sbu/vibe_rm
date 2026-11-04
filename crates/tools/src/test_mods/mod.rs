@@ -44,6 +44,7 @@ mod loadscreens;
 mod pex;
 mod places;
 mod records;
+mod regen;
 pub mod results;
 mod script;
 mod spell_visuals;
@@ -83,6 +84,7 @@ pub const NAMES: &[&str] = &[
     "loadscreens",
     "ammo",
     "firstperson",
+    "regen",
 ];
 
 /// A test mod's files: the plugin, and its compiled scripts by name.
@@ -102,6 +104,7 @@ pub fn build(name: &str, lo: &LoadOrder) -> Result<TestMod> {
     match name {
         "firstperson" => firstperson::build(lo),
         "ammo" => ammo::build(lo),
+        "regen" => regen::build(lo),
         "controltags" => controltags::build(),
         "crafting1" => crafting1::build(lo),
         "autotest" => autotest::build(lo),
