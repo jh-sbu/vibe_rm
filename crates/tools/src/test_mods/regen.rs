@@ -45,6 +45,39 @@
 //! around. Wait for the first box, close it, and touch nothing for about
 //! 3 minutes until the done box; the game saves before it. Read with
 //! `vrm-tool test-results`.
+//!
+//! **Run 2026-11-04** (a level 1 character with magicka 130 and
+//! `MagickaRateMult` 150, raised by something on it; a "Your health is
+//! low" tutorial box came up early on and was closed. Every span is timed in
+//! real seconds and no rate came out short, so it fell in a `Utility.Wait`):
+//!
+//! - `Setup`: as predicted; `CombatHealthRegenMult` 0.7 on base 0.
+//! - `Delay`: health rose at the first sample (within 0.085 s) of a
+//!   `DamageActorValue`; magicka and stamina between 0.26 and 0.44 s after
+//!   the call returned (the drop lands a frame or more before that). A wait
+//!   near the 0.5 s settings for magicka and stamina, none for health.
+//! - `Repeat`: health rose after every hit. Magicka and stamina didn't (the
+//!   hits came about 0.58 s apart, so a wait counted from the first would
+//!   have run out) and rose 0.26–0.44 s after the last: each damage starts
+//!   the wait again.
+//! - `Cross`: no pause in the other two values.
+//! - `Rates`, out of combat: health 0.693, 1.389 at `HealRateMult` 200, and
+//!   0.695 with `CombatHealthRegenMult` 0.35 (unused out of combat); magicka
+//!   4.42 at 150 and 7.36 at 250 (3% x the multiplier); stamina 4.91, 9.82.
+//! - `CombatRates` (the player in combat throughout): health 0.486, 0.973,
+//!   0.243; magicka 1.46, 2.43 (x 0.33); stamina 1.72, 3.44 (x 0.35).
+//!   UESP's formula holds with `HealRateMult` in combat too;
+//!   `fCombatHealthRegenRateMult` (0) doesn't reach the player; the
+//!   magicka and stamina settings do, with the rate multipliers.
+//! - `Hit`: the Firebolt cast from the mudcrab with its AI off never
+//!   landed. A fault: health's wait after a real hit isn't observed. The
+//!   design is faulty too: fire damage tapers (a second or two more burn
+//!   after the hit, `vrm-tool mgef-tapers`), which hides any rise in its
+//!   3 s watch; ours, where the bolt lands, reads "no rise" for that reason.
+//!   A rerun needs damage without a taper from a caster that reaches.
+//! - Seen by the user: magicka and stamina pause after sprinting, power
+//!   attacks and casting, and magicka doesn't come back while a
+//!   fire-and-forget spell is held charged.
 
 use anyhow::Result;
 use esp::writer::{AttachedScript, Node, PropertyValue, write_plugin};
