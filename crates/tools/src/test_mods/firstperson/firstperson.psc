@@ -7,6 +7,7 @@ Actor Player
 ObjectReference Seat
 Int Phase = 0
 Int Count = 0
+Int Steps = 0
 Float Epoch = 0.0
 Float Swing = -1.0
 Bool Started = false
@@ -37,12 +38,16 @@ Event OnUpdate()
         ResultSetup += ", " + RegisterForAnimationEvent(Player, "BeginCastRight")
         ResultSetup += ", " + RegisterForAnimationEvent(Player, "weaponDraw")
         ResultSetup += ", " + RegisterForAnimationEvent(Player, "MRh_SpellFire_Event")
-        Debug.MessageBox("First-person probe. Use a throwaway save. Set VrmFirstPersonStep to 1..6 in the console, then close it and draw, walk and perform ONE action. 1 first sword, 2 third sword, 3 first bow, 4 third bow, 5 first spell, 6 third spell. Equip your own items. Each phase records up to 20 event lines. Set to 7 for furniture instructions; 8 saves and stops. No animations or attacks are sent by this probe.")
+        Debug.MessageBox("First-person probe. Use a throwaway save. Set VrmFirstPersonStep to 1..6 in the console, then close it and draw, walk and perform ONE action. 1 first sword, 2 third sword, 3 first bow, 4 third bow, 5 first spell, 6 third spell. Equip your own items. Each phase records up to 20 event lines. Only the first FootLeft is listed; the rest are counted. Set to 7 for furniture instructions; 8 saves and stops. No animations or attacks are sent by this probe.")
     EndIf
     Int next = Step.GetValueInt()
     If next != Phase
+        If Phase >= 1 && Phase <= 6
+            AddLine("FootLeft total " + Steps + "\n")
+        EndIf
         Phase = next
         Count = 0
+        Steps = 0
         If Phase == 1
             ResultFirstSword = ""
         ElseIf Phase == 2
@@ -67,7 +72,13 @@ Event OnUpdate()
             Seat = Player.PlaceAtMe(Chair, 1, false, false)
             Seat.MoveTo(Player, 0.0, 120.0, 0.0, true)
             ResultFurniture = "outside " + FirstView()
-            Debug.MessageBox("A chair with a Furniture Forces 1st Person keyword is beside you. Switch to third person, sit in it manually, then use cqf VrmFirstPerson ReadFurniture while seated. Get up and use cqf VrmFirstPerson AfterFurniture. This logs IsPC1stPerson before/after ForceFirstPerson in the chair, then after exit.")
+            Debug.MessageBox("A chair with a Furniture Forces 1st Person keyword is beside you. Switch to third person and sit in it manually. While seated, open the console and set VrmFirstPersonStep to 9. Get up, then set VrmFirstPersonStep to 10. This logs IsPC1stPerson before/after ForceFirstPerson in the chair, then after exit.")
+        ElseIf Phase == 9
+            ReadFurniture()
+            Debug.Notification("First-person probe: seated reading taken. Get up, then set VrmFirstPersonStep to 10.")
+        ElseIf Phase == 10
+            AfterFurniture()
+            Debug.Notification("First-person probe: exit reading taken. Set VrmFirstPersonStep to 8 to finish.")
         ElseIf Phase == 8
             ResultObservations = "Please report separately: player shadow in first person; wheel crossing both views; sheathed arms visible; helmet/hood edge visible. Times are real seconds since phase arming, with HitFrame relative to weaponSwing too. Input key timestamps are unavailable without SKSE."
             UnregisterForAnimationEvent(Player, "weaponSwing")
@@ -98,6 +109,13 @@ Event OnAnimationEvent(ObjectReference akSource, String asEventName)
     If Phase < 1 || Phase > 6 || Count >= 20
         return
     EndIf
+    If asEventName == "FootLeft"
+        ; Walking would otherwise fill the line budget before the action.
+        Steps += 1
+        If Steps > 1
+            return
+        EndIf
+    EndIf
     Float now = Utility.GetCurrentRealTime()
     If asEventName == "weaponSwing"
         Swing = now
@@ -107,6 +125,11 @@ Event OnAnimationEvent(ObjectReference akSource, String asEventName)
         line += " since weaponSwing " + (now - Swing)
     EndIf
     line += "\n"
+    AddLine(line)
+    Count += 1
+EndEvent
+
+Function AddLine(String line)
     If Phase == 1
         ResultFirstSword += line
     ElseIf Phase == 2
@@ -120,8 +143,7 @@ Event OnAnimationEvent(ObjectReference akSource, String asEventName)
     ElseIf Phase == 6
         ResultThirdMagic += line
     EndIf
-    Count += 1
-EndEvent
+EndFunction
 
 String Function FirstView()
     Float before = Player.GetActorValue("OneHanded")

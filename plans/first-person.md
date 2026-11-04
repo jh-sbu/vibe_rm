@@ -340,13 +340,15 @@ The user installs/runs these; the generator never writes to the game's Data.
 Set `VrmFirstPersonStep` to 1–6 to arm first/third-person sword, bow and spell
 windows. Perform one action with normal controls in each window, including
 walking/drawing if testing those events. Each phase keeps at most twenty event
-lines; rearming a phase replaces its earlier report. Times are real seconds
+lines; only its first FootLeft is listed and counts toward them, and the phase's
+FootLeft total is appended on leaving it. Rearming a phase replaces its earlier
+report. Times are real seconds
 from arming, with HitFrame also timed relative to weaponSwing. Exact input-key
 timestamps are unavailable through the vanilla APIs used here.
 
-Step 7 spawns a chair using Skyrim.esm's actual FFFP keyword and explains
-`cqf VrmFirstPerson ReadFurniture` while seated and `AfterFurniture` after
-standing. Step 8 saves/stops. Copy saves to `tests/results/` and read
+Step 7 spawns a chair using Skyrim.esm's actual FFFP keyword. Sit in it
+manually, set the step to 9 while seated, stand, then set it to 10; both
+readings use only vanilla console commands (no SKSE `cqf`). Step 8 saves/stops. Copy saves to `tests/results/` and read
 `vrm-tool test-results tests/results`. Report shadows, wheel transitions,
 sheathed arms and helmet/hood visibility separately. No result has yet been
 recorded as vanilla SE behavior.
