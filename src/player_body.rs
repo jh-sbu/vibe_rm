@@ -348,6 +348,12 @@ impl Engine {
             body.first = None;
             return;
         }
+        // Both rigs are sampled together, driven by the third-person graph's
+        // update; without that graph the arms could never be re-posed.
+        if body.graph.is_none() {
+            body.first = None;
+            return;
+        }
         let Some(skeleton) = self.skeleton(FIRST_RIG) else {
             body.first = None;
             return;
@@ -584,7 +590,11 @@ impl Engine {
             f.graph.set_variable("MagicAimOffsetPitch", 0.0);
         }
         let pose = body.animate(dt, &motion, &actions, &self.vfs, &mut self.anims);
-        if let Some(f) = body.first.as_mut() {
+        // `place` pitches the pose in place: only a freshly sampled pose, or
+        // the pitch would compound each frame.
+        if pose.is_some()
+            && let Some(f) = body.first.as_mut()
+        {
             f.place(eye, yaw, pitch, body.scale);
             if log::log_enabled!(log::Level::Trace) {
                 for name in [

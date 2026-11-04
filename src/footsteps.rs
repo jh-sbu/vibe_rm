@@ -135,13 +135,15 @@ impl Engine {
         }
     }
 
-    /// Fallback land footsteps (third person, or without a first-person graph):
-    /// one each stride walked on the ground (`moved`:
-    /// horizontal distance this frame), and their jumps and landings. The character
+    /// The player's jumps and landings in either view, and fallback land
+    /// footsteps (third person, or without a first-person graph): one each
+    /// stride walked on the ground (`moved`: horizontal distance this frame).
+    /// The first-person graph's clips have no jump/landing footstep triggers,
+    /// so those stay here in both views. The character
     /// controller loses the ground for a frame now and then going over uneven
     /// meshes; only a while in the air (a jump, a fall) starts the stride over.
     pub(crate) fn update_player_footsteps(&mut self, dt: f32, moved: f32, run: bool, sprint: bool) {
-        if self.player.swimming || self.player_uses_graph_steps() {
+        if self.player.swimming {
             self.footsteps.stride = 0.0;
             self.footsteps.airborne = 0.0;
             return;
@@ -172,6 +174,11 @@ impl Engine {
                 self.footsteps.stride = 0.0;
                 return;
             }
+        }
+        if self.player_uses_graph_steps() {
+            // Strides come from the first-person graph's foot events.
+            self.footsteps.stride = 0.0;
+            return;
         }
         if moved <= 0.0 {
             return;
