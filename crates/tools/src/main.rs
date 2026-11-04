@@ -1737,16 +1737,18 @@ fn main() -> Result<()> {
                 for s in samples {
                     let mask = s.mask.as_ref().map(|m| {
                         let on: Vec<usize> = m
+                            .weights
                             .iter()
                             .enumerate()
                             .filter(|(_, w)| **w > 0.0)
                             .map(|(i, _)| i)
                             .collect();
                         format!(
-                            " mask {} of {} bones {:?}",
+                            " mask {} of {} bones {:?}, rest {}",
                             on.len(),
-                            m.len(),
-                            &on[..on.len().min(8)]
+                            m.weights.len(),
+                            &on[..on.len().min(8)],
+                            m.tail
                         )
                     });
                     println!(

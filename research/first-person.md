@@ -119,13 +119,17 @@ installed behavior projects were surveyed against their own Havok skeletons:
   tail keeps the right fingers with the right hand. 129 arrays stop at that
   bone.
 - Every BSBoneSwitchGenerator child in the vanilla assets is bound to a
-  character property, and every property that switches use is full length.
-  The short properties (`SneakMagic{Upper,Lower}Body` 85/99, dragon priest
-  ward weights 80/82, troll `H2HTurnWeights_*` 54/56) are unused or bound to
-  blenders only, and the last two omit only magic nodes. The runtime's switch
-  default mask (`1 − max` of the children, treating a missing child entry as
-  0) therefore never meets a short switch array in vanilla data. Its tail
-  convention is untested by these assets.
+  character property, and every property that resolves is full length. The
+  short properties (`SneakMagic{Upper,Lower}Body` 85/99, dragon priest ward
+  weights 80/82, troll `H2HTurnWeights_*` 54/56) are unused or bound to
+  blenders only, and the last two omit only magic nodes.
+- One switch binding doesn't resolve: the werewolf's `BSBoneSwitchGenerator`
+  names `cameraOut`, which the werewolf character lacks, so its authored
+  fallback `[1.0]` (1 of 88 bones, `NPC Root`) applies. Its child is the
+  `WW_IdleBase` clip and its default the whole combat/locomotion behavior.
+  Only a zero tail lets the werewolf move, so bone-switch arrays take tail 0,
+  the opposite of blenders. The decision and its limits are in
+  [known_ambiguities/bone-weight-tails.md](../known_ambiguities/bone-weight-tails.md).
 
 These are inferences from authored data, not SE runtime measurements, but
 they are Skyrim's own assets rather than cross-game evidence.

@@ -54,18 +54,35 @@ pub struct Sample {
     /// Added on top of the blended pose (with `weight`) rather than blended into it.
     pub additive: bool,
     /// Per-bone factors (Havok skeleton order) when only some bones take part.
-    pub mask: Option<Arc<[f32]>>,
+    pub mask: Option<BoneMask>,
 }
 
 impl Sample {
-    /// Authored hkbBoneWeightArray entries omitted after its last element
-    /// have weight one. A short mask can, for example, exclude only the root.
     pub fn bone_weight(&self, bone: usize) -> f32 {
-        self.mask
-            .as_ref()
-            .and_then(|m| m.get(bone))
-            .copied()
-            .unwrap_or(1.0)
+        self.mask.as_ref().map_or(1.0, |m| m.get(bone))
+    }
+}
+
+/// Per-bone weights in Havok skeleton order, and the weight of every bone
+/// past the authored entries. The tail differs by generator: blender
+/// children's short arrays leave out trailing ones (`tail` 1), while
+/// bone-switch children take only the bones they list (`tail` 0). See
+/// research/first-person.md and known_ambiguities/bone-weight-tails.md.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BoneMask {
+    pub weights: Arc<[f32]>,
+    pub tail: f32,
+}
+
+impl BoneMask {
+    pub fn new(weights: &[f32], tail: f32) -> Self {
+        Self {
+            weights: weights.into(),
+            tail,
+        }
+    }
+    pub fn get(&self, bone: usize) -> f32 {
+        self.weights.get(bone).copied().unwrap_or(self.tail)
     }
 }
 
@@ -108,11 +125,11 @@ pub struct Shared {
     /// states, as (state containing them, transition with nested target).
     promoted: HashMap<(usize, GenId), Vec<(i32, Transition)>>,
     /// Per (graph, bone switch): mask for its default child.
-    default_masks: HashMap<(usize, GenId), Arc<[f32]>>,
+    default_masks: HashMap<(usize, GenId), BoneMask>,
     /// Bone switches' children's weights, character properties resolved.
-    switch_weights: HashMap<(usize, GenId), Vec<Arc<[f32]>>>,
+    switch_weights: HashMap<(usize, GenId), Vec<BoneMask>>,
     /// Blender children's masks, including character-property bindings.
-    blend_masks: HashMap<(usize, GenId), Vec<Option<Arc<[f32]>>>>,
+    blend_masks: HashMap<(usize, GenId), Vec<Option<BoneMask>>>,
 }
 
 impl Shared {
@@ -206,7 +223,7 @@ impl Shared {
                                             .get(&p.to_ascii_lowercase())
                                     })
                                     .or(c.bone_weights.as_ref())
-                                    .map(|w| Arc::from(w.as_slice()))
+                                    .map(|w| BoneMask::new(w, 1.0))
                             })
                             .collect();
                         s.blend_masks.insert((gi, id), masks);
@@ -217,7 +234,7 @@ impl Shared {
                         ..
                     } => {
                         let character = s.project.character.as_ref();
-                        let weights: Vec<Arc<[f32]>> = children
+                        let weights: Vec<BoneMask> = children
                             .iter()
                             .enumerate()
                             .map(|(i, c)| {
@@ -225,19 +242,18 @@ impl Shared {
                                     properties.get(i).and_then(|p| p.as_ref()).and_then(|p| {
                                         character?.bone_weights.get(&p.to_ascii_lowercase())
                                     });
-                                bound.unwrap_or(&c.1).as_slice().into()
+                                BoneMask::new(bound.unwrap_or(&c.1), 0.0)
                             })
                             .collect();
-                        let n = weights.iter().map(|w| w.len()).max().unwrap_or(0);
-                        let mask: Vec<f32> = (0..n)
-                            .map(|b| {
-                                1.0 - weights
-                                    .iter()
-                                    .map(|w| w.get(b).copied().unwrap_or(0.0))
-                                    .fold(0.0, f32::max)
-                            })
-                            .collect();
-                        s.default_masks.insert((gi, id), mask.into());
+                        // The default takes what no child does, past the
+                        // children's entries too.
+                        let n = weights.iter().map(|w| w.weights.len()).max().unwrap_or(0);
+                        let uncovered = |at: &dyn Fn(&BoneMask) -> f32| {
+                            1.0 - weights.iter().map(at).fold(0.0, f32::max)
+                        };
+                        let mask: Vec<f32> = (0..n).map(|b| uncovered(&|w| w.get(b))).collect();
+                        let tail = uncovered(&|w| w.tail);
+                        s.default_masks.insert((gi, id), BoneMask::new(&mask, tail));
                         s.switch_weights.insert((gi, id), weights);
                     }
                     _ => {}
@@ -2206,7 +2222,7 @@ impl Ctx<'_> {
 
     // ---------------------------------------------------------------- output
 
-    fn collect(&self, node: &Node, weight: f32, mask: Option<&Arc<[f32]>>, out: &mut Vec<Sample>) {
+    fn collect(&self, node: &Node, weight: f32, mask: Option<&BoneMask>, out: &mut Vec<Sample>) {
         if weight <= 1e-4 {
             return;
         }
@@ -2258,7 +2274,7 @@ impl Ctx<'_> {
                 for ((c, wi), child_mask) in children.iter().zip(w).zip(masks) {
                     let Some(c) = c else { continue };
                     match child_mask {
-                        Some(bw) if !bw.is_empty() => {
+                        Some(bw) if !bw.weights.is_empty() => {
                             let m = combine(mask, bw);
                             self.collect(c, weight * wi, Some(&m), out);
                         }
@@ -2282,7 +2298,8 @@ impl Ctx<'_> {
                 };
                 if let Some(d) = default {
                     match self.shared.default_masks.get(&(gi, g)) {
-                        Some(dm) if !dm.is_empty() => {
+                        // No child weights at all: the default takes every bone.
+                        Some(dm) if !dm.weights.is_empty() || dm.tail != 1.0 => {
                             let m = combine(mask, dm);
                             self.collect(d, weight, Some(&m), out);
                         }
@@ -2299,12 +2316,15 @@ impl Ctx<'_> {
     }
 }
 
-fn combine(outer: Option<&Arc<[f32]>>, inner: &[f32]) -> Arc<[f32]> {
+fn combine(outer: Option<&BoneMask>, inner: &BoneMask) -> BoneMask {
     match outer {
-        None => inner.into(),
-        Some(o) => (0..o.len().max(inner.len()))
-            .map(|b| o.get(b).copied().unwrap_or(1.0) * inner.get(b).copied().unwrap_or(1.0))
-            .collect(),
+        None => inner.clone(),
+        Some(o) => BoneMask {
+            weights: (0..o.weights.len().max(inner.weights.len()))
+                .map(|b| o.get(b) * inner.get(b))
+                .collect(),
+            tail: o.tail * inner.tail,
+        },
     }
 }
 
@@ -5827,11 +5847,8 @@ mod tests {
             i.update(0.1, &mut durations);
             let samples = i.samples();
             assert_eq!(samples.len(), 2);
-            assert_eq!(samples[0].mask.as_deref(), Some(expected.as_slice()));
-            assert_eq!(
-                samples[1].mask.as_deref(),
-                Some([0.5, 1.0, 0.25].as_slice())
-            );
+            assert_eq!(samples[0].mask, Some(BoneMask::new(&expected, 1.0)));
+            assert_eq!(samples[1].mask, Some(BoneMask::new(&[0.5, 1.0, 0.25], 1.0)));
             assert_eq!(samples[0].weight, 0.5);
             assert_eq!(samples[1].weight, 0.5);
         }
@@ -5871,9 +5888,78 @@ mod tests {
             let mut i = Instance::new(shared, 1);
             i.update(0.0, &mut durations);
             let samples = i.samples();
-            assert_eq!(samples[0].mask.as_deref(), Some([0.25, 1.0].as_slice()));
+            assert_eq!(samples[0].mask, Some(BoneMask::new(&[0.25, 1.0], 1.0)));
             assert!(samples[1].mask.is_none());
         }
+    }
+
+    fn switch_samples(
+        outer: Option<Vec<f32>>,
+        children: Vec<Vec<f32>>,
+    ) -> std::collections::HashMap<String, Sample> {
+        let n = children.len();
+        let mut generators = vec![
+            masked_blend("Outer", vec![masked_child(1, None, outer)]),
+            Generator::BoneSwitch {
+                name: "Switch".into(),
+                default: Some(2),
+                children: children
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, w)| (3 + i, w))
+                    .collect(),
+                properties: vec![None; n],
+            },
+            clip("Default", ClipMode::Looping, vec![]),
+        ];
+        for i in 0..n {
+            generators.push(clip(&format!("Child{i}"), ClipMode::Looping, vec![]));
+        }
+        let samples =
+            instance(BehaviorGraph::new("Switches", Some(0), generators, vec![])).samples();
+        samples
+            .into_iter()
+            .map(|s| (s.animation.to_string(), s))
+            .collect()
+    }
+
+    #[test]
+    fn bone_switch_children_take_only_listed_bones_and_default_takes_the_rest() {
+        // Werewolf shape: one child listing only the root.
+        let s = switch_samples(None, vec![vec![1.0]]);
+        let (default, child) = (&s["Default"], &s["Child0"]);
+        assert_eq!(child.bone_weight(0), 1.0);
+        assert_eq!(default.bone_weight(0), 0.0);
+        for bone in [1, 2, 50, 98] {
+            assert_eq!(child.bone_weight(bone), 0.0, "bone {bone}");
+            assert_eq!(default.bone_weight(bone), 1.0, "bone {bone}");
+        }
+    }
+
+    #[test]
+    fn bone_switch_default_complements_children_of_unequal_lengths() {
+        let s = switch_samples(None, vec![vec![0.0, 1.0], vec![0.0, 0.0, 0.5]]);
+        let weights = |name: &str| (0..5).map(|b| s[name].bone_weight(b)).collect::<Vec<_>>();
+        assert_eq!(weights("Child0"), [0.0, 1.0, 0.0, 0.0, 0.0]);
+        assert_eq!(weights("Child1"), [0.0, 0.0, 0.5, 0.0, 0.0]);
+        assert_eq!(weights("Default"), [1.0, 0.0, 0.5, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn bone_switch_tails_compose_with_an_outer_blender_mask() {
+        // The outer blender mask leaves out trailing ones; the switch's do not.
+        let s = switch_samples(Some(vec![0.5, 0.0]), vec![vec![1.0]]);
+        let weights = |name: &str| (0..4).map(|b| s[name].bone_weight(b)).collect::<Vec<_>>();
+        assert_eq!(weights("Child0"), [0.5, 0.0, 0.0, 0.0]);
+        assert_eq!(weights("Default"), [0.0, 0.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn bone_switch_without_child_weights_leaves_the_default_unmasked() {
+        let s = switch_samples(None, vec![vec![]]);
+        assert!(s["Default"].mask.is_none());
+        assert_eq!(s["Child0"].bone_weight(0), 0.0);
+        assert_eq!(s["Child0"].bone_weight(40), 0.0);
     }
 
     #[test]

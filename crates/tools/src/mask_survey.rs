@@ -107,7 +107,12 @@ pub fn run(data: &str, detail: Option<&str>) -> Result<()> {
                     Generator::Blender { name, children, .. } => {
                         for (i, c) in children.iter().enumerate() {
                             if let Some(p) = &c.bone_weights_property {
-                                println!("  blend {rel} {name}[{i}] uses property {p}");
+                                let known =
+                                    character.bone_weights.contains_key(&p.to_ascii_lowercase());
+                                println!(
+                                    "  blend {rel} {name}[{i}] uses property {p}{}",
+                                    if known { "" } else { " (unresolved)" }
+                                );
                                 continue; // its array is reported as a property
                             }
                             if let Some(w) = &c.bone_weights {
@@ -123,8 +128,21 @@ pub fn run(data: &str, detail: Option<&str>) -> Result<()> {
                     } => {
                         for (i, (_, w)) in children.iter().enumerate() {
                             if let Some(Some(p)) = properties.get(i) {
-                                println!("  switch {rel} {name}[{i}] uses property {p}");
-                                continue;
+                                let known =
+                                    character.bone_weights.contains_key(&p.to_ascii_lowercase());
+                                println!(
+                                    "  switch {rel} {name}[{i}] uses property {p}{}{}",
+                                    if known { "" } else { " (unresolved)" },
+                                    if w.is_empty() {
+                                        ", no authored fallback"
+                                    } else {
+                                        ""
+                                    }
+                                );
+                                if known {
+                                    continue;
+                                }
+                                // Unresolved: the authored fallback is used.
                             }
                             report("switch", &format!("{rel} {name}[{i}]"), w, &mut switch);
                         }
