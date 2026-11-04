@@ -80,9 +80,13 @@ hands' casting events.
 ## Open (choices made here)
 
 - **Regeneration delay**: magicka waits `fDamagedMagickaRegenDelay` (0.5 s)
-  after being spent, and doesn't come back while a spell is held ready or
-  flowing (`bRegenNPCMagickaDuringCast` is false for NPCs; assumed for the
-  player too).
+  after being spent or damaged, each time anew, and doesn't come back while
+  a spell is held ready or flowing (`bRegenNPCMagickaDuringCast` is false
+  for NPCs). Skyrim SE (`test-mod regen`, 2026-11-04): the player's magicka
+  rose 0.26–0.44 s after a `DamageActorValue` call returned, also after the
+  last of hits 0.58 s apart; the user saw it pause after casting and not
+  come back while a Firebolt was held charged. The probe's timing can't
+  tell 0.5 s from a little less; the setting's value is used.
 - **Starting a spell**: a fire-and-forget spell needs its whole cost to start
   charging and when cast; a concentration spell starts with 1 magicka or
   more and stops when a frame's cost can't be paid. Whether the game checks

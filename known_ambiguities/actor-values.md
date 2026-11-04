@@ -48,6 +48,17 @@ use them (`vrm-tool av-conditions <data>`).
 - NPCs' `HealRate` reads 0 (as does `CombatHealthRegenMult`), though their
   race's `DATA` has 0.7: that is the player's. Our NPCs at 90 of 300 health
   didn't heal in 30 s, free, held or fighting (`test-mod autotest5`).
+- The player's health comes back at most x `HealRate`% x `HealRateMult`% a
+  second, times `CombatHealthRegenMult` in combat (UESP Skyrim:Health,
+  <https://en.uesp.net/w/index.php?oldid=3636643>). The 0.7 in combat is
+  the Player record's ability `PCHealRateCombat` (a value modifier on
+  `CombatHealthRegenMult`, base 0). Skyrim SE (`test-mod regen`,
+  2026-11-04): 0.69%, 1.39% at `HealRateMult` 200, the combat multiplier
+  unused out of combat; in combat 0.49%, 0.97%, 0.24% at
+  `CombatHealthRegenMult` 0.35, so `fCombatHealthRegenRateMult` (0) doesn't
+  apply to the player. Stamina is `StaminaRate`% x `StaminaRateMult`%,
+  x `fCombatStaminaRegenRateMult` (0.35) in combat, after a wait of about
+  `fDamagedStaminaRegenDelay` (0.26–0.44 s seen) from each damage or spend.
 
 - Checked in Skyrim SE (`test-mod autotest21`, 2026-11-01;
   `research/autotest21.md`):
@@ -63,6 +74,12 @@ use them (`vrm-tool av-conditions <data>`).
     whose stats template is a leveled list has the rolled bandit's class.
 
 ## Choices made without a source
+
+- **Health's wait after a hit**: health showed no wait after
+  `DamageActorValue`, even with hits 0.58 s apart (Skyrim SE, `test-mod
+  regen`), though `fDamagedHealthRegenDelay` is 0.5. The probe's real hit
+  (a Firebolt from an actor with its AI off) never landed, so whether a
+  blow or spell starts that wait is unseen. Ours never waits.
 
 - **Skills past 100**: UESP says the shares are worked out otherwise once a
   skill reaches 100 (not how). The stored `DNAM`s give more to the other

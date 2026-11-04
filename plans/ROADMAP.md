@@ -817,7 +817,10 @@ game each piece unlocks.
   `iStaggerAttackChance`. Attacks the graph refuses (mid-flinch, or a stagger cut the
   draw short) are retried and the weapon drawn again
 - Stamina: from race and NPC stats, back at the race's rate (percent of the most a
-  second; x0.35 in combat, `fCombatStaminaRegenRateMult`) a moment after it was spent.
+  second, x `StaminaRateMult` for the player; x0.35 in combat,
+  `fCombatStaminaRegenRateMult`) a moment after it was spent. The player's health
+  comes back by `HealRate` x `HealRateMult` (x `CombatHealthRegenMult` in combat),
+  with no wait (`test-mod regen`).
   Power attacks cost `fStaminaAttackWeaponBase` + weapon weight x
   `fStaminaAttackWeaponMult`, times the attack's own multiplier (`ATKD`); NPCs short
   of it attack normally. Blocked blows cost `fStaminaBlockBase` + 0.25 x the damage
@@ -1815,6 +1818,10 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
     isn't saved.
   - Whether `GetCrimeGold` without a faction reads the hold the player
     stands in.
+- From `test-mod regen`: whether a real blow or spell holds the player's health
+  back (`fDamagedHealthRegenDelay` 0.5; its `Hit` cast never landed, and fire's
+  taper would have hidden the answer: use untapered damage); and
+  whether NPCs' `HealRateMult` and `StaminaRateMult` count, which ours ignores.
 - Readings still to compare against ours before deciding (the notes' items
   marked "compare"):
   - autotest21's: destruction stages and overkill, faction expulsion's rank

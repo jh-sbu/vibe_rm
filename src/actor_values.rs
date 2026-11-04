@@ -342,6 +342,11 @@ impl Engine {
         }
         let m = self.scripts.actor_values.entry((actor, index)).or_default();
         m.damage = (m.damage - amount).min(0.0);
+        // Damage holds the player's magicka back as spending does
+        // (`test-mod regen`).
+        if actor == PLAYER_REF && index == av::MAGICKA && amount > 0.0 {
+            self.hold_magicka_regen();
+        }
     }
 
     /// Actors just loaded take the stamina damage scripts did them while away

@@ -4112,10 +4112,40 @@ impl Engine {
             self.player_stamina_wait -= dt;
         } else {
             let stats = self.player_stats();
-            let rate =
-                stats.stamina_regen / 100.0 * if player_fought { set.combat_regen } else { 1.0 };
+            let rate = stats.stamina_regen / 100.0
+                * (self.actor_value(PLAYER_REF, av::STAMINA_RATE_MULT) / 100.0)
+                * if player_fought { set.combat_regen } else { 1.0 };
             self.player_stamina =
                 (self.player_stamina + stats.max_stamina * rate * dt).min(stats.max_stamina);
+        }
+        self.regen_player_health(player_fought, dt);
+    }
+
+    /// The player's health comes back by `HealRate` (percent of the most a
+    /// second) times `HealRateMult`, and in combat times
+    /// `CombatHealthRegenMult` (0.7, from the Player record's
+    /// `PCHealRateCombat` ability), with no wait after damage
+    /// (`test-mod regen`).
+    pub(crate) fn regen_player_health(&mut self, fighting: bool, dt: f32) {
+        if self.player_dead() {
+            return;
+        }
+        let max = self.player_max_health();
+        let now = self.player_health;
+        if now >= max {
+            return;
+        }
+        let combat = if fighting {
+            self.actor_value(PLAYER_REF, av::COMBAT_HEALTH_REGEN_MULT)
+        } else {
+            1.0
+        };
+        let rate = self.actor_value(PLAYER_REF, av::HEAL_RATE) / 100.0
+            * (self.actor_value(PLAYER_REF, av::HEAL_RATE_MULT) / 100.0)
+            * combat;
+        let gain = (max * rate * dt).clamp(0.0, max - now);
+        if gain > 0.0 {
+            self.damage_actor_value(PLAYER_REF, av::HEALTH, -gain);
         }
     }
 

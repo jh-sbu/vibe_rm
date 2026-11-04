@@ -236,14 +236,6 @@ impl Engine {
             self.update_stamina(dt);
             self.regen_magicka(dt);
             self.regen_npc_magicka(dt);
-            if !self.player_dead() {
-                let stats = self.player_stats();
-                self.damage_actor_value(
-                    PLAYER_REF,
-                    esp::actor_value::HEALTH,
-                    -stats.max_health * stats.health_regen.max(0.0) / 100.0 * dt,
-                );
-            }
         }
         self.pass_time(seconds);
     }

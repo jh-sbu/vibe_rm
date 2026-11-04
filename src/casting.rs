@@ -773,7 +773,13 @@ impl Engine {
         if amount <= 0.0 {
             return;
         }
+        // Damage holds regeneration back (`hold_magicka_regen`).
         self.damage_actor_value(PLAYER_REF, av::MAGICKA, amount);
+    }
+
+    /// The player's magicka waits `fDamagedMagickaRegenDelay` to come back
+    /// after it was spent or damaged.
+    pub(crate) fn hold_magicka_regen(&mut self) {
         self.casting.magicka_wait = gmst_f32(&self.lo, "fDamagedMagickaRegenDelay", 0.5);
     }
 
