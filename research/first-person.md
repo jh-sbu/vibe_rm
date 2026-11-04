@@ -100,6 +100,36 @@ by the Skyrim first-person assets and the drawn-bow regression/capture, not
 an original Skyrim SE runtime measurement. Sampling and coverage diagnostics
 now agree on the implicit-one tail.
 
+### Bone-weight array survey (`vrm-tool hkb-masks "<Data>"`)
+
+The convention applies to every graph, not only the first-person one, so all
+installed behavior projects were surveyed against their own Havok skeletons:
+
+- Blender children with their own arrays: 507 full length, 631 shorter than
+  the skeleton, 9 longer. None of the 631 short arrays ends in exactly 1:
+  591 end in 0 and the rest in 0.0001–0.7. That is the shape expected if
+  trailing ones are left out, and not if trailing zeros are.
+- 101 short arrays are all zeros. Under an implicit-zero tail each would be a
+  no-op. Their lengths stop just before meaningful bones instead: 98/99 before
+  `Camera Control` (30), 97/99 before `Camera3rd`/`Camera1st`, 1/99 after the
+  root (42), 4/99 before `NPC COM` (9).
+- Example: `sprintbehavior.hkx` `1HM_Torch_SprintForwardSword[0]` (82/99)
+  weights the right hand, forearm and twists at 1 and the left arm and all
+  left fingers at 0, then stops before `NPC R Finger00`. Only the implicit-one
+  tail keeps the right fingers with the right hand. 129 arrays stop at that
+  bone.
+- Every BSBoneSwitchGenerator child in the vanilla assets is bound to a
+  character property, and every property that switches use is full length.
+  The short properties (`SneakMagic{Upper,Lower}Body` 85/99, dragon priest
+  ward weights 80/82, troll `H2HTurnWeights_*` 54/56) are unused or bound to
+  blenders only, and the last two omit only magic nodes. The runtime's switch
+  default mask (`1 − max` of the children, treating a missing child entry as
+  0) therefore never meets a short switch array in vanilla data. Its tail
+  convention is untested by these assets.
+
+These are inferences from authored data, not SE runtime measurements, but
+they are Skyrim's own assets rather than cross-game evidence.
+
 The dual-rig bow regression also found that changing the third-person rig's
 `i1stPerson` with the view resets its release branch before arrowRelease.
 Keeping its authored identity zero, with IsFirstPerson following the view,

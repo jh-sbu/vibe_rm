@@ -9,6 +9,7 @@ mod first_person;
 #[path = "../../../src/condition/functions.rs"]
 #[allow(dead_code)]
 mod functions;
+mod mask_survey;
 mod saves;
 mod seams;
 mod spell_fx;
@@ -49,6 +50,7 @@ fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("first-person") => first_person::run(&args[1])?,
+        Some("hkb-masks") => mask_survey::run(&args[1], args.get(2).map(String::as_str))?,
         Some("crafting-survey") => crafting_survey::run(&args[1])?,
         Some("control-tags") => control_tags::run(&args[1..])?,
         Some("spell-fx") => spell_fx::run(&args[1..])?,
