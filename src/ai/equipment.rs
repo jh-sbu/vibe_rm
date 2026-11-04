@@ -196,9 +196,11 @@ impl Engine {
         let Some(g) = a.graph.as_mut() else {
             return false;
         };
-        let took = g.send_event(if draw { "WeapEquip" } else { "Unequip" });
+        let ev = if draw { g.draw_event() } else { "Unequip" };
+        let took = g.send_event(ev);
         if took {
             a.drawn = draw;
+            a.drawn_magic = ev == "Magic_Equip";
         }
         took
     }

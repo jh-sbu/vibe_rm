@@ -149,19 +149,26 @@ hands' casting events.
 - **An empty hand beside a spell** stays empty (0) to the graph. Skyrim SE
   (`test-mod autotest21`): Flames in the right hand alone gave
   `GetEquippedItemType` 0 / 9 and graph `iLeftHandType` 0, `iRightHandType`
-  9, sheathed and drawn. Only the left hand's spell states
-  (`1HM_Readied_BehaviorGraph`, its start bound to `iLeftHandType`) reach the
-  magic behaviour in the graph we read, so how the game animates a
-  right-hand-only spell is open. Until then such a cast plays as with no
-  casting state. An empty hand beside a staff is still given the staff's
+  9, sheathed and drawn. A spell in the right hand is drawn with
+  `Magic_Equip` into `Magic_Behavior_State` (`player-body.md`, "Drawing
+  spells"), where the right hand casts too. Drawn with `WeapEquip` before
+  2026-11-04, only the left hand's spell states
+  (`1HM_Readied_BehaviorGraph`, its start bound to `iLeftHandType`) reached
+  the magic behaviour, and a right-hand-only cast played as with no casting
+  state. An empty hand beside a staff is still given the staff's
   (8), our choice (`staffs.md`); the reason we had for it (the same as for
   spells) no longer holds.
-- **Hands the graph has no casting for**: a spell beside a weapon, shield or
-  torch (`iLeftHandType` 1 to 7, 10 to 12) leaves the graph outside the
-  magic behaviour; the graph refusing the start, the spell is cast as with
-  no graph, without animation. How the game animates these isn't known.
+- **Hands the graph has no casting for**: none known since spells draw with
+  `Magic_Equip`. A spell in the right beside a weapon, shield or torch in
+  the left (`iLeftHandType` 1 to 7, 10 to 12) is readied in
+  `Magic_Behavior_State`, whose `MRhLeftHandOverride` selects by the left
+  hand, and `hkb-run` takes `BeginCastRight` there. A spell in the left
+  beside a weapon in the right is readied in `1HM_Readied_MagicState`. A
+  start the graph refuses is still cast as with no graph, without
+  animation.
 - **When the hands are told** (the player): `BeginCast...` then the start
-  at the press, both only once the draw is over (`WeapEquip_Out`). `..._SpellReady_Event` the
+  at the press, both only once the draw is over (`WeapEquip_Out`, or
+  `Magic_Equip_Out` for spells). `..._SpellReady_Event` the
   update after the charge time is reached (or at the release, if that
   comes first), and a concentration spell's `..._SpellRelease_Event` the
   update after it starts, when the hand's state machine runs. A
@@ -198,9 +205,12 @@ hands' casting events.
 - **Casters' hands** (`ActorRuntime::set_hand_vars`): while an NPC fights
   with a spell its graph's hand types say a spell is in hand (it holds none
   in its inventory): the left hand beside a one-handed weapon in the right
-  (`BeginCastLeft`), else both hands, casting with the right. The graph
-  follows the types while drawn (`RootBoneSwitch_MSG` re-selects), so no
-  redraw. Which hand the game's NPCs ready their spells in isn't published.
+  (`BeginCastLeft`), else both hands, casting with the right. Drawn, the
+  graph follows a change of type within the weapon or the magic states
+  (`RootBoneSwitch_MSG` re-selects). A change between them (a sword
+  drawn, then both hands' spells) is redrawn across with a force-equip
+  (`player-body.md`, "Drawing spells"). Which hand the game's NPCs ready
+  their spells in isn't published.
 - **Casters' events** follow the player's: the start once the hands are out
   (`weaponDraw`; refused, again 0.5 s later), `SpellReady` after the charge
   time, `SpellRelease` the update after, the spell cast at `SpellFire`

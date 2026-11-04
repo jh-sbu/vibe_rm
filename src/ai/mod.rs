@@ -416,8 +416,10 @@ pub struct ActorRuntime {
     /// and whether that changed this frame.
     pub(crate) weapon_out: bool,
     pub(crate) equipment_changed: bool,
-    /// Weapons drawn (or being drawn): the graph was sent `WeapEquip`.
+    /// Weapons drawn (or being drawn): the graph was sent `WeapEquip` or `Magic_Equip`.
     pub(crate) drawn: bool,
+    /// Drawn into the graph's magic states (`Magic_Equip`), not its weapon's.
+    pub(crate) drawn_magic: bool,
     /// Sounds the graph asked for this frame (`SoundPlay` payloads: SNDR editor ids).
     pub(crate) sounds: Vec<String>,
     /// Every event the graph raised this frame, for scripts (`OnAnimationEvent`).
@@ -581,6 +583,7 @@ impl ActorRuntime {
             weapon_out: false,
             equipment_changed: false,
             drawn: false,
+            drawn_magic: false,
             sounds: Vec::new(),
             graph_events: Vec::new(),
             spell_fx_events: Vec::new(),
@@ -1077,6 +1080,13 @@ impl ActorRuntime {
     }
 
     /// Send the graph an event now; true when it took it.
+    /// The event that draws what the actor holds (`behavior::draw_event`).
+    fn draw_event(&self) -> &'static str {
+        self.graph
+            .as_ref()
+            .map_or("WeapEquip", crate::world::behavior::GraphAnim::draw_event)
+    }
+
     fn graph_event(&mut self, event: &str, clips: &mut Clips) -> bool {
         if event.contains("Spell") || event.contains("Equipped_Event") {
             self.spell_fx_events.push(event.to_owned());

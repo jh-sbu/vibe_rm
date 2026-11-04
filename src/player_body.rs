@@ -48,11 +48,14 @@ pub struct PlayerBody {
     /// Off the ground this long; whether the graph was told they fall (or jumped).
     airborne: Option<f32>,
     fell: bool,
-    /// The graph took the draw (`WeapEquip`), and the weapon is in hand (its
+    /// The graph took the draw (`WeapEquip`, `Magic_Equip`), and the weapon is in hand (its
     /// `weaponDraw` / `weaponSheathe`).
     drawn: bool,
+    /// Drawn into the graph's magic states (`Magic_Equip`), not its weapon's.
+    drawn_magic: bool,
     weapon_out: bool,
-    /// The draw is over (`WeapEquip_Out`): the graph swings from here on.
+    /// The draw is over (`WeapEquip_Out`, `Magic_Equip_Out`): the graph swings
+    /// and casts from here on.
     ready: bool,
     /// The guard is up in the graph (`blockStart`).
     guard: bool,
@@ -527,6 +530,9 @@ impl Engine {
                 body.set_variable(var, value);
             }
         }
+        if let Some(body) = self.player_body.as_mut() {
+            body.follow_hands(&self.vfs, &mut self.anims);
+        }
         let feet = self.player_feet();
         let third = self.third_person;
         let yaw = self.camera.yaw;
@@ -759,6 +765,32 @@ impl PlayerBody {
         .event(ev, vfs, anims, &self.skeleton)
     }
 
+    /// Drawn, the hands changed between what draws into the graph's magic
+    /// states and what draws into its weapon's: the graph redraws across
+    /// (`redraw_event`), the new draw to finish before it swings or casts.
+    fn follow_hands(
+        &mut self,
+        vfs: &vfs::Vfs,
+        anims: &mut crate::world::animation::AnimationLibrary,
+    ) {
+        let Some(g) = self.graph.as_ref() else {
+            return;
+        };
+        let magic = g.draws_magic();
+        if !self.drawn || magic == self.drawn_magic {
+            return;
+        }
+        let ev = g.redraw_event();
+        if self.send_event(ev, vfs, anims) {
+            log::debug!("the player's hands change: {ev}");
+            self.drawn_magic = magic;
+            self.ready = false;
+            if let Some(f) = self.first.as_mut() {
+                f.ready = false;
+            }
+        }
+    }
+
     fn weapon_ready(&self) -> bool {
         self.drawn
             && if self.first_active {
@@ -818,6 +850,7 @@ impl PlayerBody {
             airborne: None,
             fell: false,
             drawn: false,
+            drawn_magic: false,
             weapon_out: false,
             ready: false,
             guard: false,
@@ -1046,7 +1079,7 @@ impl PlayerBody {
             match r.event.to_ascii_lowercase().as_str() {
                 "weapondraw" => self.weapon_out = true,
                 "weaponsheathe" => self.weapon_out = false,
-                "weapequip_out" => self.ready = self.drawn,
+                "weapequip_out" | "magic_equip_out" => self.ready = self.drawn,
                 _ => {}
             }
         }
@@ -1056,7 +1089,7 @@ impl PlayerBody {
                 match r.event.to_ascii_lowercase().as_str() {
                     "weapondraw" => f.weapon_out = true,
                     "weaponsheathe" => f.weapon_out = false,
-                    "weapequip_out" => f.ready = self.drawn,
+                    "weapequip_out" | "magic_equip_out" => f.ready = self.drawn,
                     _ => {}
                 }
             }
@@ -1295,7 +1328,8 @@ impl Engine {
         self.player_body.as_ref().is_some_and(|b| b.drawn)
     }
 
-    /// Whether the draw is over (the graph's `WeapEquip_Out`): the graph
+    /// Whether the draw is over (the graph's `WeapEquip_Out` or
+    /// `Magic_Equip_Out`): the graph
     /// won't swing before (it takes `attackStart` mid-draw and does nothing).
     pub(crate) fn player_weapon_ready(&self) -> bool {
         self.player_body.as_ref().is_some_and(|b| b.weapon_ready())
@@ -1316,10 +1350,16 @@ impl Engine {
         if body.drawn == draw {
             return true;
         }
-        let ev = if draw { "WeapEquip" } else { "Unequip" };
+        // Spells draw through the graph's magic states (`draw_event`).
+        let ev = match body.graph.as_ref() {
+            Some(g) if draw => g.draw_event(),
+            _ if draw => "WeapEquip",
+            _ => "Unequip",
+        };
         let took = body.send_event(ev, &self.vfs, &mut self.anims);
         if took {
             body.drawn = draw;
+            body.drawn_magic = ev == "Magic_Equip";
             body.ready = false;
             if let Some(f) = body.first.as_mut() {
                 f.ready = false;

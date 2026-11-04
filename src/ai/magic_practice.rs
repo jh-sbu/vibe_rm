@@ -158,8 +158,10 @@ impl ActorRuntime {
             return;
         }
         if humanoid && !self.drawn {
-            if self.graph_event("WeapEquip", &mut w.clips) {
+            let ev = self.draw_event();
+            if self.graph_event(ev, &mut w.clips) {
                 self.drawn = true;
+                self.drawn_magic = ev == "Magic_Equip";
             }
             m.wait = RETRY * 2.0;
             self.magic_practice = Some(m);

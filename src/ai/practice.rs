@@ -278,8 +278,10 @@ impl ActorRuntime {
             .turn_towards((aim - self.exec.pos).with_z(0.0).normalize_or_zero(), dt)
             .abs();
         if !self.drawn {
-            if self.graph_event("WeapEquip", &mut w.clips) {
+            let ev = self.draw_event();
+            if self.graph_event(ev, &mut w.clips) {
                 self.drawn = true;
+                self.drawn_magic = ev == "Magic_Equip";
             }
             p.wait = 1.5;
             self.practice = Some(p);

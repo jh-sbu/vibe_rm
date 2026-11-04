@@ -640,8 +640,9 @@ impl ActorRuntime {
 
     /// The graph's hand types, with the hand an actor casts with (set by the
     /// engine while it fights with a spell) holding a spell: the left beside
-    /// a one-handed weapon, else both (only the left hand's spell state
-    /// reaches the magic behaviour).
+    /// a one-handed weapon, else both. Drawn, a change between hands that draw
+    /// into the graph's magic states and its weapon's is redrawn across
+    /// (`behavior::redraw_event`).
     pub(crate) fn set_hand_vars(&mut self, vars: [(&'static str, f32); 4]) {
         let Some(g) = self.graph.as_mut() else {
             return;
@@ -650,18 +651,23 @@ impl ActorRuntime {
             g.set_variable(var, value);
         }
         let spell = crate::world::inventory::HandType::Spell.for_graph();
-        if self.combat_spell.is_some_and(|s| s.staff) {
-            return;
+        if !self.combat_spell.is_some_and(|s| s.staff) {
+            match self.cast_hand {
+                Some(LEFT) => {
+                    g.set_variable("iLeftHandType", spell);
+                }
+                Some(_) => {
+                    g.set_variable("iRightHandType", spell);
+                    g.set_variable("iLeftHandType", spell);
+                }
+                None => {}
+            }
         }
-        match self.cast_hand {
-            Some(LEFT) => {
-                g.set_variable("iLeftHandType", spell);
-            }
-            Some(_) => {
-                g.set_variable("iRightHandType", spell);
-                g.set_variable("iLeftHandType", spell);
-            }
-            None => {}
+        // Drawn, the hands changed between what draws into the graph's magic
+        // states and what draws into its weapon's: redraw across.
+        let magic = g.draws_magic();
+        if self.drawn && magic != self.drawn_magic && g.send_event(g.redraw_event()) {
+            self.drawn_magic = magic;
         }
     }
 }

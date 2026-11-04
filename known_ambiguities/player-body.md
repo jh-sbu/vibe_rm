@@ -39,8 +39,48 @@ variable names; the race's attack data (`ATKE`) for attack events.
 - **Drawing to attack.** Attacking with the weapon put away draws it instead
   of swinging; from memory of the game, not a source.
 - **When the graph can swing.** Swings are sent only after `WeapEquip_Out`
-  (the end of the draw): before it the graph takes `attackStart` and plays
-  nothing. How the game gates attacks during the draw is unknown.
+  (the end of the draw; `Magic_Equip_Out` for spells): before it the graph
+  takes `attackStart` and plays nothing. How the game gates attacks during
+  the draw is unknown.
+- **Drawing spells (2026-11-04).** The draw event is chosen from the graph's
+  `iRightHandType` / `iLeftHandType` (`world::behavior::draw_event`), for
+  the player and NPCs alike. `Magic_Equip` is sent for a spell in the right
+  hand (anything in the left), or a spell in the left beside an empty right;
+  everything else draws with `WeapEquip`, which is unchanged. The research
+  behind this is the vanilla `0_master.hkx` and `weapequip.hkx`, read with
+  `vrm-tool hkb-tree`, `hkb-events` and `hkb-run`:
+  - `weapequip.hkx`'s `Weap_Equip_MSG` selects by `iRightHandType`, and
+    index 9 (spell) is `1HM_Equip`, the one-handed sword's unsheathe. Spells
+    sent through `WeapEquip` played that, which the user reported.
+  - `Default_Behavior` takes `Magic_Equip` into `Magic_Equip_State`. Its
+    `Magic_Equip_Behavior` starts by `iRightHandType`: 9 (`MRh_Equip_State`,
+    then by `iLeftHandType`: `MRh_and_MLh_Equip`, shield, torch, staff and
+    one-handed weapons), 0 (`MLh_Equip_State`) and 8 (staff). It ends at
+    `Magic_Equip_Out` in `Magic_Behavior_State`, the only state holding
+    `MagicBehavior.hkx` beside `1HM_Behavior.hkx`'s
+    `1HM_Readied_MagicState`. `Unequip` from there plays
+    `Magic_Unequip_State`.
+  - A weapon in the right beside a spell in the left stays with
+    `WeapEquip`: `1HM_Behavior.hkx` readies that in
+    `1HM_Readied_MagicState`, so the graph has it covered either way.
+    `Magic_Equip_State` also has an `MLh_1HM_Equip_Out` exit into
+    `Weap_Readied_State`, but no clip we found raises it.
+  - A staff in the right beside a spell in the left also stays with
+    `WeapEquip` (`StaffRight_Equip_State` suggests the game may use
+    `Magic_Equip`). Staffs alone are unchanged.
+
+  Drawn, a change of hands between the two kinds is redrawn across with the
+  graph's wildcard force-equips (`world::behavior::redraw_event`):
+  `MagicForceEquip` (both hands), `MagicForceEquipRight` / `Left` into the
+  magic states, and `MagicWeap_ForceEquip` back to the weapon's.
+  `Weap_Readied_State` has no `Magic_Equip` transition, and
+  `Magic_Behavior_State` has no `WeapEquip` transition. Without the
+  redraw, a sword equipped over drawn spells left the graph ignoring
+  `attackStart`. Whether the game sends these force-equips, other events, or
+  a sheathe and draw for such a change is unknown. Which event SE sends for
+  mixed hands is also unconfirmed. `hkb-run` simulations and the real-data
+  test `spells_draw_into_the_magic_states_and_a_sword_swaps_across` show
+  that this implementation works. They don't show what SE does.
 - **Equipment changes and drawn state (2026-10-20).** Rebuilding the player's
   meshes now retains the body and running graph when the cached skeleton,
   project, rig path and sex still match. Draw intent, physical weapon placement,

@@ -1840,6 +1840,12 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
     (2026-11-03). Still to see: a hint shown after binding Activate to a key
     without art (NumPad Enter, NumLock or Apps).
   - autotest20 stays deferred by the user.
+  - Drawing spells (`known_ambiguities/player-body.md`, "Drawing spells"):
+    put off by the user (2026-11-04). In SE, check which draw event is used
+    for mixed hands (sword + spell, staff + spell). Also check what happens
+    when equipment changes between spells and a weapon while drawn. A
+    probe could use `RegisterForAnimationEvent` on `WeapEquip_Out` and
+    `Magic_Equip_Out` to see which draw each case ends with.
   - Candidates for later batches: `plans/autotest-audit.md` sorts every
     open `known_ambiguities/` item by whether a strictly automatic test
     could settle it (536 of 1055 could).

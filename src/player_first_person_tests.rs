@@ -375,3 +375,66 @@ fn camera_locks_and_forced_furniture_restore_the_previous_view() {
     drop(e);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+/// Spells draw through the graph's magic states (`Magic_Equip`), not the
+/// one-handed sword's draw, and a sword equipped while they are out moves
+/// the graph across to its weapon's (`MagicWeap_ForceEquip`).
+#[test]
+#[ignore = "requires installed Skyrim SE assets and a headless GPU adapter"]
+fn spells_draw_into_the_magic_states_and_a_sword_swaps_across() {
+    use crate::world::inventory::{LEFT, RIGHT};
+    let data = vfs::locate_data_dir().unwrap();
+    let names = esp::BASE_MASTERS
+        .iter()
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>();
+    let mut e = crate::stats::action_tests::headless_engine_plugins(&data, &names);
+    let flames = e.lo.find_editor_id("Flames").unwrap();
+    e.add_spell(PLAYER_REF, flames);
+    e.equip_spell(PLAYER_REF, flames, RIGHT);
+    e.equip_spell(PLAYER_REF, flames, LEFT);
+    e.player.grounded = true;
+    e.set_third_person(true);
+    e.update_player_body(Vec3::ZERO, 0.0);
+    let states = |e: &Engine| {
+        e.player_body
+            .as_ref()
+            .unwrap()
+            .graph
+            .as_ref()
+            .unwrap()
+            .active_states()
+    };
+    assert!(e.player_draw_weapon(true));
+    let drawing = states(&e);
+    assert!(
+        drawing.iter().any(|s| s == "Magic_Equip_State"),
+        "{drawing:?}"
+    );
+    assert!(
+        !drawing.iter().any(|s| s == "Weap_Equip_State"),
+        "{drawing:?}"
+    );
+    for _ in 0..120 {
+        e.update_player_body(Vec3::ZERO, 1.0 / 60.0);
+    }
+    let readied = states(&e);
+    assert!(
+        readied.iter().any(|s| s == "Magic_Behavior_State"),
+        "{readied:?}"
+    );
+    assert!(e.player_weapon_ready());
+
+    let sword = e.lo.find_editor_id("IronSword").unwrap();
+    e.inventory_mut(PLAYER_REF).add(sword, 1);
+    e.equip_item(PLAYER_REF, sword, true).unwrap();
+    for _ in 0..180 {
+        e.update_player_body(Vec3::ZERO, 1.0 / 60.0);
+    }
+    let swapped = states(&e);
+    assert!(
+        swapped.iter().any(|s| s == "Weap_Readied_State"),
+        "{swapped:?}"
+    );
+    assert!(e.player_weapon_drawn() && e.player_weapon_ready());
+}

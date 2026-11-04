@@ -255,6 +255,44 @@ fn take_bones(locals: &mut [Transform], from: &[Transform], bones: &[usize]) {
     }
 }
 
+/// The event that draws an actor's hands, given the graph's `iRightHandType`
+/// and `iLeftHandType`. `Magic_Equip` for a spell in the right hand, or in
+/// the left beside an empty right: the humanoid graph's `Magic_Equip_State`
+/// has draws for exactly those (`MRh_Equip_State`, `MLh_Equip_State`) and
+/// ends in `Magic_Behavior_State`. `WeapEquip` sends a spell through
+/// `weapequip.hkx`, whose right-hand selector plays the one-handed sword's
+/// `1HM_Equip` for a spell. Anything else, a weapon beside a spell included
+/// (`1HM_Behavior.hkx` readies that in `1HM_Readied_MagicState`), draws with
+/// `WeapEquip` (`known_ambiguities/player-body.md`).
+pub fn draw_event(right: f32, left: f32) -> &'static str {
+    let spell = super::inventory::HandType::Spell.for_graph();
+    if right == spell || (right == 0.0 && left == spell) {
+        "Magic_Equip"
+    } else {
+        "WeapEquip"
+    }
+}
+
+/// The event that moves an actor already drawn into what its hands now hold,
+/// when that changed between drawing with `Magic_Equip` and `WeapEquip`
+/// (`draw_event`). `Weap_Readied_State` has no transition on `Magic_Equip`,
+/// nor `Magic_Behavior_State` on `WeapEquip`; the graph's wildcard
+/// force-equips go across: `MagicForceEquip` (both hands),
+/// `MagicForceEquipRight` / `Left` (one) into `Magic_Equip_State`, and
+/// `MagicWeap_ForceEquip` into `Weap_Equip_State`.
+pub fn redraw_event(right: f32, left: f32) -> &'static str {
+    let spell = super::inventory::HandType::Spell.for_graph();
+    if draw_event(right, left) != "Magic_Equip" {
+        "MagicWeap_ForceEquip"
+    } else if right == spell && left == spell {
+        "MagicForceEquip"
+    } else if right == spell {
+        "MagicForceEquipRight"
+    } else {
+        "MagicForceEquipLeft"
+    }
+}
+
 /// Graph variables scripts set, matched ignoring case, each with the value the
 /// engine had given it before.
 #[derive(Default)]
@@ -575,6 +613,31 @@ impl GraphAnim {
         self.inst.variable(name)
     }
 
+    fn hand_types(&self) -> (f32, f32) {
+        (
+            self.variable("iRightHandType").unwrap_or(0.0),
+            self.variable("iLeftHandType").unwrap_or(0.0),
+        )
+    }
+
+    /// The event that draws what the graph's hands hold (`draw_event`).
+    pub fn draw_event(&self) -> &'static str {
+        let (right, left) = self.hand_types();
+        draw_event(right, left)
+    }
+
+    /// Whether the graph's hands draw into its magic states (`draw_event`).
+    pub fn draws_magic(&self) -> bool {
+        self.draw_event() == "Magic_Equip"
+    }
+
+    /// The event that redraws, already drawn, into what the hands now hold
+    /// (`redraw_event`).
+    pub fn redraw_event(&self) -> &'static str {
+        let (right, left) = self.hand_types();
+        redraw_event(right, left)
+    }
+
     /// The engine's own write (movement, combat, equipment...): ignored, and
     /// false, while a script's value stands (`ScriptPins::holds`).
     pub fn set_variable(&mut self, name: &str, value: f32) -> bool {
@@ -858,7 +921,7 @@ impl GraphAnim {
 
 #[cfg(test)]
 mod pin_tests {
-    use super::{ScriptPins, take_bones};
+    use super::{ScriptPins, draw_event, redraw_event, take_bones};
     use nif::Transform;
 
     #[test]
@@ -937,6 +1000,26 @@ mod pin_tests {
         take_bones(&mut locals, &from, &[1, 7]);
         let xs: Vec<f32> = locals.iter().map(|t| t.translation.x).collect();
         assert_eq!(xs, [1.0, 20.0, 3.0]);
+    }
+
+    #[test]
+    fn spells_draw_with_magic_equip() {
+        // Right, left: spells 9, sword 1, staff 8, shield 10.
+        for (r, l) in [(9.0, 9.0), (9.0, 0.0), (0.0, 9.0), (9.0, 1.0), (9.0, 10.0)] {
+            assert_eq!(draw_event(r, l), "Magic_Equip", "{r} {l}");
+        }
+        for (r, l) in [(0.0, 0.0), (1.0, 9.0), (8.0, 9.0), (1.0, 10.0), (8.0, 8.0)] {
+            assert_eq!(draw_event(r, l), "WeapEquip", "{r} {l}");
+        }
+    }
+
+    #[test]
+    fn redraws_cross_between_weapon_and_magic_states() {
+        assert_eq!(redraw_event(9.0, 9.0), "MagicForceEquip");
+        assert_eq!(redraw_event(9.0, 1.0), "MagicForceEquipRight");
+        assert_eq!(redraw_event(0.0, 9.0), "MagicForceEquipLeft");
+        assert_eq!(redraw_event(1.0, 9.0), "MagicWeap_ForceEquip");
+        assert_eq!(redraw_event(0.0, 0.0), "MagicWeap_ForceEquip");
     }
 
     #[test]
