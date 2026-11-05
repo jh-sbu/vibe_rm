@@ -263,7 +263,7 @@ impl Engine {
             achr.0 as u64,
             &self.scripts.globals,
         );
-        let p = std::sync::Arc::new(super::package::npc_packages(&self.lo, &src));
+        let p = std::sync::Arc::new(npc_packages(&self.lo, &src));
         self.whereabouts.packages.insert(key, p.clone());
         p
     }
@@ -1172,4 +1172,27 @@ mod tests {
         drop(e);
         std::fs::remove_dir_all(dir).unwrap();
     }
+}
+
+/// Packages of an actor in priority order (its AI packages part's: see templates),
+/// then its default package list's (`DPLT`, from the part that gives it).
+fn npc_packages(
+    lo: &esp::LoadOrder,
+    src: &crate::world::template::Sources,
+) -> Vec<super::package::Package> {
+    use crate::world::template::{AI_PACKAGES, DEF_PACK_LIST};
+    let mut out: Vec<super::package::Package> = match lo.get(src.of(AI_PACKAGES)) {
+        Some(rec) => rec
+            .subrecords()
+            .filter(|s| s.tag.0 == *b"PKID")
+            .flat_map(|s| super::package::expand(lo, rec.fid(s.form_id(0))))
+            .collect(),
+        None => Vec::new(),
+    };
+    if let Some(list) = src.form(lo, DEF_PACK_LIST, b"DPLT").and_then(|l| lo.get(l)) {
+        for s in list.subrecords().filter(|s| s.tag.0 == *b"LNAM") {
+            out.extend(super::package::expand(lo, list.fid(s.form_id(0))));
+        }
+    }
+    out
 }

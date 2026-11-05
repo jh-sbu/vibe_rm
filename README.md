@@ -101,7 +101,7 @@ toggles actor AI).
 - `crates/ui-swf`: the game's Interface menus (Scaleform `.swf`) through Ruffle
 - `crates/tools`: `vrm-tool` CLI for inspecting and verifying data
   (`spell-fx <Data> [effect-or-spell]`, `bsa-list`, `bsa-verify`, `esp-info`, `esp-dump`, `nif-verify`, `nif-dump`, `nif-materials`, `fsts`,
-  `navm-verify`, `hkb-tree`, `hkb-run` (a project directory or a creature's project file), `hkb-vars`, `pack-speeds`, `force-greets`, `alias-packages`, `alias-fills`, `ref-types`, `scenes`, `triggers`, `story`, `faction-owners`, `crime-factions`, `save-info`, ...), and `test-mod` / `test-results` (below)
+  `navm-verify`, `hkb-tree`, `hkb-run` (a project directory or a creature's project file), `hkb-vars`, `pack-census <Data> [--masters]` (`SHOW=<template>` lists users), `pack-speeds`, `force-greets`, `alias-packages`, `alias-fills`, `ref-types`, `scenes`, `triggers`, `story`, `faction-owners`, `crime-factions`, `save-info`, ...), and `test-mod` / `test-results` (below)
 - `src/`: the engine (renderer, world, app)
 - `vendor/ruffle`: a subset of [Ruffle](https://ruffle.rs) with Scaleform
   changes (`VENDOR.md`)

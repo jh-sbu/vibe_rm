@@ -1979,7 +1979,8 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      Built and run: `test-mod autotest13`, `autotest14` and `autotest15`
      (scenes with unloaded actors), and `autotest16` for step 9 (unloaded
      travellers walk, applied).
-   - **Unblocked work: `plans/ai-depth.md`** (drafted 2026-11-05). It plans
+   - **Unblocked work: `plans/ai-depth.md`** (in progress 2026-11-05; step 0,
+     the all-PACK census tool, is done). It plans
      these in steps: a procedure-tree interpreter (`Sequence` /
      `Simultaneous` / `Random` run as written; Wait, Lock / UnlockDoors,
      multi-location stops' per-stop unlocking, "in cell" stops elsewhere and

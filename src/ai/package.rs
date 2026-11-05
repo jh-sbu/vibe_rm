@@ -1122,26 +1122,6 @@ pub fn expand(lo: &LoadOrder, id: FormId) -> Vec<Package> {
     out
 }
 
-/// Packages of an actor in priority order (its AI packages part's: see templates),
-/// then its default package list's (`DPLT`, from the part that gives it).
-pub fn npc_packages(lo: &LoadOrder, src: &crate::world::template::Sources) -> Vec<Package> {
-    use crate::world::template::{AI_PACKAGES, DEF_PACK_LIST};
-    let mut out: Vec<Package> = match lo.get(src.of(AI_PACKAGES)) {
-        Some(rec) => rec
-            .subrecords()
-            .filter(|s| s.tag.0 == *b"PKID")
-            .flat_map(|s| expand(lo, rec.fid(s.form_id(0))))
-            .collect(),
-        None => Vec::new(),
-    };
-    if let Some(list) = src.form(lo, DEF_PACK_LIST, b"DPLT").and_then(|l| lo.get(l)) {
-        for s in list.subrecords().filter(|s| s.tag.0 == *b"LNAM") {
-            out.extend(expand(lo, list.fid(s.form_id(0))));
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 #[path = "package_data_tests.rs"]
 mod data_tests;

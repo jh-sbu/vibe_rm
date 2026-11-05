@@ -10,6 +10,16 @@ mod first_person;
 #[allow(dead_code)]
 mod functions;
 mod mask_survey;
+mod pack_census;
+#[path = "../../../src/ai/package.rs"]
+#[allow(dead_code)]
+mod package;
+mod ai {
+    pub(crate) use crate::package;
+}
+#[path = "../../../src/condition/records.rs"]
+#[allow(dead_code)]
+mod condition;
 mod saves;
 mod seams;
 mod spell_fx;
@@ -2127,6 +2137,7 @@ fn main() -> Result<()> {
             }
             println!("{ok} resolved, {bad} unresolved");
         }
+        Some("pack-census") => pack_census::run(&args[1..])?,
         Some("pack-templates") => {
             // pack-templates <data dir>: how many NPC package slots use each procedure template.
             // SHOW=<template> lists the NPCs and packages using one.

@@ -1,6 +1,6 @@
 # Plan: the unblocked AI depth work
 
-**Status: drafted** (2026-11-05). Nothing implemented yet.
+**Status: in progress** (2026-11-05). Step 0 is implemented; steps 1–16 remain.
 
 This plan covers ROADMAP Next item 4 (AI depth): everything in it that can be
 built today from public sources, the game's data and the readings we already
@@ -39,7 +39,7 @@ away actors (`ai::away`), processing tiers, package runs and their events, and
 
 This census covers all 7,573 `PACK` records in the five masters, by
 template. The current `vrm-tool pack-templates` counts only NPC `PKID` slots
-and its top 40, so step 0 adds a tool for this.
+and its top 40. `pack-census <data> --masters` reproduces this census.
 
 - Run today by their main procedure (single-procedure templates, and trees
   collapsed by `package::main_procedure`): Travel 2,488, Sandbox 1,243, Eat
@@ -74,6 +74,18 @@ and its top 40, so step 0 adds a tool for this.
 ## Steps
 
 ### 0. A package census tool
+
+**Status: done** (2026-11-05). `pack-census <data> [--masters]` counts all
+PACK records, with expanded branch behaviours from the shared engine parser;
+`SHOW=<template>` lists users. `--masters` selects the five base masters,
+excluding Creation Club additions. The run confirms 7,573 records and the
+procedure and location/target-kind counts above. Synthetic census and existing
+package-data tests pass; all 69 condition regressions pass with GPU access.
+The concrete Acquire permissions census finds one AllowStealing and one
+AllowPickpocketing (both `MQ101RalofGetDoorKey`, `0008C816`), no AllowKilling.
+This corrects step 6's planning assumption. Condition record parsing was extracted into a shared
+module so the tool does not duplicate engine behaviour; NPC package collection
+now lives with schedule collection. No package behaviour changed.
 
 Add `vrm-tool pack-census <data>`. It counts all `PACK` records by template;
 the procedures in templates' and packages' own trees; the location and target
@@ -237,9 +249,12 @@ With step 1 in place, the remaining work here is the procedures themselves.
   player's activation would do it), until "Num to acquire".
   - AllowStealing: taking owned items is a crime, as the player's is
     (`src/crime.rs`); without it, owned items are skipped.
-  - AllowPickpocketing and AllowKilling: no vanilla Acquire sets them (check
-    in step 0's census). If none does, leave them unimplemented and say so
-    rather than guess.
+  - AllowPickpocketing: step 0 found `MQ101RalofGetDoorKey` (`0008C816`)
+    explicitly sets it, and AllowStealing, true. Trace that package's target
+    and MQ101 scripts before deciding what inventory transfers it requires;
+    the planning assumption that no vanilla package sets it was incorrect.
+    AllowKilling is never explicitly enabled; leave it unimplemented rather
+    than guess.
 - **Wander** (5): sandbox about the location without furniture.
 - **Flee procedure** (FleeFrom 11, FleeTo 8, and MQ104's "back away from
   dragon"): run from the targets in the Find results or "Flee From Target"
