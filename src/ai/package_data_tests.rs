@@ -400,3 +400,143 @@ fn null_package_data_is_an_input_with_nothing_set() {
     let nulls: Vec<_> = p.conditions.iter().map(number).collect();
     assert_eq!(nulls, [Some(0.0), Some(1.0), Some(1.0)]);
 }
+
+#[test]
+fn retained_trees_bind_sparse_inputs_and_keep_string_conditions() {
+    let f = Fixture::new();
+    let template = RecordBuilder::new(b"PACK", FormId(0x800))
+        .field(b"XNAM", &[])
+        .zstring(b"ANAM", "Sequence")
+        .field(b"PRCB", &prcb(2, 1))
+        .zstring(b"ANAM", "Procedure")
+        .field(b"CTDA", &package_condition(675, 0, 0.0, 0))
+        .zstring(b"CIS1", "iObjectToGrab")
+        .zstring(b"PNAM", "Activate")
+        .field(b"PKC2", &[203])
+        .zstring(b"ANAM", "Procedure")
+        .field(b"CTDA", &numeric_condition(201, 1.0, 0))
+        .zstring(b"PNAM", "Wait")
+        .field(b"PKC2", &[202]);
+    let mut cu = 3u32.to_le_bytes().to_vec();
+    cu.extend_from_slice(&0x800u32.to_le_bytes());
+    let p = input(
+        RecordBuilder::new(b"PACK", FormId(0x801)).field(b"PKCU", &cu),
+        201,
+        "Bool",
+        &[1],
+    );
+    let p = input(p, 202, "Float", &12.5f32.to_le_bytes());
+    let p = location_input(p, 203, 0, 0x900, 64);
+    let lo = f.load(vec![template, p]);
+    let p = parse(&lo, id(0x801)).unwrap();
+    let tree = p.tree.as_ref().unwrap();
+    assert_eq!(tree.kind, "Sequence");
+    assert_eq!(tree.flags, 1);
+    assert_eq!(
+        tree.children[0].conditions[0].string_p1.as_deref(),
+        Some("iObjectToGrab")
+    );
+    assert!(
+        matches!(tree.children[0].values[0], Input::Location(Location { kind: LocationKind::NearReference(r), .. }) if r == id(0x900))
+    );
+    assert_eq!(number(&tree.children[1].conditions[0]), Some(1.0));
+    assert_eq!(tree.children[1].seconds(), 12.5);
+}
+
+#[test]
+#[ignore = "needs installed vanilla Skyrim SE masters; reads external assets only"]
+fn vanilla_trees_keep_travel_rotation_sandbox_timing_and_carry_conditions() {
+    use crate::ai::procedure::Cursor;
+    let data = vfs::locate_data_dir().expect("Skyrim SE Data directory");
+    let names = [
+        "Skyrim.esm",
+        "Update.esm",
+        "Dawnguard.esm",
+        "HearthFires.esm",
+        "Dragonborn.esm",
+    ]
+    .map(str::to_owned);
+    let lo = LoadOrder::load(&data, &names).unwrap();
+    for name in [
+        "TravelBackAndForth",
+        "SandboxMultiLocation",
+        "CarryAndDropItem",
+    ] {
+        let template = lo.find_editor_id(name).unwrap();
+        let user = lo
+            .ids_of_type(b"PACK")
+            .iter()
+            .find_map(|&id| {
+                let r = lo.get(id)?;
+                let cu = r.get(b"PKCU").filter(|d| d.len() >= 8)?;
+                (r.fid(FormId(u32::from_le_bytes(cu[4..8].try_into().unwrap()))) == template)
+                    .then_some(id)
+            })
+            .unwrap();
+        let p = parse(&lo, user).unwrap();
+        let root = p.tree.as_ref().unwrap();
+        assert_eq!(root.kind, "Sequence", "{name}");
+        match name {
+            "TravelBackAndForth" => {
+                assert_eq!(root.flags & 1, 1);
+                assert_eq!(root.children.len(), 2);
+                assert!(root.children.iter().all(|n| n.procedure == "Travel"));
+                assert!(
+                    root.children
+                        .iter()
+                        .all(|n| matches!(n.values.first(), Some(Input::Location(_))))
+                );
+                let mut c = Cursor::default();
+                c.step(root, 0.0, true, |_| true, || 0);
+                assert_eq!(c.active, vec![vec![0]]);
+                c.finish(&[0]);
+                c.step(root, 0.0, false, |_| true, || 0);
+                assert_eq!(c.active, vec![vec![1]]);
+                c.finish(&[1]);
+                c.step(root, 0.0, false, |_| true, || 0);
+                assert_eq!(c.active, vec![vec![0]]);
+                assert!(!c.completed);
+            }
+            "SandboxMultiLocation" => {
+                assert_eq!(root.children[0].procedure, "Travel");
+                assert_eq!(root.children[1].procedure, "UnlockDoors");
+                assert!(
+                    root.children
+                        .iter()
+                        .any(|n| n.kind == "Random" && n.flags & 1 != 0)
+                );
+                fn check(n: &super::Node) {
+                    if n.procedure == "Wait" {
+                        assert!(matches!(n.values.first(), Some(Input::Float(_))));
+                    }
+                    for child in &n.children {
+                        check(child);
+                    }
+                }
+                check(root);
+            }
+            _ => {
+                assert_eq!(root.flags & 1, 1);
+                assert_eq!(
+                    root.children
+                        .iter()
+                        .map(|n| n.procedure.as_str())
+                        .collect::<Vec<_>>(),
+                    ["Activate", "Travel", "Activate", "Travel"]
+                );
+                for i in [0, 2] {
+                    assert!(
+                        root.children[i]
+                            .conditions
+                            .iter()
+                            .any(|c| c.func == 675 && c.string_p1.is_some())
+                    );
+                    assert!(matches!(
+                        root.children[i].values.first(),
+                        Some(Input::Target(_))
+                    ));
+                }
+            }
+        }
+    }
+}

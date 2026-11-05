@@ -1,6 +1,7 @@
 # Plan: the unblocked AI depth work
 
-**Status: in progress** (2026-11-05). Step 0 is implemented; steps 1–16 remain.
+**Status: in progress** (2026-11-05). Step 0 is implemented. Step 1 has its bound-tree and cursor foundation;
+execution integration and saves, and steps 2–16, remain.
 
 This plan covers ROADMAP Next item 4 (AI depth): everything in it that can be
 built today from public sources, the game's data and the readings we already
@@ -95,6 +96,19 @@ Later steps quote its output, and each step's commit updates the "Not run as
 designed" list above. This needs no engine changes.
 
 ### 1. A procedure-tree interpreter (the foundation)
+
+**Status: in progress** (2026-11-05). First subcommit retains the selected
+branch on `Package`, with typed inputs and conditions bound once; string
+condition parameters are preserved (needed by carry trees). `ai::procedure`
+defines a body-independent cursor with Sequence, Simultaneous, Random and
+Stacked execution, repeat handling and moving-procedure arbitration. Eight
+synthetic cursor tests cover progress, completion and branch switching. A
+vanilla fixture reads TravelBackAndForth, SandboxMultiLocation and
+CarryAndDropItem and checks their structure and bindings; travel rotation also
+runs through the cursor. The complete tools suite passes with ignored tests
+included (82 tests). This subcommit does not yet replace live procedure
+execution or the sandbox-stop special case. Wiring and AEXC persistence are
+the next subcommit.
 
 Today `package::expand` splits a `Stacked` root into one package per branch,
 and every other tree is collapsed to one `main_procedure`. Multi-location

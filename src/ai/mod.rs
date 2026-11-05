@@ -15,6 +15,7 @@ pub mod magic_practice;
 pub mod nav;
 pub mod package;
 pub mod practice;
+pub(crate) mod procedure;
 pub mod schedule;
 mod summons;
 pub mod threat;

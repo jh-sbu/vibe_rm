@@ -1101,6 +1101,7 @@ mod tests {
             behaviour,
             schedule: Default::default(),
             conditions: Vec::new(),
+            tree: None,
             location: Some(super::super::package::Location { kind, radius }),
             target: None,
             allow: Default::default(),

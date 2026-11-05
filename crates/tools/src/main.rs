@@ -14,8 +14,11 @@ mod pack_census;
 #[path = "../../../src/ai/package.rs"]
 #[allow(dead_code)]
 mod package;
+#[path = "../../../src/ai/procedure.rs"]
+#[allow(dead_code)]
+mod procedure;
 mod ai {
-    pub(crate) use crate::package;
+    pub(crate) use crate::{package, procedure};
 }
 #[path = "../../../src/condition/records.rs"]
 #[allow(dead_code)]

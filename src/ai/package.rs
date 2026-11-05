@@ -256,6 +256,9 @@ pub struct Package {
     pub behaviour: Behaviour,
     pub schedule: Schedule,
     pub conditions: Vec<Condition>,
+    /// The selected template branch, with conditions and procedure inputs bound
+    /// to this PACK. Shared by actors; mutable progress belongs to the run.
+    pub(crate) tree: Option<std::sync::Arc<Node>>,
     pub location: Option<Location>,
     pub target: Option<Target>,
     pub allow: Allow,
@@ -307,6 +310,7 @@ impl Package {
             behaviour,
             schedule: Default::default(),
             conditions: Vec::new(),
+            tree: None,
             location: None,
             target: None,
             allow: Default::default(),
@@ -371,7 +375,7 @@ fn behaviour_of(template: &str) -> Behaviour {
 
 /// A package data input value, in record order.
 #[derive(Debug, Clone, Copy)]
-enum Input {
+pub(crate) enum Input {
     Bool(bool),
     Float(f32),
     Int(i32),
@@ -786,6 +790,10 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
         behaviour,
         template: template_name,
         schedule,
+        tree: procedure_tree(lo, tree_src).map(|mut tree| {
+            tree.bind(&inputs);
+            std::sync::Arc::new(tree)
+        }),
         // The procedure tree's conditions belong to its branches.
         conditions: condition::parse_all_before(&rec, Some(b"XNAM"))
             .into_iter()
@@ -825,14 +833,78 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
 /// (`Stacked`, `Sequence`, `Simultaneous`...) over its children, or a procedure
 /// with the inputs it takes (`PKC2`, by input index), each with its conditions.
 #[derive(Debug, Clone)]
-struct Node {
-    kind: String,
+pub(crate) struct Node {
+    pub(crate) kind: String,
     /// `PRCB` flags of a branch (`REPEAT_WHEN_COMPLETE`).
-    flags: u32,
-    conditions: Vec<Condition>,
-    children: Vec<Node>,
-    procedure: String,
-    args: Vec<u8>,
+    pub(crate) flags: u32,
+    pub(crate) conditions: Vec<Condition>,
+    pub(crate) children: Vec<Node>,
+    pub(crate) procedure: String,
+    pub(crate) args: Vec<u8>,
+    pub(crate) values: Vec<Input>,
+}
+
+/// Bind reference and numeric package-data conditions once, for both selection
+/// and execution. Missing reference inputs deliberately fail.
+fn bind_condition(c: &mut Condition, value: impl Fn(u8) -> Option<Input>) {
+    let resolve = |input: u8| match value(input) {
+        Some(Input::Target(Target::Ref(r))) => Some(Ok(r)),
+        Some(Input::Target(Target::SelfRef)) => Some(Err(condition::RefOf::Subject)),
+        Some(Input::Target(Target::LinkedRef(kw))) => {
+            Some(Err(condition::RefOf::LinkedRef(kw.unwrap_or(FormId::NULL))))
+        }
+        _ => None,
+    };
+    if let Some(input) = c.pack_input {
+        (c.run_on, c.reference) = match resolve(input) {
+            Some(Ok(r)) => (2, r),
+            Some(Err(condition::RefOf::Subject)) => (0, FormId::NULL),
+            Some(Err(condition::RefOf::LinkedRef(kw))) => (4, kw),
+            None => (condition::RUN_ON_NOTHING, FormId::NULL),
+        };
+    }
+    // Only form parameters name an input to resolve as a reference
+    // (GetNumericPackageData's is the index of a numeric one).
+    if c.p1_input && condition::param_is_form(c.func, 1) {
+        match resolve(c.p1 as u8) {
+            Some(Ok(r)) => c.p1 = r.0,
+            Some(Err(of)) => c.p1_ref = Some(of),
+            None => c.run_on = condition::RUN_ON_NOTHING,
+        }
+    }
+    package_data(c, value);
+}
+
+impl Node {
+    fn bind(&mut self, inputs: &[(u8, Input)]) {
+        let value = |i| inputs.iter().find(|(j, _)| *j == i).map(|(_, v)| *v);
+        self.values = self
+            .args
+            .iter()
+            .map(|&i| value(i).unwrap_or(Input::Other))
+            .collect();
+        for c in &mut self.conditions {
+            bind_condition(c, value);
+        }
+        for child in &mut self.children {
+            child.bind(inputs);
+        }
+    }
+
+    pub(crate) fn at(&self, path: &[u32]) -> Option<&Node> {
+        let mut node = self;
+        for &i in path {
+            node = node.children.get(i as usize)?;
+        }
+        Some(node)
+    }
+
+    pub(crate) fn seconds(&self) -> f64 {
+        match self.values.first() {
+            Some(Input::Float(v)) if v.is_finite() => v.max(0.0) as f64,
+            _ => 0.0,
+        }
+    }
 }
 
 /// The procedure tree of a template package.
@@ -855,6 +927,7 @@ fn procedure_tree(lo: &LoadOrder, template: FormId) -> Option<Node> {
                     children: Vec::new(),
                     procedure: String::new(),
                     args: Vec::new(),
+                    values: Vec::new(),
                 },
                 0,
             )),
@@ -869,6 +942,16 @@ fn procedure_tree(lo: &LoadOrder, template: FormId) -> Option<Node> {
             b"CTDA" => {
                 if let (Some(n), Some(c)) = (flat.last_mut(), condition::parse(&rec, sr.data)) {
                     n.0.conditions.push(c);
+                }
+            }
+            b"CIS1" | b"CIS2" => {
+                if let Some(c) = flat.last_mut().and_then(|(n, _)| n.conditions.last_mut()) {
+                    let value = Some(sr.zstring().into());
+                    if sr.tag.0 == *b"CIS1" {
+                        c.string_p1 = value;
+                    } else {
+                        c.string_p2 = value;
+                    }
                 }
             }
             b"PNAM" => {
@@ -1042,6 +1125,9 @@ pub fn expand(lo: &LoadOrder, id: FormId) -> Vec<Package> {
             _ => default,
         };
         let mut p = base.clone();
+        let mut tree = branch.clone();
+        tree.bind(&inputs(&rec));
+        p.tree = Some(std::sync::Arc::new(tree));
         p.editor_id = format!("{}#{n}", base.editor_id);
         let location = proc.args.iter().find_map(|a| match values.get(a) {
             Some(Input::Location(l)) => Some(*l),
@@ -1089,32 +1175,7 @@ pub fn expand(lo: &LoadOrder, id: FormId) -> Vec<Package> {
         let nested = (!std::ptr::eq(proc, branch)).then_some(&proc.conditions);
         for c in branch.conditions.iter().chain(nested.into_iter().flatten()) {
             let mut c = c.clone();
-            let resolve = |input: u8| match values.get(&input) {
-                Some(Input::Target(Target::Ref(r))) => Some(Ok(*r)),
-                Some(Input::Target(Target::SelfRef)) => Some(Err(condition::RefOf::Subject)),
-                Some(Input::Target(Target::LinkedRef(kw))) => {
-                    Some(Err(condition::RefOf::LinkedRef(kw.unwrap_or(FormId::NULL))))
-                }
-                _ => None,
-            };
-            if let Some(input) = c.pack_input {
-                (c.run_on, c.reference) = match resolve(input) {
-                    Some(Ok(r)) => (2, r),
-                    Some(Err(condition::RefOf::Subject)) => (0, FormId::NULL),
-                    Some(Err(condition::RefOf::LinkedRef(kw))) => (4, kw),
-                    None => (condition::RUN_ON_NOTHING, FormId::NULL),
-                };
-            }
-            // Only form parameters name an input to resolve as a reference
-            // (GetNumericPackageData's is the index of a numeric one).
-            if c.p1_input && condition::param_is_form(c.func, 1) {
-                match resolve(c.p1 as u8) {
-                    Some(Ok(r)) => c.p1 = r.0,
-                    Some(Err(of)) => c.p1_ref = Some(of),
-                    None => c.run_on = condition::RUN_ON_NOTHING,
-                }
-            }
-            package_data(&mut c, |i| values.get(&i).copied());
+            bind_condition(&mut c, |i| values.get(&i).copied());
             p.conditions.push(c);
         }
         out.push(p);
