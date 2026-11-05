@@ -1958,7 +1958,8 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      (`AEXC`, step 8). Calibrated against autotest13 to autotest16, step 9).
    - Processing policies: detailed updates nearby and coarse advancement away
      (done, step 6), still to add: travel walked along the navmesh and
-     through load doors rather than in a straight line and put through (execution state, travel progress and
+     through load doors rather than in a straight line and put through
+     (`plans/ai-depth.md` step 12) (execution state, travel progress and
      timestamps are saved: step 8).
      CommonLibSSE exposes High, MiddleHigh, MiddleLow and Low processing levels,
      but their exact eligibility, update cadence and subsystem behavior need
@@ -1978,43 +1979,58 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      Built and run: `test-mod autotest13`, `autotest14` and `autotest15`
      (scenes with unloaded actors), and `autotest16` for step 9 (unloaded
      travellers walk, applied).
-   - Alias fills: created actors cleaned up; "from alias" locations
-     followed through travel, not only at refresh; packages for "from event"
-     aliases, and package targets by object id / type and interrupt data;
-     form-list and leveled-list entries in alias inventory (`CNTO`: direct
-     items are granted, `known_ambiguities/locks.md`)
-   - Remaining procedures: guard (restricted areas), dialogue,
-     carry, flee, the sawmills' lever and log-pile cycle (object graph events), orbit packages; ambush triggers (sleepers'
-     reduced detection: see Detection);
-     escorts' follower min / max distances and several followers, riding,
-     the follower object list and `PreferPreferredPath?`; fleeing to doors, cover and allies (`fCombatFlee*`),
-     threat
-     avoidance outside combat (`fCombatAvoidThreatsChance`, `AVTH`); actors
-     that can't reach their target backing away; force-greets' "moving into a
-     new space", player keyword and riding checks, "Greet Using Preferred
-     Path?", `ForceGreetWaitSitting` and alias trigger locations; UseMagic
-     practice targets reacting (the College's are statics here) and unloaded
-     actors' UseMagic casts; disarmed NPCs picking their weapon back up
-     ("Taking an enemy's weapon if you have lost yours", Salma in Ironbind
-     Barrow)
-   - Followers: already-unloaded teammates following through load doors and
-     fast travel, waiting catch-up, nonteammate quest followers, their other combat behaviour (`known_ambiguities/followers.md`);
-     teammates while the player waits or sleeps; dismissal by death;
-     `AllyKilled` lines
-   - Locks: sleepers asking the player to leave coming to them and staying up
-     (their lines done: see Done);
-     actors stepping round loose clutter instead of shoving it
-   - Off-screen travel between worldspaces; paths round locked animated doors
-   - Package trees: branches of `Sequence` / `Simultaneous` roots (multi-location
-     sandboxes' stops done: see Done; their "in cell" stops elsewhere, per-stop
-     unlocking and progress kept across loads remain),
-     guard / wait / find / acquire procedures; numeric package-data defaults,
-     runtime changes and contexts beyond candidate package selection
-     (`known_ambiguities/package-trees.md`)
-   - Vehicles: carts pulled by horses (`TetherToHorse`; the carriage held to the
-     horse by physics constraints), passengers riding seated in them (`SetVehicle`)
-   - Dragons: flying, circling, landing and perching; breath and shout attacks
-     (with magic)
+   - **Unblocked work: `plans/ai-depth.md`** (drafted 2026-11-05). It plans
+     these in steps: a procedure-tree interpreter (`Sequence` /
+     `Simultaneous` / `Random` run as written; Wait, Lock / UnlockDoors,
+     multi-location stops' per-stop unlocking, "in cell" stops elsewhere and
+     progress kept across loads); package-data defaults and Object ID / Type
+     targets; the dialogue (Say, SayToPlayer, StartConversation), carry
+     (CarryAndDropItem / KeepItem, the sawmill cycle), Find / Acquire /
+     Wander / Flee, UseIdleMarker, KeepAnEyeOn and GroupMovement procedures;
+     escorts' follower distances, several followers, the object list and
+     preferred paths; force greets' "moving into a new space", the
+     `RidingInCarriage` check, `ForceGreetWaitSitting` and alias trigger
+     locations; "from alias" locations followed through travel and leveled
+     items in alias inventories (`CNTO`: 160 vanilla entries); followers
+     (unloaded ones and quest followers through doors and fast travel, the
+     player waiting or sleeping, dismissal by death, `AllyKilled` lines);
+     off-screen travel along the navmesh (`NAVI`), through load doors and
+     between worldspaces, paths round locked doors, stepping round clutter;
+     sleepers coming to the player before asking them to leave; away
+     UseMagic / UseWeapon counts; NPCs riding, carts (`TetherToHorse`,
+     `SetVehicle`) and dragons (flight, Orbit, Hover, perching, the Shout
+     procedure).
+   - Done or closed while planning (2026-11-05): packages for "from event"
+     aliases already run (such aliases are filled from story events, and
+     alias packages run on whatever fills an alias); the College's UseMagic
+     practice target (`00098B98`) is an `XMarker`, so there is nothing to
+     react.
+   - Blocked, waiting on evidence (details in `plans/ai-depth.md`, "Left
+     out: blocked"):
+     - The Guard procedure (75 tree uses: GuardPost,
+       TravelBackAndForthAndGuard, GroupMovement, the CW hold packages): no
+       public source says what a guard does in its restricted area;
+       `fGuardPackageAttackRadiusMult` (0.5) and `iGuardWarnings` (2) hint at
+       warnings and an attack radius. It needs an SE probe.
+     - Fleeing to doors, cover and allies: the flee settings' rules are
+       undocumented (`known_ambiguities/combat-fleeing.md` item 9).
+     - Threat avoidance: the combat style's "Avoid Threat Chance" (`CSTY`,
+       default 0.2; there is no `fCombatAvoidThreatsChance` setting) and the
+       `AvoidThreat` dialogue subtype exist, but nothing public says what a
+       threat is or how actors avoid it.
+     - Actors that can't reach their target backing away: no public
+       description; it needs an SE observation.
+     - Disarmed NPCs picking a weapon back up: UESP *Skyrim:Disarm*
+       (revision 3246655)'s "Taking an enemy's weapon if you have lost yours"
+       is a possible use for the player, not NPC behaviour. No public source
+       says NPCs do it; it needs an SE observation.
+     - Cleaning up created actors: autotest22 saw none removed on `Clear` /
+       `Stop` / `CompleteQuest`; when the game removes them is unknown.
+     - Package target kind 5 ("interrupt data" here; xEdit: "Unknown 5", no
+       vanilla use) and location kind 11 (xEdit: "Unknown 11", 18 uses in
+       packages' own trees): meaning unknown.
+     - Followers' other combat behaviour (`known_ambiguities/followers.md`).
+     - Ambush triggers (sleepers' reduced detection: see Detection).
    - NPC encumbrance: `IsOverEncumbered` is False for NPCs over their carry
      weight, as autotest21 read it (`src/encumbrance.rs`); whether such NPCs
      are slowed or changed in any other way is unconfirmed
