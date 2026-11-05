@@ -438,6 +438,11 @@ impl Engine {
         let Some(cell) = self.home_cell(achr, npc) else {
             return Vec::new();
         };
+        self.cell_doors(cell)
+    }
+
+    /// Locked load doors on either side of a cell, shared by home and procedure locks.
+    pub(crate) fn cell_doors(&self, cell: FormId) -> Vec<FormId> {
         let Some(idx) = self.lo.cell(cell) else {
             return Vec::new();
         };
@@ -456,6 +461,19 @@ impl Engine {
             }
         }
         out
+    }
+
+    pub(crate) fn procedure_cell_locks(&mut self, cell: FormId, locked: bool) {
+        let held = if locked {
+            Default::default()
+        } else {
+            self.doors_held_locked()
+        };
+        for door in self.cell_doors(cell) {
+            if locked || !held.contains(&self.lock_holder(door)) {
+                self.set_locked(door, locked);
+            }
+        }
     }
 
     /// An actor's home: the interior where its sleep package that locks doors

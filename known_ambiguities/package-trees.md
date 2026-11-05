@@ -1,6 +1,6 @@
 # Package procedure trees and default package lists
 
-Implemented in `src/ai/package.rs` (`procedure_tree`, `expand`, `npc_packages`),
+Implemented in `src/ai/package.rs` (`procedure_tree`, `expand`; NPC collection is in `schedule::npc_packages`),
 with package-input conditions in `src/condition/mod.rs`. Based on the templates'
 own trees in the data (`vrm-tool pack-tree <data> <package or template>`) and
 which form lists NPCs name (`vrm-tool pack-lists <data>`).
@@ -63,8 +63,9 @@ Limits and unresolved behavior:
   not established; failure follows this project's unsupported-condition policy.
 - Support is scoped to authored values in package-selection conditions and
   the template branches already exposed by `expand`. Sequence/Simultaneous
-  execution, nested branch switching and inherited/default or dynamically
-  changing or global-backed package data still need implementation and evidence.
+  execution and nested branch switching now use the cursor for available
+  procedures. Inherited/default or dynamically changing or global-backed
+  package data still need implementation and evidence.
 - The existing parser interprets `Int` as signed 32-bit, whereas xEdit displays
   its storage as unsigned. Negative values' native interpretation is not
   established; tests of negative inputs check the parser's current convention,
@@ -111,10 +112,10 @@ alias" whether the subject's current location is within the alias's location.
 
 Limits and unresolved behavior:
 
-- xEdit names location kind 2 "Near Package Start Location". The engine keeps
-  no package start position, so it uses the actor's current position, as force
-  greet triggers and travel goals already do; an actor is then always within
-  its own "near current" location.
+- xEdit names location kind 2 "Near Package Start Location". New runs retain
+  their initial coordinates, and goals and location checks use those. Legacy
+  runs with no recorded origin use the actor's current position until the next
+  run; the original start cannot be recovered.
 - When the package's actor isn't loaded (persistent actors' schedule
   selection), near-style locations can't be placed and the condition fails.
 - An empty alias, a missing input or a non-location input fails the condition.
@@ -136,40 +137,30 @@ of one `Sequence` per location: Travel, UnlockDoors when asked, then
 `Simultaneous` Sandbox and Wait for "Location N Time (seconds)". Each
 location's branch is conditioned on its time being above zero.
 
-The engine reads this from the tree rather than the template's name
-(`package::sandbox_stops`): the first repeating `Sequence` / `Random` whose
-conditions the package's own data passes (`condition::evaluate_package_data`:
-only `GetNumericPackageData`, decided when parsed), and each of its passing
-children that sandboxes at a location and waits. Sandbox packages with two
-or more such stops get `Package::stops`. All 81 multi-location packages with
-two or more locations do (`HodSleepingGiant19x3` has one); every vanilla one
-is random. The actor sandboxes about its stop; once within the sandbox area
-it starts the stop's clock, and when that has run it gives up what it is
-doing and heads for the next.
+The procedure cursor now runs this tree directly, including its first pass
+and per-stop door procedures; the former precomputed `Package::stops` and
+`StopProgress` rotation are removed. Progress is saved with the run and retained
+when the body unloads. Time passed in a menu advances a loaded Wait without
+respawning the actor at Location 1. Current implementation limits are recorded
+in `plans/ai-depth.md` step 2.
 
 Choices not settled by public sources:
 
-- The wait is in real seconds. The inputs are named "(seconds)"; DoNothing's
-  Wait input is named "ActualSeconds". Real against game seconds (the
-  authored 30 to 300 would be 1.5 to 15 real seconds at TimeScale 20) isn't
-  established.
-- The clock starts on arrival, as the per-location `Sequence` runs Travel
-  before its Sandbox + Wait. A `Simultaneous` branch is taken to end when its
-  Wait does (Sandbox never completes); that is inferred, not documented.
-- The first pass is folded into the rotation: a sequential package starts at
-  its first stop, a random one at a random stop (the tree's random first pass
-  has no Travel; the actor walks there anyway). Each random pick is another
-  stop than the current one; whether `Random` can pick the same child twice
-  running is unknown.
-- Progress isn't kept: a new package, a cell load or a wait / sleep (the
-  actor put back at Location 1 by `jump_to_schedules`) starts over. Unloaded
-  actors' whereabouts use Location 1 only.
-- "In cell" stops in another cell (Kynesgrove's campfire and inn) aren't
-  travelled to: such a stop sandboxes about the actor's editor place, as "in
-  cell" locations already do. Per-stop UnlockDoors isn't done.
-- The sequential branch's `Simultaneous` nodes for locations 2 to 6 check
-  Location 1's time (`GetNumericPackageData` 0x20), as authored; they are
-  followed as written. No vanilla package is sequential.
+- Wait uses real seconds. The inputs say "(seconds)"; DoNothing's input says
+  "ActualSeconds". The real/game-time distinction has not been measured.
+- A Simultaneous branch ends when its Wait does (Sandbox never completes).
+  That follows the tree's apparent purpose, not documented engine timing.
+- The authored first pass is now kept distinct from the repeat. It has no
+  Travel before the first Sandbox/Wait, so that Wait starts when entered,
+  whereas repeating stops first Travel and then start their Wait. The old
+  implementation folded this pass into the rotation; the new reading follows
+  the authored structure. Whether SE's Sandbox itself delays its simultaneous
+  Wait until arrival is not established.
+- Random excludes its own previous child when another passes; separate Random
+  nodes have independent choice histories. Native repeat-choice rules remain
+  unmeasured.
+- The sequential branch's Simultaneous nodes for locations 2 to 6 check
+  Location 1's time, as authored; the interpreter follows those conditions.
 
 An autotest is planned in `plans/autotest-survey.md` (tier 3).
 

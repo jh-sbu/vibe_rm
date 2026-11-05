@@ -234,6 +234,7 @@ impl Engine {
         if due || self.away.get(&r).is_some_and(|x| x.next_eval <= 0.0) {
             self.evaluate_away(r, slot, tier);
         }
+        self.procedure_locks(r);
         self.move_away(r, dt, tier, now + extra as f64);
         let Some(x) = self.away.get_mut(&r) else {
             return;
@@ -345,7 +346,6 @@ impl Engine {
             x.begin_run(pick, now, for_scene);
             x.current = pick;
             x.goal = None;
-            x.stop = Default::default();
             x.patrol = None;
             // Whatever it was doing is over; its new package takes it on.
             x.stage = None;

@@ -615,3 +615,54 @@ fn a_load_door_pair_shares_one_lock() {
     e.set_locked(DOOR, true);
     assert!(e.is_locked(PARTNER));
 }
+
+#[test]
+fn procedure_locks_apply_once_to_the_named_cells_load_doors() {
+    use crate::ai::{
+        exec::ActorExec,
+        package::{Behaviour, Input, Location, LocationKind, Node as TreeNode, Package},
+        procedure::Cursor,
+    };
+    let (_f, mut e) = fixture();
+    for (name, locked) in [("UnlockDoors", false), ("LockDoors", true)] {
+        let tree = TreeNode {
+            kind: "Procedure".into(),
+            flags: 0,
+            conditions: vec![],
+            children: vec![],
+            procedure: name.into(),
+            args: vec![0],
+            values: vec![Input::Location(Location {
+                kind: LocationKind::InCell(ROOM),
+                radius: 0.0,
+            })],
+        };
+        let mut p = Package::bare(FormId(0x900), Behaviour::Hold);
+        p.tree = Some(std::sync::Arc::new(tree));
+        let mut cursor = Cursor {
+            tree_key: p.editor_id.clone(),
+            ..Default::default()
+        };
+        cursor.step(p.tree.as_ref().unwrap(), 0.0, true, |_| true, || 0);
+        let mut x = ActorExec::new(vec![p], glam::Vec3::ZERO, 0.0, 0.0);
+        x.current = Some(0);
+        x.place = Some(Place::Interior(ROOM));
+        x.begin_run(Some(0), 0.0, false);
+        x.run.as_mut().unwrap().cursor = Some(cursor);
+        e.away.insert(ACTOR, x);
+        let chest = e.is_locked(CHEST);
+        e.procedure_locks(ACTOR);
+        assert_eq!(e.is_locked(SHOP_IN), locked);
+        assert_eq!(e.is_locked(SHOP_OUT), locked);
+        assert_eq!(e.is_locked(CHEST), chest);
+        let c = e.away[&ACTOR]
+            .run
+            .as_ref()
+            .unwrap()
+            .cursor
+            .as_ref()
+            .unwrap();
+        assert!(c.active.is_empty());
+        assert!(c.states[&Vec::new()].finished);
+    }
+}

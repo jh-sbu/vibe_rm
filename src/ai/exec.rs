@@ -7,7 +7,7 @@ use glam::Vec3;
 
 use super::package::{Behaviour, Package};
 use super::schedule::Place;
-use super::{ActorRuntime, Goal, StopProgress, combat};
+use super::{ActorRuntime, Goal, combat};
 use crate::engine::Engine;
 use crate::world_state::Wounds;
 
@@ -69,8 +69,6 @@ pub struct ActorExec {
     pub(crate) npc: FormId,
     /// The goal was set by hand (console `travel`): packages leave it alone.
     pub(super) pinned: bool,
-    /// Which of a multi-location sandbox package's stops it is at.
-    pub(super) stop: StopProgress,
     /// Patrol progress: (route start, index of the point heading for).
     pub(super) patrol: Option<(FormId, usize)>,
     /// The run of its current package, and one a scene's package took over
@@ -354,7 +352,6 @@ impl ActorExec {
         if same {
             self.current = away.current;
             self.goal = away.goal;
-            self.stop = away.stop;
             self.patrol = away.patrol;
             // Back from a save, which keeps no goal: worked out again at once.
             if away.goal.is_none() {
@@ -398,7 +395,7 @@ impl ActorExec {
             eval_slot: self.eval_slot,
             next_eval: self.next_eval,
             current: self.current.map(|i| i as u32),
-            stop: (self.stop.index as u32, self.stop.arrived),
+            stop: (0, None),
             patrol: self.patrol.map(|(start, i)| (start, i as u32)),
             run: self.run.clone(),
             suspended: self.suspended.clone(),
@@ -430,10 +427,6 @@ impl ActorExec {
             eval_slot: s.eval_slot,
             next_eval: s.next_eval,
             current: s.current.map(|i| i as usize),
-            stop: StopProgress {
-                index: s.stop.0 as usize,
-                arrived: s.stop.1,
-            },
             patrol: s.patrol.map(|(start, i)| (start, i as usize)),
             run: s.run,
             suspended: s.suspended,
@@ -470,7 +463,7 @@ pub struct SavedExec {
     pub eval_slot: Option<i64>,
     pub next_eval: f32,
     pub current: Option<u32>,
-    /// A multi-location sandbox's stop, and when it arrived there.
+    /// Legacy stop slot, retained only for AEXC wire compatibility. New runs use cursors.
     pub stop: (u32, Option<f64>),
     pub patrol: Option<(FormId, u32)>,
     pub run: Option<PackageRun>,
@@ -518,10 +511,12 @@ impl Engine {
             .map(|t| t.1)
             .filter(|c| !c.is_nan())
             .unwrap_or(goal.centre);
+        let whole_cell = there.is_some_and(|(_, target)| target.is_nan());
         a.exiting.is_none()
             && in_place
             && !a.is_walking()
-            && a.exec.pos.truncate().distance(centre.truncate()) <= goal.radius + ARRIVED_SLACK
+            && (whole_cell
+                || a.exec.pos.truncate().distance(centre.truncate()) <= goal.radius + ARRIVED_SLACK)
     }
 
     /// Loaded actors' Travel and Escort runs complete once they arrive (out of
@@ -770,7 +765,10 @@ pub(crate) mod tests {
         away.begin_run(Some(2), 1.0, false);
         away.current = Some(2);
         away.goal = Some(Goal::travel(Vec3::X * 500.0));
-        away.stop.index = 1;
+        away.run.as_mut().unwrap().cursor = Some(super::super::procedure::Cursor {
+            tree_key: "home".into(),
+            ..Default::default()
+        });
         away.patrol = Some((FAR, 3));
         away.combat = Some(combat::Combat::new(FAR));
         away.away(Some(place), None, stage, (0.0, 0.0))
@@ -787,7 +785,10 @@ pub(crate) mod tests {
         x.take_back(&away, true);
         assert_eq!(x.current, Some(2));
         assert_eq!(x.goal.map(|g| g.centre), Some(Vec3::X * 500.0));
-        assert_eq!(x.stop.index, 1);
+        assert_eq!(
+            x.run.as_ref().unwrap().cursor,
+            away.run.as_ref().unwrap().cursor
+        );
         assert_eq!(x.patrol, Some((FAR, 3)));
         // Out of combat.
         assert!(x.combat.is_none());
@@ -795,7 +796,7 @@ pub(crate) mod tests {
         let mut x = exec();
         x.take_back(&away, false);
         assert_eq!(x.package(), Some(HOME));
-        assert_eq!((x.current, x.stop.index, x.patrol), (None, 0, None));
+        assert_eq!((x.current, x.patrol), (None, None));
         assert!(x.goal.is_none());
         // Nothing to take up where it was gone (its schedule moved it on).
         let gone = left_at(None, here);
@@ -815,7 +816,7 @@ pub(crate) mod tests {
         );
         x.take_back(&away, true);
         assert_eq!(x.package(), Some(HOME));
-        assert_eq!((x.current, x.stop.index, x.patrol), (None, 0, None));
+        assert_eq!((x.current, x.patrol), (None, None));
         // A goal set by hand is kept, whatever its packages.
         let mut pinned = away.clone();
         pinned.pinned = true;

@@ -1,9 +1,10 @@
 # Plan: the unblocked AI depth work
 
-**Status: in progress** (2026-11-05). Step 0 is implemented. Step 1 has its bound-tree and cursor foundation;
-run persistence and initial live execution integration are implemented. Step 1
-still needs multi-location migration and the remaining completion rules; steps
-2–16 remain.
+**Status: in progress** (2026-11-05). Step 0 is complete. Step 1 has bound
+trees, durable cursors, loaded/away execution and multi-location migration;
+Patrol completion and away practice counts remain. Step 2 has door procedures,
+run-start coordinates and stop continuity; its remaining work is listed below.
+Steps 3–16 are not implemented.
 
 This plan covers ROADMAP Next item 4 (AI depth): everything in it that can be
 built today from public sources, the game's data and the readings we already
@@ -61,7 +62,9 @@ and its top 40. `pack-census <data> --masters` reproduces this census.
   templates.
 - Now interpreted as sequences: TravelBackAndForth 24. CarryAndDropItem and
   CarryAndKeepItem use their Activate/Travel trees; their remaining carry
-  behaviour is still tracked in step 5.
+  behaviour is still tracked in step 5. SandboxMultiLocation's sequence and
+  per-stop door procedures now use the interpreter; large time-advance catch-up
+  still needs the remaining work in step 2.
 - Procedures named in templates' and packages' own trees: Travel 294, Sandbox
   97, HoldPosition 93, Wait 90, Guard 75, Sit 47, Patrol 47, UnlockDoors 46,
   Find 36, Follow 34, Activate 26, Sleep 20, Shout 18, Say 16, UseWeapon 13,
@@ -130,15 +133,16 @@ step 5's carry details remain. Single Travel/ Escort arrival events keep their
 existing immediate timing and package identity. The AI suite passes with
 ignored tests included (168 tests). A temporary `Node::executable` gate keeps
 trees containing procedures not yet implemented on their existing behaviour,
-including UseWeapon's Find/Acquire preparation and multi-location sandboxing's
-Lock/UnlockDoors. Remaining step 1 work: migrate those sandbox stops when step
-2's door procedures are available; finish Patrol completion and away practice
-counts; add completion for the procedures implemented in steps 4–7 as they
-become available. This does not mark step 1 or the overall plan complete.
+including UseWeapon's Find/Acquire preparation. The following subcommit adds
+door procedures and removes the sandbox-stop special case (step 2 below).
+Remaining step 1 work: finish Patrol completion and away practice counts; add
+completion for procedures in steps 4–7 as they become available. This does not
+mark step 1 or the overall plan complete.
 
-Today `package::expand` splits a `Stacked` root into one package per branch,
-and every other tree is collapsed to one `main_procedure`. Multi-location
-sandboxing is a special case (`package::sandbox_stops`, `StopProgress`).
+Before this work, `package::expand` split a `Stacked` root into one package
+per branch, and every other tree collapsed to one `main_procedure`.
+Multi-location sandboxing used a special case (`sandbox_stops`, `StopProgress`),
+now removed.
 Most of the templates above need their trees run as written.
 
 - Keep the parsed tree (`Node`: kind, conditions, `PRCB` flags with "Repeat
@@ -193,6 +197,36 @@ Most of the templates above need their trees run as written.
   `CarryAndDropItem` packages.
 
 ### 2. Sequences' simple procedures, and multi-location leftovers
+
+**Status: partially implemented** (2026-11-05), in the sandbox migration
+subcommit. LockDoors/UnlockDoors use their node's location and the home-door
+pair/lock policy. Multi-location Sandbox/Wait now runs directly through the
+cursor, including per-stop door procedures; `Stop`, `stops`, `StopProgress` and
+the rotation special case are gone. The old AEXC stop slot is retained only for
+wire compatibility and is zeroed in new executions. Run-start coordinates
+resolve PLDT kind 2 for loaded goals and away targets. Loaded waits advance
+when time passes and no longer respawn a cursor at Location 1; current-leaf
+placement drives departures, including whole-cell stops in other interiors.
+Whole-cell sandbox arrival requests cell-wide furniture placement.
+
+Validated: 171 AI tests, 9 lock tests, 5 scene tests, 69 condition tests and 2
+execution-save tests, all with ignored tests included. The package fixture
+checks enabled locations through the interpreter rather than the removed stop
+list. New tests cover lock pairs, cursor continuity after waiting, run-start
+coordinates and whole-cell stop placement.
+
+Remaining before step 2 is complete:
+
+- Catch-up across several procedures in one large time advance. Newly entered
+  phases currently start at zero instead of consuming remaining elapsed time.
+- Keep the run start's space as well as its coordinates (kind 2 currently uses
+  the actor's current space when resolving an away target). Legacy runs without
+  an origin fall back to the current position until their next run.
+- HoldPosition return to the run origin after displacement, and explicit
+  StayAtCurrentLocation/DoNothing fixture coverage.
+- Vanilla runtime fixtures for TravelBackAndForthAndGuard and
+  ActivateInSequence, including cross-cell whole-cell stop travel. Existing
+  structural/cursor fixtures do not establish those end-to-end behaviours.
 
 With step 1 in place, the remaining work here is the procedures themselves.
 

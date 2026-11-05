@@ -288,8 +288,32 @@ impl Engine {
             .actor_ref(achr)
             .map(|a| a.exec.effective(p))
             .or_else(|| self.away.get(&achr).map(|x| x.effective(p)));
-        let p = effective.as_deref().unwrap_or(p);
+        self.package_location_place(achr, effective.as_deref().unwrap_or(p))
+    }
+
+    pub(crate) fn package_location_place(
+        &self,
+        achr: FormId,
+        p: &Package,
+    ) -> Option<(Place, Vec3)> {
         let target = match p.location.map(|l| l.kind) {
+            Some(LocationKind::NearEditor) => {
+                let pos = self
+                    .lo
+                    .get(achr)
+                    .map(|r| crate::world::records::reference(&r).position)?;
+                return Some((self.editor_place_of(achr, pos)?, pos));
+            }
+            Some(LocationKind::NearCurrent) => {
+                let exec = self
+                    .actor_ref(achr)
+                    .map(|a| &a.exec)
+                    .or_else(|| self.away.get(&achr));
+                let (place, current) = self.current_place_of(achr)?;
+                let pos = exec.and_then(|x| x.run.as_ref()?.origin).unwrap_or(current);
+                return Some((place, pos));
+            }
+            Some(LocationKind::NearSelf) => return self.current_place_of(achr),
             Some(LocationKind::NearReference(r)) => Some(r),
             Some(LocationKind::NearLinkedRef(kw)) => {
                 self.linked_ref(achr, (!kw.is_null()).then_some(kw))
@@ -773,6 +797,9 @@ impl Engine {
     /// the fighting and the player's followers are left be.
     pub(crate) fn jump_to_schedules(&mut self, secs: f32) {
         let start = std::time::Instant::now();
+        self.advance_loaded_trees(secs);
+        self.evaluate_packages(0.0);
+        self.loaded_procedure_locks();
         self.refresh_whereabouts();
         let mut despawn = Vec::new();
         let mut walk_on = Vec::new();
@@ -828,8 +855,14 @@ impl Engine {
                     walk_on.push((a.ref_id, a.walk_speed() * secs));
                     continue;
                 }
-                let p = &a.exec.packages[i];
-                let (centre, radius) = self.package_target(a, p);
+                // A cursor owns its stop and wait progress, including after a
+                // menu advance. Never respawn it at the package's first input.
+                if !changed && to == key && a.exec.run.as_ref().is_some_and(|r| r.cursor.is_some())
+                {
+                    continue;
+                }
+                let p = a.exec.effective(&a.exec.packages[i]);
+                let (centre, radius) = self.package_target(a, &p);
                 let away = !matches!(
                     p.behaviour,
                     super::Behaviour::Follow
@@ -1127,8 +1160,6 @@ mod tests {
             use_weapon: None,
             use_magic: None,
             activate: 0,
-            stops: Vec::new(),
-            random_stops: false,
         };
         let direct = package(Behaviour::Sandbox, LocationKind::NearReference(MARKER), 0.0);
         assert_eq!(

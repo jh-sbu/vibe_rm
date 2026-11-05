@@ -346,15 +346,32 @@ fn multi_location_sandboxes_rotate_through_the_stops_their_data_enables() {
     for (package, random) in [(id(0x801), false), (id(0x802), true)] {
         let p = parse(&lo, package).unwrap();
         assert_eq!(p.behaviour, Behaviour::Sandbox);
-        assert_eq!(p.random_stops, random);
-        // The third stop's time is zero: its branch doesn't run.
-        let [a, b] = p.stops.as_slice() else {
-            panic!("{:?}", p.stops);
-        };
-        assert!(matches!(a.location.kind, LocationKind::NearReference(r) if r == id(0x10)));
-        assert_eq!(a.seconds, 120.0);
-        assert!(matches!(b.location.kind, LocationKind::NearReference(r) if r == id(0x11)));
-        assert_eq!(b.seconds, 90.0);
+        let tree = p.tree.as_ref().unwrap();
+        let mut cursor = crate::ai::procedure::Cursor::default();
+        let passes = |cs: &[Condition]| condition::evaluate_package_data(cs) == Some(true);
+        cursor.step(tree, 0.0, true, passes, || 0);
+        cursor.finish(&[0]);
+        cursor.step(tree, 0.0, true, passes, || 0);
+        let rotation = if random { 1 } else { 2 };
+        assert_eq!(
+            cursor.active,
+            vec![vec![rotation, 0, 0, 0], vec![rotation, 0, 0, 1]]
+        );
+        let first = cursor.moving(tree).unwrap().1;
+        assert!(
+            matches!(first.values[0], Input::Location(Location { kind: LocationKind::NearReference(r), .. }) if r == id(0x10))
+        );
+        cursor.step(tree, 120.0, true, passes, || 0);
+        let second = cursor.moving(tree).unwrap().1;
+        assert!(
+            matches!(second.values[0], Input::Location(Location { kind: LocationKind::NearReference(r), .. }) if r == id(0x11))
+        );
+        cursor.step(tree, 90.0, true, passes, || 0);
+        // The zero-time third stop is skipped and the first one runs again.
+        assert!(
+            matches!(cursor.moving(tree).unwrap().1.values[0], Input::Location(Location { kind: LocationKind::NearReference(r), .. }) if r == id(0x10))
+        );
+        assert!(!cursor.completed);
     }
 }
 

@@ -1836,7 +1836,9 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
 - Test plugins:
   - Procedure trees (`plans/ai-depth.md`, step 1): probe Simultaneous first/all
     completion, Random repeats and cadence-based Stacked switches, including
-    whether returning to the previous branch resumes its progress.
+    whether returning to the previous branch resumes its progress. Also compare
+    LockDoors/UnlockDoors door selection by radius and ownership
+    (`known_ambiguities/locks.md`, procedure-tree location locks).
   - `test-mod autotest23` isn't written yet. It should cover autotest22's
     follow-up list ("Faults and open items").
   - Built and waiting for the user's run: `loadscreens`

@@ -77,8 +77,8 @@ entry per actor with a place or a package run: those away and those loaded,
 the loaded ones as they would be were their cells to unload as the save is
 made (so they attach again where they stood, at the stage they reached, in
 the same furniture when free). An entry keeps the package run and the one a
-scene suspended, the package that gave way, the package index, a sandbox's
-stop and a patrol's point, position, heading and place, the stage, the away
+scene suspended, the package that gave way, the package index and a patrol's
+point (the legacy sandbox stop slot remains on the wire but is no longer used), position, heading and place, the stage, the away
 stepper's state (settled, prompted, pending jump and run end, placement
 heading), both clocks it was last stepped at, its next package reading,
 health, stamina and away bleeding. Version 1 of `AEXC` also keeps each run's

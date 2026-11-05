@@ -176,6 +176,16 @@ impl Engine {
                 }
                 a.exec.patrol = None;
                 a.interrupt(&mut self.furniture);
+                self.whereabouts.next_refresh = 0.0;
+                let whole_cell = a.exec.current.and_then(|i| a.exec.packages.get(i)).is_some_and(|p| {
+                    let p = a.exec.effective(p);
+                    p.behaviour == super::package::Behaviour::Sandbox && matches!((key, p.location),
+                        (crate::render::CellKey::Interior(cell), Some(super::package::Location { kind: super::package::LocationKind::InCell(target), .. })) if cell == target)
+                });
+                if whole_cell {
+                    a.fresh = true;
+                    a.load_cell = Some(key);
+                }
             }
         }
     }
@@ -263,6 +273,8 @@ impl Node {
                     | "UseMagic"
                     | "Eat"
                     | "Guard"
+                    | "LockDoors"
+                    | "UnlockDoors"
             ))
             && self.children.iter().all(Node::executable)
     }
@@ -446,5 +458,160 @@ mod tests {
             vec![RunEvent::Start(PACKAGE), RunEvent::End(PACKAGE)]
         );
         assert!(x.run.as_ref().unwrap().cursor.as_ref().unwrap().completed);
+    }
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn waiting_advances_the_cursor_without_respawning_at_location_one() {
+        let (_f, mut e) = fixture();
+        install(
+            &mut e,
+            sequence(
+                vec![
+                    leaf("Wait", vec![Input::Float(5.0)]),
+                    leaf(
+                        "Travel",
+                        vec![location(LocationKind::NearReference(MARKER))],
+                    ),
+                ],
+                true,
+            ),
+        );
+        let origin = e.actor_ref(ACTOR).unwrap().exec.pos;
+        e.pass_time(5.0);
+        let a = e.actor_ref(ACTOR).unwrap();
+        assert_eq!(a.exec.pos, origin);
+        assert_eq!(a.exec.goal.unwrap().behaviour, Behaviour::Travel);
+        assert_eq!(
+            a.exec.run.as_ref().unwrap().cursor.as_ref().unwrap().active,
+            vec![vec![1]]
+        );
+        assert_eq!(a.exec.run_events, vec![RunEvent::Start(PACKAGE)]);
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn near_package_start_keeps_the_runs_origin_when_the_actor_moves() {
+        let (_f, mut e) = fixture();
+        install(
+            &mut e,
+            sequence(
+                vec![leaf("Travel", vec![location(LocationKind::NearCurrent)])],
+                false,
+            ),
+        );
+        let origin = e.actor_ref(ACTOR).unwrap().exec.pos;
+        let a = e.actor_mut(ACTOR).unwrap();
+        a.exec.pos += Vec3::X * 2000.;
+        a.exec.next_eval = 0.0;
+        e.evaluate_packages(0.0);
+        assert_eq!(
+            e.actor_ref(ACTOR).unwrap().exec.goal.unwrap().centre,
+            origin
+        );
+        assert_eq!(
+            e.within_package_location(
+                ACTOR,
+                ACTOR,
+                Location {
+                    kind: LocationKind::NearCurrent,
+                    radius: 10.0
+                },
+                None
+            ),
+            Some(false)
+        );
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn arriving_at_a_whole_cell_stop_requests_its_cell_wide_furniture_placement() {
+        let (_f, mut e) = fixture();
+        install(
+            &mut e,
+            sequence(
+                vec![
+                    leaf("Wait", vec![Input::Float(1.0)]),
+                    leaf("Sandbox", vec![location(LocationKind::InCell(CELL))]),
+                ],
+                false,
+            ),
+        );
+        e.advance_loaded_trees(1.0);
+        e.evaluate_packages(0.0);
+        let a = e.actor_ref(ACTOR).unwrap();
+        assert!(a.fresh);
+        assert_eq!(a.load_cell, Some(crate::render::CellKey::Interior(CELL)));
+        assert_eq!(a.exec.goal.unwrap().behaviour, Behaviour::Sandbox);
+    }
+}
+
+impl Engine {
+    pub(crate) fn loaded_procedure_locks(&mut self) {
+        let actors: Vec<_> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| !a.dead && !a.exec.pinned && a.exec.combat.is_none())
+            .map(|a| a.ref_id)
+            .collect();
+        for actor in actors {
+            self.procedure_locks(actor);
+        }
+    }
+
+    pub(crate) fn procedure_locks(&mut self, actor: FormId) {
+        let exec = self
+            .actor_ref(actor)
+            .map(|a| &a.exec)
+            .or_else(|| self.away.get(&actor));
+        let Some(exec) = exec else {
+            return;
+        };
+        let Some((p, tree, cursor)) = exec.current.and_then(|i| {
+            let p = exec.packages.get(i)?;
+            Some((p, p.tree.as_ref()?, exec.run.as_ref()?.cursor.as_ref()?))
+        }) else {
+            return;
+        };
+        let actions: Vec<_> = cursor
+            .active
+            .iter()
+            .filter_map(|path| {
+                let node = tree.at(path)?;
+                let locked = match node.procedure.as_str() {
+                    "LockDoors" => true,
+                    "UnlockDoors" => false,
+                    _ => return None,
+                };
+                let p = p.for_procedure(Some(node));
+                let place = self
+                    .package_location_place(actor, &p)
+                    .map(|x| x.0)
+                    .or_else(|| match p.location.map(|l| l.kind) {
+                        Some(
+                            super::package::LocationKind::NearCurrent
+                            | super::package::LocationKind::NearSelf,
+                        ) => self.current_place_of(actor).map(|x| x.0),
+                        _ => None,
+                    });
+                Some((path.clone(), place, locked))
+            })
+            .collect();
+        for (path, place, locked) in actions {
+            if let Some(super::schedule::Place::Interior(cell)) = place {
+                self.procedure_cell_locks(cell, locked);
+            }
+            // A location without a lockable load door has nothing to do.
+            let exec = match self.actor_mut(actor) {
+                Some(a) => Some(&mut a.exec),
+                None => self.away.get_mut(&actor),
+            };
+            if let Some(exec) = exec {
+                if let Some(cursor) = exec.run.as_mut().and_then(|r| r.cursor.as_mut()) {
+                    cursor.finish(&path);
+                }
+                exec.next_eval = 0.0;
+            }
+        }
     }
 }

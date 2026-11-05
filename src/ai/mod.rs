@@ -135,14 +135,6 @@ impl Goal {
     }
 }
 
-/// Where an actor is in its package's `Package::stops`: the stop, and when it
-/// got there (real time; `None`: still on its way).
-#[derive(Debug, Clone, Copy, Default)]
-struct StopProgress {
-    index: usize,
-    arrived: Option<f64>,
-}
-
 /// A point on a patrol route.
 #[derive(Debug, Clone, Copy)]
 pub struct PatrolPoint {
@@ -1512,6 +1504,7 @@ impl ActorRuntime {
             fresh && !self.dead && goal.behaviour == Behaviour::Sandbox
                 && !self.exec.run.as_ref().is_some_and(|run| run.scene)
                 && self.exec.current.and_then(|i| self.exec.packages.get(i)).is_some_and(|p| {
+                    let p = self.exec.effective(p);
                     p.greet.is_none() && matches!((cell, p.location),
                         (crate::render::CellKey::Interior(id), Some(package::Location { kind: package::LocationKind::InCell(target), .. })) if *id == target)
                 })
@@ -3273,11 +3266,17 @@ impl Engine {
             LocationKind::NearLinkedRef(kw) => self
                 .linked_ref(a.ref_id, (!kw.is_null()).then_some(kw))
                 .and_then(|r| self.ref_position(r)),
-            LocationKind::NearCurrent | LocationKind::NearSelf => Some(a.exec.pos),
+            LocationKind::NearCurrent => a
+                .exec
+                .run
+                .as_ref()
+                .and_then(|r| r.origin)
+                .or(Some(a.exec.pos)),
+            LocationKind::NearSelf => Some(a.exec.pos),
             LocationKind::NearAlias(alias) => quest
                 .and_then(|q| self.alias_ref(q, alias))
                 .and_then(|r| self.ref_position(r)),
-            LocationKind::InCell(_) => return (a.editor_pos, loc.radius.max(SANDBOX_MAX)),
+            LocationKind::InCell(_) => return (a.exec.pos, loc.radius.max(SANDBOX_MAX)),
             // About its editor place when that is in the location, else at the location's marker.
             LocationKind::InLocAlias(alias) => {
                 let Some(l) = quest.and_then(|q| self.alias_ref(q, alias)) else {
@@ -3474,62 +3473,6 @@ impl Engine {
         out
     }
 
-    /// Multi-location sandboxers: once one has been at its stop for the stop's
-    /// time, on to the next (in order, or another picked at random), its
-    /// package's goal worked out again at once.
-    fn advance_sandbox_stops(&mut self) {
-        let now = self.scripts.real_time;
-        let mut seed = self.rand() | 1;
-        for rt in self.cells.values_mut() {
-            for a in &mut rt.actors {
-                if a.exec.pinned || a.dead || a.exec.combat.is_some() {
-                    continue;
-                }
-                let Some(p) = a.exec.current.and_then(|i| a.exec.packages.get(i)) else {
-                    continue;
-                };
-                if a.exec.run.as_ref().is_some_and(|r| r.cursor.is_some()) {
-                    continue;
-                }
-                let (Some(stop), Some(goal)) = (p.stops.get(a.exec.stop.index), a.exec.goal) else {
-                    continue;
-                };
-                if goal.behaviour != Behaviour::Sandbox {
-                    continue;
-                }
-                let Some(since) = a.exec.stop.arrived else {
-                    // Arrived: within the area it sandboxes in.
-                    let r = goal.radius.clamp(SANDBOX_MIN, SANDBOX_MAX);
-                    if a.exec.pos.truncate().distance(goal.centre.truncate()) <= r {
-                        a.exec.stop.arrived = Some(now);
-                    }
-                    continue;
-                };
-                if now - since < stop.seconds as f64 {
-                    continue;
-                }
-                let n = p.stops.len();
-                a.exec.stop.index = if p.random_stops && n > 1 {
-                    seed ^= seed << 13;
-                    seed ^= seed >> 7;
-                    seed ^= seed << 17;
-                    (a.exec.stop.index + 1 + seed as usize % (n - 1)) % n
-                } else {
-                    (a.exec.stop.index + 1) % n
-                };
-                a.exec.stop.arrived = None;
-                a.exec.next_eval = 0.0;
-                log::debug!(
-                    "{} sandboxes on at stop {} of {}",
-                    a.ref_id,
-                    a.exec.stop.index,
-                    p.editor_id
-                );
-                a.interrupt(&mut self.furniture);
-            }
-        }
-    }
-
     /// Choose each actor's package and goal.
     fn evaluate_packages(&mut self, dt: f32) {
         self.refresh_alias_packages();
@@ -3574,25 +3517,13 @@ impl Engine {
                 let cursor = pick.and_then(|pi| {
                     self.cursor_for(a.ref_id, &a.exec, &a.exec.packages[pi], &mut rand)
                 });
-                // A multi-location sandbox starts at its first stop, or a random one.
-                let stop = match pick.map(|pi| &a.exec.packages[pi]) {
-                    Some(_) if pick == a.exec.current => a.exec.stop,
-                    Some(p) if p.random_stops && !p.stops.is_empty() => StopProgress {
-                        index: rand() as usize % p.stops.len(),
-                        arrived: None,
-                    },
-                    _ => StopProgress::default(),
-                };
                 let goal = pick.map(|pi| {
                     let base = &a.exec.packages[pi];
                     let effective = cursor.as_ref().map(|c| {
                         base.for_procedure(c.moving(base.tree.as_ref().unwrap()).map(|(_, n)| n))
                     });
                     let p = effective.as_ref().unwrap_or(base);
-                    let (centre, radius) = match p.stops.get(stop.index) {
-                        Some(s) => self.location_target(a, s.location, p.quest),
-                        None => self.package_target(a, p),
-                    };
+                    let (centre, radius) = self.package_target(a, p);
                     let target = self.package_target_ref(a, p, p.target);
                     // A force greeter waits (standing, sandboxing or seated) until it
                     // sets off to the player.
@@ -3695,7 +3626,7 @@ impl Engine {
                         sneak: p.sneak,
                     }
                 });
-                decisions.push((*key, i, pick, goal, stop, cursor));
+                decisions.push((*key, i, pick, goal, cursor));
             }
         }
         for rt in self.cells.values_mut() {
@@ -3715,7 +3646,7 @@ impl Engine {
         }
         let mut lock_changes = Vec::new();
         let now = self.game_hours_total();
-        for (key, i, pick, goal, stop, cursor) in decisions {
+        for (key, i, pick, goal, cursor) in decisions {
             let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.get_mut(i)) else {
                 continue;
             };
@@ -3768,7 +3699,6 @@ impl Engine {
                 a.exec.current = pick;
                 a.exec.goal = goal;
                 a.turn_after_arrival = arrival_turn_after_package_eval(a.turn_after_arrival, goal);
-                a.exec.stop = stop;
                 if !first {
                     a.interrupt(&mut self.furniture);
                 }
@@ -3793,6 +3723,9 @@ impl Engine {
             if done && !a.exec.run_completed() {
                 a.exec.complete_run(true);
             }
+            if switched_cursor {
+                self.whereabouts.next_refresh = 0.0;
+            }
         }
         if !lock_changes.is_empty() {
             self.package_door_locks(lock_changes);
@@ -3804,8 +3737,8 @@ impl Engine {
         self.update_swimming_states();
         self.update_force_greets(dt);
         self.advance_loaded_trees(dt);
-        self.advance_sandbox_stops();
         self.evaluate_packages(dt);
+        self.loaded_procedure_locks();
         self.update_practice_weapons();
         // Choose before the AI requests landings, so a newly needed heal does
         // not replace the offensive spell that an earlier step already threw.

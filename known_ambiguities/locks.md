@@ -225,3 +225,21 @@ changes, save restoration, old saves and malformed sections, not engine parity.
 4. **NPCs and load doors.** What lets NPCs through locked load doors isn't known:
    whether every package can, only packages naming a place inside, or something
    in the doors' or quests' data.
+
+## Procedure-tree location locks (2026-11-05)
+
+Vanilla SandboxMultiLocation (`00068B86`, read with `pack-tree`) explicitly
+runs UnlockDoors with each stop's Location input, between Travel and
+Sandbox/Wait, conditional on "Unlock On Arrival?". SandboxLockOnArrival also
+names a LockDoors node. This establishes the location/ordering, not the exact
+set of doors affected.
+
+The implementation chooses the same door set as existing sleeper locks: the
+location's interior cell's load doors and their partners, where a lock is
+authored; pairs share their holder. Unlocking preserves doors held locked by
+another household's active locking package. Containers and ordinary animated
+gates are not included. An exterior location, unresolved location or cell with
+no such doors completes without changing locks. This reuses the already
+researched home-door policy; whether SE's procedure instead considers radius,
+ownership or non-load doors remains uncertain. A probe should compare two
+owned doors and an unowned door within/outside a procedure location radius.

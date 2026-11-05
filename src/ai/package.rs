@@ -209,14 +209,6 @@ pub struct Location {
     pub radius: f32,
 }
 
-/// One of the places a multi-location sandbox package moves between: sandbox
-/// there for `seconds` (real time) once arrived.
-#[derive(Debug, Clone, Copy)]
-pub struct Stop {
-    pub location: Location,
-    pub seconds: f32,
-}
-
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Schedule {
     pub month: i8,
@@ -292,10 +284,6 @@ pub struct Package {
     pub use_magic: Option<UseMagic>,
     /// Activate packages: how many times ("Number to Activate"), 0 for none.
     pub activate: u32,
-    /// Sandbox at each of these in turn (`SandboxMultiLocation`: its repeating
-    /// branch of travel, sandbox and wait), in order or picked at random.
-    pub stops: Vec<Stop>,
-    pub random_stops: bool,
 }
 
 #[cfg(test)]
@@ -331,8 +319,6 @@ impl Package {
             use_weapon: None,
             use_magic: None,
             activate: 0,
-            stops: Vec::new(),
-            random_stops: false,
         }
     }
 }
@@ -777,12 +763,6 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
         }),
         _ => None,
     });
-    let (stops, random_stops) = match behaviour {
-        Behaviour::Sandbox => procedure_tree(lo, tree_src)
-            .and_then(|t| sandbox_stops(&t, &inputs))
-            .unwrap_or_default(),
-        _ => (Vec::new(), false),
-    };
     Some(Package {
         id,
         editor_id,
@@ -824,8 +804,6 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
         use_weapon,
         use_magic,
         activate,
-        stops,
-        random_stops,
     })
 }
 
@@ -833,7 +811,6 @@ impl Package {
     /// A body goal for one leaf. The PACK id and its schedule stay the same.
     pub(crate) fn for_procedure(&self, node: Option<&Node>) -> Self {
         let mut p = self.clone();
-        p.stops.clear();
         p.greet = None;
         let Some(n) = node else {
             p.behaviour = Behaviour::Hold;
@@ -1064,72 +1041,6 @@ fn procedure_tree(lo: &LoadOrder, template: FormId) -> Option<Node> {
         Some(node)
     }
     build(&mut flat.into_iter())
-}
-
-/// `PRCB` flag: the branch starts over once complete (xEdit: "Repeat when Complete").
-const REPEAT_WHEN_COMPLETE: u32 = 1;
-
-/// The places a sandbox package's tree moves between, and whether it picks
-/// them at random: the first branch that repeats when complete (a `Sequence`
-/// or `Random`) whose conditions the package's own data passes, and each of
-/// its children that passes and both sandboxes at a location and waits
-/// (`SandboxMultiLocation`'s Travel / UnlockDoors / Sandbox + Wait per
-/// location, the location's time above zero). `None` without two such places.
-fn sandbox_stops(root: &Node, inputs: &[(u8, Input)]) -> Option<(Vec<Stop>, bool)> {
-    let value = |i: u8| inputs.iter().find(|(j, _)| *j == i).map(|(_, v)| *v);
-    let passes = |n: &Node| {
-        let conds: Vec<Condition> = n
-            .conditions
-            .iter()
-            .cloned()
-            .map(|mut c| {
-                package_data(&mut c, value);
-                c
-            })
-            .collect();
-        condition::evaluate_package_data(&conds) == Some(true)
-    };
-    fn rotation<'a>(n: &'a Node, passes: &impl Fn(&Node) -> bool) -> Option<&'a Node> {
-        if !passes(n) {
-            return None;
-        }
-        if n.flags & REPEAT_WHEN_COMPLETE != 0 && matches!(n.kind.as_str(), "Sequence" | "Random") {
-            return Some(n);
-        }
-        n.children.iter().find_map(|c| rotation(c, passes))
-    }
-    // The procedures a branch runs: those whose conditions (and their parents') pass.
-    fn running<'a>(n: &'a Node, passes: &impl Fn(&Node) -> bool, out: &mut Vec<&'a Node>) {
-        if passes(n) {
-            if !n.procedure.is_empty() {
-                out.push(n);
-            }
-            n.children.iter().for_each(|c| running(c, passes, out));
-        }
-    }
-    let node = rotation(root, &passes)?;
-    let stops: Vec<Stop> = node
-        .children
-        .iter()
-        .filter_map(|c| {
-            let mut procs = Vec::new();
-            running(c, &passes, &mut procs);
-            let arg = |name: &str| {
-                procs
-                    .iter()
-                    .find(|p| p.procedure == name)
-                    .and_then(|p| p.args.first())
-                    .and_then(|&a| value(a))
-            };
-            match (arg("Sandbox"), arg("Wait")) {
-                (Some(Input::Location(location)), Some(Input::Float(seconds))) => {
-                    Some(Stop { location, seconds })
-                }
-                _ => None,
-            }
-        })
-        .collect();
-    (stops.len() > 1).then_some((stops, node.kind == "Random"))
 }
 
 /// What the AI does for a procedure.
