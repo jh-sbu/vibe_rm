@@ -236,6 +236,7 @@ impl Engine {
         }
         self.procedure_locks(r);
         self.move_away(r, dt, tier, now + extra as f64);
+        self.advance_away_practice(r, dt);
         let Some(x) = self.away.get_mut(&r) else {
             return;
         };

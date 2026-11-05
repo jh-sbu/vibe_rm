@@ -6344,6 +6344,8 @@ fn full_execution() -> crate::ai::exec::SavedExec {
         activations: 2,
         cursor: None,
         origin: None,
+        origin_place: None,
+        practice: None,
     };
     SavedExec {
         npc: Some(SCENE_ACTOR),
@@ -6803,10 +6805,10 @@ fn execution_tree_cursor_payload_and_legacy_run() {
     w.len(1);
     super::continuity::put_exec(&mut w, ACTOR, &legacy_exec);
     // Tail: suspended bool, done_once form, health, stamina, bleeding bool
-    // (14 bytes). Remove the new run's preceding two absent-field bools.
+    // (14 bytes). Remove the new run's preceding four absent-field bools.
     let end = w.0.len() - 14;
-    assert_eq!(&w.0[end - 2..end], &[0, 0]);
-    w.0.drain(end - 2..end);
+    assert_eq!(&w.0[end - 4..end], &[0, 0, 0, 0]);
+    w.0.drain(end - 4..end);
     let mut legacy = Snapshot::default().write();
     legacy.sections.retain(|(tag, _)| tag != b"AEXC");
     legacy.add(b"AEXC", w.0);
@@ -6841,4 +6843,55 @@ fn execution_tree_cursor_payload_and_legacy_run() {
     assert!(refused(|c| {
         c.states.insert(vec![0; 65], Progress::default());
     }));
+}
+
+#[test]
+fn execution_practice_origin_space_and_version_one_cursor() {
+    let mut x = full_execution();
+    let run = x.run.as_mut().unwrap();
+    run.origin_place = Some(Place::Interior(CELL));
+    run.practice = Some(crate::ai::away_practice::Progress {
+        seed: 3,
+        magic: true,
+        elapsed: 4.5,
+        credit: 1.0,
+        wait: 0.5,
+        magic_left: Some(2),
+        action: true,
+        ..Default::default()
+    });
+    let mut s = Snapshot::default();
+    s.continuity.executions.insert(ACTOR, x.clone());
+    let f = s.write();
+    assert_eq!(Snapshot::read(&f).unwrap().continuity.executions[&ACTOR], x);
+    check_continuity_payload(&f, b"AEXC");
+    let mut bad = x.clone();
+    bad.run.as_mut().unwrap().practice.as_mut().unwrap().wait = f64::NAN;
+    s.continuity.executions.insert(ACTOR, bad);
+    assert!(Snapshot::read(&s.write()).is_err());
+    let mut old = crate::ai::exec::ActorExec::default().saved();
+    old.pos = Vec3::ZERO;
+    old.run = full_execution().run;
+    old.run.as_mut().unwrap().cursor = Some(crate::ai::procedure::Cursor {
+        tree_key: "old".into(),
+        revision: 99,
+        ..Default::default()
+    });
+    let mut w = Writer::default();
+    w.u32(u32::MAX);
+    w.u32(1);
+    w.len(1);
+    super::continuity::put_exec(&mut w, ACTOR, &old);
+    // Version one had neither cursor revision (8 bytes) nor the two optional
+    // origin-space/practice fields. The final 14 bytes belong to the execution.
+    let end = w.0.len() - 14;
+    w.0.drain(end - 10..end);
+    let mut f = Snapshot::default().write();
+    f.sections.retain(|(tag, _)| tag != b"AEXC");
+    f.add(b"AEXC", w.0);
+    old.run.as_mut().unwrap().cursor.as_mut().unwrap().revision = 0;
+    assert_eq!(
+        Snapshot::read(&f).unwrap().continuity.executions[&ACTOR],
+        old
+    );
 }

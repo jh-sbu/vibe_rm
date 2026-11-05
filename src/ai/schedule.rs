@@ -309,8 +309,12 @@ impl Engine {
                     .actor_ref(achr)
                     .map(|a| &a.exec)
                     .or_else(|| self.away.get(&achr));
-                let (place, current) = self.current_place_of(achr)?;
-                let pos = exec.and_then(|x| x.run.as_ref()?.origin).unwrap_or(current);
+                let (place, current) = exec
+                    .and_then(|x| Some((x.place?, x.pos)))
+                    .or_else(|| self.current_place_of(achr))?;
+                let run = exec.and_then(|x| x.run.as_ref()).filter(|r| r.id == p.id);
+                let pos = run.and_then(|r| r.origin).unwrap_or(current);
+                let place = run.and_then(|r| r.origin_place).unwrap_or(place);
                 return Some((place, pos));
             }
             Some(LocationKind::NearSelf) => return self.current_place_of(achr),
@@ -962,9 +966,13 @@ impl Engine {
         // there (`step_away`).
         if !a.dead {
             let now = self.scripts.real_time;
-            let w = crate::world_state::Wounds::of(&a, now);
             let clocks = (now, self.game_hours_total());
-            let mut x = a.exec.away(self.place_of_key(key), w, None, clocks);
+            let Some(place) = self.place_of_key(key) else {
+                return;
+            };
+            let mut x = crate::world_state::leaving(&a, place, clocks);
+            x.stage = None;
+            x.settled = false;
             if let Some(&(place, pos)) = self.whereabouts.of.get(&r) {
                 (x.place, x.pos) = (Some(place), pos);
                 x.on_arrival = self.whereabouts.placement_heading.get(&r).copied();

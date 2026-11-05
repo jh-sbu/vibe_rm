@@ -885,8 +885,11 @@ impl Package {
                 p.escort_run = number(8, 500.0);
             }
             "HoldPosition" => {
-                p.behaviour = Behaviour::Hold;
-                p.location = None;
+                p.behaviour = Behaviour::Travel;
+                p.location = Some(Location {
+                    kind: LocationKind::NearCurrent,
+                    radius: 0.0,
+                });
                 p.target = None;
             }
             _ => {}

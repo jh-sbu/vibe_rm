@@ -190,6 +190,8 @@ pub struct PackageRun {
     /// the root. The tree itself comes from the package data, never the save.
     pub(crate) cursor: Option<super::procedure::Cursor>,
     pub(crate) origin: Option<Vec3>,
+    pub(crate) origin_place: Option<Place>,
+    pub(crate) practice: Option<super::away_practice::Progress>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -258,6 +260,8 @@ impl ActorExec {
                 activations: 0,
                 cursor: None,
                 origin: self.pos.is_finite().then_some(self.pos),
+                origin_place: self.place,
+                practice: None,
                 scene: for_scene,
             })
         });

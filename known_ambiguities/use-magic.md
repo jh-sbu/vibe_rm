@@ -57,3 +57,24 @@ pack-templates <data>` with `SHOW=UseMagic`, `pack-tree <data> <package>`).
 - The actor draws its hands (`WeapEquip`) at its place and puts them away
   when the package ends. A package's actor that is fighting does neither.
 - Concentration spells' magicka doesn't come back while they are held, as in a fight.
+
+## Away counting (2026-11-05)
+
+`plans/ai-depth.md` calls for finite packages to count casts while away, without
+spending magicka or firing anything. The input names and vanilla users above
+establish counts, cooldown ranges and held-cast ranges; the Shimmermist package
+(`dunShimmermistFalmerCastPackage`, `000CB11C`) specifies one cast. Its fixture
+now completes away without projectiles or magicka use.
+
+The coarse controller counts a thrown cast after the spell's authored charge
+time, and a concentration cast after charge plus its sampled hold time. It
+samples the package count once and cooldown after each cast, with no cooldown
+after the last. It does not model draw/release clips, facing or physical line
+of sight away. These timing choices are not measured SE away behavior; they
+reuse the existing loaded interpretation where no body/graph is available.
+
+Counts, pending action time, cooldown and random state persist with the run.
+An action still pending when the body returns completes its count after the
+remaining time without firing that action again. Loaded practice is captured
+on both unloading and despawning. A queued SE probe should compare finite
+away completion timing, count continuity and magicka before/after unloading.

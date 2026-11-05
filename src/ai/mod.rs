@@ -3,6 +3,7 @@
 pub mod alias;
 pub mod archery;
 pub mod away;
+pub(crate) mod away_practice;
 pub mod casters;
 pub mod combat;
 mod equipment;
@@ -1699,6 +1700,10 @@ impl ActorRuntime {
             None
         };
         self.exec.patrol = Some((start, next.unwrap_or(idx)));
+        if next.is_none() && self.exec.reached_last_patrol_point() {
+            self.exec.complete_procedure(true);
+            return PatrolStep::Done;
+        }
         if w.furniture.get(p.ref_id).is_some() {
             let at = Goal {
                 behaviour: Behaviour::Patrol,
@@ -1716,7 +1721,10 @@ impl ActorRuntime {
                 log::debug!("{} patrol point {idx} reached, next {n}", self.ref_id);
                 PatrolStep::Busy
             }
-            None => PatrolStep::Done,
+            None => {
+                self.exec.complete_procedure(true);
+                PatrolStep::Done
+            }
         }
     }
 
@@ -3250,6 +3258,12 @@ impl Engine {
     /// Where a package location points to, as (centre, radius).
     fn package_target(&self, a: &ActorRuntime, p: &Package) -> (Vec3, f32) {
         match p.location {
+            Some(loc)
+                if matches!(loc.kind, LocationKind::NearCurrent)
+                    && a.exec.package() != Some(p.id) =>
+            {
+                (a.exec.pos, loc.radius)
+            }
             Some(loc) => self.location_target(a, loc, p.quest),
             None => (a.editor_pos, 0.0),
         }
@@ -3306,6 +3320,34 @@ impl Engine {
         loc: package::Location,
         quest: Option<FormId>,
     ) -> Option<bool> {
+        if matches!(loc.kind, LocationKind::NearCurrent) {
+            let exec = self
+                .actor_ref(actor)
+                .map(|a| &a.exec)
+                .or_else(|| self.away.get(&actor));
+            if let Some(exec) = exec {
+                let run = exec.run.as_ref();
+                let origin = run.and_then(|r| r.origin).unwrap_or(exec.pos);
+                let start_place = run
+                    .and_then(|r| r.origin_place)
+                    .or_else(|| self.ref_current_place(actor));
+                let away_subject = (!self.actor_cells.contains_key(&subject))
+                    .then(|| self.away.get(&subject))
+                    .flatten();
+                let subject_place = away_subject
+                    .and_then(|x| x.place)
+                    .or_else(|| self.ref_current_place(subject));
+                if let (Some(start), Some(here)) = (start_place, subject_place) {
+                    if !schedule::same_space(start, here) {
+                        return Some(false);
+                    }
+                }
+                let pos = away_subject
+                    .map(|x| x.pos)
+                    .or_else(|| self.ref_position(subject))?;
+                return Some(pos.distance(origin) <= loc.radius);
+            }
+        }
         match loc.kind {
             LocationKind::InCell(c) => {
                 let cell = self.lo.cell(c)?;
@@ -3647,6 +3689,7 @@ impl Engine {
         let mut lock_changes = Vec::new();
         let now = self.game_hours_total();
         for (key, i, pick, goal, cursor) in decisions {
+            let origin_place = self.place_of_key(key);
             let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.get_mut(i)) else {
                 continue;
             };
@@ -3696,6 +3739,14 @@ impl Engine {
                     .get(&a.ref_id)
                     .is_some_and(|(_, _, ps)| ps.iter().any(|p| Some(p.id) == id));
                 a.exec.begin_run(pick, now, for_scene);
+                if let Some(run) = a
+                    .exec
+                    .run
+                    .as_mut()
+                    .filter(|r| r.started_at == now && r.origin_place.is_none())
+                {
+                    run.origin_place = origin_place;
+                }
                 a.exec.current = pick;
                 a.exec.goal = goal;
                 a.turn_after_arrival = arrival_turn_after_package_eval(a.turn_after_arrival, goal);

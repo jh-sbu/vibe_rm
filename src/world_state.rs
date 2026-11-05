@@ -126,15 +126,39 @@ impl Wounds {
 
 /// Loaded actor `a`'s execution as it leaves `place` at real and game time
 /// `clocks`: at the stage it reached, unless it was on its way out.
-fn leaving(
+pub(crate) fn leaving(
     a: &crate::ai::ActorRuntime,
     place: Place,
     clocks: (f64, f64),
 ) -> crate::ai::exec::ActorExec {
     let stage = a.stage().filter(|_| a.exiting.is_none());
-    a.exec
+    let mut exec = a
+        .exec
         .clone()
-        .away(Some(place), Wounds::of(a, clocks.0), stage, clocks)
+        .away(Some(place), Wounds::of(a, clocks.0), stage, clocks);
+    if let Some(run) = exec.run.as_mut() {
+        let seed = a.ref_id.0 as u64 ^ run.started_at.to_bits();
+        let behaviour = a
+            .exec
+            .current
+            .and_then(|i| a.exec.packages.get(i))
+            .map(|p| a.exec.effective(p).behaviour)
+            .or_else(|| a.exec.goal.map(|g| g.behaviour));
+        match behaviour {
+            Some(crate::ai::package::Behaviour::UseWeapon) => {
+                if let Some(p) = &a.practice {
+                    run.practice = Some(p.away_progress(seed));
+                }
+            }
+            Some(crate::ai::package::Behaviour::UseMagic) => {
+                if let Some(p) = &a.magic_practice {
+                    run.practice = Some(p.away_progress(seed));
+                }
+            }
+            _ => {}
+        }
+    }
+    exec
 }
 
 impl Engine {

@@ -92,9 +92,39 @@ pub struct Practice {
     /// (kept when a barrage is cancelled).
     barrages_done: u32,
     elapsed: f32,
+    pending_away: bool,
 }
 
 impl Practice {
+    pub(crate) fn away_progress(&self, seed: u64) -> super::away_practice::Progress {
+        let (wait, action) = match self.phase {
+            Phase::Drawing(t, hold) => ((hold - t).max(0.0) + 0.8, true),
+            Phase::Loosed(t, _) => ((0.8 - t).max(0.0), true),
+            _ => (self.wait.max(0.0), self.pending_away),
+        };
+        super::away_practice::Progress {
+            elapsed: self.elapsed as f64,
+            wait: wait as f64,
+            attacks_left: self.left,
+            barrages: self.barrages_done,
+            target: self.target.map(|i| i as u32),
+            action,
+            ..super::away_practice::Progress::new(seed)
+        }
+    }
+
+    fn from_away(p: super::away_practice::Progress) -> Self {
+        Self {
+            target: p.target.map(|i| i as usize),
+            left: p.attacks_left,
+            wait: p.wait as f32,
+            barrages_done: p.barrages,
+            elapsed: p.elapsed as f32,
+            pending_away: p.action,
+            ..Default::default()
+        }
+    }
+
     /// Advance only attacks. Graph acceptance commits each attempted action;
     /// the return value requests one projectile, after release notification.
     fn attack_step(
@@ -223,6 +253,10 @@ fn practice_attack_event(
 }
 
 impl ActorRuntime {
+    fn practice_from_away(p: super::away_practice::Progress) -> Practice {
+        Practice::from_away(p)
+    }
+
     /// One step of practice; `w.targets` has raw reference positions.
     pub(crate) fn practice_step(&mut self, dt: f32, goal: &PracticeGoal, w: &mut World) {
         self.speed = 0.0;
@@ -230,7 +264,37 @@ impl ActorRuntime {
         if self.exec.run_completed() {
             return;
         }
-        let mut p = self.practice.unwrap_or_default();
+        let mut p = self.practice.unwrap_or_else(|| {
+            self.exec
+                .run
+                .as_mut()
+                .and_then(|r| r.practice.take())
+                .filter(|p| !p.magic)
+                .map(Self::practice_from_away)
+                .unwrap_or_default()
+        });
+        if p.pending_away {
+            p.elapsed += dt;
+            p.wait -= dt;
+            if p.wait <= 0.0 {
+                p.pending_away = false;
+                p.left = p.left.saturating_sub(1);
+                p.wait = uniform(
+                    w.rand,
+                    if self.bow { 0.6 } else { 1.2 },
+                    if self.bow { 1.6 } else { 2.2 },
+                );
+                if p.left == 0 {
+                    p.barrages_done += 1;
+                    p.wait += uniform(w.rand, goal.pause.0, goal.pause.1);
+                }
+            }
+            if p.finished(goal) {
+                self.exec.complete_procedure(true);
+            }
+            self.practice = Some(p);
+            return;
+        }
         if matches!(p.phase, Phase::Cancelling)
             || (p
                 .target
@@ -244,7 +308,9 @@ impl ActorRuntime {
             }
         }
         // A new barrage: choose only among targets whose own trigger passes.
-        if p.left == 0 && matches!(p.phase, Phase::Ready) && p.wait <= 0.0 {
+        if (p.left == 0 && matches!(p.phase, Phase::Ready) && p.wait <= 0.0)
+            || (p.target.is_none() && p.left > 0)
+        {
             let targets: Vec<usize> = (0..goal.targets.len())
                 .filter(|&t| goal.eligible(t, self.ref_id, self.exec.pos, w.targets))
                 .collect();
@@ -253,8 +319,10 @@ impl ActorRuntime {
                 return;
             }
             p.target = Some(targets[((w.rand)() % targets.len() as u64) as usize]);
-            p.left = goal.attacks.0
-                + ((w.rand)() % u64::from(goal.attacks.1 - goal.attacks.0 + 1)) as u32;
+            if p.left == 0 {
+                p.left = goal.attacks.0
+                    + ((w.rand)() % u64::from(goal.attacks.1 - goal.attacks.0 + 1)) as u32;
+            }
             log::debug!(
                 "{} practises on {:?}: {} attacks",
                 self.ref_id,

@@ -166,9 +166,17 @@ fn put_run(w: &mut Writer, run: Option<&PackageRun>) {
         if let Some(cursor) = &run.cursor {
             super::procedure_cursor::put(w, cursor);
         }
+        w.bool(run.origin_place.is_some());
+        if let Some(place) = run.origin_place {
+            super::state::put_place(w, place);
+        }
+        w.bool(run.practice.is_some());
+        if let Some(practice) = run.practice {
+            super::practice::put(w, practice);
+        }
     }
 }
-fn get_run(r: &mut Reader, trees: bool) -> Result<Option<PackageRun>> {
+fn get_run(r: &mut Reader, version: u32) -> Result<Option<PackageRun>> {
     if !r.bool()? {
         return Ok(None);
     }
@@ -183,7 +191,7 @@ fn get_run(r: &mut Reader, trees: bool) -> Result<Option<PackageRun>> {
     };
     let scene = r.bool()?;
     let activations = r.u32()?;
-    let origin = if trees && r.bool()? {
+    let origin = if version >= 1 && r.bool()? {
         Some(r.vec3()?)
     } else {
         None
@@ -191,8 +199,21 @@ fn get_run(r: &mut Reader, trees: bool) -> Result<Option<PackageRun>> {
     if origin.is_some_and(|p| !p.is_finite()) {
         return Err(Corrupt("invalid package start position".into()));
     }
-    let cursor = if trees && r.bool()? {
-        Some(super::procedure_cursor::get(r)?)
+    let cursor = if version >= 1 && r.bool()? {
+        Some(super::procedure_cursor::get(r, version)?)
+    } else {
+        None
+    };
+    let origin_place = if version >= 2 && r.bool()? {
+        Some(super::state::get_place(r)?)
+    } else {
+        None
+    };
+    if let Some(Place::Interior(id) | Place::Exterior(id, _)) = origin_place {
+        nonnull(id)?;
+    }
+    let practice = if version >= 2 && r.bool()? {
+        Some(super::practice::get(r)?)
     } else {
         None
     };
@@ -204,6 +225,8 @@ fn get_run(r: &mut Reader, trees: bool) -> Result<Option<PackageRun>> {
         activations,
         cursor,
         origin,
+        origin_place,
+        practice,
     }))
 }
 
@@ -270,7 +293,7 @@ pub(super) fn put_exec(w: &mut Writer, actor: FormId, x: &SavedExec) {
     }
 }
 
-fn get_exec(r: &mut Reader, trees: bool) -> Result<(FormId, SavedExec)> {
+fn get_exec(r: &mut Reader, version: u32) -> Result<(FormId, SavedExec)> {
     let bad = || Corrupt("invalid actor execution".into());
     let actor = r.form()?;
     nonnull(actor)?;
@@ -341,7 +364,7 @@ fn get_exec(r: &mut Reader, trees: bool) -> Result<(FormId, SavedExec)> {
     } else {
         None
     };
-    let (run, suspended) = (get_run(r, trees)?, get_run(r, trees)?);
+    let (run, suspended) = (get_run(r, version)?, get_run(r, version)?);
     let done_once = r.opt_form()?;
     let (health, stamina) = (r.f32()?, r.f32()?);
     let bleeding = if r.bool()? { Some(r.f32()?) } else { None };
@@ -1065,7 +1088,7 @@ impl Continuity {
         // A marker impossible as a valid legacy count; old AEXC payloads still
         // start directly with their count and have no cursor or run origin.
         w.u32(u32::MAX);
-        w.u32(1);
+        w.u32(2);
         w.len(self.executions.len());
         for (actor, x) in sorted(&self.executions) {
             put_exec(&mut w, actor, x);
@@ -1280,8 +1303,9 @@ impl Continuity {
             let mut previous = None;
             let first = r.u32()?;
             let trees = first == u32::MAX;
+            let version = if trees { r.u32()? } else { 0 };
             let count = if trees {
-                if r.u32()? != 1 {
+                if !(1..=2).contains(&version) {
                     return Err(Corrupt("unknown AEXC version".into()));
                 }
                 r.count(EXEC_BYTES)?
@@ -1293,7 +1317,7 @@ impl Continuity {
                 n
             };
             for _ in 0..count {
-                let (actor, x) = get_exec(&mut r, trees)?;
+                let (actor, x) = get_exec(&mut r, version)?;
                 ordered(&mut previous, actor)?;
                 s.executions.insert(actor, x);
             }

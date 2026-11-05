@@ -48,9 +48,10 @@ pub(super) fn put(w: &mut Writer, c: &Cursor) {
     for path in &c.active {
         put_path(w, path);
     }
+    w.u64(c.revision);
 }
 
-pub(super) fn get(r: &mut Reader) -> Result<Cursor> {
+pub(super) fn get(r: &mut Reader, version: u32) -> Result<Cursor> {
     let key = r.bytes()?;
     if key.len() > 4096 {
         return Err(Corrupt("procedure tree key too long".into()));
@@ -106,8 +107,10 @@ pub(super) fn get(r: &mut Reader) -> Result<Cursor> {
     if completed && !active.is_empty() {
         return Err(Corrupt("completed procedure tree still active".into()));
     }
+    let revision = if version >= 2 { r.u64()? } else { 0 };
     Ok(Cursor {
         tree_key,
+        revision,
         completed,
         states,
         active,

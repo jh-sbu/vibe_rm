@@ -29,6 +29,8 @@ pub(crate) struct Progress {
 pub(crate) struct Cursor {
     /// Expanded Stacked branches share a PACK id; distinguish their progress.
     pub tree_key: String,
+    /// Distinguish a repeating node re-entering the same leaf path.
+    pub revision: u64,
     pub states: BTreeMap<Path, Progress>,
     pub active: Vec<Path>,
     pub completed: bool,
@@ -140,6 +142,7 @@ impl Cursor {
     }
 
     fn reset(&mut self, path: &[u32]) {
+        self.revision = self.revision.saturating_add(1);
         for (p, state) in &mut self.states {
             if p.starts_with(path) {
                 *state = Progress {

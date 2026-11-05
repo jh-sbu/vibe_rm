@@ -417,3 +417,5 @@ impl Engine {
 }
 
 mod procedure_cursor;
+
+mod practice;

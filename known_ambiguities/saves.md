@@ -81,14 +81,16 @@ scene suspended, the package that gave way, the package index and a patrol's
 point (the legacy sandbox stop slot remains on the wire but is no longer used), position, heading and place, the stage, the away
 stepper's state (settled, prompted, pending jump and run end, placement
 heading), both clocks it was last stepped at, its next package reading,
-health, stamina and away bleeding. Version 1 of `AEXC` also keeps each run's
+health, stamina and away bleeding. Version 2 of `AEXC` also keeps each run's
 procedure cursor (including suspended runs): tree paths, branch choices,
-completed nodes, elapsed seconds and procedure counters, and its start
-position. The tree and bound inputs are re-read from PACK records. The section
-starts with a `FFFFFFFF` marker and version number before the actor count;
-unversioned AEXC loads with no cursor or run-start position, to start at the
-root. Counts, path depths, time values and active-state references are checked
-on read. This is an engine-owned representation, not an SE save-layout claim. Wounds stay in `WRLD`, which now lists
+completed nodes, elapsed seconds, counters and repeat epoch. It saves the
+run's starting coordinates and space, and logical away practice progress
+(counts, pending action/recovery time and random state). The tree and inputs
+are re-read from PACK records. The section starts with a `FFFFFFFF` marker and
+version number before the actor count. Unversioned AEXC loads without cursor
+or origin; version 1 cursors load with repeat epoch zero and no start-space
+or practice state. Counts, depths, clocks, target indices and active-state
+references are checked on read. This is an engine-owned representation, not an SE save-layout claim. Wounds stay in `WRLD`, which now lists
 loaded actors' too, and are joined to their executions as the save loads.
 Not kept: the package list and goal (taken again from the records: the
 execution's alias generation never matches the loaded game's, and its goal is

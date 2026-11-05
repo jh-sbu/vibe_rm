@@ -119,3 +119,27 @@ stamina, are unsourced.
 - Hold when Blocked, head tracking, Always Hit, damage and combat-start
   flags, and acquisition of weapons from the world remain unsupported.
   Practice attacks retain their existing harmless behavior.
+
+## Away counting (2026-11-05)
+
+The unblocked AI plan explicitly requires finite away barrage counts, without
+arrows, melee hits or resource costs. The coarse controller retains attacks
+left, completed barrages, recovery/pause time and the time limit with the run.
+It uses the existing 1.2–2.2 second melee recovery; bows use the existing draw
+constant, 0.4–1.2 second hold, 0.8 second release recovery and 0.6–1.6 second
+between-shot delay. Barrage pauses use the authored range. A finite final
+barrage ends without its final pause. Aim Only does not count attacks, while
+its time limit still applies. Targets must resolve and pass their trigger.
+
+Melee attacks are counted immediately when ready, since no acceptance event
+or swing graph runs away. Bow timings are the existing loaded fallback values,
+not measurements of native off-screen attacks. Ranged/specific weapon inputs
+and an already held bow determine the coarse bow timing; world weapon
+acquisition still belongs to the Find/Acquire step. Coarse timing has its own
+saved random stream. These are implementation choices pending an SE probe of
+finite practice, interruption, unloading and re-entry (queued in ROADMAP).
+
+Loaded progress is captured on unloading/despawning. A pending logical action
+finishes its count on reattachment without producing another attack, retaining
+its target and remaining barrage. Repeat epochs distinguish two visits to the
+same tree path so a new practice cycle gets fresh counters.

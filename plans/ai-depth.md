@@ -2,8 +2,9 @@
 
 **Status: in progress** (2026-11-05). Step 0 is complete. Step 1 has bound
 trees, durable cursors, loaded/away execution and multi-location migration;
-Patrol completion and away practice counts remain. Step 2 has door procedures,
-run-start coordinates and stop continuity; its remaining work is listed below.
+finite Patrol completion and away practice counts are implemented. Step 2 has
+door procedures, run-start coordinates/space, hold-position return and stop
+continuity; its remaining work is listed below.
 Steps 3–16 are not implemented.
 
 This plan covers ROADMAP Next item 4 (AI depth): everything in it that can be
@@ -135,9 +136,15 @@ ignored tests included (168 tests). A temporary `Node::executable` gate keeps
 trees containing procedures not yet implemented on their existing behaviour,
 including UseWeapon's Find/Acquire preparation. The following subcommit adds
 door procedures and removes the sandbox-stop special case (step 2 below).
-Remaining step 1 work: finish Patrol completion and away practice counts; add
-completion for procedures in steps 4–7 as they become available. This does not
-mark step 1 or the overall plan complete.
+The next completion subcommit adds finite Patrol completion, including a
+one-time final furniture marker, and logical away UseMagic/UseWeapon counts.
+Loaded practice transfers on unloading/despawning and reattachment; pending
+actions do not fire twice. AEXC version 2 retains the counters and repeat epoch,
+reads both earlier layouts, and also adds the origin's space. HoldPosition
+returns to that origin without completing. The vanilla Shimmermist single-cast
+fixture passes with no projectile or magicka use. Remaining step 1 integration:
+completion for procedures in steps 4–7 as they become available and enabling
+their trees. The overall plan is not complete.
 
 Before this work, `package::expand` split a `Stacked` root into one package
 per branch, and every other tree collapsed to one `main_procedure`.
@@ -219,11 +226,9 @@ Remaining before step 2 is complete:
 
 - Catch-up across several procedures in one large time advance. Newly entered
   phases currently start at zero instead of consuming remaining elapsed time.
-- Keep the run start's space as well as its coordinates (kind 2 currently uses
-  the actor's current space when resolving an away target). Legacy runs without
-  an origin fall back to the current position until their next run.
-- HoldPosition return to the run origin after displacement, and explicit
-  StayAtCurrentLocation/DoNothing fixture coverage.
+- Explicit StayAtCurrentLocation/DoNothing fixture coverage. Run-start space
+  and HoldPosition return are now implemented; legacy runs lacking an origin
+  still fall back to their current position until the next run.
 - Vanilla runtime fixtures for TravelBackAndForthAndGuard and
   ActivateInSequence, including cross-cell whole-cell stop travel. Existing
   structural/cursor fixtures do not establish those end-to-end behaviours.

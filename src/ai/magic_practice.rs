@@ -46,6 +46,7 @@ pub struct MagicPractice {
     /// The package this is the practice of: each of several packages
     /// (Onmund's four spells) starts afresh.
     package: Option<FormId>,
+    pending_away: bool,
 }
 
 /// Seconds a caster waits before trying again when it can't start a cast
@@ -56,6 +57,27 @@ const RETRY: f32 = 0.5;
 const FACING: f32 = 0.2;
 
 impl MagicPractice {
+    pub(crate) fn away_progress(&self, seed: u64) -> super::away_practice::Progress {
+        let wait = if self.channel > 0.0 {
+            self.channel
+        } else if let Some(cast) = self.cast {
+            if cast.phase == HandPhase::Charging {
+                (cast.cast.spell.charge - cast.t).max(0.0)
+            } else {
+                0.0
+            }
+        } else {
+            self.wait.max(0.0)
+        };
+        super::away_practice::Progress {
+            magic: true,
+            magic_left: self.left,
+            wait: wait as f64,
+            action: self.pending_away || self.channel > 0.0 || self.cast.is_some(),
+            ..super::away_practice::Progress::new(seed)
+        }
+    }
+
     /// Holding a concentration spell.
     pub(crate) fn channelling(&self) -> bool {
         self.channel > 0.0
@@ -95,7 +117,21 @@ impl ActorRuntime {
         let Some(spell) = self.combat_spell.filter(|s| s.spell == goal.spell) else {
             return;
         };
-        let mut m = self.magic_practice.unwrap_or_default();
+        let mut m = self.magic_practice.unwrap_or_else(|| {
+            let saved = self
+                .exec
+                .run
+                .as_mut()
+                .and_then(|r| r.practice.take())
+                .filter(|p| p.magic);
+            saved.map_or_else(MagicPractice::default, |p| MagicPractice {
+                left: p.magic_left,
+                wait: p.wait as f32,
+                pending_away: p.action,
+                package,
+                ..Default::default()
+            })
+        });
         if m.package != package {
             if let Some(h) = m.cast {
                 self.release_hand(h.hand);
@@ -109,6 +145,15 @@ impl ActorRuntime {
         let left = *m.left.get_or_insert_with(|| {
             goal.casts.0 + ((w.rand)() % u64::from(goal.casts.1 - goal.casts.0 + 1)) as u32
         });
+        if m.pending_away {
+            m.wait -= dt;
+            if m.wait <= 0.0 {
+                m.pending_away = false;
+                self.cast_over(&mut m, goal, left, w);
+            }
+            self.magic_practice = Some(m);
+            return;
+        }
         let at_self = spell.self_target || goal.at_self(self.ref_id);
         let aim = if at_self {
             None
@@ -537,6 +582,35 @@ mod tests {
             elsewhere.target = Some(FormId(0x601));
             a.magic_practice_step(0.1, &elsewhere, w);
             assert!(a.casts.is_none(), "its target isn't loaded");
+        });
+    }
+
+    #[test]
+    fn a_pending_away_cast_finishes_without_recasting_when_the_body_returns() {
+        with_world(Vec3::Y * 500.0, |w| {
+            let g = goal();
+            let mut a = caster(spell(false, false), g);
+            let mut p = super::super::package::Package::bare(
+                FormId(100),
+                super::super::package::Behaviour::UseMagic,
+            );
+            p.use_magic = None;
+            a.exec.packages = vec![p];
+            a.exec.current = Some(0);
+            a.exec.begin_run(Some(0), 0.0, false);
+            a.exec.run.as_mut().unwrap().practice = Some(super::super::away_practice::Progress {
+                magic: true,
+                magic_left: Some(2),
+                wait: 1.0,
+                action: true,
+                ..super::super::away_practice::Progress::new(1)
+            });
+            a.magic_practice_step(0.5, &g, w);
+            assert!(a.casts.is_none());
+            a.magic_practice_step(0.5, &g, w);
+            assert!(a.casts.is_none());
+            assert_eq!(a.magic_practice.unwrap().left, Some(1));
+            assert!(a.exec.run.as_ref().unwrap().practice.is_none());
         });
     }
 

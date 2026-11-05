@@ -26,6 +26,34 @@ impl ActorExec {
         }
     }
 
+    /// Remember reaching the final patrol point so its furniture is used once,
+    /// then the procedure completes instead of entering that marker again.
+    pub(crate) fn reached_last_patrol_point(&mut self) -> bool {
+        let path = self
+            .current
+            .and_then(|i| self.packages.get(i))
+            .and_then(|p| {
+                self.run
+                    .as_ref()?
+                    .cursor
+                    .as_ref()?
+                    .moving(p.tree.as_ref()?)
+                    .map(|(path, _)| path.clone())
+            });
+        let Some(path) = path else {
+            return false;
+        };
+        let Some(progress) = self
+            .run
+            .as_mut()
+            .and_then(|r| r.cursor.as_mut())
+            .and_then(|c| c.states.get_mut(&path))
+        else {
+            return false;
+        };
+        std::mem::replace(&mut progress.arrived, true)
+    }
+
     /// A procedure's end advances its cursor. Only a completed root ends PACK.
     pub(crate) fn complete_procedure(&mut self, gives_way: bool) {
         let has_cursor = self.run.as_ref().is_some_and(|r| r.cursor.is_some());
@@ -48,6 +76,12 @@ impl ActorExec {
                 .and_then(|i| self.packages.get(i))
                 .and_then(|p| p.tree.clone())
                 .unwrap();
+            if tree
+                .at(&path)
+                .is_some_and(|n| n.procedure == "HoldPosition")
+            {
+                return;
+            }
             let ends = ends_root(&tree, &path);
             if let Some(c) = self.run.as_mut().and_then(|r| r.cursor.as_mut()) {
                 c.finish(&path);
@@ -136,7 +170,7 @@ impl Engine {
             if !c.valid_for(tree, &p.editor_id) {
                 continue;
             }
-            let before = c.active.clone();
+            let before = (c.active.clone(), c.revision);
             let ctx = Context {
                 subject: Some(a.ref_id),
                 quest: p.quest,
@@ -149,7 +183,7 @@ impl Engine {
                 |cs| condition::evaluate(self, cs, ctx),
                 &mut random,
             );
-            changes.push((a.ref_id, before != c.active, c));
+            changes.push((a.ref_id, before != (c.active.clone(), c.revision), c));
         }
         for (id, changed, cursor) in changes {
             let Some(key) = self.actor_cells.get(&id).copied() else {
@@ -173,6 +207,7 @@ impl Engine {
                 a.exec.next_eval = 0.0;
                 if let Some(run) = a.exec.run.as_mut() {
                     run.activations = 0;
+                    run.practice = None;
                 }
                 a.exec.patrol = None;
                 a.interrupt(&mut self.furniture);
@@ -209,7 +244,7 @@ impl Engine {
         if !c.valid_for(&tree, &p.editor_id) {
             return;
         }
-        let before = c.active.clone();
+        let before = (c.active.clone(), c.revision);
         let ctx = Context {
             subject: Some(actor),
             quest: p.quest,
@@ -228,7 +263,7 @@ impl Engine {
                 seed
             },
         );
-        let changed = before != c.active;
+        let changed = before != (c.active.clone(), c.revision);
         let Some(exec) = self.away.get_mut(&actor) else {
             return;
         };
@@ -245,6 +280,7 @@ impl Engine {
             exec.stage = None;
             if let Some(run) = exec.run.as_mut() {
                 run.activations = 0;
+                run.practice = None;
             }
         }
         if done {
@@ -542,6 +578,153 @@ mod tests {
         assert!(a.fresh);
         assert_eq!(a.load_cell, Some(crate::render::CellKey::Interior(CELL)));
         assert_eq!(a.exec.goal.unwrap().behaviour, Behaviour::Sandbox);
+    }
+    #[test]
+    fn non_repeating_patrol_completes_at_its_final_point() {
+        use super::super::{ActorRuntime, Clips, Goal, PatrolPoint, PatrolStep, World};
+        let mut a = ActorRuntime::new(
+            ACTOR,
+            super::super::exec::tests::BASE,
+            Arc::new(crate::world::skeleton::Skeleton::default()),
+            glam::Mat4::IDENTITY,
+            vec![],
+            0.0,
+        );
+        let start = MARKER;
+        let mut p = Package::bare(PACKAGE, Behaviour::Patrol);
+        p.tree = Some(Arc::new(sequence(vec![leaf("Patrol", vec![])], false)));
+        let mut c = Cursor {
+            tree_key: p.editor_id.clone(),
+            ..Default::default()
+        };
+        c.step(p.tree.as_ref().unwrap(), 0.0, true, |_| true, || 1);
+        a.exec.packages = vec![p];
+        a.exec.current = Some(0);
+        a.exec.begin_run(Some(0), 0.0, false);
+        a.exec.run.as_mut().unwrap().cursor = Some(c);
+        let goal = Goal {
+            behaviour: Behaviour::Patrol,
+            target: Some(start),
+            repeat: false,
+            radius: 50.0,
+            ..Goal::travel(Vec3::ZERO)
+        };
+        let nav = super::super::nav::NavWorld::default();
+        let mut furniture = super::super::furniture::FurnitureWorld::default();
+        let vfs = vfs::Vfs::new("/nonexistent-patrol-fixture", &[]);
+        let mut anims = crate::world::animation::AnimationLibrary::default();
+        let mut behaviors = crate::world::animation::BehaviorLibrary::default();
+        let patrols = std::collections::HashMap::from([(
+            start,
+            Arc::new(vec![
+                PatrolPoint {
+                    ref_id: start,
+                    pos: Vec3::ZERO,
+                },
+                PatrolPoint {
+                    ref_id: ACTOR,
+                    pos: Vec3::X * 500.0,
+                },
+            ]),
+        )]);
+        let mut w = World {
+            nav: &nav,
+            furniture: &mut furniture,
+            clips: Clips {
+                vfs: &vfs,
+                anims: &mut anims,
+                behaviors: &mut behaviors,
+            },
+            may_use: &|_, _, _| true,
+            claimed: &Default::default(),
+            patrols: &patrols,
+            targets: &Default::default(),
+            holds: &|_, _| false,
+            rand: &mut || 1,
+        };
+        assert!(matches!(a.patrol_target(&goal, &mut w), PatrolStep::Busy));
+        assert!(!a.exec.run_completed());
+        a.exec.pos = Vec3::X * 500.0;
+        assert!(matches!(a.patrol_target(&goal, &mut w), PatrolStep::Done));
+        assert!(a.exec.run_completed());
+        assert_eq!(
+            a.exec.run_events,
+            vec![RunEvent::Start(PACKAGE), RunEvent::End(PACKAGE)]
+        );
+    }
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn hold_position_returns_to_its_origin_without_completing_on_arrival() {
+        let (_f, mut e) = fixture();
+        install(&mut e, sequence(vec![leaf("HoldPosition", vec![])], false));
+        let origin = e.actor_ref(ACTOR).unwrap().exec.pos;
+        let a = e.actor_mut(ACTOR).unwrap();
+        a.exec.pos += Vec3::X * 1000.;
+        a.exec.next_eval = 0.0;
+        e.evaluate_packages(0.0);
+        let a = e.actor_ref(ACTOR).unwrap();
+        assert_eq!(a.exec.goal.unwrap().centre, origin);
+        assert_eq!(a.exec.goal.unwrap().behaviour, Behaviour::Travel);
+        e.actor_mut(ACTOR).unwrap().exec.pos = origin;
+        e.complete_arrivals();
+        assert!(!e.actor_ref(ACTOR).unwrap().exec.run_completed());
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn an_away_run_start_keeps_its_space_when_coordinates_overlap_elsewhere() {
+        use super::super::schedule::Place;
+        let (_f, mut e) = fixture();
+        let mut p = Package::bare(PACKAGE, Behaviour::Travel);
+        p.location = Some(Location {
+            kind: LocationKind::NearCurrent,
+            radius: 10.0,
+        });
+        let mut x = ActorExec::new(vec![p], Vec3::ZERO, 0.0, 0.0);
+        x.current = Some(0);
+        x.place = Some(Place::Interior(CELL));
+        x.begin_run(Some(0), 0.0, false);
+        x.place = Some(Place::Exterior(esp::FormId(0x3C), (0, 0)));
+        e.away.insert(ACTOR, x);
+        let p = &e.away[&ACTOR].packages[0];
+        assert_eq!(
+            e.package_location_place(ACTOR, p),
+            Some((Place::Interior(CELL), Vec3::ZERO))
+        );
+        assert_eq!(
+            e.within_package_location(ACTOR, ACTOR, p.location.unwrap(), None),
+            Some(false)
+        );
+    }
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn a_new_package_uses_its_own_start_in_the_first_goal() {
+        let (_f, mut e) = fixture();
+        install(&mut e, sequence(vec![leaf("HoldPosition", vec![])], false));
+        let a = e.actor_mut(ACTOR).unwrap();
+        a.exec.pos += Vec3::X * 500.0;
+        let new_origin = a.exec.pos;
+        let mut p = a.exec.packages[0].clone();
+        p.id = super::super::exec::tests::PACKAGE2;
+        p.editor_id = "second".into();
+        a.exec.packages.insert(0, p);
+        a.exec.current = Some(1);
+        a.exec.next_eval = 0.0;
+        e.evaluate_packages(0.0);
+        assert_eq!(
+            e.actor_ref(ACTOR).unwrap().exec.goal.unwrap().centre,
+            new_origin
+        );
+        assert_eq!(
+            e.actor_ref(ACTOR)
+                .unwrap()
+                .exec
+                .run
+                .as_ref()
+                .unwrap()
+                .origin,
+            Some(new_origin)
+        );
     }
 }
 
