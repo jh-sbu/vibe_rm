@@ -471,6 +471,27 @@ mod tests {
 
     #[test]
     #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn wait_stop_movement_controls_an_existing_walk() {
+        for stop in [false, true] {
+            let (_f, mut e) = fixture();
+            let n = leaf("Wait", vec![Input::Float(5.), Input::Bool(stop)]);
+            loaded(&mut e, package(vec![n], false));
+            let a = e.actor_mut(ACTOR).unwrap();
+            a.state = State::Walk {
+                path: vec![Vec3::X * 1000.],
+                next: 0,
+                budget: 20.,
+                to_seat: false,
+            };
+            e.pass_time(1.);
+            let a = e.actor_ref(ACTOR).unwrap();
+            assert_eq!(a.exec.pos.x > 0., !stop);
+            assert_eq!(a.is_walking(), !stop);
+        }
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
     fn a_large_away_wait_consumes_successive_waits_without_advancing_papyrus_time() {
         let (_f, mut e) = fixture();
         away(&mut e, package(vec![wait(2.), wait(3.)], true));

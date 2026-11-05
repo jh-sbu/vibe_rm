@@ -1312,6 +1312,13 @@ game each piece unlocks.
   continuation. DialogueActivate reaches Talk From, then requests a player
   conversation or NPC ADIA. SayToPlayer's transition condition remains in AI
   depth step 9; choices/probes: `known_ambiguities/package-dialogue.md`.
+- Carry packages use their ordered authored endpoints and live isCarryItem
+  graph conditions. The sawmill worker's accepted furniture notifications now
+  drive the log graph and resource scripts through busy/ready/cut/reset;
+  existing activate-parent and animation-wait natives supply the remainder.
+  Wait reads StopMovement. Bucket/stone animations remain blocked as before;
+  research and probes: `research/carry-sawmills.md`,
+  `known_ambiguities/furniture.md`.
 - `GetWithinPackageLocation` conditions check the subject against a package
   `Location` input placed for the package's actor (force greet, travel-to-radius,
   civil war hold-position and Dawnguard disguised vampire template branches,
@@ -1860,6 +1867,8 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
     Probe package Say cancellation, Finish Speaking, multi-response fragments,
     unload/reload, forced subtitles and DialogueActivate's ADIA completion
     (`known_ambiguities/package-dialogue.md`).
+    Record actor/furniture notifications through a sawmill load/cut cycle and
+    compare Wait's StopMovement behavior (`known_ambiguities/furniture.md`).
   - `test-mod autotest23` isn't written yet. It should cover autotest22's
     follow-up list ("Faults and open items").
   - Built and waiting for the user's run: `loadscreens`

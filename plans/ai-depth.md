@@ -4,8 +4,8 @@
 trees, durable cursors, loaded/away execution and multi-location migration;
 finite Patrol completion and away practice counts are implemented. Step 2 is
 complete, including menu-time catch-up, door travel and vanilla sequence fixtures.
-Steps 3 and 4 are complete.
-Steps 5–16 are not implemented.
+Steps 3–5 are complete.
+Steps 6–16 are not implemented.
 
 This plan covers ROADMAP Next item 4 (AI depth): everything in it that can be
 built today from public sources, the game's data and the readings we already
@@ -354,6 +354,30 @@ truncation, invalid response indices and malformed ownership data.
   NPC-to-NPC conversation through the ADIA path already in place.
 
 ### 5. Carrying, and the sawmills
+
+**Status: done** (2026-11-05). Carry trees
+already use their authored endpoints and graph condition; vanilla graph tests
+confirm the condition is `isCarryItem`, driven by the wood pickup/carry-offset
+and put-down cycle. CarryAndKeepItem's final Wait reads time/StopMovement.
+Asset inspection corrects the initial description: CarryAndDropItem declares
+those inputs but never uses them in its shipped tree, so no wait is inserted.
+StopMovement now controls an existing walk while preserving seated waits.
+
+The sawmill's missing link was the worker animation notification reaching the
+paired furniture graph. Accepted payload-free events now reach that graph and
+its registered scripts. A vanilla fixture runs the worker's load graph,
+MillLogPile graph, ResourceObjectSawMillScript, resource state changes and
+activate-parent lever delay through load/busy/ready/cut/reset. Existing natives
+already supply the rest of the chain. Research is in
+`research/carry-sawmills.md`; routing/timing choices and probes are in
+`known_ambiguities/furniture.md`. Buckets and DLC2 stone-pile animation behavior
+remain blocked exactly as planned.
+
+Validated: 205 AI tests, two vanilla graph/script carry and sawmill fixtures,
+10 shared-cursor tests, 9 animated-object tests and the animation-event
+notification regression, all with ignored tests included. The sawmill fixture
+starts with the real worker graph's raised notification; it does not inject a
+replacement script or hardcoded resource-state change.
 
 - **CarryAndDropItem / CarryAndKeepItem** (32 / 11): the tree is Activate
   Carry Start (when the graph variable says empty-handed) → Travel to Carry

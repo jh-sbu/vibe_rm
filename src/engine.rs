@@ -3,6 +3,10 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
+#[cfg(test)]
+#[path = "engine_carry_tests.rs"]
+mod carry_tests;
+
 use anyhow::{Context, Result};
 use esp::{FormId, LoadOrder};
 use glam::{Vec2, Vec3};

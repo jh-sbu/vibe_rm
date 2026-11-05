@@ -158,6 +158,15 @@ impl Cursor {
                 .any(|p| root.at(p).is_some_and(|n| n.procedure == "Wait"))
     }
 
+    pub(crate) fn stops_movement(&self, root: &Node) -> bool {
+        self.active.iter().any(|path| {
+            root.at(path).is_some_and(|n| {
+                n.procedure == "Wait"
+                    && !matches!(n.values.get(1), Some(super::package::Input::Bool(false)))
+            })
+        })
+    }
+
     fn reset(&mut self, path: &[u32]) {
         self.revision = self.revision.saturating_add(1);
         for (p, state) in &mut self.states {

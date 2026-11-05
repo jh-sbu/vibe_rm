@@ -211,14 +211,16 @@ impl Engine {
                     run.practice = None;
                 }
                 a.exec.patrol = None;
-                let waiting = a
+                let retain_body = a
                     .exec
                     .current
                     .and_then(|i| a.exec.packages.get(i))
                     .and_then(|p| p.tree.as_ref())
                     .zip(a.exec.run.as_ref().and_then(|r| r.cursor.as_ref()))
-                    .is_some_and(|(tree, c)| c.waits_in_place(tree));
-                if !waiting {
+                    .is_some_and(|(tree, c)| {
+                        c.waits_in_place(tree) && (a.in_furniture() || !c.stops_movement(tree))
+                    });
+                if !retain_body {
                     a.interrupt(&mut self.furniture);
                 }
                 self.whereabouts.next_refresh = 0.0;

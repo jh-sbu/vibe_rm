@@ -9,6 +9,7 @@ pub mod combat;
 mod equipment;
 pub mod exec;
 pub mod furniture;
+mod furniture_events;
 mod greet;
 pub mod idles;
 mod influence;
@@ -3745,6 +3746,11 @@ impl Engine {
                 .as_ref()
                 .zip(pick.and_then(|i| a.exec.packages[i].tree.as_ref()))
                 .is_some_and(|(c, tree)| c.waits_in_place(tree));
+            let stops_wait = cursor
+                .as_ref()
+                .zip(pick.and_then(|i| a.exec.packages[i].tree.as_ref()))
+                .is_some_and(|(c, tree)| c.stops_movement(tree));
+            let retain_body = waiting_in_place && (a.in_furniture() || !stops_wait);
             if pick != a.exec.current {
                 if let Some(p) = pick.map(|pi| &a.exec.packages[pi]) {
                     log::debug!(
@@ -3775,7 +3781,7 @@ impl Engine {
                 a.exec.current = pick;
                 a.exec.goal = goal;
                 a.turn_after_arrival = arrival_turn_after_package_eval(a.turn_after_arrival, goal);
-                if !first && !waiting_in_place {
+                if (!first || (waiting_in_place && stops_wait && a.is_walking())) && !retain_body {
                     a.interrupt(&mut self.furniture);
                 }
             } else {
@@ -3788,7 +3794,7 @@ impl Engine {
                     .is_some_and(|g| Some(g.behaviour) != goal.map(|g| g.behaviour));
                 a.exec.goal = goal;
                 a.turn_after_arrival = arrival_turn_after_package_eval(a.turn_after_arrival, goal);
-                if (changed || switched_cursor) && !waiting_in_place {
+                if (changed || switched_cursor) && !retain_body {
                     a.interrupt(&mut self.furniture);
                 }
             }
@@ -3973,6 +3979,7 @@ impl Engine {
         let mut equip = Vec::new();
         let mut sounds: Vec<(String, Vec3)> = Vec::new();
         let mut anim_events: Vec<(FormId, Vec<String>)> = Vec::new();
+        let mut furniture_events: Vec<(FormId, Vec<String>)> = Vec::new();
         let mut activations: Vec<(FormId, FormId)> = Vec::new();
         let mut steps: Vec<crate::footsteps::Step> = Vec::new();
         let listener = self.camera.position;
@@ -4195,6 +4202,9 @@ impl Engine {
                     sounds.push((s, a.exec.pos + Vec3::Z * 64.0 * a.scale));
                 }
                 if !a.graph_events.is_empty() {
+                    if let Some(seat) = a.seat.as_ref().filter(|s| !s.furniture.is_null()) {
+                        furniture_events.push((seat.furniture, a.graph_events.clone()));
+                    }
                     anim_events.push((a.ref_id, std::mem::take(&mut a.graph_events)));
                 }
                 if let Some(f) = a.activated.take() {
@@ -4270,6 +4280,9 @@ impl Engine {
         }
         for (r, events) in anim_events {
             self.raise_anim_events(r, &events);
+        }
+        for (furniture, events) in furniture_events {
+            self.relay_furniture_events(furniture, &events);
         }
         // Getting into furniture activates it (`CarryFurnitureScript` registers
         // for the user's animation events then).
