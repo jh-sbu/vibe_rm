@@ -371,6 +371,16 @@ pub(crate) enum Input {
     Other,
 }
 
+impl Input {
+    pub(crate) fn is_null(self) -> bool {
+        match self {
+            Self::Other | Self::Target(Target::Other | Target::ObjectType(0)) => true,
+            Self::Target(Target::Ref(id) | Target::Object(id)) => id.is_null(),
+            _ => false,
+        }
+    }
+}
+
 fn location(rec: &esp::LoadedRecord<'_>, d: &[u8]) -> Option<Location> {
     if d.len() < 12 {
         return None;
@@ -475,7 +485,7 @@ fn package_data(c: &mut Condition, input: impl Fn(u8) -> Option<Input>) {
         condition::GET_NUMERIC_PACKAGE_DATA => index(c.p1).and_then(number),
         // Unset: no such input, or one holding nothing the package can use.
         condition::IS_NULL_PACKAGE_DATA => Some(PackageData::Number(u8::from(
-            index(c.p1).is_none_or(|v| matches!(v, Input::Other)),
+            index(c.p1).is_none_or(Input::is_null),
         ) as f32)),
         condition::GET_WITHIN_PACKAGE_LOCATION => index(c.p1).and_then(|value| match value {
             Input::Location(l) => Some(PackageData::Location(l)),
@@ -945,6 +955,19 @@ fn bind_condition(c: &mut Condition, value: impl Fn(u8) -> Option<Input>) {
 }
 
 impl Node {
+    /// A sole non-repeating procedure preserves its standing arrival goal.
+    pub(crate) fn single_procedure(&self) -> Option<&Node> {
+        if self.flags & 1 != 0 {
+            None
+        } else if !self.procedure.is_empty() {
+            Some(self)
+        } else if self.children.len() == 1 {
+            self.children[0].single_procedure()
+        } else {
+            None
+        }
+    }
+
     fn bind(&mut self, inputs: &[(u8, Input)]) {
         let value = |i| inputs.iter().find(|(j, _)| *j == i).map(|(_, v)| *v);
         self.values = self

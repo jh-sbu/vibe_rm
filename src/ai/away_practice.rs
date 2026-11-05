@@ -160,24 +160,24 @@ impl Progress {
 }
 
 impl crate::engine::Engine {
-    pub(crate) fn advance_away_practice(&mut self, actor: esp::FormId, dt: f32) {
+    pub(crate) fn away_practice_settings(&self, actor: esp::FormId) -> Option<Settings> {
         use super::package::{Behaviour, WeaponKind};
         let Some(x) = self.away.get(&actor).filter(|x| {
             x.settled && x.combat.is_none() && x.bleeding.is_none() && !x.run_completed()
         }) else {
-            return;
+            return None;
         };
         let Some(base) = x.current.and_then(|i| x.packages.get(i)) else {
-            return;
+            return None;
         };
         let p = x.effective(base);
         let settings = match p.behaviour {
             Behaviour::UseMagic => {
                 let Some(inputs) = p.use_magic else {
-                    return;
+                    return None;
                 };
                 let Some(spell) = inputs.spell.and_then(|id| self.practice_spell(id)) else {
-                    return;
+                    return None;
                 };
                 Settings::Magic {
                     inputs,
@@ -187,7 +187,7 @@ impl crate::engine::Engine {
             }
             Behaviour::UseWeapon => {
                 let Some(inputs) = p.use_weapon else {
-                    return;
+                    return None;
                 };
                 let eligible =
                     inputs
@@ -208,7 +208,7 @@ impl crate::engine::Engine {
                             })
                         });
                 if !eligible {
-                    return;
+                    return None;
                 }
                 let carried = self
                     .inventories
@@ -228,7 +228,14 @@ impl crate::engine::Engine {
                 };
                 Settings::Weapon { inputs, bow }
             }
-            _ => return,
+            _ => return None,
+        };
+        Some(settings)
+    }
+
+    pub(crate) fn advance_away_practice(&mut self, actor: esp::FormId, dt: f32) {
+        let Some(settings) = self.away_practice_settings(actor) else {
+            return;
         };
         let Some(x) = self.away.get_mut(&actor) else {
             return;

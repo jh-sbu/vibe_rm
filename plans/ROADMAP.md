@@ -1840,7 +1840,9 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
     LockDoors/UnlockDoors door selection by radius and ownership
     (`known_ambiguities/locks.md`, procedure-tree location locks). Compare finite
     away UseMagic/UseWeapon completion timing, magicka and progress across unload
-    and re-entry (`known_ambiguities/use-magic.md`, `use-weapon.md`).
+    and re-entry (`known_ambiguities/use-magic.md`, `use-weapon.md`). Compare one
+    long menu wait with several short waits across Travel/Wait, load doors and
+    carry sequences (`known_ambiguities/package-trees.md`, menu time).
   - `test-mod autotest23` isn't written yet. It should cover autotest22's
     follow-up list ("Faults and open items").
   - Built and waiting for the user's run: `loadscreens`

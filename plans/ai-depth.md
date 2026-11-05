@@ -2,9 +2,8 @@
 
 **Status: in progress** (2026-11-05). Step 0 is complete. Step 1 has bound
 trees, durable cursors, loaded/away execution and multi-location migration;
-finite Patrol completion and away practice counts are implemented. Step 2 has
-door procedures, run-start coordinates/space, hold-position return and stop
-continuity; its remaining work is listed below.
+finite Patrol completion and away practice counts are implemented. Step 2 is
+complete, including menu-time catch-up, door travel and vanilla sequence fixtures.
 Steps 3–16 are not implemented.
 
 This plan covers ROADMAP Next item 4 (AI depth): everything in it that can be
@@ -64,8 +63,8 @@ and its top 40. `pack-census <data> --masters` reproduces this census.
 - Now interpreted as sequences: TravelBackAndForth 24. CarryAndDropItem and
   CarryAndKeepItem use their Activate/Travel trees; their remaining carry
   behaviour is still tracked in step 5. SandboxMultiLocation's sequence and
-  per-stop door procedures now use the interpreter; large time-advance catch-up
-  still needs the remaining work in step 2.
+  per-stop door procedures now use the interpreter, including large time-advance
+  catch-up (step 2).
 - Procedures named in templates' and packages' own trees: Travel 294, Sandbox
   97, HoldPosition 93, Wait 90, Guard 75, Sit 47, Patrol 47, UnlockDoors 46,
   Find 36, Follow 34, Activate 26, Sleep 20, Shout 18, Say 16, UseWeapon 13,
@@ -205,8 +204,8 @@ Most of the templates above need their trees run as written.
 
 ### 2. Sequences' simple procedures, and multi-location leftovers
 
-**Status: partially implemented** (2026-11-05), in the sandbox migration
-subcommit. LockDoors/UnlockDoors use their node's location and the home-door
+**Status: done** (2026-11-05), in the sandbox migration and menu-time
+subcommits. LockDoors/UnlockDoors use their node's location and the home-door
 pair/lock policy. Multi-location Sandbox/Wait now runs directly through the
 cursor, including per-stop door procedures; `Stop`, `stops`, `StopProgress` and
 the rotation special case are gone. The old AEXC stop slot is retained only for
@@ -222,16 +221,23 @@ checks enabled locations through the interpreter rather than the removed stop
 list. New tests cover lock pairs, cursor continuity after waiting, run-start
 coordinates and whole-cell stop placement.
 
-Remaining before step 2 is complete:
+The menu-time subcommit consumes remaining seconds through successive Wait,
+Travel and away-practice phases on a temporary clock, without advancing
+Papyrus real time. Door crossings retain the run and cursor. Zero-second Wait
+holds indefinitely, as DriveCart and UseWeapon's authored inputs imply;
+Wait-only phases preserve furniture. Single completed Travel/Escort packages
+retain their destination. ActivateInSequence skips statically empty target
+slots, including Blind Cliff's unused final target. Choices and SE probes are
+recorded in `known_ambiguities/package-trees.md`.
 
-- Catch-up across several procedures in one large time advance. Newly entered
-  phases currently start at zero instead of consuming remaining elapsed time.
-- Explicit StayAtCurrentLocation/DoNothing fixture coverage. Run-start space
-  and HoldPosition return are now implemented; legacy runs lacking an origin
-  still fall back to their current position until the next run.
-- Vanilla runtime fixtures for TravelBackAndForthAndGuard and
-  ActivateInSequence, including cross-cell whole-cell stop travel. Existing
-  structural/cursor fixtures do not establish those end-to-end behaviours.
+Validated: 192 AI tests, 69 condition tests, 5 scene tests and 2 execution-save
+tests, with ignored tests included. Vanilla fixtures execute DriveCart/DoNothing,
+seated StayAtCurrentLocation, the repeating travel half of
+TravelBackAndForthAndGuard, and both ActivateInSequence users. Synthetic runtime
+tests cross a load door into a whole-cell destination without restarting the
+run and consume remaining seconds after its arrival delay. These fixtures
+verify this implementation, not unmeasured original-game timing. Legacy runs
+lacking an origin still use their current position until the next run.
 
 With step 1 in place, the remaining work here is the procedures themselves.
 

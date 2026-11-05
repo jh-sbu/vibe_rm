@@ -231,3 +231,43 @@ choices, nested Stacked switches on the evaluation cadence and whether returning
 to a previous branch resumes it. Queued in ROADMAP Test plugins. Unfinished
 procedure integration and the temporary fallback gate are tracked only in
 `plans/ai-depth.md` step 1.
+
+## Menu time and optional sequence inputs (2026-11-05)
+
+Additional asset examination with `pack-tree` found:
+
+- `DriveCart` (`000CDFC4`), using DoNothing (`000654E2`), sets
+  `ActualSeconds` to zero and `StopMovement` true. UseWeapon also supplies its
+  explicitly named "Max Time spent Attacking (0 = forever)" to Wait.
+- StayAtCurrentLocation (`00082571`) selects Wait while
+  `IsFurnitureAnimType(1)` passes, otherwise Travel to its starting location.
+- ActivateInSequence (`00071C45`) supplies seven Activate leaves. Delphine's
+  `00071C46` leaves targets 5 and 6 unset; Blind Cliff's `0008CABD` supplies
+  only its first two targets, including an unset final target. The unset values
+  are PTDA Object Type zero. xEdit's public `wbObjectTypeEnum` names zero
+  "None"; its MPL 2.0 source was consulted for enum facts, without copying code.
+- TravelBackAndForthAndGuard (`0009BD86`) runs a repeating Travel pair beside
+  Guard. Guard remains skipped as the plan requires.
+
+Choices: Wait with zero seconds holds indefinitely; positive seconds complete
+on elapsed real time. A Wait-only phase retains a seat, including beyond the
+previous furniture duration. A statically unset Activate target or zero use
+count completes without activating anything. A dynamically unresolved alias is
+not treated as an empty authored slot. IsNullPackageData recognizes these null
+target sentinels. These rules follow the authored uses; exact SE behavior at
+malformed and dynamically disappearing inputs still needs observation.
+
+Large wait/sleep advances consume time across phase boundaries on a temporary
+clock. Movement precedes the boundary's completion, so a newly entered Wait
+receives only subsequent seconds. Papyrus real time stays paused; away movement
+deadlines are rebased afterwards. Furniture exit animation is skipped during
+the menu advance, as scheduled respawning already skipped it. The graph resets
+to its default state and applies the carry offset/instant exit when accepted;
+carried objects survive, ordinary idle objects do not. Native menu timing for
+these transitions is unmeasured. Queue a probe comparing several short waits
+with one long wait through Travel/Wait, doors and a carry sequence.
+
+A sole completed Travel/Escort retains its destination while current, matching
+the existing arrival behavior. Composite sequences give way only at root
+completion. Synthetic runtime and vanilla data fixtures verify this engine's
+chosen rules; they are not original-game measurements.

@@ -121,7 +121,9 @@ fn plan_move(
         };
         return if !same_space(place, there) {
             if prompted { now } else { late }
-        } else if target.is_nan() || pos.is_nan() {
+        } else if target.is_nan() {
+            now
+        } else if pos.is_nan() {
             Move::Settle
         } else if matches!(tier, Processing::Buffered { .. }) {
             Move::Walk {
@@ -189,21 +191,6 @@ impl Engine {
         }
     }
 
-    /// Step every away actor at once, `secs` more real seconds having passed
-    /// for them (time passed in a menu: `Engine::pass_time`).
-    pub(crate) fn step_all_away(&mut self, secs: f32) {
-        let mut all: Vec<FormId> = self
-            .away
-            .iter()
-            .filter(|(_, x)| x.place.is_some())
-            .map(|(&r, _)| r)
-            .collect();
-        all.sort();
-        for r in all {
-            self.step_away_by(r, secs);
-        }
-    }
-
     /// Advance actor `r`'s execution away: read its packages when due, move it
     /// as its package has it, and end a run that has had its time.
     pub(crate) fn step_away(&mut self, r: FormId) {
@@ -214,20 +201,24 @@ impl Engine {
     /// clock says (time passed in a menu).
     fn step_away_by(&mut self, r: FormId, extra: f32) {
         let now = self.scripts.real_time;
+        self.step_away_at(r, now + extra.max(0.0) as f64, now);
+    }
+
+    pub(super) fn step_away_at(&mut self, r: FormId, clock: f64, stamp: f64) {
         let Some(tier) = self.processing(r).filter(|&t| t != Processing::Full) else {
             return;
         };
         let Some(x) = self.away.get(&r) else {
             return;
         };
-        let dt = (now - x.stepped_at).max(0.0) as f32 + extra.max(0.0);
+        let dt = (clock - x.stepped_at).max(0.0) as f32;
         self.refresh_away_packages(r);
         let hours = self.game_hours_total();
         let slot = (hours * 2.0).floor() as i64;
         let Some(x) = self.away.get_mut(&r) else {
             return;
         };
-        x.stamp(now, hours);
+        x.stamp(stamp, hours);
         x.next_eval -= dt;
         let due = x.next_eval <= 0.0 || x.eval_slot != Some(slot);
         self.advance_away_tree(r, dt);
@@ -235,13 +226,13 @@ impl Engine {
             self.evaluate_away(r, slot, tier);
         }
         self.procedure_locks(r);
-        self.move_away(r, dt, tier, now + extra as f64);
+        self.move_away(r, dt, tier, clock);
         self.advance_away_practice(r, dt);
         let Some(x) = self.away.get_mut(&r) else {
             return;
         };
         x.prompted = false;
-        if x.ends_at.is_some_and(|t| t <= now + extra as f64) {
+        if x.ends_at.is_some_and(|t| t <= clock) {
             x.ends_at = None;
             x.complete_procedure(false);
         }
@@ -419,7 +410,7 @@ impl Engine {
             }
             _ => None,
         };
-        let now = self.scripts.real_time;
+        let now = clock;
         match step {
             Move::Settle => {
                 if let Some(x) = self.away.get_mut(&r) {
@@ -591,7 +582,7 @@ impl Engine {
     /// Put away actor `r` at `pos` in `there` (NaN: anywhere in it), facing
     /// the way it went. Its scripts hear of a change of location, and one
     /// put in a loaded cell comes in.
-    fn put_away(&mut self, r: FormId, there: Place, pos: Vec3) {
+    pub(super) fn put_away(&mut self, r: FormId, there: Place, pos: Vec3) {
         let Some(x) = self.away.get_mut(&r) else {
             return;
         };
@@ -734,8 +725,8 @@ impl Engine {
             return;
         }
         log::debug!("{secs:.0} s pass");
-        self.step_all_away(secs);
-        self.jump_to_schedules(secs);
+        self.advance_menu_time(secs);
+        self.jump_to_schedules(0.0);
     }
 }
 

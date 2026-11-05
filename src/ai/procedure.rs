@@ -141,6 +141,23 @@ impl Cursor {
             .map(|(_, path, n)| (path, n))
     }
 
+    pub(crate) fn body<'a>(&self, root: &'a Node) -> Option<&'a Node> {
+        self.moving(root).map(|(_, n)| n).or_else(|| {
+            self.completed
+                .then(|| root.single_procedure())
+                .flatten()
+                .filter(|n| matches!(n.procedure.as_str(), "Travel" | "Escort"))
+        })
+    }
+
+    pub(crate) fn waits_in_place(&self, root: &Node) -> bool {
+        self.body(root).is_none()
+            && self
+                .active
+                .iter()
+                .any(|p| root.at(p).is_some_and(|n| n.procedure == "Wait"))
+    }
+
     fn reset(&mut self, path: &[u32]) {
         self.revision = self.revision.saturating_add(1);
         for (p, state) in &mut self.states {
@@ -181,7 +198,14 @@ impl Cursor {
             if !entered {
                 state.elapsed += dt;
             }
-            if node.procedure == "Wait" && state.elapsed >= node.seconds() {
+            let empty_activation = node.procedure == "Activate"
+                && (node.values.first().is_some_and(|v| v.is_null())
+                    || matches!(node.values.get(1), Some(super::package::Input::Int(0))));
+            if empty_activation
+                || (node.procedure == "Wait"
+                    && node.seconds() > 0.0
+                    && state.elapsed >= node.seconds())
+            {
                 state.finished = true;
                 return Status::Complete;
             }
@@ -425,9 +449,41 @@ mod tests {
         assert_eq!(c.active, vec![vec![1]]);
         tick(&mut c, &n, 1.0);
         assert_eq!(c.active, vec![vec![0]]);
-        let empty = branch("Sequence", vec![wait(0.0)], true);
+        let empty = branch("Sequence", vec![], true);
         tick(&mut c, &empty, 1000.0);
         assert!(!c.completed);
+    }
+
+    #[test]
+    fn zero_wait_holds_and_unset_activation_slots_are_skipped() {
+        let n = branch("Simultaneous", vec![leaf("Sandbox"), wait(0.0)], false);
+        let mut c = Cursor::default();
+        tick(&mut c, &n, 0.0);
+        tick(&mut c, &n, 1e9);
+        assert!(!c.completed);
+        let empty = Node {
+            values: vec![
+                Input::Target(super::super::package::Target::ObjectType(0)),
+                Input::Int(1),
+            ],
+            ..leaf("Activate")
+        };
+        let n = branch("Sequence", vec![empty, wait(1.0)], false);
+        let mut c = Cursor::default();
+        tick(&mut c, &n, 0.0);
+        assert_eq!(c.active, vec![vec![1]]);
+    }
+
+    #[test]
+    fn completed_single_travel_keeps_its_body_goal() {
+        let n = branch("Sequence", vec![leaf("Travel")], false);
+        let mut c = Cursor::default();
+        tick(&mut c, &n, 0.0);
+        c.finish(&[0]);
+        tick(&mut c, &n, 0.0);
+        assert!(c.completed);
+        assert!(c.moving(&n).is_none());
+        assert_eq!(c.body(&n).unwrap().procedure, "Travel");
     }
 
     #[test]

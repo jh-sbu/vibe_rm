@@ -52,6 +52,34 @@ fn with_world(test: impl FnOnce(&mut World<'_>)) {
 }
 
 #[test]
+fn a_wait_only_phase_holds_the_furniture_loop_past_its_old_timer() {
+    let mut a = actor();
+    let root = package::Node {
+        kind: "Procedure".into(),
+        procedure: "Wait".into(),
+        flags: 0,
+        conditions: vec![],
+        children: vec![],
+        args: vec![],
+        values: vec![package::Input::Float(0.)],
+    };
+    let mut p = Package::bare(FormId(3), Behaviour::Hold);
+    p.tree = Some(Arc::new(root.clone()));
+    a.exec.packages = vec![p];
+    a.exec.current = Some(0);
+    a.exec.begin_run(Some(0), 0., false);
+    let mut c = procedure::Cursor::default();
+    c.step(&root, 0., true, |_| true, || 0);
+    a.exec.run.as_mut().unwrap().cursor = Some(c);
+    a.state = State::Use(0.1);
+    with_world(|w| {
+        a.step(60., w);
+    });
+    assert!(matches!(a.state, State::Use(t) if t > 0.));
+    assert!(!a.leave);
+}
+
+#[test]
 fn armor_scales_package_gaits_and_combat_without_changing_animation_speeds() {
     let mut a = actor();
     assert_eq!(a.move_speed(), 100.0);

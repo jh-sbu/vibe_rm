@@ -20,7 +20,7 @@ impl ActorExec {
             (Some(tree), Some((_run, cursor)))
                 if cursor.tree_key == p.editor_id && tree.executable() =>
             {
-                std::borrow::Cow::Owned(p.for_procedure(cursor.moving(tree).map(|(_, n)| n)))
+                std::borrow::Cow::Owned(p.for_procedure(cursor.body(tree)))
             }
             _ => std::borrow::Cow::Borrowed(p),
         }
@@ -91,7 +91,9 @@ impl ActorExec {
             }
             self.next_eval = 0.0;
             if ends {
-                let composite = tree.children.len() > 1;
+                let composite = !tree
+                    .single_procedure()
+                    .is_some_and(|n| matches!(n.procedure.as_str(), "Travel" | "Escort"));
                 self.complete_run(gives_way || composite);
             }
         } else if !has_cursor {
@@ -210,7 +212,16 @@ impl Engine {
                     run.practice = None;
                 }
                 a.exec.patrol = None;
-                a.interrupt(&mut self.furniture);
+                let waiting = a
+                    .exec
+                    .current
+                    .and_then(|i| a.exec.packages.get(i))
+                    .and_then(|p| p.tree.as_ref())
+                    .zip(a.exec.run.as_ref().and_then(|r| r.cursor.as_ref()))
+                    .is_some_and(|(tree, c)| c.waits_in_place(tree));
+                if !waiting {
+                    a.interrupt(&mut self.furniture);
+                }
                 self.whereabouts.next_refresh = 0.0;
                 let whole_cell = a.exec.current.and_then(|i| a.exec.packages.get(i)).is_some_and(|p| {
                     let p = a.exec.effective(p);
@@ -369,20 +380,99 @@ mod tests {
         Input::Location(Location { kind, radius: 0.0 })
     }
     fn install(e: &mut Engine, tree: Node) {
+        let mut p = Package::bare(PACKAGE, Behaviour::Travel);
+        p.tree = Some(Arc::new(tree));
+        install_package(e, p);
+    }
+    fn install_package(e: &mut Engine, mut p: Package) {
         e.location = crate::engine::Location::Interior(CELL);
         e.scripts.alias_gen = 7;
         loaded_actor(e);
         let a = e.actor_mut(ACTOR).unwrap();
-        let mut p = Package::bare(PACKAGE, Behaviour::Travel);
         p.schedule.hour = -1;
         p.schedule.day_of_week = -1;
-        p.tree = Some(Arc::new(tree));
+        p.conditions.clear();
         a.exec.packages = vec![p];
         a.exec.current = None;
         a.exec.run = None;
         a.exec.next_eval = 0.0;
         a.fresh = false;
         e.evaluate_packages(0.0);
+    }
+
+    #[test]
+    #[ignore = "requires installed Skyrim SE masters and a headless GPU"]
+    fn vanilla_guard_travel_and_activation_sequences_advance_loaded_goals() {
+        let (_f, mut e) = fixture();
+        let data = vfs::locate_data_dir().unwrap();
+        let names: Vec<_> = esp::BASE_MASTERS.iter().map(|s| s.to_string()).collect();
+        e.lo = esp::LoadOrder::load(&data, &names).unwrap();
+        let template = e.lo.find_editor_id("TravelBackAndForthAndGuard").unwrap();
+        let p =
+            e.lo.ids_of_type(b"PACK")
+                .iter()
+                .find_map(|&id| {
+                    let r = e.lo.get(id)?;
+                    let d = r.get(b"PKCU")?.get(4..8)?;
+                    (r.fid(FormId(u32::from_le_bytes(d.try_into().ok()?))) == template)
+                        .then(|| super::super::package::parse(&e.lo, id))
+                        .flatten()
+                })
+                .unwrap();
+        let id = p.id;
+        install_package(&mut e, p);
+        let first = e.actor_ref(ACTOR).unwrap().exec.goal.unwrap().centre;
+        assert!(first.is_finite());
+        for expected in [vec![1, 1], vec![1, 0]] {
+            let goal = e.actor_ref(ACTOR).unwrap().exec.goal.unwrap();
+            e.actor_mut(ACTOR).unwrap().exec.pos = goal.centre;
+            e.complete_arrivals();
+            e.advance_loaded_trees(0.);
+            e.evaluate_packages(0.);
+            let x = &e.actor_ref(ACTOR).unwrap().exec;
+            assert_eq!(x.package(), Some(id));
+            assert_eq!(
+                x.run.as_ref().unwrap().cursor.as_ref().unwrap().active,
+                vec![expected]
+            );
+            assert!(!x.run_completed());
+        }
+
+        e.cells.values_mut().for_each(|rt| rt.actors.clear());
+        e.actor_cells.clear();
+        let p = super::super::package::parse(&e.lo, FormId(0x8CABD)).unwrap();
+        install_package(&mut e, p);
+        let at = e.actor_ref(ACTOR).unwrap().exec.goal.unwrap().centre;
+        let cell = e.lo.cell_of_ref(FormId(0x8CAB7)).unwrap();
+        let key = crate::render::CellKey::Interior(cell);
+        let rt = e
+            .cells
+            .remove(&crate::render::CellKey::Interior(CELL))
+            .unwrap();
+        e.cells.insert(key, rt);
+        e.actor_cells.insert(ACTOR, key);
+        e.location = crate::engine::Location::Interior(cell);
+        e.actor_mut(ACTOR).unwrap().exec.pos = at;
+        e.complete_arrivals();
+        let mut seen = vec![];
+        for _ in 0..3 {
+            e.advance_loaded_trees(0.);
+            e.evaluate_packages(0.);
+            let a = e.actor_mut(ACTOR).unwrap();
+            let Some(goal) = a.exec.goal else {
+                break;
+            };
+            if goal.behaviour != Behaviour::Activate {
+                break;
+            }
+            seen.push(goal.target.unwrap());
+            a.activation_done(&goal);
+        }
+        assert_eq!(seen, [FormId(0x8CAB7), FormId(0x8CABC)]);
+        assert_eq!(
+            e.actor_ref(ACTOR).unwrap().exec.done_once,
+            Some(FormId(0x8CABD))
+        );
     }
 
     #[test]

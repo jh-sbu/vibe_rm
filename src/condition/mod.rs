@@ -922,6 +922,14 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         159 | 49 if ctx.idle.is_none() => {
             Some(subject.map_or(0.0, |s| e.sit_sleep_state(s, c.func == 49)))
         }
+        613 if ctx.idle.is_none() => {
+            let anim = subject
+                .and_then(|s| e.actor_ref(s))
+                .filter(|a| a.in_furniture())
+                .and_then(|a| a.seat.as_ref())
+                .map_or(0, |s| s.anim_type);
+            b(anim == c.p1)
+        }
         237 => b(subject.is_some_and(|s| e.is_ghost(s))), // GetIsGhost
         // The platform: a PC build (UESP Skyrim:Console, oldid 3628513, "Returns
         // true if the game is running on a Windows environment"). Gore is never

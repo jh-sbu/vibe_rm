@@ -557,3 +557,71 @@ fn vanilla_trees_keep_travel_rotation_sandbox_timing_and_carry_conditions() {
         }
     }
 }
+
+#[test]
+#[ignore = "needs installed vanilla Skyrim SE masters; reads external assets only"]
+fn vanilla_wait_guard_travel_and_optional_activation_slots_execute() {
+    use crate::ai::procedure::Cursor;
+    let data = vfs::locate_data_dir().unwrap();
+    let names: Vec<_> = esp::BASE_MASTERS.iter().map(|s| s.to_string()).collect();
+    let lo = LoadOrder::load(&data, &names).unwrap();
+    let advance = |c: &mut Cursor, root: &super::Node, dt| {
+        c.step(
+            root,
+            dt,
+            true,
+            |cs| cs.iter().all(|c| number(c) == Some(c.value)),
+            || 0,
+        );
+    };
+    let p = parse(&lo, FormId(0xCDFC4)).unwrap(); // DriveCart / DoNothing
+    let root = p.tree.as_ref().unwrap();
+    let mut c = Cursor::default();
+    advance(&mut c, root, 0.0);
+    advance(&mut c, root, 86400.0);
+    assert!(!c.completed);
+    assert!(c.waits_in_place(root));
+
+    let template = lo.find_editor_id("TravelBackAndForthAndGuard").unwrap();
+    let root = procedure_tree(&lo, template).unwrap();
+    let mut c = Cursor::default();
+    advance(&mut c, &root, 0.0);
+    assert_eq!(c.active, vec![vec![1, 0]]);
+    c.finish(&[1, 0]);
+    advance(&mut c, &root, 0.0);
+    assert_eq!(c.active, vec![vec![1, 1]]);
+    c.finish(&[1, 1]);
+    advance(&mut c, &root, 0.0);
+    assert_eq!(c.active, vec![vec![1, 0]]);
+
+    for (id, expected) in [
+        (0x71C46, vec![0x71C3C, 0x71C3E, 0x71C40, 0x71C41, 0x71C42]),
+        (0x8CABD, vec![0x8CAB7, 0x8CABC]),
+    ] {
+        let p = parse(&lo, FormId(id)).unwrap();
+        let root = p.tree.as_ref().unwrap();
+        let mut c = Cursor::default();
+        advance(&mut c, root, 0.0);
+        let path = c.moving(root).unwrap().0.clone();
+        assert_eq!(c.body(root).unwrap().procedure, "Travel");
+        c.finish(&path);
+        let mut seen = vec![];
+        for _ in 0..10 {
+            advance(&mut c, root, 0.0);
+            if c.completed {
+                break;
+            }
+            let (path, node) = c.moving(root).unwrap();
+            assert_eq!(node.procedure, "Activate");
+            let Input::Target(Target::Ref(target)) = node.values[0] else {
+                panic!("non-reference activation");
+            };
+            seen.push(target.0);
+            let path = path.clone();
+            c.finish(&path);
+        }
+        assert!(c.completed);
+        assert_eq!(seen, expected);
+        assert_eq!(p.id, FormId(id));
+    }
+}

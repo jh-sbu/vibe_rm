@@ -631,7 +631,7 @@ impl Engine {
 
     /// The load door nearest `from` (in any loaded cell) leading to `target`, or failing
     /// that to `target`'s worldspace. Returns the door and the spot in front of it.
-    fn door_towards(&self, from: Vec3, target: Place) -> Option<(FormId, Vec3)> {
+    pub(super) fn door_towards(&self, from: Vec3, target: Place) -> Option<(FormId, Vec3)> {
         let mut best: Option<(bool, f32, FormId, Vec3)> = None;
         for rt in self.cells.values() {
             for d in rt.doors.iter().filter(|d| !self.is_disabled(d.ref_id)) {

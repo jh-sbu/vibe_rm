@@ -110,6 +110,52 @@ fn plan(e: &mut Engine, a: &mut ActorRuntime) {
 
 #[test]
 #[ignore = "requires installed Skyrim SE animation assets and a headless GPU"]
+fn vanilla_stay_at_current_location_preserves_a_seated_actor() {
+    let (mut e, mut a, key) = fixture();
+    plan(&mut e, &mut a);
+    let seat = a.seat.as_mut().unwrap();
+    seat.kind = Use::Sit;
+    seat.anim_type = 1;
+    a.state = State::Use(0.1);
+    a.leave = false;
+    let template = e.lo.find_editor_id("StayAtCurrentLocation").unwrap();
+    let mut ps = package::expand(&e.lo, template);
+    assert_eq!(ps.len(), 2);
+    for p in &mut ps {
+        p.schedule.hour = -1;
+        p.schedule.day_of_week = -1;
+    }
+    a.exec.packages = ps;
+    a.exec.alias_gen = e.scripts.alias_gen;
+    a.exec.next_eval = 0.;
+    let id = a.ref_id;
+    e.cells.get_mut(&key).unwrap().actors.insert(0, a);
+    e.evaluate_packages(0.);
+    let a = e.actor_ref(id).unwrap();
+    assert!(!a.leave);
+    assert!(matches!(a.state, State::Use(_)));
+    let tree = a.exec.packages[a.exec.current.unwrap()]
+        .tree
+        .as_ref()
+        .unwrap();
+    assert!(
+        a.exec
+            .run
+            .as_ref()
+            .unwrap()
+            .cursor
+            .as_ref()
+            .unwrap()
+            .waits_in_place(tree)
+    );
+    e.pass_time(120.);
+    let a = e.actor_ref(id).unwrap();
+    assert!(!a.leave);
+    assert!(matches!(a.state, State::Use(_)));
+}
+
+#[test]
+#[ignore = "requires installed Skyrim SE animation assets and a headless GPU"]
 fn whole_cell_load_places_upstairs_sandboxer_at_downstairs_idle() {
     let (mut e, mut a, key) = fixture();
     // Reproduce the old local search: it cannot offer the downstairs marker.

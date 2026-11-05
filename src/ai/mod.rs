@@ -21,6 +21,7 @@ mod procedure_runtime;
 pub mod schedule;
 mod summons;
 pub mod threat;
+mod time;
 
 #[cfg(test)]
 mod movement_tests;
@@ -1175,6 +1176,13 @@ impl ActorRuntime {
             return false;
         }
         let idle_turn_rate = self.turn_rate();
+        let holding_seat = self
+            .exec
+            .current
+            .and_then(|i| self.exec.packages.get(i))
+            .and_then(|p| p.tree.as_ref())
+            .zip(self.exec.run.as_ref().and_then(|r| r.cursor.as_ref()))
+            .is_some_and(|(tree, c)| c.waits_in_place(tree));
         match &mut self.state {
             State::Idle(t) => {
                 self.speed = 0.0;
@@ -1326,6 +1334,9 @@ impl ActorRuntime {
                 true
             }
             State::Use(t) => {
+                if holding_seat && !self.leave {
+                    *t = t.max(dt + 1.0);
+                }
                 *t -= dt;
                 let remaining = *t;
                 if self.step_sub_idle(dt, &mut w.clips) {
@@ -3561,9 +3572,9 @@ impl Engine {
                 });
                 let goal = pick.map(|pi| {
                     let base = &a.exec.packages[pi];
-                    let effective = cursor.as_ref().map(|c| {
-                        base.for_procedure(c.moving(base.tree.as_ref().unwrap()).map(|(_, n)| n))
-                    });
+                    let effective = cursor
+                        .as_ref()
+                        .map(|c| base.for_procedure(c.body(base.tree.as_ref().unwrap())));
                     let p = effective.as_ref().unwrap_or(base);
                     let (centre, radius) = self.package_target(a, p);
                     let target = self.package_target_ref(a, p, p.target);
@@ -3720,6 +3731,10 @@ impl Engine {
                 .and_then(|r| r.cursor.as_ref())
                 .map(|c| (&c.tree_key, &c.active))
                 != cursor.as_ref().map(|c| (&c.tree_key, &c.active));
+            let waiting_in_place = cursor
+                .as_ref()
+                .zip(pick.and_then(|i| a.exec.packages[i].tree.as_ref()))
+                .is_some_and(|(c, tree)| c.waits_in_place(tree));
             if pick != a.exec.current {
                 if let Some(p) = pick.map(|pi| &a.exec.packages[pi]) {
                     log::debug!(
@@ -3750,7 +3765,7 @@ impl Engine {
                 a.exec.current = pick;
                 a.exec.goal = goal;
                 a.turn_after_arrival = arrival_turn_after_package_eval(a.turn_after_arrival, goal);
-                if !first {
+                if !first && !waiting_in_place {
                     a.interrupt(&mut self.furniture);
                 }
             } else {
@@ -3763,7 +3778,7 @@ impl Engine {
                     .is_some_and(|g| Some(g.behaviour) != goal.map(|g| g.behaviour));
                 a.exec.goal = goal;
                 a.turn_after_arrival = arrival_turn_after_package_eval(a.turn_after_arrival, goal);
-                if changed || switched_cursor {
+                if (changed || switched_cursor) && !waiting_in_place {
                     a.interrupt(&mut self.furniture);
                 }
             }
