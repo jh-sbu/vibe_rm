@@ -1834,6 +1834,9 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
     NPCs not fleeing at 18% health, stolen `AIPL` (type 1, owner None), and
     `KILL` for an essential `Kill(None)`.
 - Test plugins:
+  - Procedure trees (`plans/ai-depth.md`, step 1): probe Simultaneous first/all
+    completion, Random repeats and cadence-based Stacked switches, including
+    whether returning to the previous branch resumes its progress.
   - `test-mod autotest23` isn't written yet. It should cover autotest22's
     follow-up list ("Faults and open items").
   - Built and waiting for the user's run: `loadscreens`
@@ -1980,7 +1983,8 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      (scenes with unloaded actors), and `autotest16` for step 9 (unloaded
      travellers walk, applied).
    - **Unblocked work: `plans/ai-depth.md`** (in progress 2026-11-05; step 0,
-     the all-PACK census tool, is done). It plans
+     the all-PACK census tool, is done; step 1 has bound trees, saved cursors and
+     initial loaded/away execution, with remaining integration tracked there). It plans
      these in steps: a procedure-tree interpreter (`Sequence` /
      `Simultaneous` / `Random` run as written; Wait, Lock / UnlockDoors,
      multi-location stops' per-stop unlocking, "in cell" stops elsewhere and

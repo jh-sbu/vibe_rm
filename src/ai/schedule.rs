@@ -284,6 +284,11 @@ impl Engine {
     /// Where a package puts an actor, when its location names a place (a reference,
     /// linked reference or interior cell). The position is NaN for a whole cell.
     pub(crate) fn package_place(&self, achr: FormId, p: &Package) -> Option<(Place, Vec3)> {
+        let effective = self
+            .actor_ref(achr)
+            .map(|a| a.exec.effective(p))
+            .or_else(|| self.away.get(&achr).map(|x| x.effective(p)));
+        let p = effective.as_deref().unwrap_or(p);
         let target = match p.location.map(|l| l.kind) {
             Some(LocationKind::NearReference(r)) => Some(r),
             Some(LocationKind::NearLinkedRef(kw)) => {

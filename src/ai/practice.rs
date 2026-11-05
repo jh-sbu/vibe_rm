@@ -324,7 +324,7 @@ impl ActorRuntime {
                 p.barrages_done,
                 p.elapsed
             );
-            self.exec.complete_run(true);
+            self.exec.complete_procedure(true);
         }
         self.practice = Some(p);
     }

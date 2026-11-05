@@ -543,16 +543,17 @@ impl Engine {
             else {
                 continue;
             };
+            let p = a.exec.effective(p);
             if run.outcome == Outcome::Running
                 && matches!(p.behaviour, Behaviour::Travel | Behaviour::Escort)
-                && self.arrived(a, p, goal)
+                && self.arrived(a, &p, goal)
             {
                 done.push(a.ref_id);
             }
         }
         for r in done {
             if let Some(a) = self.actor_mut(r) {
-                a.exec.complete_run(false);
+                a.exec.complete_procedure(false);
             }
         }
     }

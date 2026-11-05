@@ -250,7 +250,7 @@ impl ActorRuntime {
         m.wait = uniform(w.rand, goal.cooldown.0, goal.cooldown.1);
         if left <= 1 {
             log::debug!("{} finished its casting practice", self.ref_id);
-            self.exec.complete_run(true);
+            self.exec.complete_procedure(true);
             *m = MagicPractice {
                 package: m.package,
                 ..Default::default()

@@ -1913,6 +1913,9 @@ impl Engine {
         let Some(a) = self.actor_ref(r) else {
             return self.run_away(r) && self.away_package_done(r, packages, now - started);
         };
+        if a.exec.done_once.is_some_and(|id| packages.contains(&id)) {
+            return true;
+        }
         let Some(p) = a
             .exec
             .current
@@ -1924,6 +1927,15 @@ impl Engine {
         let Some(goal) = a.exec.goal else {
             return false;
         };
+        if a.exec.run.as_ref().is_some_and(|run| run.cursor.is_some()) {
+            if a.exec.run_completed() {
+                return true;
+            }
+            return matches!(
+                a.exec.effective(p).behaviour,
+                Behaviour::Sit | Behaviour::Sleep
+            ) && a.in_furniture();
+        }
         match p.behaviour {
             Behaviour::Travel | Behaviour::Escort => self.arrived(a, p, goal),
             Behaviour::Sit | Behaviour::Sleep => a.in_furniture(),
@@ -1950,6 +1962,9 @@ impl Engine {
         let Some(x) = self.away.get(&r) else {
             return false;
         };
+        if x.done_once.is_some_and(|id| packages.contains(&id)) {
+            return true;
+        }
         let Some(p) = x
             .current
             .and_then(|c| x.packages.get(c))
@@ -1957,6 +1972,11 @@ impl Engine {
         else {
             return false;
         };
+        if x.run.as_ref().is_some_and(|run| run.cursor.is_some()) {
+            return x.run_completed()
+                || (matches!(x.effective(p).behaviour, Behaviour::Sit | Behaviour::Sleep)
+                    && x.settled);
+        }
         match p.behaviour {
             Behaviour::Travel | Behaviour::Escort => x.run_completed(),
             Behaviour::Sit | Behaviour::Sleep => x.settled,
@@ -2382,5 +2402,68 @@ mod away_tests {
         assert_eq!(e.away[&ACTOR].pos.x, 2960.0);
         e.update_scenes();
         assert!(e.is_scene_action_complete(SCENE, 1));
+    }
+}
+
+#[cfg(test)]
+mod tree_completion_tests {
+    use super::*;
+    use crate::ai::{
+        exec::{
+            ActorExec,
+            tests::{ACTOR, CELL, MARKER, PACKAGE, fixture},
+        },
+        package::{Input, Location, LocationKind, Node},
+        procedure::Cursor,
+        schedule::Place,
+    };
+    use std::sync::Arc;
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn an_away_scene_waits_for_the_root_and_remembers_a_completed_package_that_gave_way() {
+        let (_f, mut e) = fixture();
+        let leaf = |name: &str, values| Node {
+            kind: "Procedure".into(),
+            flags: 0,
+            conditions: vec![],
+            children: vec![],
+            procedure: name.into(),
+            args: vec![],
+            values,
+        };
+        let tree = Node {
+            kind: "Sequence".into(),
+            children: vec![
+                leaf(
+                    "Travel",
+                    vec![Input::Location(Location {
+                        kind: LocationKind::NearReference(MARKER),
+                        radius: 0.0,
+                    })],
+                ),
+                leaf("Wait", vec![Input::Float(5.0)]),
+            ],
+            ..leaf("", vec![])
+        };
+        let mut p = Package::bare(PACKAGE, Behaviour::Travel);
+        p.tree = Some(Arc::new(tree));
+        let mut cursor = Cursor {
+            tree_key: p.editor_id.clone(),
+            ..Default::default()
+        };
+        cursor.step(p.tree.as_ref().unwrap(), 0.0, true, |_| true, || 0);
+        let mut x = ActorExec::new(vec![p], Vec3::new(3000., 0., 0.), 0.0, 0.0);
+        x.current = Some(0);
+        x.place = Some(Place::Interior(CELL));
+        x.settled = true;
+        x.begin_run(Some(0), 0.0, true);
+        x.run.as_mut().unwrap().cursor = Some(cursor);
+        e.away.insert(ACTOR, x);
+        assert!(!e.away_package_done(ACTOR, &[PACKAGE], 1000.0));
+        e.away.get_mut(&ACTOR).unwrap().complete_run(true);
+        // Evaluation can replace the completed package before the scene updates.
+        e.away.get_mut(&ACTOR).unwrap().current = None;
+        assert!(e.away_package_done(ACTOR, &[PACKAGE], 1000.0));
     }
 }

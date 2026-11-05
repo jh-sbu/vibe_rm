@@ -229,7 +229,9 @@ impl Engine {
         };
         x.stamp(now, hours);
         x.next_eval -= dt;
-        if x.next_eval <= 0.0 || x.eval_slot != Some(slot) {
+        let due = x.next_eval <= 0.0 || x.eval_slot != Some(slot);
+        self.advance_away_tree(r, dt);
+        if due || self.away.get(&r).is_some_and(|x| x.next_eval <= 0.0) {
             self.evaluate_away(r, slot, tier);
         }
         self.move_away(r, dt, tier, now + extra as f64);
@@ -239,7 +241,7 @@ impl Engine {
         x.prompted = false;
         if x.ends_at.is_some_and(|t| t <= now + extra as f64) {
             x.ends_at = None;
-            x.complete_run(false);
+            x.complete_procedure(false);
         }
         self.bleed_away(r, dt);
     }
@@ -278,6 +280,13 @@ impl Engine {
     /// loaded actors' are (`evaluate_packages`), and start the one that
     /// applies.
     fn evaluate_away(&mut self, r: FormId, slot: i64, tier: Processing) {
+        let mut seed = self.rand() | 1;
+        let mut rand = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
         let Some(x) = self.away.get(&r) else {
             return;
         };
@@ -311,6 +320,13 @@ impl Engine {
             Some(&old) => old,
             None => x.package(),
         };
+        let cursor = pick.and_then(|i| self.cursor_for(r, x, &x.packages[i], &mut rand));
+        let switched = x
+            .run
+            .as_ref()
+            .and_then(|run| run.cursor.as_ref())
+            .map(|c| (&c.tree_key, &c.active))
+            != cursor.as_ref().map(|c| (&c.tree_key, &c.active));
         let pinned = x.pinned;
         let now = self.game_hours_total();
         let Some(x) = self.away.get_mut(&r) else {
@@ -341,6 +357,19 @@ impl Engine {
         } else {
             x.current = pick;
         }
+        let done = cursor.as_ref().is_some_and(|c| c.completed);
+        if let Some(run) = x.run.as_mut() {
+            run.cursor = cursor;
+        }
+        if switched {
+            x.settled = false;
+            x.ends_at = None;
+            x.jump_at = None;
+            x.strode_at = None;
+        }
+        if done && !x.run_completed() {
+            x.complete_run(true);
+        }
         if lock_old != id {
             self.package_door_locks(vec![(r, lock_old, id)]);
         }
@@ -365,6 +394,8 @@ impl Engine {
             }
             return;
         };
+        let p = x.effective(p);
+        let p = &*p;
         let step = if matches!(p.behaviour, Behaviour::Follow | Behaviour::Escort) {
             // Keeping up with whom it follows, when they are away too.
             let near = p.follow_radius.1.max(0.0) + FOLLOW_SLACK;
@@ -428,7 +459,7 @@ impl Engine {
                     self.put_away(r, there, to);
                 }
                 if let Some(x) = self.away.get_mut(&r) {
-                    x.complete_run(false);
+                    x.complete_procedure(false);
                 }
             }
             Move::Follow {
@@ -451,7 +482,7 @@ impl Engine {
                         self.put_away(r, place, end);
                     }
                     if let Some(x) = self.away.get_mut(&r) {
-                        x.complete_run(false);
+                        x.complete_procedure(false);
                     }
                     return;
                 }
@@ -483,7 +514,7 @@ impl Engine {
                     x.settled = true;
                     x.jump_at = None;
                     x.strode_at = None;
-                    x.complete_run(false);
+                    x.complete_procedure(false);
                 }
             }
         }

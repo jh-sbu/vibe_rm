@@ -1,8 +1,9 @@
 # Plan: the unblocked AI depth work
 
 **Status: in progress** (2026-11-05). Step 0 is implemented. Step 1 has its bound-tree and cursor foundation;
-run persistence is implemented. Live execution integration and steps 2–16
-remain.
+run persistence and initial live execution integration are implemented. Step 1
+still needs multi-location migration and the remaining completion rules; steps
+2–16 remain.
 
 This plan covers ROADMAP Next item 4 (AI depth): everything in it that can be
 built today from public sources, the game's data and the readings we already
@@ -51,13 +52,16 @@ and its top 40. `pack-census <data> --masters` reproduces this census.
 - Not run as designed (falling back to `Behaviour::Hold`, or one procedure of
   a sequence): UseIdleMarker 65, Orbit 58, SandboxAndKeepEyeOn 36,
   CarryAndDropItem 32, PatrolStaticPathing 30, TravelBackAndForthAndGuard 26,
-  TravelBackAndForth 24, GroupMovement 23, Shout 22, EscortPlayerWhenNear 18,
+  GroupMovement 23, Shout 22, EscortPlayerWhenNear 18,
   FollowPlayer 14, StayAtCurrentLocation 14, TravelCrouchWhenNearTemplate 12,
   DoNothing 12, CarryAndKeepItem 11, FleeFrom 11, FleeTo 8, FollowTo 6,
   ForceGreetWaitSitting 6, Say 5, Acquire 5, Hover 5, SayToPlayer 4,
   SandboxLockOnArrival 4, ActivateInSequence 2, StartConversation 1,
   KeepDistanceFrom 1, SingleFileFollow 1, and the dragons' and Alduin's
   templates.
+- Now interpreted as sequences: TravelBackAndForth 24. CarryAndDropItem and
+  CarryAndKeepItem use their Activate/Travel trees; their remaining carry
+  behaviour is still tracked in step 5.
 - Procedures named in templates' and packages' own trees: Travel 294, Sandbox
   97, HoldPosition 93, Wait 90, Guard 75, Sit 47, Patrol 47, UnlockDoors 46,
   Find 36, Follow 34, Activate 26, Sleep 20, Shout 18, Say 16, UseWeapon 13,
@@ -115,8 +119,22 @@ including suspended runs and unload/reload copies. Version 1 of AEXC preserves
 both, with bounded path/state decoding and validation; unversioned AEXC still
 loads with no cursor or origin. Save tests cover round trips, legacy runs,
 truncation and malformed progress. All 26 execution regressions pass including
-ignored GPU tests, and the eight cursor tests pass. Live execution wiring is
-next.
+ignored GPU tests, and the eight cursor tests pass.
+
+The third subcommit connects available procedures to loaded and away runs:
+leaf goals, real-time Wait, cadence-based nested Stacked rechecks, procedure
+completion distinct from root completion, scene completion and current-leaf
+travel targets. TravelBackAndForth now runs its repeating two-Travel tree.
+Supported carry trees can advance through their Activate and Travel leaves;
+step 5's carry details remain. Single Travel/ Escort arrival events keep their
+existing immediate timing and package identity. The AI suite passes with
+ignored tests included (168 tests). A temporary `Node::executable` gate keeps
+trees containing procedures not yet implemented on their existing behaviour,
+including UseWeapon's Find/Acquire preparation and multi-location sandboxing's
+Lock/UnlockDoors. Remaining step 1 work: migrate those sandbox stops when step
+2's door procedures are available; finish Patrol completion and away practice
+counts; add completion for the procedures implemented in steps 4–7 as they
+become available. This does not mark step 1 or the overall plan complete.
 
 Today `package::expand` splits a `Stacked` root into one package per branch,
 and every other tree is collapsed to one `main_procedure`. Multi-location

@@ -16,6 +16,7 @@ pub mod nav;
 pub mod package;
 pub mod practice;
 pub(crate) mod procedure;
+mod procedure_runtime;
 pub mod schedule;
 mod summons;
 pub mod threat;
@@ -1460,7 +1461,7 @@ impl ActorRuntime {
             goal.activate
         );
         if goal.activate > 0 && run.activations >= goal.activate {
-            self.exec.complete_run(true);
+            self.exec.complete_procedure(true);
         }
     }
 
@@ -3487,6 +3488,9 @@ impl Engine {
                 let Some(p) = a.exec.current.and_then(|i| a.exec.packages.get(i)) else {
                     continue;
                 };
+                if a.exec.run.as_ref().is_some_and(|r| r.cursor.is_some()) {
+                    continue;
+                }
                 let (Some(stop), Some(goal)) = (p.stops.get(a.exec.stop.index), a.exec.goal) else {
                     continue;
                 };
@@ -3567,6 +3571,9 @@ impl Engine {
                     .packages
                     .iter()
                     .position(|p| applies(p) && Some(p.id) != finished);
+                let cursor = pick.and_then(|pi| {
+                    self.cursor_for(a.ref_id, &a.exec, &a.exec.packages[pi], &mut rand)
+                });
                 // A multi-location sandbox starts at its first stop, or a random one.
                 let stop = match pick.map(|pi| &a.exec.packages[pi]) {
                     Some(_) if pick == a.exec.current => a.exec.stop,
@@ -3577,7 +3584,11 @@ impl Engine {
                     _ => StopProgress::default(),
                 };
                 let goal = pick.map(|pi| {
-                    let p = &a.exec.packages[pi];
+                    let base = &a.exec.packages[pi];
+                    let effective = cursor.as_ref().map(|c| {
+                        base.for_procedure(c.moving(base.tree.as_ref().unwrap()).map(|(_, n)| n))
+                    });
+                    let p = effective.as_ref().unwrap_or(base);
                     let (centre, radius) = match p.stops.get(stop.index) {
                         Some(s) => self.location_target(a, s.location, p.quest),
                         None => self.package_target(a, p),
@@ -3684,7 +3695,7 @@ impl Engine {
                         sneak: p.sneak,
                     }
                 });
-                decisions.push((*key, i, pick, goal, stop));
+                decisions.push((*key, i, pick, goal, stop, cursor));
             }
         }
         for rt in self.cells.values_mut() {
@@ -3704,7 +3715,7 @@ impl Engine {
         }
         let mut lock_changes = Vec::new();
         let now = self.game_hours_total();
-        for (key, i, pick, goal, stop) in decisions {
+        for (key, i, pick, goal, stop, cursor) in decisions {
             let Some(a) = self.cells.get_mut(&key).and_then(|rt| rt.actors.get_mut(i)) else {
                 continue;
             };
@@ -3728,6 +3739,13 @@ impl Engine {
             if old != id {
                 lock_changes.push((a.ref_id, old, id));
             }
+            let switched_cursor = a
+                .exec
+                .run
+                .as_ref()
+                .and_then(|r| r.cursor.as_ref())
+                .map(|c| (&c.tree_key, &c.active))
+                != cursor.as_ref().map(|c| (&c.tree_key, &c.active));
             if pick != a.exec.current {
                 if let Some(p) = pick.map(|pi| &a.exec.packages[pi]) {
                     log::debug!(
@@ -3764,9 +3782,16 @@ impl Engine {
                     .is_some_and(|g| Some(g.behaviour) != goal.map(|g| g.behaviour));
                 a.exec.goal = goal;
                 a.turn_after_arrival = arrival_turn_after_package_eval(a.turn_after_arrival, goal);
-                if changed {
+                if changed || switched_cursor {
                     a.interrupt(&mut self.furniture);
                 }
+            }
+            let done = cursor.as_ref().is_some_and(|c| c.completed);
+            if let Some(run) = a.exec.run.as_mut() {
+                run.cursor = cursor;
+            }
+            if done && !a.exec.run_completed() {
+                a.exec.complete_run(true);
             }
         }
         if !lock_changes.is_empty() {
@@ -3778,6 +3803,7 @@ impl Engine {
     pub(crate) fn update_actors(&mut self, dt: f32) {
         self.update_swimming_states();
         self.update_force_greets(dt);
+        self.advance_loaded_trees(dt);
         self.advance_sandbox_stops();
         self.evaluate_packages(dt);
         self.update_practice_weapons();

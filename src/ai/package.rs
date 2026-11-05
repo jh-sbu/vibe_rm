@@ -829,6 +829,95 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
     })
 }
 
+impl Package {
+    /// A body goal for one leaf. The PACK id and its schedule stay the same.
+    pub(crate) fn for_procedure(&self, node: Option<&Node>) -> Self {
+        let mut p = self.clone();
+        p.stops.clear();
+        p.greet = None;
+        let Some(n) = node else {
+            p.behaviour = Behaviour::Hold;
+            p.location = None;
+            p.target = None;
+            return p;
+        };
+        let flag = |i: usize, default| match n.values.get(i) {
+            Some(Input::Bool(v)) => *v,
+            _ => default,
+        };
+        let number = |i: usize, default| match n.values.get(i) {
+            Some(Input::Float(v)) => *v,
+            Some(Input::Int(v)) => *v as f32,
+            _ => default,
+        };
+        p.behaviour = behaviour_of_procedure(&n.procedure);
+        p.location = n.values.iter().find_map(|v| {
+            if let Input::Location(l) = v {
+                Some(*l)
+            } else {
+                None
+            }
+        });
+        p.target = n.values.iter().find_map(|v| {
+            if let Input::Target(t) = v {
+                Some(*t)
+            } else {
+                None
+            }
+        });
+        if p.location.is_none() {
+            let kind = match p.target {
+                Some(Target::Ref(r)) => Some(LocationKind::NearReference(r)),
+                Some(Target::Alias(a)) => Some(LocationKind::NearAlias(a)),
+                Some(Target::LinkedRef(kw)) => {
+                    Some(LocationKind::NearLinkedRef(kw.unwrap_or(FormId::NULL)))
+                }
+                Some(Target::SelfRef) => Some(LocationKind::NearSelf),
+                _ => None,
+            };
+            p.location = kind.map(|kind| Location { kind, radius: 0.0 });
+        }
+        match n.procedure.as_str() {
+            "Sandbox" => {
+                p.allow = Allow {
+                    eating: flag(1, false),
+                    sleeping: flag(2, false),
+                    idle_markers: flag(4, true),
+                    sitting: flag(5, false),
+                    wandering: flag(6, true),
+                    special_furniture: flag(9, false),
+                    meal: false,
+                };
+                p.energy = number(8, 50.0).clamp(0.0, 100.0);
+            }
+            "Eat" => {
+                p.behaviour = Behaviour::Sandbox;
+                p.allow.sitting = true;
+                p.allow.eating = true;
+                p.allow.meal = true;
+            }
+            "Activate" => p.activate = number(1, 1.0).max(0.0) as u32,
+            "Patrol" => {
+                p.point_radius = number(1, 50.0);
+                p.repeat = flag(2, true);
+                p.start_nearest = flag(3, false);
+            }
+            "Follow" => p.follow_radius = (number(1, 128.0), number(2, 384.0)),
+            "Escort" => {
+                p.escort_wait = number(3, 512.0);
+                p.escort_run = number(8, 500.0);
+            }
+            "HoldPosition" => {
+                p.behaviour = Behaviour::Hold;
+                p.location = None;
+                p.target = None;
+            }
+            _ => {}
+        }
+        p
+    }
+}
+
 /// A node of a package template's procedure tree (after `XNAM`): a branch
 /// (`Stacked`, `Sequence`, `Simultaneous`...) over its children, or a procedure
 /// with the inputs it takes (`PKC2`, by input index), each with its conditions.

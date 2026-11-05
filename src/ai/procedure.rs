@@ -161,6 +161,10 @@ impl Cursor {
         rand: &mut impl FnMut() -> u64,
         active: &mut Vec<Path>,
     ) -> Status {
+        // Guard's restricted-area rules are explicitly blocked in ai-depth.
+        if node.procedure == "Guard" {
+            return Status::Skipped;
+        }
         let state = self.states.entry(path.clone()).or_default();
         if state.finished {
             return Status::Complete;

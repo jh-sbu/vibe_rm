@@ -204,3 +204,39 @@ An autotest is planned in `plans/autotest-survey.md` (tier 3).
   strike nothing. The old weapon comes back afterwards. Per-target trigger
   distances, Aim Only and optional pauses are implemented; remaining lifecycle
   and timing questions are in [use-weapon.md](use-weapon.md).
+
+## Procedure cursor semantics (2026-11-05)
+
+The retained trees and `ai::procedure::Cursor` follow the structure read from
+vanilla TravelBackAndForth (`00098EB2`), SandboxMultiLocation (`00068B86`)
+and CarryAndDropItem (`00079ABF`), inspected with `pack-tree`. Their flags,
+input ordering, condition strings and repeat structure are game-asset evidence;
+the cursor's scheduling rules below remain inferences, not SE measurements.
+
+- Sequence advances in order, skipping failing children. A repeat restarts its
+  subtree. Progress belongs to the package run, including a scene-suspended
+  run, rather than the loaded body.
+- Simultaneous ends on its first completing eligible child. A failing child
+  does not count as completion. The moving procedure follows the former
+  main-procedure priority (Patrol, Follow, Sit, Sleep, Sandbox, Escort, Travel,
+  HoldPosition), while Wait only advances its timer. This extends the existing
+  Sandbox/Wait inference above; it is still not independently established.
+- Stacked rechecks on package evaluation, and switching branches restarts the
+  branch left behind. The same PACK remains current and fires no package
+  lifecycle event just for a branch or procedure change. Neither the recheck
+  cadence nor restart-versus-resume of an old branch has been measured in SE.
+- Random excludes its previous child when another eligible child exists, but
+  allows a sole eligible child to repeat. Its previous choice survives a
+  repeating ancestor's reset. These are choices, not documented random rules.
+- Wait uses real seconds, as previously chosen for sandbox stops; a newly
+  entered Wait does not reuse the preceding procedure's elapsed time.
+- Single Travel and Escort keep the already observed arrival lifecycle: the
+  run ends immediately on arrival and remains current until replaced. Other
+  procedures in a sequence finishing do not end the PACK. Scenes wait for
+  root completion, retaining their existing Sit/Sleep furniture completion.
+
+An SE probe should compare Simultaneous's first/all completion, Random repeat
+choices, nested Stacked switches on the evaluation cadence and whether returning
+to a previous branch resumes it. Queued in ROADMAP Test plugins. Unfinished
+procedure integration and the temporary fallback gate are tracked only in
+`plans/ai-depth.md` step 1.
