@@ -4,7 +4,7 @@
 trees, durable cursors, loaded/away execution and multi-location migration;
 finite Patrol completion and away practice counts are implemented. Step 2 is
 complete, including menu-time catch-up, door travel and vanilla sequence fixtures.
-Steps 3–16 are not implemented.
+Step 3 is complete. Steps 4–16 are not implemented.
 
 This plan covers ROADMAP Next item 4 (AI depth): everything in it that can be
 built today from public sources, the game's data and the readings we already
@@ -267,6 +267,26 @@ With step 1 in place, the remaining work here is the procedures themselves.
   its tree and run it as written.
 
 ### 3. Package data defaults and targets
+
+**Status: done** (2026-11-05). `pack-census`
+now compares concrete/template input indices: zero vanilla packages omit an
+input among all 7,573 records in the five masters. Defaults are inherited for
+mod support, with explicit false/zero/null values retained. Parsed fields,
+selection conditions, bound trees and expanded Stacked branches use the same
+resolved values. Synthetic tests cover each of these paths.
+
+Object ID / Type resolution shares one base predicate and a spatial selector
+covering authored, moved and created references, location space/radius,
+ownership, furniture reservations and stable nearest selection. Sleep retains
+own-bed priority. Inventory weapon and food predicates use the same matching
+code. New tests cover types, radius/space, disabled and contained references,
+created references, ties and bed ownership/reservations. All 197 AI tests and
+87 tools tests pass with ignored fixtures included, as do 69 condition, 9 item
+and 12 inventory tests. Runtime package-data
+mutation has no vanilla record/native mechanism found in the PACK layout,
+Package.pex or full native census; findings are in `research/package-data.md`.
+Detailed inferred target rules and future SE probes are in
+`known_ambiguities/package-trees.md`.
 
 - **Defaults**: templates carry their own `CNAM` values (`TravelBackAndForth`
   has them for its Bools). An input the package omits takes the template's

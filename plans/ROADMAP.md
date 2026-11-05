@@ -1300,6 +1300,13 @@ game each piece unlocks.
   during loaded and persistent actor package selection. Missing or unsupported
   values fail the condition. Remaining input and context limits:
   `known_ambiguities/package-trees.md`
+- Package inputs inherit template defaults, preserving explicit false, zero
+  and null overrides in parsed fields, conditions and procedure trees. The
+  five-master census found no omitted template inputs (mod support). No vanilla
+  numeric package-data setter or global-backed input was found; runtime input
+  mutation needs no implementation (`research/package-data.md`). Object ID /
+  Object Type selectors share location-limited reference search, furniture
+  permissions/reservations, food and weapon classification (AI depth step 3).
 - `GetWithinPackageLocation` conditions check the subject against a package
   `Location` input placed for the package's actor (force greet, travel-to-radius,
   civil war hold-position and Dawnguard disguised vampire template branches,
@@ -1843,6 +1850,8 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
     and re-entry (`known_ambiguities/use-magic.md`, `use-weapon.md`). Compare one
     long menu wait with several short waits across Travel/Wait, load doors and
     carry sequences (`known_ambiguities/package-trees.md`, menu time).
+    Probe Object Type aggregate categories, equidistant targets, ownership,
+    occupied furniture markers and the default search radius (same note).
   - `test-mod autotest23` isn't written yet. It should cover autotest22's
     follow-up list ("Faults and open items").
   - Built and waiting for the user's run: `loadscreens`

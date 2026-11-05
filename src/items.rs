@@ -707,15 +707,7 @@ impl Engine {
 
     /// Whether a potion (`ALCH`) is food (`ENIT` flag 0x2).
     pub fn is_food(&self, item: FormId) -> bool {
-        self.lo
-            .get(item)
-            .filter(|r| r.tag().0 == *b"ALCH")
-            .and_then(|r| {
-                r.get(b"ENIT")
-                    .filter(|d| d.len() >= 8)
-                    .map(|d| u32::from_le_bytes(d[4..8].try_into().unwrap()) & 0x2 != 0)
-            })
-            .unwrap_or(false)
+        crate::ai::targets::matches_base(&self.lo, item, crate::ai::package::Target::ObjectType(15))
     }
 
     /// Takes an item off once the actor has none of it left (out of the

@@ -64,8 +64,9 @@ Limits and unresolved behavior:
 - Support is scoped to authored values in package-selection conditions and
   the template branches already exposed by `expand`. Sequence/Simultaneous
   execution and nested branch switching now use the cursor for available
-  procedures. Inherited/default or dynamically changing or global-backed
-  package data still need implementation and evidence.
+  procedures. Template defaults are now inherited; the vanilla census finds
+  no omitted template inputs. No vanilla numeric input setter or global-backed
+  input was found (`research/package-data.md`).
 - The existing parser interprets `Int` as signed 32-bit, whereas xEdit displays
   its storage as unsigned. Negative values' native interpretation is not
   established; tests of negative inputs check the parser's current convention,
@@ -271,3 +272,31 @@ A sole completed Travel/Escort retains its destination while current, matching
 the existing arrival behavior. Composite sequences give way only at root
 completion. Synthetic runtime and vanilla data fixtures verify this engine's
 chosen rules; they are not original-game measurements.
+
+## Object ID and Object Type resolution (2026-11-05)
+
+The shared selector matches base records using xEdit's public object-type names,
+including food's ENIT flag, weapon animation kinds and furniture marker types
+already used by the engine. Inventory weapon checks and food checks use this
+predicate too. World searches include authored, moved and created references,
+exclude disabled/deleted/contained references and stay in the package's space
+and search radius. A whole-cell location accepts any position in that cell.
+
+Choices after checking PACK/FURN's public UESP layouts and xEdit's enum (see
+`research/package-data.md`): select the nearest suitable reference to the
+actor, breaking equal distances by FormID. Preserve Sleep's own-bed, faction,
+unowned priority, ownership permissions and marker reservations. A positive
+authored search radius is used as given; absent/zero radius uses the existing
+768-unit furniture search distance. Generic Object Type furniture selection
+uses all usable markers, while Beds/Chairs restrict the marker kind. Existing
+furniture interaction still handles approach paths and graph compatibility.
+
+The enum does not establish every aggregate membership rule. "Combat Wearable"
+is interpreted as weapons, ammo and light/heavy armor; "Wearable" as armor
+including clothing. Spell Range Target includes aimed, target actor and target
+location deliveries; Touch and Self use their corresponding delivery values.
+"Weapons: None" selects no object. These memberships, native tie breaking and
+search distance defaults remain unmeasured in SE. A probe should compare
+equidistant targets, ownership, occupied multi-marker furniture, no positive
+search radius and the aggregate object categories. Do not treat these choices
+as evidence for the blocked location/target kinds.

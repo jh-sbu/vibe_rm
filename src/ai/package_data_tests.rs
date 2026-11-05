@@ -94,6 +94,100 @@ fn number(c: &Condition) -> Option<f32> {
     }
 }
 
+#[test]
+fn omitted_inputs_inherit_defaults_and_explicit_false_or_null_override_them() {
+    let fixture = Fixture::new();
+    let template = input(
+        RecordBuilder::new(b"PACK", FormId(0x800)).zstring(b"EDID", "Travel"),
+        9,
+        "Bool",
+        &[1],
+    );
+    let template = input(template, 7, "Float", &12.5f32.to_le_bytes())
+        .zstring(b"ANAM", "SingleRef")
+        .field(b"PTDA", &[0, 0, 0, 0, 0, 9, 0, 0])
+        .field(b"UNAM", &[3])
+        .field(b"XNAM", &[])
+        .zstring(b"ANAM", "Procedure")
+        .zstring(b"PNAM", "Wait")
+        .field(b"PKC2", &[7])
+        .field(b"PKC2", &[9]);
+    let mut cu = [0; 12];
+    cu[4..8].copy_from_slice(&0x800u32.to_le_bytes());
+    let p = RecordBuilder::new(b"PACK", FormId(0x801))
+        .field(b"PKCU", &cu)
+        .field(b"CTDA", &numeric_condition(9, 1., 0));
+    let overridden = input(
+        RecordBuilder::new(b"PACK", FormId(0x802)).field(b"PKCU", &cu),
+        9,
+        "Bool",
+        &[0],
+    )
+    .zstring(b"ANAM", "SingleRef")
+    .field(b"PTDA", &[2, 0, 0, 0, 0, 0, 0, 0])
+    .field(b"UNAM", &[3])
+    .field(b"CTDA", &numeric_condition(9, 0., 0));
+    let lo = fixture.load(vec![template, p, overridden]);
+    let p = parse(&lo, id(0x801)).unwrap();
+    assert_eq!(number(&p.conditions[0]), Some(1.));
+    let tree = p.tree.as_ref().unwrap();
+    assert_eq!(tree.seconds(), 12.5);
+    assert!(matches!(tree.values[1], Input::Bool(true)));
+    let values = resolved_inputs(&lo, id(0x801));
+    assert!(
+        values
+            .iter()
+            .any(|&(i, v)| i == 3 && matches!(v, Input::Target(Target::Ref(r)) if r == id(0x900)))
+    );
+    let p = parse(&lo, id(0x802)).unwrap();
+    assert_eq!(number(&p.conditions[0]), Some(0.));
+    assert!(matches!(
+        p.tree.as_ref().unwrap().values[1],
+        Input::Bool(false)
+    ));
+    assert!(
+        resolved_inputs(&lo, id(0x802))
+            .iter()
+            .any(|&(i, v)| i == 3 && v.is_null())
+    );
+}
+
+#[test]
+fn expanded_stacked_branches_bind_the_same_inherited_values_as_selection_conditions() {
+    let fixture = Fixture::new();
+    let template = input(RecordBuilder::new(b"PACK", FormId(0x800)), 9, "Bool", &[1]);
+    let template = input(template, 7, "Float", &8f32.to_le_bytes())
+        .field(b"XNAM", &[])
+        .zstring(b"ANAM", "Stacked")
+        .field(b"PRCB", &prcb(2, 0))
+        .zstring(b"ANAM", "Procedure")
+        .zstring(b"PNAM", "Wait")
+        .field(b"CTDA", &numeric_condition(9, 1., 0))
+        .field(b"PKC2", &[7])
+        .zstring(b"ANAM", "Procedure")
+        .zstring(b"PNAM", "Wait")
+        .field(b"CTDA", &numeric_condition(9, 0., 0))
+        .field(b"PKC2", &[7]);
+    let mut cu = [0; 12];
+    cu[4..8].copy_from_slice(&0x800u32.to_le_bytes());
+    let p = RecordBuilder::new(b"PACK", FormId(0x801)).field(b"PKCU", &cu);
+    let lo = fixture.load(vec![template, p]);
+    let branches = expand(&lo, id(0x801));
+    assert_eq!(branches.len(), 2);
+    for p in &branches {
+        assert_eq!(number(&p.conditions[0]), Some(1.));
+        assert_eq!(p.tree.as_ref().unwrap().seconds(), 8.);
+    }
+    assert_eq!(
+        condition::evaluate_package_data(&branches[0].conditions),
+        Some(true)
+    );
+    assert_eq!(
+        condition::evaluate_package_data(&branches[1].conditions),
+        Some(false)
+    );
+}
+
 fn location(c: &Condition) -> Option<Location> {
     match c.package_data {
         Some(condition::PackageData::Location(l)) => Some(l),

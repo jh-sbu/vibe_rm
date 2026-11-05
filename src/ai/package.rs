@@ -466,6 +466,31 @@ fn inputs(rec: &esp::LoadedRecord<'_>) -> Vec<(u8, Input)> {
     indices.into_iter().zip(values).collect()
 }
 
+/// Concrete values override template defaults, including explicit false/zero
+/// and explicit null targets. Resolve FormIDs in the defining plugin.
+fn resolved_inputs(lo: &LoadOrder, id: FormId) -> Vec<(u8, Input)> {
+    let mut chain = Vec::new();
+    let mut next = id;
+    while !next.is_null() && chain.len() < 64 && !chain.contains(&next) {
+        chain.push(next);
+        next = lo
+            .get(next)
+            .and_then(|r| {
+                r.get(b"PKCU")
+                    .filter(|d| d.len() >= 8)
+                    .map(|d| r.fid(FormId(u32::from_le_bytes(d[4..8].try_into().unwrap()))))
+            })
+            .unwrap_or(FormId::NULL);
+    }
+    let mut out = std::collections::BTreeMap::new();
+    for id in chain.into_iter().rev() {
+        if let Some(r) = lo.get(id) {
+            out.extend(inputs(&r));
+        }
+    }
+    out.into_iter().collect()
+}
+
 /// Work out the package input a GetNumericPackageData, GetWithinPackageLocation
 /// or GetWithinDistance (its distance) condition reads (by `UNAM` index). Numbers:
 /// booleans are 0 or 1; integers and floats share the condition function's
@@ -591,7 +616,7 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
         b => b,
     };
     let names = input_names(lo, tree_src);
-    let inputs = inputs(&rec);
+    let inputs = resolved_inputs(lo, id);
     let named = |n: &str| {
         inputs
             .iter()
@@ -1135,7 +1160,8 @@ pub fn expand(lo: &LoadOrder, id: FormId) -> Vec<Package> {
     let Some(root) = tree.filter(|t| t.kind == "Stacked" && t.children.len() > 1) else {
         return vec![base];
     };
-    let values: std::collections::HashMap<u8, Input> = inputs(&rec).into_iter().collect();
+    let inputs = resolved_inputs(lo, id);
+    let values: std::collections::HashMap<u8, Input> = inputs.iter().copied().collect();
     let mut out = Vec::new();
     for (n, branch) in root.children.iter().enumerate() {
         let Some(proc) = main_procedure(branch) else {
@@ -1152,7 +1178,7 @@ pub fn expand(lo: &LoadOrder, id: FormId) -> Vec<Package> {
         };
         let mut p = base.clone();
         let mut tree = branch.clone();
-        tree.bind(&inputs(&rec));
+        tree.bind(&inputs);
         p.tree = Some(std::sync::Arc::new(tree));
         p.editor_id = format!("{}#{n}", base.editor_id);
         let location = proc.args.iter().find_map(|a| match values.get(a) {

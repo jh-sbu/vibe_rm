@@ -470,19 +470,15 @@ impl crate::engine::Engine {
 /// Whether `w` is a weapon of `kind`.
 fn weapon_is(lo: &esp::LoadOrder, w: FormId, kind: super::package::WeaponKind) -> bool {
     use super::package::WeaponKind;
-    let Some(anim) = lo
-        .get(w)
-        .filter(|r| r.tag().0 == *b"WEAP")
-        .and_then(|r| r.get(b"DNAM").and_then(|d| d.first().copied()))
-    else {
-        return false;
+    let target = match kind {
+        WeaponKind::Any => super::package::Target::ObjectType(11),
+        WeaponKind::Melee => super::package::Target::ObjectType(19),
+        WeaponKind::Ranged => super::package::Target::ObjectType(20),
+        WeaponKind::Specific(f) => super::package::Target::Object(f),
     };
-    match kind {
-        WeaponKind::Any => true,
-        WeaponKind::Melee => (1..=6).contains(&anim),
-        WeaponKind::Ranged => anim == 7 || anim == 9,
-        WeaponKind::Specific(f) => f == w,
-    }
+    lo.get(w)
+        .is_some_and(|r| r.tag().0 == *b"WEAP" && r.get(b"DNAM").is_some_and(|d| !d.is_empty()))
+        && super::targets::matches_base(lo, w, target)
 }
 
 /// Where to aim at a target object: the middle of its bounds (`OBND`).

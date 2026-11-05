@@ -20,6 +20,7 @@ pub(crate) mod procedure;
 mod procedure_runtime;
 pub mod schedule;
 mod summons;
+pub(crate) mod targets;
 pub mod threat;
 mod time;
 
@@ -3276,7 +3277,12 @@ impl Engine {
                 (a.exec.pos, loc.radius)
             }
             Some(loc) => self.location_target(a, loc, p.quest),
-            None => (a.editor_pos, 0.0),
+            None => (
+                self.package_target_ref(a, p, p.target)
+                    .and_then(|r| self.ref_position(r))
+                    .unwrap_or(a.editor_pos),
+                0.0,
+            ),
         }
     }
 
@@ -3439,6 +3445,9 @@ impl Engine {
                 self.linked_ref(achr, Some(FormId::NULL))
             }
             Some(Target::SelfRef) => Some(achr),
+            Some(t @ (Target::Object(_) | Target::ObjectType(_))) => {
+                self.package_objects(achr, p, t).first().copied()
+            }
             _ => None,
         }
     }

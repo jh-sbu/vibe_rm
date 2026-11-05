@@ -288,7 +288,15 @@ impl Engine {
             .actor_ref(achr)
             .map(|a| a.exec.effective(p))
             .or_else(|| self.away.get(&achr).map(|x| x.effective(p)));
-        self.package_location_place(achr, effective.as_deref().unwrap_or(p))
+        let p = effective.as_deref().unwrap_or(p);
+        self.package_location_place(achr, p).or_else(|| {
+            if p.location.is_some() {
+                return None;
+            }
+            let r = self.package_target_of(achr, p, p.target)?;
+            let at = self.ref_position(r)?;
+            Some((self.current_place_of(r)?.0, at))
+        })
     }
 
     pub(crate) fn package_location_place(

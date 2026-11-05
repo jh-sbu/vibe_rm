@@ -22,7 +22,9 @@ struct Census {
     procedures: BTreeMap<String, usize>,
     locations: BTreeMap<u32, usize>,
     targets: BTreeMap<u32, usize>,
+    object_types: BTreeMap<u32, usize>,
     acquire_flags: BTreeMap<String, usize>,
+    omitted_defaults: BTreeMap<String, (usize, usize)>,
 }
 
 impl Census {
@@ -48,6 +50,21 @@ impl Census {
                         .unwrap_or_else(|| t.to_string())
                 },
             );
+            if let Some(t) = template.and_then(|t| lo.get(t)) {
+                let indices = |r: &esp::LoadedRecord<'_>| -> std::collections::BTreeSet<u8> {
+                    r.subrecords()
+                        .take_while(|s| s.tag.0 != *b"XNAM")
+                        .filter(|s| s.tag.0 == *b"UNAM")
+                        .filter_map(|s| s.data.first().copied())
+                        .collect()
+                };
+                let count = indices(&t).difference(&indices(&rec)).count();
+                if count > 0 {
+                    let entry = out.omitted_defaults.entry(name.clone()).or_default();
+                    entry.0 += 1;
+                    entry.1 += count;
+                }
+            }
             let group = out.templates.entry(name).or_default();
             group.count += 1;
             group.users.push((id, rec.editor_id().unwrap_or_default()));
@@ -68,7 +85,10 @@ impl Census {
                         *out.locations.entry(sr.u32(0)).or_default() += 1
                     }
                     b"PTDA" if sr.data.len() >= 8 => {
-                        *out.targets.entry(sr.u32(0)).or_default() += 1
+                        *out.targets.entry(sr.u32(0)).or_default() += 1;
+                        if sr.u32(0) == 2 {
+                            *out.object_types.entry(sr.u32(4)).or_default() += 1;
+                        }
                     }
                     _ => {}
                 }
@@ -156,6 +176,10 @@ impl Census {
         for (kind, count) in &self.targets {
             writeln!(s, "{count:6} {kind}").unwrap();
         }
+        s.push_str("Object Type selectors (PTDA kind 2):\n");
+        for (kind, count) in &self.object_types {
+            writeln!(s, "{count:6} {kind}").unwrap();
+        }
         s.push_str("Explicitly enabled concrete Acquire permissions:\n");
         for name in ["allowstealing", "allowpickpocketing", "allowkilling"] {
             writeln!(
@@ -165,6 +189,15 @@ impl Census {
             )
             .unwrap();
         }
+        s.push_str("Omitted template inputs (PACK count; input slots):\n");
+        for (name, (packages, inputs)) in &self.omitted_defaults {
+            writeln!(s, "{packages:6} {inputs:6} {name}").unwrap();
+        }
+        let (packages, inputs) = self
+            .omitted_defaults
+            .values()
+            .fold((0, 0), |(p, i), (np, ni)| (p + np, i + ni));
+        writeln!(s, "{packages:6} {inputs:6} TOTAL").unwrap();
         s
     }
 }
@@ -210,6 +243,9 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let template = RecordBuilder::new(b"PACK", FormId(0x800))
             .zstring(b"EDID", "Travel")
+            .zstring(b"ANAM", "Bool")
+            .field(b"CNAM", &[1])
+            .field(b"UNAM", &[12])
             .field(b"XNAM", &[])
             .zstring(b"ANAM", "Procedure")
             .zstring(b"PNAM", "Travel");
@@ -240,6 +276,8 @@ mod tests {
         assert_eq!(c.templates["Travel"].behaviours["Travel"], 1);
         assert_eq!(c.procedures["Travel"], 1);
         assert_eq!(c.targets[&2], 1);
+        assert_eq!(c.object_types[&10], 1);
+        assert_eq!(c.omitted_defaults["Travel"], (1, 1));
         assert!(c.report(Some("travel")).contains("SceneTravel"));
         assert!(!c.report(None).contains("SceneTravel"));
         std::fs::remove_dir_all(dir).unwrap();
