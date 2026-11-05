@@ -81,7 +81,14 @@ scene suspended, the package that gave way, the package index, a sandbox's
 stop and a patrol's point, position, heading and place, the stage, the away
 stepper's state (settled, prompted, pending jump and run end, placement
 heading), both clocks it was last stepped at, its next package reading,
-health, stamina and away bleeding. Wounds stay in `WRLD`, which now lists
+health, stamina and away bleeding. Version 1 of `AEXC` also keeps each run's
+procedure cursor (including suspended runs): tree paths, branch choices,
+completed nodes, elapsed seconds and procedure counters, and its start
+position. The tree and bound inputs are re-read from PACK records. The section
+starts with a `FFFFFFFF` marker and version number before the actor count;
+unversioned AEXC loads with no cursor or run-start position, to start at the
+root. Counts, path depths, time values and active-state references are checked
+on read. This is an engine-owned representation, not an SE save-layout claim. Wounds stay in `WRLD`, which now lists
 loaded actors' too, and are joined to their executions as the save loads.
 Not kept: the package list and goal (taken again from the records: the
 execution's alias generation never matches the loaded game's, and its goal is

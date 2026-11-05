@@ -6342,6 +6342,8 @@ fn full_execution() -> crate::ai::exec::SavedExec {
         outcome,
         scene: true,
         activations: 2,
+        cursor: None,
+        origin: None,
     };
     SavedExec {
         npc: Some(SCENE_ACTOR),
@@ -6750,4 +6752,93 @@ fn durable_player_marker_apply() {
     let file = Snapshot::capture(&e).write();
     Snapshot::read(&file).unwrap().apply(&mut e).unwrap();
     assert_eq!(e.map_heading, 0.0);
+}
+
+#[test]
+fn execution_tree_cursor_payload_and_legacy_run() {
+    use crate::ai::procedure::{Cursor, Progress};
+    let mut x = full_execution();
+    let mut cursor = Cursor {
+        tree_key: "Example#2".into(),
+        ..Default::default()
+    };
+    cursor.states.insert(
+        vec![],
+        Progress {
+            started: true,
+            next: 2,
+            last: Some(1),
+            ..Default::default()
+        },
+    );
+    cursor.states.insert(
+        vec![2],
+        Progress {
+            started: true,
+            elapsed: 7.25,
+            count: 3,
+            arrived: true,
+            spoken: true,
+            ..Default::default()
+        },
+    );
+    cursor.active.push(vec![2]);
+    let run = x.run.as_mut().unwrap();
+    run.origin = Some(Vec3::new(100., 200., 300.));
+    run.cursor = Some(cursor.clone());
+    x.suspended.as_mut().unwrap().cursor = Some(cursor);
+    let mut snapshot = Snapshot::default();
+    snapshot.continuity.executions.insert(ACTOR, x.clone());
+    let file = snapshot.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(restored.continuity.executions[&ACTOR], x);
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"AEXC");
+    // Legacy AEXC had no version header or cursor/origin fields. Start with a
+    // minimal execution and its single old-format run, preserving its lifecycle.
+    let mut legacy_exec = crate::ai::exec::ActorExec::default().saved();
+    legacy_exec.pos = Vec3::ZERO;
+    legacy_exec.run = full_execution().run;
+    let mut w = Writer::default();
+    w.len(1);
+    super::continuity::put_exec(&mut w, ACTOR, &legacy_exec);
+    // Tail: suspended bool, done_once form, health, stamina, bleeding bool
+    // (14 bytes). Remove the new run's preceding two absent-field bools.
+    let end = w.0.len() - 14;
+    assert_eq!(&w.0[end - 2..end], &[0, 0]);
+    w.0.drain(end - 2..end);
+    let mut legacy = Snapshot::default().write();
+    legacy.sections.retain(|(tag, _)| tag != b"AEXC");
+    legacy.add(b"AEXC", w.0);
+    let restored = Snapshot::read(&legacy).unwrap();
+    assert_eq!(restored.continuity.executions[&ACTOR], legacy_exec);
+
+    let refused = |change: fn(&mut crate::ai::procedure::Cursor)| {
+        let mut bad = Snapshot::read(&file).unwrap();
+        change(
+            bad.continuity
+                .executions
+                .get_mut(&ACTOR)
+                .unwrap()
+                .run
+                .as_mut()
+                .unwrap()
+                .cursor
+                .as_mut()
+                .unwrap(),
+        );
+        Snapshot::read(&bad.write()).is_err()
+    };
+    assert!(refused(
+        |c| c.states.get_mut(&vec![2]).unwrap().elapsed = f64::NAN
+    ));
+    assert!(refused(
+        |c| c.states.get_mut(&vec![2]).unwrap().elapsed = -1.0
+    ));
+    assert!(refused(|c| c.active.push(vec![2])));
+    assert!(refused(|c| c.active = vec![vec![999]]));
+    assert!(refused(|c| c.completed = true));
+    assert!(refused(|c| {
+        c.states.insert(vec![0; 65], Progress::default());
+    }));
 }

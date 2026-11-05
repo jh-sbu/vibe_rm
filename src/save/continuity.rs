@@ -150,7 +150,7 @@ fn put_opt_f64(w: &mut Writer, v: Option<f64>) {
 fn get_opt_f64(r: &mut Reader) -> Result<Option<f64>> {
     Ok(if r.bool()? { Some(r.f64()?) } else { None })
 }
-fn put_run(w: &mut Writer, run: Option<PackageRun>) {
+fn put_run(w: &mut Writer, run: Option<&PackageRun>) {
     w.bool(run.is_some());
     if let Some(run) = run {
         w.form(run.id);
@@ -158,9 +158,17 @@ fn put_run(w: &mut Writer, run: Option<PackageRun>) {
         w.bool(run.outcome == Outcome::Completed);
         w.bool(run.scene);
         w.u32(run.activations);
+        w.bool(run.origin.is_some());
+        if let Some(origin) = run.origin {
+            w.vec3(origin);
+        }
+        w.bool(run.cursor.is_some());
+        if let Some(cursor) = &run.cursor {
+            super::procedure_cursor::put(w, cursor);
+        }
     }
 }
-fn get_run(r: &mut Reader) -> Result<Option<PackageRun>> {
+fn get_run(r: &mut Reader, trees: bool) -> Result<Option<PackageRun>> {
     if !r.bool()? {
         return Ok(None);
     }
@@ -173,12 +181,29 @@ fn get_run(r: &mut Reader) -> Result<Option<PackageRun>> {
     } else {
         Outcome::Running
     };
+    let scene = r.bool()?;
+    let activations = r.u32()?;
+    let origin = if trees && r.bool()? {
+        Some(r.vec3()?)
+    } else {
+        None
+    };
+    if origin.is_some_and(|p| !p.is_finite()) {
+        return Err(Corrupt("invalid package start position".into()));
+    }
+    let cursor = if trees && r.bool()? {
+        Some(super::procedure_cursor::get(r)?)
+    } else {
+        None
+    };
     Ok(Some(PackageRun {
         id,
         started_at,
         outcome,
-        scene: r.bool()?,
-        activations: r.u32()?,
+        scene,
+        activations,
+        cursor,
+        origin,
     }))
 }
 
@@ -234,8 +259,8 @@ pub(super) fn put_exec(w: &mut Writer, actor: FormId, x: &SavedExec) {
         w.form(start);
         w.u32(i);
     }
-    put_run(w, x.run);
-    put_run(w, x.suspended);
+    put_run(w, x.run.as_ref());
+    put_run(w, x.suspended.as_ref());
     w.opt_form(x.done_once);
     w.f32(x.health);
     w.f32(x.stamina);
@@ -245,7 +270,7 @@ pub(super) fn put_exec(w: &mut Writer, actor: FormId, x: &SavedExec) {
     }
 }
 
-fn get_exec(r: &mut Reader) -> Result<(FormId, SavedExec)> {
+fn get_exec(r: &mut Reader, trees: bool) -> Result<(FormId, SavedExec)> {
     let bad = || Corrupt("invalid actor execution".into());
     let actor = r.form()?;
     nonnull(actor)?;
@@ -316,7 +341,7 @@ fn get_exec(r: &mut Reader) -> Result<(FormId, SavedExec)> {
     } else {
         None
     };
-    let (run, suspended) = (get_run(r)?, get_run(r)?);
+    let (run, suspended) = (get_run(r, trees)?, get_run(r, trees)?);
     let done_once = r.opt_form()?;
     let (health, stamina) = (r.f32()?, r.f32()?);
     let bleeding = if r.bool()? { Some(r.f32()?) } else { None };
@@ -1037,6 +1062,10 @@ impl Continuity {
         }
         file.add(b"AIOF", w.0);
         let mut w = Writer::default();
+        // A marker impossible as a valid legacy count; old AEXC payloads still
+        // start directly with their count and have no cursor or run origin.
+        w.u32(u32::MAX);
+        w.u32(1);
         w.len(self.executions.len());
         for (actor, x) in sorted(&self.executions) {
             put_exec(&mut w, actor, x);
@@ -1249,8 +1278,22 @@ impl Continuity {
         }
         if let Some(mut r) = optional(file, b"AEXC")? {
             let mut previous = None;
-            for _ in 0..r.count(EXEC_BYTES)? {
-                let (actor, x) = get_exec(&mut r)?;
+            let first = r.u32()?;
+            let trees = first == u32::MAX;
+            let count = if trees {
+                if r.u32()? != 1 {
+                    return Err(Corrupt("unknown AEXC version".into()));
+                }
+                r.count(EXEC_BYTES)?
+            } else {
+                let n = first as usize;
+                if n.saturating_mul(EXEC_BYTES) > r.left() {
+                    return Err(Corrupt("invalid legacy AEXC count".into()));
+                }
+                n
+            };
+            for _ in 0..count {
+                let (actor, x) = get_exec(&mut r, trees)?;
                 ordered(&mut previous, actor)?;
                 s.executions.insert(actor, x);
             }

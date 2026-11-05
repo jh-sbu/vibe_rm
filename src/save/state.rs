@@ -32,7 +32,7 @@
 //! delayed activation queues, random streams, player stance/recovery and image
 //! modifiers/script fades, active magic effects (`AEFF`) and their
 //! tapers (`TAPR`), and actors' executions (`AEXC`: package runs, how far
-//! they got with them, where they are and their clocks, for actors away and
+//! their procedure cursors and start positions, where they are and their clocks, for actors away and
 //! loaded alike; their wounds stay in `WRLD`).
 //! Not yet saved: actors' goals set by hand, fights, searches and greetings,
 //! the rest of AI progress (animation, procedures' loaded-only state) and
@@ -2317,7 +2317,10 @@ impl Snapshot {
         self.continuity.validate()?;
         let is_package = |p: FormId| e.lo.get(p).is_some_and(|r| r.tag().0 == *b"PACK");
         for (actor, x) in &self.continuity.executions {
-            let runs = [x.run, x.suspended].into_iter().flatten().map(|r| r.id);
+            let runs = [x.run.as_ref(), x.suspended.as_ref()]
+                .into_iter()
+                .flatten()
+                .map(|r| r.id);
             anyhow::ensure!(
                 runs.chain(x.done_once).all(is_package),
                 "save has an execution of {actor} running what isn't a package"

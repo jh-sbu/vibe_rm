@@ -1280,7 +1280,7 @@ mod tests {
         assert!(a.is_walking());
         // Facing along its path, and not started over.
         assert!(a.exec.heading.abs() < 1e-3);
-        assert_eq!(a.exec.run.unwrap().started_at, 8.0);
+        assert_eq!(a.exec.run.as_ref().unwrap().started_at, 8.0);
         // An hour more takes it to the end.
         e.pass_time(180.0);
         let a = e.actor_ref(ACTOR).unwrap();

@@ -27,6 +27,8 @@ pub(crate) struct Progress {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct Cursor {
+    /// Expanded Stacked branches share a PACK id; distinguish their progress.
+    pub tree_key: String,
     pub states: BTreeMap<Path, Progress>,
     pub active: Vec<Path>,
     pub completed: bool,
@@ -65,7 +67,7 @@ impl Cursor {
             &mut rand,
             &mut active,
         );
-        self.completed = status != Status::Running;
+        self.completed = status == Status::Complete;
         // A repeat that just finished is entered again without spending the same
         // frame's time twice. Two passes bound even a zero-second infinite loop.
         if !self.completed && active.is_empty() {
@@ -86,6 +88,28 @@ impl Cursor {
         if let Some(p) = self.states.get_mut(path) {
             p.finished = true;
         }
+        self.active.retain(|p| p.as_slice() != path);
+    }
+
+    /// A different version of a template or a different selected branch must
+    /// not use paths and indices from the old tree.
+    pub(crate) fn valid_for(&self, root: &Node, key: &str) -> bool {
+        self.tree_key == key
+            && self.states.iter().all(|(path, state)| {
+                root.at(path).is_some_and(|node| {
+                    state.next as usize <= node.children.len()
+                        && state
+                            .selected
+                            .is_none_or(|i| (i as usize) < node.children.len())
+                        && state
+                            .last
+                            .is_none_or(|i| (i as usize) < node.children.len())
+                })
+            })
+            && self
+                .active
+                .iter()
+                .all(|path| root.at(path).is_some_and(|n| !n.procedure.is_empty()))
     }
 
     /// First body-moving procedure, in the old main_procedure priority order.

@@ -1,7 +1,8 @@
 # Plan: the unblocked AI depth work
 
 **Status: in progress** (2026-11-05). Step 0 is implemented. Step 1 has its bound-tree and cursor foundation;
-execution integration and saves, and steps 2–16, remain.
+run persistence is implemented. Live execution integration and steps 2–16
+remain.
 
 This plan covers ROADMAP Next item 4 (AI depth): everything in it that can be
 built today from public sources, the game's data and the readings we already
@@ -107,8 +108,15 @@ vanilla fixture reads TravelBackAndForth, SandboxMultiLocation and
 CarryAndDropItem and checks their structure and bindings; travel rotation also
 runs through the cursor. The complete tools suite passes with ignored tests
 included (82 tests). This subcommit does not yet replace live procedure
-execution or the sandbox-stop special case. Wiring and AEXC persistence are
-the next subcommit.
+execution or the sandbox-stop special case.
+
+The second subcommit puts the cursor and run-start position on `PackageRun`,
+including suspended runs and unload/reload copies. Version 1 of AEXC preserves
+both, with bounded path/state decoding and validation; unversioned AEXC still
+loads with no cursor or origin. Save tests cover round trips, legacy runs,
+truncation and malformed progress. All 26 execution regressions pass including
+ignored GPU tests, and the eight cursor tests pass. Live execution wiring is
+next.
 
 Today `package::expand` splits a `Stacked` root into one package per branch,
 and every other tree is collapsed to one `main_procedure`. Multi-location

@@ -177,7 +177,7 @@ impl Stage {
 /// Unloading neither ends nor restarts it; combat and conversations leave it
 /// as it is (their procedures run instead of its); a scene's package
 /// suspends it.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PackageRun {
     pub id: FormId,
     /// Game time it started at, in hours (`Engine::game_hours_total`).
@@ -188,6 +188,10 @@ pub struct PackageRun {
     pub(crate) scene: bool,
     /// Times it has activated an Activate package's target.
     pub(crate) activations: u32,
+    /// The selected procedure tree's durable progress. Legacy saves start at
+    /// the root. The tree itself comes from the package data, never the save.
+    pub(crate) cursor: Option<super::procedure::Cursor>,
+    pub(crate) origin: Option<Vec3>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -213,12 +217,14 @@ pub enum RunEvent {
 impl ActorExec {
     /// The package it runs.
     pub fn package(&self) -> Option<FormId> {
-        self.run.map(|r| r.id)
+        self.run.as_ref().map(|r| r.id)
     }
 
     /// Whether the package it runs has completed.
     pub(crate) fn run_completed(&self) -> bool {
-        self.run.is_some_and(|r| r.outcome == Outcome::Completed)
+        self.run
+            .as_ref()
+            .is_some_and(|r| r.outcome == Outcome::Completed)
     }
 
     /// Take up package `pick` (an index into `packages`) at game time `now`:
@@ -238,7 +244,11 @@ impl ActorExec {
                 self.suspended = Some(old);
             }
         }
-        let resumed = self.suspended.filter(|s| Some(s.id) == id);
+        let resumed = self
+            .suspended
+            .as_ref()
+            .filter(|s| Some(s.id) == id)
+            .cloned();
         if !for_scene {
             self.suspended = None;
         }
@@ -248,6 +258,8 @@ impl ActorExec {
                 started_at: now,
                 outcome: Outcome::Running,
                 activations: 0,
+                cursor: None,
+                origin: self.pos.is_finite().then_some(self.pos),
                 scene: for_scene,
             })
         });
@@ -324,8 +336,8 @@ impl ActorExec {
     /// and a patrol's point, and a goal set by hand. Fights and searches
     /// aren't taken back: it attaches out of combat, not searching.
     pub(crate) fn take_back(&mut self, away: &ActorExec, resuming: bool) {
-        self.run = away.run;
-        self.suspended = away.suspended;
+        self.run = away.run.clone();
+        self.suspended = away.suspended.clone();
         self.done_once = away.done_once;
         if !resuming {
             return;
@@ -388,8 +400,8 @@ impl ActorExec {
             current: self.current.map(|i| i as u32),
             stop: (self.stop.index as u32, self.stop.arrived),
             patrol: self.patrol.map(|(start, i)| (start, i as u32)),
-            run: self.run,
-            suspended: self.suspended,
+            run: self.run.clone(),
+            suspended: self.suspended.clone(),
             done_once: self.done_once,
             health: self.health,
             stamina: self.stamina,
@@ -520,7 +532,7 @@ impl Engine {
             if a.dead || a.exec.pinned || a.exec.combat.is_some() {
                 continue;
             }
-            let (Some(run), Some(goal)) = (a.exec.run, a.exec.goal) else {
+            let (Some(run), Some(goal)) = (a.exec.run.as_ref(), a.exec.goal) else {
                 continue;
             };
             let Some(p) = a
@@ -649,11 +661,11 @@ pub(crate) mod tests {
         // The same package carries on.
         x.begin_run(Some(2), 2.0, false);
         assert!(x.run_events.is_empty());
-        assert_eq!(x.run.unwrap().started_at, 1.0);
+        assert_eq!(x.run.as_ref().unwrap().started_at, 1.0);
         x.begin_run(Some(1), 3.0, false);
         assert_eq!(x.run_events, [RunEvent::Change(HOME), RunEvent::Start(FAR)]);
         assert_eq!(x.package(), Some(FAR));
-        assert_eq!(x.run.unwrap().started_at, 3.0);
+        assert_eq!(x.run.as_ref().unwrap().started_at, 3.0);
         x.run_events.clear();
         x.begin_run(None, 4.0, false);
         assert_eq!(x.run_events, [RunEvent::Change(FAR)]);
@@ -692,9 +704,15 @@ pub(crate) mod tests {
         let mut x = exec();
         x.begin_run(Some(2), 1.0, false);
         x.run.as_mut().unwrap().activations = 2;
+        let cursor = super::super::procedure::Cursor {
+            tree_key: "home".into(),
+            ..Default::default()
+        };
+        x.run.as_mut().unwrap().cursor = Some(cursor.clone());
+        let origin = x.run.as_ref().unwrap().origin;
         x.begin_run(Some(0), 3.0, true);
         assert_eq!(x.package(), Some(SCENE));
-        assert_eq!(x.suspended.map(|r| r.id), Some(HOME));
+        assert_eq!(x.suspended.as_ref().map(|r| r.id), Some(HOME));
         x.run_events.clear();
         x.begin_run(Some(2), 5.0, false);
         // Its scripts hear of it as of any change; its progress is kept.
@@ -702,8 +720,10 @@ pub(crate) mod tests {
             x.run_events,
             [RunEvent::Change(SCENE), RunEvent::Start(HOME)]
         );
-        let run = x.run.unwrap();
+        let run = x.run.as_ref().unwrap();
         assert_eq!((run.started_at, run.activations), (1.0, 2));
+        assert_eq!(run.cursor.as_ref(), Some(&cursor));
+        assert_eq!(run.origin, origin);
         assert_eq!(x.suspended, None);
     }
 
@@ -740,7 +760,7 @@ pub(crate) mod tests {
         x.begin_run(Some(1), 5.0, false);
         assert_eq!(x.suspended, None);
         x.begin_run(Some(2), 6.0, false);
-        assert_eq!(x.run.unwrap().started_at, 6.0);
+        assert_eq!(x.run.as_ref().unwrap().started_at, 6.0);
     }
 
     /// Away on `HOME`'s run, part way through it, at `stage` in `place`.
@@ -1057,7 +1077,7 @@ pub(crate) mod tests {
         assert_eq!(x.place, Some(here));
         assert_eq!((x.pos, x.heading), (Vec3::new(10.0, 20.0, 30.0), 1.25));
         assert_eq!(x.resumes_in(Some(here)), Some(Stage::Standing));
-        let run = x.run.expect("its run");
+        let run = x.run.as_ref().expect("its run");
         assert_eq!((run.id, run.started_at), (PACKAGE, 2.0));
         assert_eq!(x.current, Some(0));
         assert_eq!(x.npc, BASE);
@@ -1075,7 +1095,7 @@ pub(crate) mod tests {
         let mut a = exec();
         a.packages = vec![Package::bare(PACKAGE, Behaviour::Travel)];
         a.take_back(x, true);
-        assert_eq!((a.current, a.run), (Some(0), x.run));
+        assert_eq!((a.current, a.run.as_ref()), (Some(0), x.run.as_ref()));
         assert_eq!(a.next_eval, 0.0);
     }
 
@@ -1104,7 +1124,7 @@ pub(crate) mod tests {
         e.actor_mut(ACTOR).unwrap().fresh = false;
         reload(&mut e, &[b"AEXC"]);
         let x = &e.away[&ACTOR];
-        assert_eq!((x.place, x.run, x.stage), (None, None, None));
+        assert_eq!((x.place, x.run.as_ref(), x.stage), (None, None, None));
         assert_eq!(x.wounds.map(|w| w.health), Some(30.0));
         // Well actors loaded as it was saved leave nothing.
         let (_f, mut e) = fixture();
@@ -1202,7 +1222,13 @@ pub(crate) mod tests {
         a.exec.goal = Some(Goal::travel(a.exec.pos + Vec3::X * 1000.0));
         e.complete_arrivals();
         assert_eq!(
-            e.actor_ref(ACTOR).unwrap().exec.run.unwrap().outcome,
+            e.actor_ref(ACTOR)
+                .unwrap()
+                .exec
+                .run
+                .as_ref()
+                .unwrap()
+                .outcome,
             Outcome::Running
         );
     }
@@ -1214,7 +1240,7 @@ pub(crate) mod tests {
         travelling(&mut e);
         e.report_package_runs();
         e.unload_all();
-        let run = e.away[&ACTOR].run.expect("still running");
+        let run = e.away[&ACTOR].run.as_ref().expect("still running");
         assert_eq!((run.id, run.started_at), (PACKAGE, 2.0));
         assert!(e.away[&ACTOR].run_events.is_empty());
         // Away, it runs the package it left with until its own packages say
