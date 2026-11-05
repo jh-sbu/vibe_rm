@@ -19,6 +19,7 @@
 //! `SLRP` (looping scene dialogue deadlines),
 //! `SRSQ` (ordered pending scene restarts),
 //! `SFGT` (scene force-greet completion markers),
+//! `PDLG` (selected package Say responses and owning procedure tokens),
 //! `RLSP` (rolled leveled spell-list results),
 //! `WSTA` (ward-hit outcomes and their remaining `IsWardState` hold),
 //! `DETH` (killers and times of death), `DCNT` (deaths by actor base), `DSFL` (SetDestroyed flags), `STPT` (stealth-point reservoirs and
@@ -2285,6 +2286,7 @@ impl Snapshot {
             &self.scene_force_greeted,
         )?;
         e.validate_saved_rolled_spells(&self.rolled_spells)?;
+        e.validate_saved_package_speech(&self.continuity.package_speech)?;
         e.validate_saved_active_effects(&self.continuity.active_effects.0, &runtime)?;
         let tapering: Vec<_> = self.continuity.tapers.iter().map(|t| t.0.clone()).collect();
         e.validate_saved_active_effects(&tapering, &runtime)?;
@@ -2347,6 +2349,7 @@ impl Snapshot {
         // Leave the old game's cells before the world state is replaced: their
         // unloading writes into it.
         e.discard_conversation_for_load();
+        e.discard_package_dialogue();
         e.unload_all();
         if matches!(e.menu, Some(crate::items::Menu::Crafting { .. })) {
             e.menu = None;

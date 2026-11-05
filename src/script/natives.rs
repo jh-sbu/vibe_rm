@@ -649,7 +649,7 @@ pub fn call(
                     } else if e.is_scene_speaking(r) {
                         e.scene_headtracking().get(&r).map(|(t, _)| *t)
                     } else {
-                        None
+                        e.package_dialogue_target(r)
                     }
                 });
             v(target.map_or(Value::None, |r| e.object_value(r)))

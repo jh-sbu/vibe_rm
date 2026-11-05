@@ -4,7 +4,8 @@
 trees, durable cursors, loaded/away execution and multi-location migration;
 finite Patrol completion and away practice counts are implemented. Step 2 is
 complete, including menu-time catch-up, door travel and vanilla sequence fixtures.
-Step 3 is complete. Steps 4–16 are not implemented.
+Steps 3 and 4 are complete.
+Steps 5–16 are not implemented.
 
 This plan covers ROADMAP Next item 4 (AI depth): everything in it that can be
 built today from public sources, the game's data and the readings we already
@@ -52,15 +53,18 @@ and its top 40. `pack-census <data> --masters` reproduces this census.
   66, UseWeapon 58, Escort 51.
 - Not run as designed (falling back to `Behaviour::Hold`, or one procedure of
   a sequence): UseIdleMarker 65, Orbit 58, SandboxAndKeepEyeOn 36,
-  CarryAndDropItem 32, PatrolStaticPathing 30, TravelBackAndForthAndGuard 26,
+  CarryAndDropItem 32, PatrolStaticPathing 30,
   GroupMovement 23, Shout 22, EscortPlayerWhenNear 18,
-  FollowPlayer 14, StayAtCurrentLocation 14, TravelCrouchWhenNearTemplate 12,
-  DoNothing 12, CarryAndKeepItem 11, FleeFrom 11, FleeTo 8, FollowTo 6,
-  ForceGreetWaitSitting 6, Say 5, Acquire 5, Hover 5, SayToPlayer 4,
-  SandboxLockOnArrival 4, ActivateInSequence 2, StartConversation 1,
+  FollowPlayer 14, TravelCrouchWhenNearTemplate 12,
+  CarryAndKeepItem 11, FleeFrom 11, FleeTo 8, FollowTo 6,
+  ForceGreetWaitSitting 6, Acquire 5, Hover 5, SayToPlayer 4,
   KeepDistanceFrom 1, SingleFileFollow 1, and the dragons' and Alduin's
   templates.
-- Now interpreted as sequences: TravelBackAndForth 24. CarryAndDropItem and
+- Now interpreted as sequences: TravelBackAndForth 24, the travel half of
+  TravelBackAndForthAndGuard 26 (Guard remains blocked), ActivateInSequence 2,
+  StayAtCurrentLocation 14, DoNothing 12 and SandboxLockOnArrival 4.
+  Say 5 and StartConversation 1 run their dialogue procedures; SayToPlayer's
+  transition condition remains for step 9. CarryAndDropItem and
   CarryAndKeepItem use their Activate/Travel trees; their remaining carry
   behaviour is still tracked in step 5. SandboxMultiLocation's sequence and
   per-stop door procedures now use the interpreter, including large time-advance
@@ -310,6 +314,31 @@ Detailed inferred target rules and future SE probes are in
 
 ### 4. Dialogue procedures
 
+**Status: done** (2026-11-05). Say runs its
+Travel then the selected INFO responses using scene voice/gesture playback,
+with listener head tracking, cancellation/Finish Speaking and Force Subtitle
+in both HUDs. Unloaded speakers wait; interrupted responses restart on return
+without reselecting INFO or replaying begin fragments. Optional PDLG saves
+retain the selected response and suffix, including finishing old-run speech;
+old saves have no pending speech. The codec bounds keys/paths, checks ordering
+and validates topic/INFO membership and response indices before load mutates
+the engine.
+
+DialogueActivate approaches Talk From and opens the player conversation or
+sends NPC ADIA through the existing Story Manager. Asset examination corrects
+the planned input description: StartConversation's template has no topic;
+the player path uses the existing HELO fallback. SayToPlayer's tree is enabled
+but its transition condition remains for step 9. Synthetic tests cover
+response ordering/completion, cancellation, unload/reload, selected-response
+restoration, player approach and NPC ADIA; a vanilla fixture checks the three
+templates' argument order and transition condition. Decisions and probes are
+in `known_ambiguities/package-dialogue.md`.
+
+Validated with ignored fixtures included: 204 AI tests, all 191 native-save
+tests, 25 scene tests, 69 condition tests and 18 shared-parser tests. The save
+tests include PDLG snapshot round trips, legacy omission, duplicate sections,
+truncation, invalid response indices and malformed ownership data.
+
 - **Say** (5 Say packages, 16 tree uses; SayToPlayer 4): travel to the
   location, then speak the topic to the target. Use the inputs "Look At
   Target", "Finish Speaking" (a run that changes mid-line lets the line end)
@@ -320,7 +349,8 @@ Detailed inferred target rules and future SE probes are in
   condition fails, which blocks the branch, as today.
 - **StartConversation / DialogueActivate** (1): walk to "Talk From" and start
   a conversation with the target. When the target is the player, this is a
-  force greet with the given topic; when it is an NPC, it starts an
+  force greet with a HELO fallback (the vanilla template has no topic input);
+  when it is an NPC, it starts an
   NPC-to-NPC conversation through the ADIA path already in place.
 
 ### 5. Carrying, and the sawmills

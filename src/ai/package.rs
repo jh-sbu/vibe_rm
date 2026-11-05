@@ -890,6 +890,12 @@ impl Package {
             p.location = kind.map(|kind| Location { kind, radius: 0.0 });
         }
         match n.procedure.as_str() {
+            "Say" => {
+                p.location = Some(Location {
+                    kind: LocationKind::NearSelf,
+                    radius: 0.,
+                });
+            }
             "Sandbox" => {
                 p.allow = Allow {
                     eating: flag(1, false),
@@ -1098,7 +1104,7 @@ fn procedure_tree(lo: &LoadOrder, template: FormId) -> Option<Node> {
 fn behaviour_of_procedure(name: &str) -> Behaviour {
     match name {
         "Sandbox" => Behaviour::Sandbox,
-        "Travel" | "HoldPosition" => Behaviour::Travel,
+        "Travel" | "HoldPosition" | "DialogueActivate" => Behaviour::Travel,
         "Patrol" => Behaviour::Patrol,
         "Follow" => Behaviour::Follow,
         "Escort" => Behaviour::Escort,

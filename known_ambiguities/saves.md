@@ -106,6 +106,17 @@ running before is kept. Home doors keep the saved locks: the packages that
 pass finds count as the ones the doors already follow. This is the engine's own layout; how
 `.ess` saves store AI processes is not established.
 
+Optional `PDLG` retains package Say's selected INFO and response, listener,
+flags and owning run/branch/epoch. The response and remaining suffix restore
+without selecting another INFO or running its begin fragment again; the
+current response replays on attachment because partial audio seeking is not
+supported. Finish Speaking may keep an old run's last response after a package
+switch. Legacy files omit pending speech. Bounded keys/paths, sorted unique
+speakers, owning runs for non-finishing speech and topic/INFO/response membership
+are validated before load changes live state. This is another semantic native
+save policy, not a claim about Skyrim's ESS format; see
+`package-dialogue.md` for the chosen cancellation and completion rules.
+
 Greater Powers' last-use game days are stored by spell form in optional `PWCD`.
 Loading replaces the cooldown map; legacy native saves without `PWCD` clear it.
 The section retains the existing engine policy of a full 24 game hours between

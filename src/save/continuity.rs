@@ -101,6 +101,7 @@ pub(crate) struct Continuity {
     /// Actors' executions (`AEXC`), away and loaded; legacy saves have none,
     /// and their actors are placed by their schedules.
     pub executions: HashMap<FormId, SavedExec>,
+    pub package_speech: Vec<crate::ai::speech::SavedSpeech>,
 }
 
 fn optional<'a>(file: &'a SaveFile, tag: &[u8; 4]) -> Result<Option<Reader<'a>>> {
@@ -619,6 +620,7 @@ impl Continuity {
             ai_off: e.ai_off.clone(),
             // Taken with the wounds they go with (`Snapshot::capture`).
             executions: HashMap::new(),
+            package_speech: e.saved_package_speech(),
         }
     }
     pub fn write(&self, file: &mut SaveFile) {
@@ -1094,9 +1096,16 @@ impl Continuity {
             put_exec(&mut w, actor, x);
         }
         file.add(b"AEXC", w.0);
+        if !self.package_speech.is_empty() {
+            file.add(b"PDLG", super::speech::put(&self.package_speech));
+        }
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
+        if let Some(mut r) = optional(file, b"PDLG")? {
+            s.package_speech = super::speech::get(&mut r)?;
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"GFAD")? {
             if r.bool()? {
                 s.script_fade = Some(crate::imagespace::GameFade {
@@ -1677,6 +1686,29 @@ impl Continuity {
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        super::speech::validate(&self.package_speech)?;
+        for s in self.package_speech.iter().filter(|s| !s.finish) {
+            let owned = self
+                .executions
+                .get(&s.actor)
+                .and_then(|x| x.run.as_ref())
+                .filter(|r| {
+                    r.id == s.owner.package
+                        && r.started_at == s.owner.started_at
+                        && r.outcome == Outcome::Running
+                })
+                .and_then(|r| r.cursor.as_ref())
+                .is_some_and(|c| {
+                    c.tree_key == s.owner.key
+                        && c.revision == s.owner.revision
+                        && c.active.contains(&s.owner.path)
+                });
+            if !owned {
+                return Err(Corrupt(
+                    "package dialogue has no owning procedure run".into(),
+                ));
+            }
+        }
         let (effects, next_id) = &self.active_effects;
         let mut previous = None;
         let mut summons = std::collections::HashSet::new();
@@ -2104,5 +2136,6 @@ impl Continuity {
         e.ai_off = self.ai_off;
         // Before the save's cells load and attach their actors.
         e.restore_executions(self.executions);
+        e.restore_package_speech(self.package_speech);
     }
 }

@@ -371,19 +371,22 @@ impl Ui {
             );
         }
         // What an NPC nearby says by itself, as a subtitle.
-        let mut subtitles: Vec<(&str, &str)> = engine
+        let mut subtitles: Vec<(&str, &str, bool)> = engine
             .scene_lines()
             .into_iter()
-            .map(|l| (l.name.as_str(), l.text.as_str()))
+            .map(|l| (l.name.as_str(), l.text.as_str(), l.force_subtitle))
             .collect();
         subtitles.extend(
             engine
                 .barks
                 .current
                 .as_ref()
-                .map(|b| (b.name.as_str(), b.text.as_str())),
+                .map(|b| (b.name.as_str(), b.text.as_str(), false)),
         );
-        if let Some((name, line)) = subtitles.into_iter().find(|(_, t)| !t.trim().is_empty()) {
+        if let Some((name, line, _)) = subtitles
+            .into_iter()
+            .find(|(_, t, force)| (engine.subtitles(false) || *force) && !t.trim().is_empty())
+        {
             let text = if name.is_empty() {
                 line.to_string()
             } else {

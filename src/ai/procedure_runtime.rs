@@ -76,10 +76,9 @@ impl ActorExec {
                 .and_then(|i| self.packages.get(i))
                 .and_then(|p| p.tree.clone())
                 .unwrap();
-            if tree
-                .at(&path)
-                .is_some_and(|n| n.procedure == "HoldPosition")
-            {
+            if tree.at(&path).is_some_and(|n| {
+                matches!(n.procedure.as_str(), "HoldPosition" | "DialogueActivate")
+            }) {
                 return;
             }
             let ends = ends_root(&tree, &path);
@@ -322,6 +321,8 @@ impl Node {
                     | "Guard"
                     | "LockDoors"
                     | "UnlockDoors"
+                    | "Say"
+                    | "DialogueActivate"
             ))
             && self.children.iter().all(Node::executable)
     }

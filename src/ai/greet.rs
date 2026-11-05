@@ -107,6 +107,7 @@ impl Engine {
     /// Whether `r` should greet the player now: the line it would open with.
     fn force_greet_due(&mut self, r: FormId, g: &ForceGreet) -> Option<(Topic, Info)> {
         if self.conversation.is_some()
+            || self.is_package_speaking(r)
             || self.menu.is_some()
             || self.player_dead()
             || !self.ai_enabled
@@ -142,7 +143,7 @@ impl Engine {
 
     /// The topic and line a force greet opens with: the package's topic, or the
     /// first topic of its subtype with a line for `r`.
-    fn greet_line(&mut self, r: FormId, topic: GreetTopic) -> Option<(Topic, Info)> {
+    pub(super) fn greet_line(&mut self, r: FormId, topic: GreetTopic) -> Option<(Topic, Info)> {
         let topics = match topic {
             GreetTopic::Topic(id) => crate::dialogue::topic(&self.lo, id).into_iter().collect(),
             GreetTopic::Subtype(sub) => self.bark_topics(&sub),

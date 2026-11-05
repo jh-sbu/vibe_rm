@@ -325,7 +325,13 @@ impl Engine {
                 let place = run.and_then(|r| r.origin_place).unwrap_or(place);
                 return Some((place, pos));
             }
-            Some(LocationKind::NearSelf) => return self.current_place_of(achr),
+            Some(LocationKind::NearSelf) => {
+                return self
+                    .actor_ref(achr)
+                    .and_then(|_| self.current_place_of(achr))
+                    .or_else(|| self.away.get(&achr).and_then(|x| Some((x.place?, x.pos))))
+                    .or_else(|| self.current_place_of(achr));
+            }
             Some(LocationKind::NearReference(r)) => Some(r),
             Some(LocationKind::NearLinkedRef(kw)) => {
                 self.linked_ref(achr, (!kw.is_null()).then_some(kw))

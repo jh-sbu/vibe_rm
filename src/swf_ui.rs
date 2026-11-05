@@ -2152,22 +2152,22 @@ impl<M: HudMovie> Hud<M> {
 
     /// What an NPC nearby says by itself (a scene's line or a bark).
     fn subtitle(&mut self, engine: &Engine) {
-        let mut lines: Vec<(&str, &str)> = engine
+        let mut lines: Vec<(&str, &str, bool)> = engine
             .scene_lines()
             .into_iter()
-            .map(|l| (l.name.as_str(), l.text.as_str()))
+            .map(|l| (l.name.as_str(), l.text.as_str(), l.force_subtitle))
             .collect();
         lines.extend(
             engine
                 .barks
                 .current
                 .as_ref()
-                .map(|b| (b.name.as_str(), b.text.as_str())),
+                .map(|b| (b.name.as_str(), b.text.as_str(), false)),
         );
         let line = lines
             .into_iter()
-            .find(|(_, t)| engine.subtitles(false) && !t.trim().is_empty())
-            .map(|(name, line)| {
+            .find(|(_, t, force)| (engine.subtitles(false) || *force) && !t.trim().is_empty())
+            .map(|(name, line, _)| {
                 if name.is_empty() {
                     line.to_string()
                 } else {

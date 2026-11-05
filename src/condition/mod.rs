@@ -480,7 +480,9 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
             .conversation
             .as_ref()
             .is_some_and(|cv| Some(cv.npc_ref) == subject && cv.current.is_some())
-            || subject.is_some_and(|s| e.is_barking(s) || e.is_scene_speaking(s))), // IsTalking
+            || subject.is_some_and(|s| {
+                e.is_barking(s) || e.is_scene_speaking(s) || e.is_package_speaking(s)
+            })), // IsTalking
         GET_EVENT_DATA => {
             // (function, member): 0 GetIsID, 1 IsInList, 2 GetValue, 3 HasKeyword.
             let ev = e.story_event_for(ctx.quest)?;

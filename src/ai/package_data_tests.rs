@@ -719,3 +719,27 @@ fn vanilla_wait_guard_travel_and_optional_activation_slots_execute() {
         assert_eq!(p.id, FormId(id));
     }
 }
+
+#[test]
+#[ignore = "needs installed vanilla Skyrim SE masters; reads external assets only"]
+fn vanilla_dialogue_templates_preserve_response_flags_and_talk_from() {
+    let data = vfs::locate_data_dir().unwrap();
+    let names: Vec<_> = esp::BASE_MASTERS.iter().map(|s| s.to_string()).collect();
+    let lo = LoadOrder::load(&data, &names).unwrap();
+    let say = procedure_tree(&lo, lo.find_editor_id("Say").unwrap()).unwrap();
+    assert_eq!(say.children[0].procedure, "Travel");
+    assert_eq!(say.children[0].args, [3]);
+    assert_eq!(say.children[1].procedure, "Say");
+    assert_eq!(say.children[1].args, [0, 1, 4, 2, 5]);
+    let start = procedure_tree(&lo, lo.find_editor_id("StartConversation").unwrap()).unwrap();
+    assert_eq!(start.children[0].procedure, "DialogueActivate");
+    assert_eq!(start.children[0].args, [0, 1, 2]);
+    let say_player = procedure_tree(&lo, lo.find_editor_id("SayToPlayer").unwrap()).unwrap();
+    assert_eq!(say_player.children[0].procedure, "Say");
+    assert!(
+        say_player.children[0]
+            .conditions
+            .iter()
+            .any(|c| c.func == 358)
+    );
+}

@@ -9,6 +9,7 @@ mod continuity;
 mod copies;
 pub mod file;
 pub mod metadata;
+mod speech;
 pub mod state;
 #[cfg(test)]
 mod tests;

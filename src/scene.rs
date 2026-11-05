@@ -54,9 +54,10 @@ pub struct SceneLine {
     pub speaker: FormId,
     pub name: String,
     pub text: String,
-    voice: Option<crate::audio::VoiceId>,
-    ends_at: f64,
-    response_index: usize,
+    pub(crate) voice: Option<crate::audio::VoiceId>,
+    pub(crate) ends_at: f64,
+    pub(crate) response_index: usize,
+    pub(crate) force_subtitle: bool,
 }
 
 struct ActionRun {
@@ -1246,6 +1247,7 @@ impl Engine {
                         .collect();
                     run.info = Some((topic, info.clone()));
                     run.line = Some(SceneLine {
+                        force_subtitle: false,
                         speaker,
                         name: self.form_name(speaker),
                         text: response.text.clone(),
@@ -1370,6 +1372,13 @@ impl Engine {
             .iter()
             .flat_map(|run| &run.actions)
             .filter_map(|a| a.line.as_ref())
+            .chain(
+                self.barks
+                    .packages
+                    .values()
+                    .filter(|s| s.paused_at.is_none())
+                    .map(|s| &s.line),
+            )
             .filter(|l| {
                 self.ref_position(l.speaker)
                     .is_some_and(|p| p.distance(player) < SUBTITLE_DISTANCE)
@@ -1747,6 +1756,9 @@ impl Engine {
             return false;
         }
         let ar = &self.scenes.running[i].actions[k];
+        if ar.line.is_none() && self.is_package_speaking(speaker) {
+            return false;
+        }
         if let Some(line) = &ar.line {
             let finished = match (line.voice, &self.audio) {
                 (Some(v), Some(a)) => !a.is_playing(v),
@@ -1822,8 +1834,23 @@ impl Engine {
         let Some((topic, info)) = ar.info.clone() else {
             return;
         };
+        let listener = self.scene_dialogue_listener(i, k);
+        let line = self.play_spoken_response(speaker, listener, &topic, info.id, r, response_index);
+        self.scenes.running[i].actions[k].line = Some(line);
+    }
+
+    /// Shared response playback for scene actions and package Say procedures.
+    pub(crate) fn play_spoken_response(
+        &mut self,
+        speaker: FormId,
+        listener: Option<FormId>,
+        topic: &Topic,
+        info: FormId,
+        r: Response,
+        response_index: usize,
+    ) -> SceneLine {
         let voice_type = self.actor_voice_type(speaker).unwrap_or_default();
-        let path = crate::dialogue::voice_path(&self.lo, voice_type, &topic, info.id, r.number);
+        let path = crate::dialogue::voice_path(&self.lo, voice_type, topic, info, r.number);
         let at = self.ref_position(speaker).map(|p| p + Vec3::Z * 110.0);
         let mut voice = None;
         let params = crate::world::sound::default_params(
@@ -1844,19 +1871,20 @@ impl Engine {
         let now = self.scripts.real_time;
         let idle = r.speaker_idle;
         let listener_idle = r.listener_idle;
-        let listener = self.scene_dialogue_listener(i, k);
-        self.scenes.running[i].actions[k].line = Some(SceneLine {
+        let line = SceneLine {
             speaker,
             name,
             text: r.text,
             voice,
             ends_at: now + duration,
             response_index,
-        });
+            force_subtitle: false,
+        };
         self.line_gesture(speaker, idle);
         if let Some(listener) = listener.filter(|r| *r != speaker) {
             self.listener_gesture(listener, listener_idle);
         }
+        line
     }
 
     /// Give the actor the action's packages; true once the one it runs is done.
@@ -2039,6 +2067,13 @@ impl Engine {
     /// Who scene dialogue has `r` look at: (target reference, turn to face it).
     pub(crate) fn scene_headtracking(&self) -> HashMap<FormId, (FormId, bool)> {
         let mut out = HashMap::new();
+        for (&speaker, speech) in &self.barks.packages {
+            if speech.look && speech.paused_at.is_none() {
+                if let Some(target) = speech.listener.filter(|t| *t != speaker) {
+                    out.insert(speaker, (target, true));
+                }
+            }
+        }
         for run in &self.scenes.running {
             for (a, ar) in run.def.scene.actions.iter().zip(&run.actions) {
                 let (ActionKind::Dialogue { headtrack, .. }, Some(r), State::Running | State::Done) =

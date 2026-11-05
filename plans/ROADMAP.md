@@ -1307,6 +1307,11 @@ game each piece unlocks.
   mutation needs no implementation (`research/package-data.md`). Object ID /
   Object Type selectors share location-limited reference search, furniture
   permissions/reservations, food and weapon classification (AI depth step 3).
+- Package Say plays selected INFO responses using scene voices and gestures,
+  with target head tracking, Finish Speaking, forced subtitles and PDLG save
+  continuation. DialogueActivate reaches Talk From, then requests a player
+  conversation or NPC ADIA. SayToPlayer's transition condition remains in AI
+  depth step 9; choices/probes: `known_ambiguities/package-dialogue.md`.
 - `GetWithinPackageLocation` conditions check the subject against a package
   `Location` input placed for the package's actor (force greet, travel-to-radius,
   civil war hold-position and Dawnguard disguised vampire template branches,
@@ -1852,6 +1857,9 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
     carry sequences (`known_ambiguities/package-trees.md`, menu time).
     Probe Object Type aggregate categories, equidistant targets, ownership,
     occupied furniture markers and the default search radius (same note).
+    Probe package Say cancellation, Finish Speaking, multi-response fragments,
+    unload/reload, forced subtitles and DialogueActivate's ADIA completion
+    (`known_ambiguities/package-dialogue.md`).
   - `test-mod autotest23` isn't written yet. It should cover autotest22's
     follow-up list ("Faults and open items").
   - Built and waiting for the user's run: `loadscreens`

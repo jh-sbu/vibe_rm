@@ -19,6 +19,7 @@ pub mod practice;
 pub(crate) mod procedure;
 mod procedure_runtime;
 pub mod schedule;
+pub(crate) mod speech;
 mod summons;
 pub(crate) mod targets;
 pub mod threat;
