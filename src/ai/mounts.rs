@@ -35,6 +35,8 @@ impl Ride {
     }
 }
 
+const ACTOR_TYPE_HORSE: FormId = FormId(0x26110);
+
 fn horse_input(n: &package::Node) -> bool {
     let i = match n.procedure.as_str() {
         "Travel" => 1,
@@ -74,7 +76,7 @@ impl Engine {
             horse != actor
                 && !self.is_disabled(horse)
                 && !self.is_dead(horse)
-                && self.has_keyword(horse, FormId(0x26110))
+                && self.has_keyword(horse, ACTOR_TYPE_HORSE)
                 && self
                     .current_place_of(horse)
                     .is_some_and(|(p, _)| schedule::same_space(p, place))
@@ -99,8 +101,9 @@ impl Engine {
             return Some(horse);
         }
         let base = self.base_of(actor)?;
-        self.lo
-            .ids_of_type(b"ACHR")
+        // Ownership first: it is a map lookup, and few horses are this rider's,
+        // whereas availability resolves templates, places and other rides.
+        self.placed_horses()
             .iter()
             .copied()
             .chain(
@@ -109,10 +112,23 @@ impl Engine {
                     .iter()
                     .filter_map(|(&id, r)| r.actor.then_some(id)),
             )
-            .filter(|&h| available(h) && self.ref_owner(h) == Some(base))
+            .filter(|&h| self.ref_owner(h) == Some(base) && available(h))
             .filter_map(|h| Some((h, self.ref_position(h)?.distance_squared(pos))))
             .min_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)))
             .map(|v| v.0)
+    }
+
+    /// Placed horses, scanned once instead of every `ACHR` on every search.
+    /// Created actors are few and are checked as they come.
+    fn placed_horses(&self) -> &[FormId] {
+        self.placed_horses.get_or_init(|| {
+            self.lo
+                .ids_of_type(b"ACHR")
+                .iter()
+                .copied()
+                .filter(|&h| self.has_keyword(h, ACTOR_TYPE_HORSE))
+                .collect()
+        })
     }
 
     pub(crate) fn dismount(&mut self, actor: FormId) -> bool {
@@ -666,11 +682,16 @@ mod integration_tests {
             if let Some(d) = rec.get(b"XHOR").filter(|d| d.len() >= 4) {
                 let horse = rec.fid(FormId(u32::from_le_bytes(d[..4].try_into().unwrap())));
                 println!("rider {id} horse {horse}");
-                if e.has_keyword(horse, FormId(0x26110)) {
+                if e.has_keyword(horse, ACTOR_TYPE_HORSE) {
                     associations += 1;
+                    assert!(
+                        e.placed_horses().contains(&horse),
+                        "the owned-horse index includes {horse}"
+                    );
                 }
             }
         }
         assert!(associations > 0);
+        println!("{} placed horses", e.placed_horses().len());
     }
 }

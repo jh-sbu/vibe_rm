@@ -362,6 +362,9 @@ pub struct Engine {
     pub(crate) offscreen: std::cell::OnceCell<crate::ai::offscreen::Network>,
     pub(crate) offscreen_routes: HashMap<FormId, crate::ai::offscreen::Journey>,
     pub(crate) rides: HashMap<FormId, crate::ai::mounts::Ride>,
+    /// Load-order `ACHR`s that are horses (`ActorTypeHorse`), found once:
+    /// their keywords come from base records Papyrus can't change.
+    pub(crate) placed_horses: std::cell::OnceCell<Vec<FormId>>,
     pub(crate) passengers: HashMap<FormId, crate::ai::vehicles::Passenger>,
     pub(crate) tethers: HashMap<FormId, crate::ai::vehicles::Tether>,
     pub(crate) hitches: HashMap<FormId, crate::ai::vehicles::Hitch>,
@@ -685,6 +688,7 @@ impl Engine {
             nav: Default::default(),
             offscreen: Default::default(),
             offscreen_routes: Default::default(),
+            placed_horses: Default::default(),
             rides: Default::default(),
             passengers: Default::default(),
             tethers: Default::default(),
