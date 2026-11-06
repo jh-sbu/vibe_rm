@@ -10,7 +10,8 @@ Step 7 implements fixed idle markers, observation, FollowTo, group spacing and
 crouched final travel legs. Step 8 adds escort lists/initial legs and preferred
 paths. Step 9 implements force-greet transition, sitting and alias-trigger
 leftovers. Step 10 completes reference-location refresh and leveled alias grants.
-Steps 11–16 are not implemented.
+Step 11 completes follower travel/wait continuity, verifies scripted death
+dismissal and adds AllyKilled lines. Steps 12–16 are not implemented.
 
 This plan covers ROADMAP Next item 4 (AI depth): everything in it that can be
 built today from public sources, the game's data and the readings we already
@@ -595,6 +596,20 @@ Choices/probes are in `known_ambiguities/alias-fills.md`, `locks.md`, `saves.md`
   that proves it.
 
 ### 11. Followers
+
+**Status: done** (2026-11-06). Loaded and away Follow-on-player actors travel
+with the player, including quest/nonteammate followers; waiting/disabled/dead
+actors stay excluded. Away branches/stacks refresh before selection. Waiting
+and sleeping put the party beside the player afterwards without restarting its
+run. A fixture executes vanilla DialogueFollowerScript.SetFollower and the
+actual FollowerAliasScript.OnDeath: existing natives already free the slot,
+remove CurrentHirelingFaction and zero PlayerFollowerCount. No replacement
+engine dismissal was needed. AllyKilled uses the threat-side calculation,
+sight/same-space witnesses and the shared bark channel with a documented
+per-fight cooldown. Choices/probes: `known_ambiguities/followers.md`.
+
+Validated: 237 AI regressions, nine fast-travel tests, the vanilla death-script
+integration and 195 native-save tests, all with ignored fixtures included.
 
 - **Unloaded followers through load doors and fast travel**: today only
   loaded teammates whose goal is Follow on the player come along

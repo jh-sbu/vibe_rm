@@ -72,9 +72,9 @@ Implemented in `src/followers.rs` (the flag, who answers for a blow), with
 
 Local UESP [Followers revision 3646982](https://en.uesp.net/w/index.php?oldid=3646982),
 Notes, describes fast travel and zone changes bringing stuck followers back.
-The shared party hooks now include living loaded teammates whose active goal
-is Follow targeting the player. Waiting, dismissed/nonteammate and dead actors
-are excluded; summons retain their existing inclusion and duplicates are removed.
+The original party hook included living loaded teammates whose active goal
+was Follow targeting the player. Step 11 below extends that selection. Waiting
+and dead actors remain excluded; summons retain their existing inclusion and duplicates are removed.
 The normal move path retains destination placement in WRLD. Exact attachment,
 combat and disabled-actor behavior is not verified in SE.
 
@@ -82,3 +82,41 @@ Optional native TEAM retains teammate/canDoFavor flags by replacement; old saves
 clear them rather than keeping stale membership. Original `.ess` representation
 is not established. Tests use synthetic actor runtimes and no visual assets;
 spawn/animation attachment is not claimed to have been visually validated.
+
+## Full following-party continuity (2026-11-06)
+
+Actors whose current package follows the player now join the party whether
+loaded or away, and whether teammates or quest followers. Away package stacks
+and cursor branches are refreshed before selection, including after native
+save load. Waiting, disabled and dead actors are excluded. Loaded summons keep
+their prior inclusion. Door travel/fast travel and waiting/sleeping use the same
+arrival placement; a long wait does not strand followers at scheduled locations.
+The run/cursor is retained rather than restarted. Inclusion of nonteammates is
+a functional extension of the package-follow reading: UESP Followers revision
+3646982, Notes, explicitly describes followers returning on zone changes,
+fast travel or waiting, not every quest NPC with a Follow package.
+
+Vanilla PEX/VMAD examination: DialogueFollower (000750BA) attaches
+FollowerAliasScript to its human follower alias. OnDeath sets PlayerFollowerCount
+zero, removes CurrentHirelingFaction and clears the alias. It does not clear
+SetPlayerTeammate; that dead actor is excluded from the alive teammate count.
+FollowerDeathScript instead calls DialogueFollowerScript.DismissFollower(0,1),
+which removes the teammate flag and eventually clears the slot after its wait.
+All natives and alias event delivery needed by the first path already work.
+A fixture runs the actual SetFollower → actor death → FollowerAliasScript chain
+and verifies the global, faction removal and cleared alias. No engine-owned
+dismissal is added to substitute for the scripts.
+
+AllyKilled is subtype ALKL (public xEdit topic enum; no implementation copied).
+Before a death removes combat membership, witnesses are selected from the same
+combat side calculation used by threat.rs, restricted to visible living actors
+in the same space. They queue ALKL through the shared bark channel, deferring
+while busy; subsequent attempts use a per-fight cooldown with the existing
+Taunt min/max settings (vanilla 10–30 seconds). There is no dedicated AllyKilled
+GMST in the examined data; using that interval and retaining only the latest
+pending ally death are policies to compare in SE. Combat exit/unload drops the
+pending incidental line, as other combat state is transient.
+
+Probe quest/nonteammate followers through doors, a save load immediately before
+fast travel, waiting/sleeping, and ordinary script dismissal after death. Compare
+visible versus hidden ally deaths, multiple simultaneous deaths and ALKL timing.

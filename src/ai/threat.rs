@@ -226,6 +226,67 @@ fn group_threat_ratio(actor: FormId, own: f32, fighters: &[Fighter]) -> f32 {
 }
 
 impl Engine {
+    pub(super) fn ally_death_witnesses(&self, victim: FormId) -> Vec<FormId> {
+        self.combat_group(victim)
+            .map_or_else(Vec::new, |(allies, _)| {
+                allies
+                    .into_iter()
+                    .filter(|&r| {
+                        r != victim
+                            && self
+                                .actor_ref(r)
+                                .is_some_and(|a| !a.dead && a.exec.bleeding.is_none())
+                            && self.line_of_sight(r, victim) == Some(true)
+                            && self
+                                .current_place_of(r)
+                                .zip(self.current_place_of(victim))
+                                .is_some_and(|((a, _), (b, _))| super::schedule::same_space(a, b))
+                    })
+                    .collect()
+            })
+    }
+
+    pub(super) fn queue_ally_death(&mut self, witnesses: Vec<FormId>, victim: FormId) {
+        for witness in witnesses {
+            if let Some(c) = self.actor_mut(witness).and_then(|a| a.exec.combat.as_mut()) {
+                c.ally_killed = Some(victim);
+            }
+        }
+    }
+
+    fn update_ally_killed_dialogue(&mut self, dt: f32) {
+        let mut due = Vec::new();
+        for a in self
+            .cells
+            .values_mut()
+            .flat_map(|rt| &mut rt.actors)
+            .filter(|a| !a.dead && a.exec.bleeding.is_none())
+        {
+            if let Some(c) = a.exec.combat.as_mut() {
+                c.ally_dialogue = (c.ally_dialogue - dt.max(0.)).max(0.);
+                if c.ally_killed.is_some() && c.ally_dialogue <= 0. {
+                    due.push(a.ref_id);
+                }
+            }
+        }
+        due.sort();
+        let min = gmst_f32(&self.lo, "fCombatDialogueTauntMinElapsedTime", 10.);
+        let max = gmst_f32(&self.lo, "fCombatDialogueTauntMaxElapsedTime", 30.);
+        for r in due {
+            if !self.bark_channel_available() {
+                break;
+            }
+            if self.scene_of_actor(r).is_some() {
+                continue;
+            }
+            let wait = flee_dialogue_interval(min, max, self.rand());
+            if let Some(c) = self.actor_mut(r).and_then(|a| a.exec.combat.as_mut()) {
+                c.ally_killed = None;
+                c.ally_dialogue = wait;
+            }
+            self.bark(r, b"ALKL");
+        }
+    }
     /// Everyone fighting, and the player while anyone fights them.
     fn fighters(&self) -> Vec<Fighter> {
         let mut fighters: Vec<Fighter> = self
@@ -309,6 +370,7 @@ impl Engine {
     /// flee say so. Fleeing actors safe long enough (`fFleeIsSafeTimer`) leave the
     /// fight.
     pub(crate) fn update_threat(&mut self, dt: f32) {
+        self.update_ally_killed_dialogue(dt);
         let strength_every = gmst_f32(&self.lo, STRENGTH_UPDATE.0, STRENGTH_UPDATE.1);
         let check_every = gmst_f32(&self.lo, THREAT_RATIO_UPDATE.0, THREAT_RATIO_UPDATE.1);
         let safe_after = gmst_f32(&self.lo, "fFleeIsSafeTimer", 30.0);
@@ -634,5 +696,97 @@ mod tests {
         fleeing[0].strength = 0.0;
         assert_eq!(group_threat_ratio(b, 300.0, &fleeing), 300.0 / 900.0);
         assert_eq!(group_threat_ratio(a, 100.0, &fleeing), 400.0 / 900.0);
+    }
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn ally_killed_uses_combat_sides_and_sight_and_defers_busy_dialogue_until_its_timer() {
+        use crate::ai::{
+            ActorRuntime,
+            exec::tests::{ACTOR, BASE, CELL, fixture, loaded_actor},
+        };
+        use glam::{Mat4, Vec3};
+        use std::sync::Arc;
+        let (_f, mut e) = fixture();
+        e.location = crate::engine::Location::Interior(CELL);
+        loaded_actor(&mut e);
+        e.actor_mut(ACTOR).unwrap().exec.pos = Vec3::ZERO;
+        e.actor_mut(ACTOR).unwrap().exec.combat = Some(Combat::new(PLAYER_REF));
+        let visible = FormId(0x901);
+        let hidden = FormId(0x902);
+        let enemy = FormId(0x903);
+        let key = crate::render::CellKey::Interior(CELL);
+        for (id, y, target) in [
+            (visible, -100., PLAYER_REF),
+            (hidden, 100., PLAYER_REF),
+            (enemy, -100., ACTOR),
+        ] {
+            let mut a = ActorRuntime::new(
+                id,
+                BASE,
+                Arc::new(crate::world::skeleton::Skeleton::default()),
+                Mat4::from_translation(Vec3::Y * y),
+                vec![],
+                0.,
+            );
+            a.exec.pos = Vec3::Y * y;
+            a.exec.heading = 0.;
+            a.exec.combat = Some(Combat::new(target));
+            e.cells.entry(key).or_default().actors.push(a);
+            e.actor_cells.insert(id, key);
+        }
+        assert_eq!(e.ally_death_witnesses(ACTOR), vec![visible]);
+        e.actor_mut(visible)
+            .unwrap()
+            .exec
+            .combat
+            .as_mut()
+            .unwrap()
+            .ally_killed = Some(ACTOR);
+        e.ai_enabled = false;
+        e.update_ally_killed_dialogue(1.);
+        assert_eq!(
+            e.actor_ref(visible)
+                .unwrap()
+                .exec
+                .combat
+                .as_ref()
+                .unwrap()
+                .ally_killed,
+            Some(ACTOR)
+        );
+        e.ai_enabled = true;
+        e.update_ally_killed_dialogue(0.);
+        let c = e.actor_ref(visible).unwrap().exec.combat.as_ref().unwrap();
+        assert_eq!(c.ally_killed, None);
+        assert!((10. ..30.).contains(&c.ally_dialogue));
+        e.actor_mut(visible)
+            .unwrap()
+            .exec
+            .combat
+            .as_mut()
+            .unwrap()
+            .ally_killed = Some(ACTOR);
+        e.update_ally_killed_dialogue(0.1);
+        assert!(
+            e.actor_ref(visible)
+                .unwrap()
+                .exec
+                .combat
+                .as_ref()
+                .unwrap()
+                .ally_killed
+                .is_some()
+        );
+        e.update_ally_killed_dialogue(30.);
+        assert!(
+            e.actor_ref(visible)
+                .unwrap()
+                .exec
+                .combat
+                .as_ref()
+                .unwrap()
+                .ally_killed
+                .is_none()
+        );
     }
 }

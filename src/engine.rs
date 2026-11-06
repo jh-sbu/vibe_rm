@@ -6,6 +6,9 @@ use std::time::Instant;
 #[cfg(test)]
 #[path = "engine_carry_tests.rs"]
 mod carry_tests;
+#[cfg(test)]
+#[path = "engine_follower_tests.rs"]
+mod follower_tests;
 
 use anyhow::{Context, Result};
 use esp::{FormId, LoadOrder};

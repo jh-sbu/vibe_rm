@@ -647,7 +647,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires a headless GPU; synthetic records only"]
-    fn fast_travel_party_only_brings_living_following_teammates_and_summons() {
+    fn fast_travel_party_brings_living_following_quest_actors_teammates_and_summons() {
         use crate::ai::package::Behaviour;
         use crate::ai::{ActorRuntime, Goal};
         use crate::engine::Location;
@@ -690,10 +690,13 @@ mod tests {
             }
         }
         e.magic.commanded.insert(FormId(0x954), PLAYER_REF);
-        assert_eq!(e.player_party(), vec![FormId(0x950), FormId(0x954)]);
+        assert_eq!(
+            e.player_party(),
+            vec![FormId(0x950), FormId(0x953), FormId(0x954)]
+        );
         e.travel_to_map_marker(FormId(0x930)).unwrap();
         e.complete_load();
-        for id in [0x950, 0x954] {
+        for id in [0x950, 0x953, 0x954] {
             let moved = e.world_state.moved[&FormId(id)];
             assert!(moved.pos.distance(e.player_feet()) < 400.0);
             assert_eq!(
@@ -701,7 +704,7 @@ mod tests {
                 crate::ai::schedule::Place::Exterior(FormId(0x900), (1, 1))
             );
         }
-        for id in [0x951, 0x952, 0x953] {
+        for id in [0x951, 0x952] {
             assert!(!e.world_state.moved.contains_key(&FormId(id)));
         }
         let file = crate::save::state::Snapshot::capture(&e).write();

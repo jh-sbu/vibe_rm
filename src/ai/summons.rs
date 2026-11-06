@@ -83,9 +83,23 @@ impl Engine {
         self.delete_created(r);
     }
 
-    /// Live summons and loaded teammates actively following the player,
+    /// Live summons and loaded/away actors actively following the player,
     /// about to move through a load door or travel with them.
-    pub(crate) fn player_party(&self) -> Vec<FormId> {
+    pub(crate) fn player_party(&mut self) -> Vec<FormId> {
+        let mut away: Vec<_> = self
+            .away
+            .keys()
+            .copied()
+            .filter(|r| !self.actor_cells.contains_key(r))
+            .collect();
+        away.sort();
+        let slot = (self.game_hours_total() * 2.).floor() as i64;
+        for actor in &away {
+            self.refresh_away_packages(*actor);
+            if let Some(tier) = self.processing(*actor) {
+                self.evaluate_away(*actor, slot, tier);
+            }
+        }
         let mut out: Vec<FormId> = self
             .magic
             .commanded
@@ -97,9 +111,7 @@ impl Engine {
             self.cells
                 .values()
                 .flat_map(|rt| &rt.actors)
-                .filter(|a| {
-                    !a.dead && !self.is_disabled(a.ref_id) && self.is_player_teammate(a.ref_id)
-                })
+                .filter(|a| !a.dead && !self.is_disabled(a.ref_id))
                 .filter(|a| {
                     a.exec.goal.is_some_and(|g| {
                         g.behaviour == super::package::Behaviour::Follow
@@ -108,9 +120,33 @@ impl Engine {
                 })
                 .map(|a| a.ref_id),
         );
+        out.extend(
+            away.into_iter()
+                .filter(|&r| !self.is_dead(r) && !self.is_disabled(r))
+                .filter(|&r| self.follows_player(r)),
+        );
         out.sort();
         out.dedup();
         out
+    }
+
+    pub(super) fn follows_player(&self, actor: FormId) -> bool {
+        let Some(x) = self.execution(actor) else {
+            return false;
+        };
+        if x.pinned {
+            return x.goal.is_some_and(|g| {
+                g.behaviour == super::package::Behaviour::Follow && g.target == Some(PLAYER_REF)
+            });
+        }
+        let Some(p) = x.current.and_then(|i| x.packages.get(i)) else {
+            return x.goal.is_some_and(|g| {
+                g.behaviour == super::package::Behaviour::Follow && g.target == Some(PLAYER_REF)
+            });
+        };
+        let p = x.effective(p);
+        p.behaviour == super::package::Behaviour::Follow
+            && self.package_target_of(actor, &p, p.target) == Some(PLAYER_REF)
     }
 
     /// The player arrived (through a load door, or moved): their party
@@ -236,5 +272,67 @@ impl Engine {
             }
         }
         best.map(|b| b.1)
+    }
+}
+
+#[cfg(test)]
+mod follower_tests {
+    use super::*;
+    use crate::ai::{
+        exec::{
+            ActorExec,
+            tests::{ACTOR, BASE, CELL, PACKAGE, fixture},
+        },
+        package::{Behaviour, Package, Target},
+        schedule::Place,
+    };
+    fn away_follower(e: &mut Engine) {
+        e.location = crate::engine::Location::Interior(CELL);
+        e.scripts.alias_gen = 7;
+        let mut p = Package::bare(PACKAGE, Behaviour::Follow);
+        p.target = Some(Target::Ref(PLAYER_REF));
+        p.schedule.hour = -1;
+        p.schedule.day_of_week = -1;
+        let mut x = ActorExec::new(vec![p], Vec3::X * 9000., 0., 0.);
+        x.npc = BASE;
+        x.place = Some(Place::Interior(CELL));
+        x.current = Some(0);
+        x.alias_gen = 7;
+        x.begin_run(Some(0), 0., false);
+        e.away.insert(ACTOR, x);
+    }
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn away_quest_follower_keeps_its_run_and_arrives_beside_the_player_after_waiting() {
+        let (_f, mut e) = fixture();
+        away_follower(&mut e);
+        assert!(!e.is_player_teammate(ACTOR));
+        assert_eq!(e.player_party(), vec![ACTOR]);
+        let start = e.away[&ACTOR].run.as_ref().unwrap().started_at;
+        e.pass_time(120.);
+        assert!(e.world_state.moved[&ACTOR].pos.distance(e.player_feet()) < 400.);
+        assert_eq!(e.away[&ACTOR].run.as_ref().unwrap().started_at, start);
+    }
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn away_quest_follower_crosses_a_load_door_but_waiting_or_disabled_actors_do_not() {
+        let (_f, mut e) = fixture();
+        away_follower(&mut e);
+        e.away.get_mut(&ACTOR).unwrap().packages[0].behaviour = Behaviour::Hold;
+        assert!(e.player_party().is_empty());
+        e.away.get_mut(&ACTOR).unwrap().packages[0].behaviour = Behaviour::Follow;
+        e.scripts.disabled.insert(ACTOR, true);
+        assert!(e.player_party().is_empty());
+        e.scripts.disabled.insert(ACTOR, false);
+        e.request_load(crate::loading::LoadRequest::new(
+            crate::loading::LoadTarget::Interior {
+                cell: CELL,
+                spawn: Some((Vec3::X * 5000., 0.)),
+            },
+            crate::loading::LoadCause::Door,
+        ));
+        e.complete_load();
+        assert!(e.world_state.moved[&ACTOR].pos.distance(e.player_feet()) < 400.);
+        assert_eq!(e.away[&ACTOR].package(), Some(PACKAGE));
     }
 }

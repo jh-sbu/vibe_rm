@@ -862,6 +862,8 @@ pub struct Combat {
     /// Seconds until another FLEE dialogue attempt, while fleeing. A newly
     /// entered flee can speak immediately; leaving it cancels the countdown.
     pub(crate) flee_dialogue: f32,
+    pub(crate) ally_killed: Option<FormId>,
+    pub(crate) ally_dialogue: f32,
     /// Seconds the target has gone undetected, and where it was last detected.
     pub(crate) unseen: f32,
     pub(crate) last_seen: Option<Vec3>,
@@ -934,6 +936,8 @@ impl Combat {
             safe: 0.0,
             threat_near: false,
             flee_dialogue: 0.0,
+            ally_killed: None,
+            ally_dialogue: 0.0,
             unseen: 0.0,
             last_seen: None,
         }
@@ -2849,6 +2853,11 @@ impl Engine {
             if self.player_dead() {
                 return;
             }
+            let witnesses = if self.player_health - amount <= 0. {
+                self.ally_death_witnesses(PLAYER_REF)
+            } else {
+                vec![]
+            };
             self.player_health -= amount;
             log::info!(
                 "player takes {amount:.0} damage ({:.0} left)",
@@ -2858,6 +2867,7 @@ impl Engine {
                 self.player_health = 0.0;
                 self.scripts.notify("You have died.");
                 self.player_died_at = Some(self.scripts.real_time);
+                self.queue_ally_death(witnesses, PLAYER_REF);
             }
             if let Some(by) = attacker {
                 self.assault_on_player(by);
@@ -3685,9 +3695,11 @@ impl Engine {
     /// hear of it (`OnDying`, `OnDeath`) and the Story Manager gets a kill event.
     pub fn kill_actor_by(&mut self, actor: FormId, killer: Option<FormId>) -> bool {
         let rank = killer.map_or(0, |k| self.relationship_rank(actor, k));
+        let witnesses = self.ally_death_witnesses(actor);
         // Loaded, or away (autotest13: damage kills unloaded actors at once).
         let killed = self.kill_actor_quietly(actor) || self.kill_away(actor);
         if killed {
+            self.queue_ally_death(witnesses, actor);
             let at = self.game_hours_total();
             self.world_state
                 .deaths

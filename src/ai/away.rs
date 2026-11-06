@@ -251,7 +251,7 @@ impl Engine {
     }
 
     /// An away actor whose aliases changed takes up its new package stack.
-    fn refresh_away_packages(&mut self, r: FormId) {
+    pub(super) fn refresh_away_packages(&mut self, r: FormId) {
         let generation = self.scripts.alias_gen;
         let Some(npc) = self
             .away
@@ -283,7 +283,7 @@ impl Engine {
     /// Read away actor `r`'s packages (in half hour `slot`, at `tier`), as
     /// loaded actors' are (`evaluate_packages`), and start the one that
     /// applies.
-    fn evaluate_away(&mut self, r: FormId, slot: i64, tier: Processing) {
+    pub(super) fn evaluate_away(&mut self, r: FormId, slot: i64, tier: Processing) {
         let mut seed = self.rand() | 1;
         let mut rand = || {
             seed ^= seed << 13;
@@ -808,9 +808,11 @@ impl Engine {
         if !self.ai_enabled {
             return;
         }
+        let party = self.player_party();
         log::debug!("{secs:.0} s pass");
         self.advance_menu_time(secs);
         self.jump_to_schedules(0.0);
+        self.party_arrives(party, self.camera.yaw);
     }
 }
 
