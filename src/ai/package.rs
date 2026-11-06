@@ -368,6 +368,7 @@ pub(crate) enum Input {
     Location(Location),
     Target(Target),
     Topic(GreetTopic),
+    ObjectList(u8),
     Other,
 }
 
@@ -431,7 +432,11 @@ fn inputs(rec: &esp::LoadedRecord<'_>) -> Vec<(u8, Input)> {
             b"XNAM" => break,
             b"ANAM" => {
                 kind = sr.zstring();
-                values.push(Input::Other);
+                values.push(if kind == "ObjectList" {
+                    Input::ObjectList(0)
+                } else {
+                    Input::Other
+                });
             }
             b"CNAM" if kind == "Bool" && !sr.data.is_empty() => {
                 *values.last_mut().unwrap() = Input::Bool(sr.data[0] != 0)
@@ -463,7 +468,20 @@ fn inputs(rec: &esp::LoadedRecord<'_>) -> Vec<(u8, Input)> {
             _ => {}
         }
     }
-    indices.into_iter().zip(values).collect()
+    indices
+        .into_iter()
+        .zip(values)
+        .map(|(i, v)| {
+            (
+                i,
+                if matches!(v, Input::ObjectList(_)) {
+                    Input::ObjectList(i)
+                } else {
+                    v
+                },
+            )
+        })
+        .collect()
 }
 
 /// Concrete values override template defaults, including explicit false/zero
@@ -907,6 +925,13 @@ impl Package {
                     meal: false,
                 };
                 p.energy = number(8, 50.0).clamp(0.0, 100.0);
+            }
+            "Wander" => {
+                p.behaviour = Behaviour::Sandbox;
+                p.allow = Allow {
+                    wandering: true,
+                    ..Allow::NONE
+                };
             }
             "Eat" => {
                 p.behaviour = Behaviour::Sandbox;

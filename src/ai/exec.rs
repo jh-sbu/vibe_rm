@@ -479,6 +479,25 @@ pub struct SavedExec {
 }
 
 impl Engine {
+    pub(crate) fn execution(&self, actor: FormId) -> Option<&ActorExec> {
+        self.actor_ref(actor)
+            .map(|a| &a.exec)
+            .or_else(|| self.away.get(&actor))
+    }
+
+    pub(crate) fn execution_mut(&mut self, actor: FormId) -> Option<&mut ActorExec> {
+        if let Some(key) = self.actor_cells.get(&actor).copied() {
+            self.cells
+                .get_mut(&key)?
+                .actors
+                .iter_mut()
+                .find(|a| a.ref_id == actor)
+                .map(|a| &mut a.exec)
+        } else {
+            self.away.get_mut(&actor)
+        }
+    }
+
     /// The tier actor `r` runs at: loaded, in a cell the player just left, or
     /// elsewhere (none for actors not running: dead, disabled, or never
     /// touched by the world and placed by their schedules).

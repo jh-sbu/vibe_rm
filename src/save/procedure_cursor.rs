@@ -1,6 +1,6 @@
 //! Bounded, versioned AEXC procedure progress. Trees are re-read from PACK data.
 use super::codec::{Corrupt, Reader, Result, Writer};
-use crate::ai::procedure::{Cursor, Path, Progress};
+use crate::ai::procedure::{Cursor, Found, Path, Progress};
 
 const MAX_NODES: usize = 4096;
 const MAX_DEPTH: usize = 64;
@@ -49,6 +49,24 @@ pub(super) fn put(w: &mut Writer, c: &Cursor) {
         put_path(w, path);
     }
     w.u64(c.revision);
+    w.len(c.lists.len());
+    for (&slot, list) in &c.lists {
+        w.u8(slot);
+        w.len(list.len());
+        for found in list {
+            match *found {
+                Found::Reference(r) => {
+                    w.u8(0);
+                    w.form(r);
+                }
+                Found::Inventory { owner, item } => {
+                    w.u8(1);
+                    w.form(owner);
+                    w.form(item);
+                }
+            }
+        }
+    }
 }
 
 pub(super) fn get(r: &mut Reader, version: u32) -> Result<Cursor> {
@@ -108,11 +126,103 @@ pub(super) fn get(r: &mut Reader, version: u32) -> Result<Cursor> {
         return Err(Corrupt("completed procedure tree still active".into()));
     }
     let revision = if version >= 2 { r.u64()? } else { 0 };
+    let mut lists = std::collections::BTreeMap::new();
+    if version >= 3 {
+        let n = r.count(5)?;
+        if n > 256 {
+            return Err(Corrupt("too many procedure object lists".into()));
+        }
+        let mut previous = None;
+        for _ in 0..n {
+            let slot = r.u8()?;
+            if previous.is_some_and(|p| p >= slot) {
+                return Err(Corrupt("unsorted procedure object lists".into()));
+            }
+            previous = Some(slot);
+            let n = r.count(5)?;
+            if n > MAX_NODES {
+                return Err(Corrupt("procedure object list too large".into()));
+            }
+            let mut list = Vec::with_capacity(n);
+            let mut seen = std::collections::HashSet::new();
+            for _ in 0..n {
+                let found = match r.u8()? {
+                    0 => Found::Reference(r.form()?),
+                    1 => Found::Inventory {
+                        owner: r.form()?,
+                        item: r.form()?,
+                    },
+                    _ => return Err(Corrupt("invalid procedure search result".into())),
+                };
+                let invalid = match found {
+                    Found::Reference(id) => id.is_null(),
+                    Found::Inventory { owner, item } => owner.is_null() || item.is_null(),
+                };
+                if invalid || !seen.insert(found) {
+                    return Err(Corrupt(
+                        "invalid or duplicate procedure search result".into(),
+                    ));
+                }
+                list.push(found);
+            }
+            lists.insert(slot, list);
+        }
+    }
     Ok(Cursor {
         tree_key,
         revision,
         completed,
         states,
         active,
+        lists,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use esp::FormId;
+
+    #[test]
+    fn object_lists_round_trip_and_reject_duplicate_or_null_results() {
+        let mut c = Cursor::default();
+        c.lists.insert(
+            2,
+            vec![
+                Found::Reference(FormId(11)),
+                Found::Inventory {
+                    owner: FormId(12),
+                    item: FormId(13),
+                },
+            ],
+        );
+        let mut w = Writer::default();
+        put(&mut w, &c);
+        let mut r = Reader::new(&w.0);
+        assert_eq!(get(&mut r, 3).unwrap(), c);
+        r.finish().unwrap();
+        for bad in [
+            vec![Found::Reference(FormId::NULL)],
+            vec![Found::Reference(FormId(11)); 2],
+        ] {
+            c.lists.insert(2, bad);
+            let mut w = Writer::default();
+            put(&mut w, &c);
+            assert!(get(&mut Reader::new(&w.0), 3).is_err());
+        }
+    }
+
+    #[test]
+    fn version_two_cursors_read_without_object_lists() {
+        let c = Cursor {
+            revision: 7,
+            ..Default::default()
+        };
+        let mut w = Writer::default();
+        put(&mut w, &c);
+        w.0.truncate(w.0.len() - 4); // Version two has no ObjectList map.
+        let mut r = Reader::new(&w.0);
+        assert_eq!(get(&mut r, 2).unwrap(), c);
+        r.finish().unwrap();
+    }
 }

@@ -325,6 +325,8 @@ impl Node {
                     | "UnlockDoors"
                     | "Say"
                     | "DialogueActivate"
+                    | "Find"
+                    | "Wander"
             ))
             && self.children.iter().all(Node::executable)
     }

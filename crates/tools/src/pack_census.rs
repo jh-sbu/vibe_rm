@@ -23,6 +23,8 @@ struct Census {
     locations: BTreeMap<u32, usize>,
     targets: BTreeMap<u32, usize>,
     object_types: BTreeMap<u32, usize>,
+    object_type_users: BTreeMap<u32, Vec<(FormId, String)>>,
+    object_id_types: BTreeMap<String, usize>,
     acquire_flags: BTreeMap<String, usize>,
     omitted_defaults: BTreeMap<String, (usize, usize)>,
 }
@@ -88,6 +90,16 @@ impl Census {
                         *out.targets.entry(sr.u32(0)).or_default() += 1;
                         if sr.u32(0) == 2 {
                             *out.object_types.entry(sr.u32(4)).or_default() += 1;
+                            out.object_type_users
+                                .entry(sr.u32(4))
+                                .or_default()
+                                .push((id, rec.editor_id().unwrap_or_default()));
+                        } else if sr.u32(0) == 1 {
+                            let form = rec.fid(FormId(sr.u32(4)));
+                            let kind = lo
+                                .tag_of(form)
+                                .map_or_else(|| "<none>".into(), |t| t.to_string());
+                            *out.object_id_types.entry(kind).or_default() += 1;
                         }
                     }
                     _ => {}
@@ -178,6 +190,22 @@ impl Census {
         }
         s.push_str("Object Type selectors (PTDA kind 2):\n");
         for (kind, count) in &self.object_types {
+            writeln!(s, "{count:6} {kind}").unwrap();
+            if show == Some(format!("object-type:{kind}").as_str()) {
+                let mut users = self
+                    .object_type_users
+                    .get(kind)
+                    .cloned()
+                    .unwrap_or_default();
+                users.sort();
+                users.dedup();
+                for (id, name) in users {
+                    writeln!(s, "         {id} {name}").unwrap();
+                }
+            }
+        }
+        s.push_str("Object ID record types (PTDA kind 1):\n");
+        for (kind, count) in &self.object_id_types {
             writeln!(s, "{count:6} {kind}").unwrap();
         }
         s.push_str("Explicitly enabled concrete Acquire permissions:\n");
@@ -279,6 +307,7 @@ mod tests {
         assert_eq!(c.object_types[&10], 1);
         assert_eq!(c.omitted_defaults["Travel"], (1, 1));
         assert!(c.report(Some("travel")).contains("SceneTravel"));
+        assert!(c.report(Some("object-type:10")).contains("SceneTravel"));
         assert!(!c.report(None).contains("SceneTravel"));
         std::fs::remove_dir_all(dir).unwrap();
     }

@@ -6,6 +6,7 @@
 //! the target; melee swings strike nothing. Always Power Attack selects an
 //! authored power attack suited to the actor's hands. Outside combat only.
 
+use crate::engine::Engine;
 use esp::FormId;
 use glam::Vec3;
 
@@ -426,11 +427,11 @@ impl crate::engine::Engine {
             let inv = self.inventories.get(&a.ref_id);
             let current = inv.and_then(|i| i.weapon(&self.lo));
             match kind {
-                Some(kind) if !current.is_some_and(|w| weapon_is(&self.lo, w, kind)) => {
+                Some(kind) if !current.is_some_and(|w| weapon_is(self, w, kind)) => {
                     let carried = inv.map(|i| i.items.clone()).unwrap_or_default();
                     let best = carried
                         .iter()
-                        .filter(|(f, n)| *n > 0 && weapon_is(&self.lo, *f, kind))
+                        .filter(|(f, n)| *n > 0 && weapon_is(self, *f, kind))
                         .max_by(|x, y| {
                             crate::ai::combat::weapon_damage(&self.lo, x.0)
                                 .total_cmp(&crate::ai::combat::weapon_damage(&self.lo, y.0))
@@ -468,7 +469,7 @@ impl crate::engine::Engine {
 }
 
 /// Whether `w` is a weapon of `kind`.
-fn weapon_is(lo: &esp::LoadOrder, w: FormId, kind: super::package::WeaponKind) -> bool {
+fn weapon_is(e: &Engine, w: FormId, kind: super::package::WeaponKind) -> bool {
     use super::package::WeaponKind;
     let target = match kind {
         WeaponKind::Any => super::package::Target::ObjectType(11),
@@ -476,9 +477,9 @@ fn weapon_is(lo: &esp::LoadOrder, w: FormId, kind: super::package::WeaponKind) -
         WeaponKind::Ranged => super::package::Target::ObjectType(20),
         WeaponKind::Specific(f) => super::package::Target::Object(f),
     };
-    lo.get(w)
+    e.lo.get(w)
         .is_some_and(|r| r.tag().0 == *b"WEAP" && r.get(b"DNAM").is_some_and(|d| !d.is_empty()))
-        && super::targets::matches_base(lo, w, target)
+        && e.matches_package_item(w, target)
 }
 
 /// Where to aim at a target object: the middle of its bounds (`OBND`).

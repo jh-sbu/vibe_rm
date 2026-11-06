@@ -87,6 +87,51 @@ pub(crate) fn matches_base(lo: &LoadOrder, base: FormId, target: Target) -> bool
 }
 
 impl Engine {
+    pub(crate) fn matches_package_item(&self, item: FormId, target: Target) -> bool {
+        self.matches_package_form(None, item, target)
+    }
+
+    pub(crate) fn matches_package_reference(&self, reference: FormId, target: Target) -> bool {
+        self.base_of(reference)
+            .is_some_and(|base| self.matches_package_form(Some(reference), base, target))
+    }
+
+    fn matches_package_form(
+        &self,
+        reference: Option<FormId>,
+        base: FormId,
+        target: Target,
+    ) -> bool {
+        let Target::Object(object) = target else {
+            return matches_base(&self.lo, base, target);
+        };
+        if object.is_null() || base.is_null() {
+            return false;
+        }
+        let mut pending = vec![object];
+        let mut seen = std::collections::HashSet::new();
+        while let Some(form) = pending.pop() {
+            if !seen.insert(form) {
+                continue;
+            }
+            match self.lo.tag_of(form).map(|t| t.0) {
+                Some(tag) if tag == *b"FLST" => pending.extend(self.formlist(form)),
+                Some(tag) if tag == *b"FACT" => {
+                    if reference.is_some_and(|r| {
+                        self.npc_factions(r)
+                            .iter()
+                            .any(|&(f, rank)| f == form && rank >= 0)
+                    }) {
+                        return true;
+                    }
+                }
+                _ if form == base || reference == Some(form) => return true,
+                _ => {}
+            }
+        }
+        false
+    }
+
     /// All matching world references, nearest first with a stable FormID tie.
     /// A whole-cell location admits every height and distance in that cell.
     pub(crate) fn package_objects(
@@ -94,6 +139,19 @@ impl Engine {
         actor: FormId,
         p: &Package,
         target: Target,
+    ) -> Vec<FormId> {
+        self.search_package_references(actor, p, Some(target))
+    }
+
+    pub(crate) fn package_references(&self, actor: FormId, p: &Package) -> Vec<FormId> {
+        self.search_package_references(actor, p, None)
+    }
+
+    fn search_package_references(
+        &self,
+        actor: FormId,
+        p: &Package,
+        target: Option<Target>,
     ) -> Vec<FormId> {
         let Some((place, centre)) = self
             .package_location_place(actor, p)
@@ -141,6 +199,7 @@ impl Engine {
         );
         refs.extend(self.world_state.moved.keys().copied());
         refs.extend(self.actor_cells.keys().chain(self.away.keys()).copied());
+        refs.insert(crate::engine::PLAYER_REF);
         let npc = self
             .actor_ref(actor)
             .map_or_else(|| self.base_of(actor).unwrap_or(actor), |a| a.npc);
@@ -149,23 +208,25 @@ impl Engine {
             if r == actor || self.is_disabled(r) {
                 continue;
             }
-            let Some(rf) = self.reference_of(r).filter(|rf| !rf.deleted()) else {
+            if self.reference_of(r).is_none_or(|rf| rf.deleted()) {
                 continue;
-            };
-            let matches = if let Some(f) = self
-                .furniture
-                .get(r)
-                .filter(|_| matches!(target, Target::ObjectType(26 | 27)))
-            {
-                let kind = if matches!(target, Target::ObjectType(26)) {
-                    Use::Sleep
+            }
+            let matches = target.is_none_or(|target| {
+                if let Some(f) = self
+                    .furniture
+                    .get(r)
+                    .filter(|_| matches!(target, Target::ObjectType(26 | 27)))
+                {
+                    let kind = if matches!(target, Target::ObjectType(26)) {
+                        Use::Sleep
+                    } else {
+                        Use::Sit
+                    };
+                    f.markers.iter().any(|m| m.kind == kind)
                 } else {
-                    Use::Sit
-                };
-                f.markers.iter().any(|m| m.kind == kind)
-            } else {
-                matches_base(&self.lo, rf.base, target)
-            };
+                    self.matches_package_reference(r, target)
+                }
+            });
             if !matches {
                 continue;
             }
@@ -190,7 +251,7 @@ impl Engine {
             if let Some(f) = self.furniture.get(r) {
                 let kinds: &[Use] = match p.behaviour {
                     Behaviour::Sleep => &[Use::Sleep],
-                    Behaviour::Sit if !matches!(target, Target::ObjectType(10)) => {
+                    Behaviour::Sit if !matches!(target, Some(Target::ObjectType(10))) => {
                         &[Use::Sit, Use::Special]
                     }
                     _ => &[Use::Sit, Use::Sleep, Use::Special, Use::Lean, Use::Idle],

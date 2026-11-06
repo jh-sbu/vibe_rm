@@ -188,6 +188,34 @@ fn expanded_stacked_branches_bind_the_same_inherited_values_as_selection_conditi
     );
 }
 
+#[test]
+fn object_list_bindings_preserve_sparse_input_identity_and_template_defaults() {
+    let fixture = Fixture::new();
+    let template = input(
+        RecordBuilder::new(b"PACK", FormId(0x800)),
+        42,
+        "ObjectList",
+        &[0; 4],
+    )
+    .field(b"XNAM", &[])
+    .zstring(b"ANAM", "Procedure")
+    .zstring(b"PNAM", "Find")
+    .field(b"PKC2", &[255])
+    .field(b"PKC2", &[255])
+    .field(b"PKC2", &[42]);
+    let mut cu = [0; 12];
+    cu[4..8].copy_from_slice(&0x800u32.to_le_bytes());
+    let lo = fixture.load(vec![
+        template,
+        RecordBuilder::new(b"PACK", FormId(0x801)).field(b"PKCU", &cu),
+    ]);
+    let p = parse(&lo, id(0x801)).unwrap();
+    assert!(matches!(
+        p.tree.as_ref().unwrap().values[2],
+        Input::ObjectList(42)
+    ));
+}
+
 fn location(c: &Condition) -> Option<Location> {
     match c.package_data {
         Some(condition::PackageData::Location(l)) => Some(l),

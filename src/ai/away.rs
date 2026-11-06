@@ -226,6 +226,12 @@ impl Engine {
             self.evaluate_away(r, slot, tier);
         }
         self.procedure_locks(r);
+        for _ in 0..8 {
+            if !self.run_find(r) {
+                break;
+            }
+            self.advance_away_tree(r, 0.);
+        }
         self.move_away(r, dt, tier, clock);
         self.advance_away_practice(r, dt);
         let Some(x) = self.away.get_mut(&r) else {

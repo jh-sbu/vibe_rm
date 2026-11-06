@@ -81,7 +81,10 @@ scene suspended, the package that gave way, the package index and a patrol's
 point (the legacy sandbox stop slot remains on the wire but is no longer used), position, heading and place, the stage, the away
 stepper's state (settled, prompted, pending jump and run end, placement
 heading), both clocks it was last stepped at, its next package reading,
-health, stamina and away bleeding. Version 2 of `AEXC` also keeps each run's
+health, stamina and away bleeding. Version 3 also retains run-scoped ObjectLists,
+including reference results and (holder, item) inventory results; version 2
+loads these as empty lists. Slots and result counts are bounded and duplicate
+results are rejected. Version 2 of `AEXC` also keeps each run's
 procedure cursor (including suspended runs): tree paths, branch choices,
 completed nodes, elapsed seconds, counters and repeat epoch. It saves the
 run's starting coordinates and space, and logical away practice progress

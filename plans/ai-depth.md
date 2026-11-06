@@ -5,7 +5,8 @@ trees, durable cursors, loaded/away execution and multi-location migration;
 finite Patrol completion and away practice counts are implemented. Step 2 is
 complete, including menu-time catch-up, door travel and vanilla sequence fixtures.
 Steps 3–5 are complete.
-Steps 6–16 are not implemented.
+Step 6 has Find, Wander and saved ObjectLists; Acquire and Flee remain.
+Steps 7–16 are not implemented.
 
 This plan covers ROADMAP Next item 4 (AI depth): everything in it that can be
 built today from public sources, the game's data and the readings we already
@@ -397,6 +398,16 @@ replacement script or hardcoded resource-state change.
   trace finds a missing native or event, implement it here.
 
 ### 6. Find, Acquire and Flee procedures
+
+**Status: in progress** (2026-11-06). Find fills run-scoped ObjectLists with
+nearby matching references, holder inventories, and optional own inventory/spells.
+Empty searches retry beside Wander; randomized results retain the selected order.
+Faction and nested/dynamic FLST Object IDs share the target resolver, with cycle
+protection. AEXC version 3 preserves results, including suspended runs, and reads
+versions 0–2. The MQ101 fixture traces Ralof’s key to a soldier alias inventory
+and the scene’s stage-280 death gate. Acquire/Flee and UseWeapon tree enablement
+remain in this step. Research and choices: `research/find-acquire-flee.md` and
+`known_ambiguities/find-acquire-flee.md`.
 
 - **Find** (36 tree uses): fill the package's ObjectList with the matching
   references in the search location (the step 3 resolver), and with matching

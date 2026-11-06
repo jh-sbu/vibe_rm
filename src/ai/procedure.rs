@@ -11,6 +11,15 @@ use crate::condition::Condition;
 
 pub(crate) type Path = Vec<u32>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum Found {
+    Reference(esp::FormId),
+    Inventory {
+        owner: esp::FormId,
+        item: esp::FormId,
+    },
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct Progress {
     pub started: bool,
@@ -34,6 +43,8 @@ pub(crate) struct Cursor {
     pub states: BTreeMap<Path, Progress>,
     pub active: Vec<Path>,
     pub completed: bool,
+    /// Shared mutable ObjectList inputs belong to this package run.
+    pub lists: BTreeMap<u8, Vec<Found>>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -96,7 +107,17 @@ impl Cursor {
     /// A different version of a template or a different selected branch must
     /// not use paths and indices from the old tree.
     pub(crate) fn valid_for(&self, root: &Node, key: &str) -> bool {
+        fn has_list(node: &Node, slot: u8) -> bool {
+            node.values
+                .iter()
+                .any(|v| matches!(v, super::package::Input::ObjectList(i) if *i == slot))
+                || node.children.iter().any(|n| has_list(n, slot))
+        }
         self.tree_key == key
+            && self
+                .lists
+                .iter()
+                .all(|(&slot, list)| has_list(root, slot) && list.len() <= 4096)
             && self.states.iter().all(|(path, state)| {
                 root.at(path).is_some_and(|node| {
                     state.next as usize <= node.children.len()

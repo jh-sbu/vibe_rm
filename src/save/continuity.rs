@@ -1090,7 +1090,7 @@ impl Continuity {
         // A marker impossible as a valid legacy count; old AEXC payloads still
         // start directly with their count and have no cursor or run origin.
         w.u32(u32::MAX);
-        w.u32(2);
+        w.u32(3);
         w.len(self.executions.len());
         for (actor, x) in sorted(&self.executions) {
             put_exec(&mut w, actor, x);
@@ -1314,7 +1314,7 @@ impl Continuity {
             let trees = first == u32::MAX;
             let version = if trees { r.u32()? } else { 0 };
             let count = if trees {
-                if !(1..=2).contains(&version) {
+                if !(1..=3).contains(&version) {
                     return Err(Corrupt("unknown AEXC version".into()));
                 }
                 r.count(EXEC_BYTES)?

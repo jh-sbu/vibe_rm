@@ -6882,10 +6882,11 @@ fn execution_practice_origin_space_and_version_one_cursor() {
     w.u32(1);
     w.len(1);
     super::continuity::put_exec(&mut w, ACTOR, &old);
-    // Version one had neither cursor revision (8 bytes) nor the two optional
-    // origin-space/practice fields. The final 14 bytes belong to the execution.
+    // Version one had neither cursor revision (8 bytes), ObjectLists (4 bytes
+    // for an empty map), nor the two optional origin-space/practice fields.
+    // The final 14 bytes belong to the execution.
     let end = w.0.len() - 14;
-    w.0.drain(end - 10..end);
+    w.0.drain(end - 14..end);
     let mut f = Snapshot::default().write();
     f.sections.retain(|(tag, _)| tag != b"AEXC");
     f.add(b"AEXC", w.0);

@@ -68,6 +68,7 @@ impl Engine {
             self.advance_loaded_trees(0.0);
             self.evaluate_packages(0.0);
             self.loaded_procedure_locks();
+            self.run_loaded_finds();
             self.menu_paths(0.0, clock);
             self.complete_arrivals();
             self.step_menu_away(clock);

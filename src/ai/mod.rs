@@ -8,6 +8,7 @@ pub mod casters;
 pub mod combat;
 mod equipment;
 pub mod exec;
+mod find;
 pub mod furniture;
 mod furniture_events;
 mod greet;
@@ -3821,6 +3822,7 @@ impl Engine {
         self.advance_loaded_trees(dt);
         self.evaluate_packages(dt);
         self.loaded_procedure_locks();
+        self.run_loaded_finds();
         self.update_practice_weapons();
         // Choose before the AI requests landings, so a newly needed heal does
         // not replace the offensive spell that an earlier step already threw.
