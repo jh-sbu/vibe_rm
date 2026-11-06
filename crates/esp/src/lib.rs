@@ -10,6 +10,7 @@ pub mod auto_calc;
 pub mod destructible;
 mod form_id;
 mod load_order;
+pub mod navi;
 pub mod navmesh;
 mod plugin;
 mod record;

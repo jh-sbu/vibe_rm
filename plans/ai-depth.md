@@ -11,7 +11,9 @@ crouched final travel legs. Step 8 adds escort lists/initial legs and preferred
 paths. Step 9 implements force-greet transition, sitting and alias-trigger
 leftovers. Step 10 completes reference-location refresh and leveled alias grants.
 Step 11 completes follower travel/wait continuity, verifies scripted death
-dismissal and adds AllyKilled lines. Steps 12–16 are not implemented.
+dismissal and adds AllyKilled lines. Step 12 has bounded NAVI/NVPP parsing
+and incremental master merging; routing and local movement remain.
+Steps 13–16 are not implemented.
 
 This plan covers ROADMAP Next item 4 (AI depth): everything in it that can be
 built today from public sources, the game's data and the readings we already
@@ -630,6 +632,17 @@ integration and 195 native-save tests, all with ignored fixtures included.
   `Taunt` use. "Ally" means the same side as `threat.rs` uses; record that.
 
 ### 12. Off-screen travel along the navmesh, through doors and between worldspaces
+
+**Status: in progress** (2026-11-06). First subcommit adds bounded NVMI/NVPP
+parsers, load-order FormID remapping and incremental NAVI merging, including
+NVSI removals/deleted NAVM filtering. The five masters override NAVI 00012FB4
+incrementally: taking only the winning Dragonborn version loses most of Skyrim.
+The merged census has 18,693 active entries, 33,418 edge links, 2,162 door links
+and 500 preferred-path groups, with no malformed NVMI entries in any master.
+`vrm-tool nav-census <data>` reproduces the coverage. Parser tests check island
+payloads, signed grid axes, truncation/size bounds, remapping and incremental
+merge/removal; a vanilla fixture checks all five masters. Coarse route execution,
+locked portals and clutter steering remain in this step.
 
 Away travellers walk in a straight line within their space and are put onto
 targets in other spaces (`known_ambiguities/actor-execution.md`, "Away").

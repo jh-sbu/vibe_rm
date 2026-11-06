@@ -10,6 +10,7 @@ mod first_person;
 #[allow(dead_code)]
 mod functions;
 mod mask_survey;
+mod nav_census;
 mod pack_census;
 #[path = "../../../src/ai/package.rs"]
 #[allow(dead_code)]
@@ -2141,6 +2142,7 @@ fn main() -> Result<()> {
             println!("{ok} resolved, {bad} unresolved");
         }
         Some("pack-census") => pack_census::run(&args[1..])?,
+        Some("nav-census") => nav_census::run(std::path::Path::new(&args[1]))?,
         Some("pack-templates") => {
             // pack-templates <data dir>: how many NPC package slots use each procedure template.
             // SHOW=<template> lists the NPCs and packages using one.
