@@ -31,11 +31,29 @@ struct Sample {
     stages: BTreeMap<&'static str, Duration>,
     counts: BTreeMap<&'static str, usize>,
     cells: Vec<(i32, i32, Duration)>,
+    schedule_phases: [Duration; SCHEDULE_PHASES.len()],
+    schedule_top: Vec<ScheduleRecord>,
+    schedule_batches: Vec<(usize, usize, usize)>,
 }
 
 impl Sample {
     fn add(&mut self, name: &'static str, elapsed: Duration) {
         *self.stages.entry(name).or_default() += elapsed;
+    }
+
+    fn schedule_entry(&mut self, entry: ScheduleRecord) {
+        for (sum, time) in self.schedule_phases.iter_mut().zip(entry.phases) {
+            *sum += time;
+        }
+        // Keep the slowest eight occurrences, including sub-millisecond entries:
+        // many individually cheap entries can still make an expensive batch.
+        let at = self
+            .schedule_top
+            .partition_point(|e| e.total >= entry.total);
+        if at < 8 {
+            self.schedule_top.insert(at, entry);
+            self.schedule_top.truncate(8);
+        }
     }
 
     fn report(&self, elapsed: Duration, limit: Duration) -> bool {
@@ -105,9 +123,38 @@ impl Drop for Frame {
                     time.as_secs_f64() * 1000.0
                 );
             }
+            for (name, time) in SCHEDULE_PHASES.iter().zip(sample.schedule_phases) {
+                if !time.is_zero() {
+                    let _ = write!(
+                        detail,
+                        " ai.schedule.entry.{name}={:.3}ms",
+                        time.as_secs_f64() * 1000.0
+                    );
+                }
+            }
+            for (start, end, total) in sample.schedule_batches {
+                let _ = write!(detail, " schedule_batch={start}..{end}/{total}");
+            }
             log::info!(target: "vibe_rm::diagnostics",
                 "frame={sequence} work={:.3}ms gap_before={:.3}ms{detail}",
                 elapsed.as_secs_f64() * 1000.0, self.gap.as_secs_f64() * 1000.0);
+            for entry in sample.schedule_top {
+                detail.clear();
+                for (name, time) in SCHEDULE_PHASES.iter().zip(entry.phases) {
+                    if !time.is_zero() {
+                        let _ = write!(detail, " {name}={:.3}ms", time.as_secs_f64() * 1000.0);
+                    }
+                }
+                let base = entry
+                    .base
+                    .map_or_else(|| "none".to_owned(), |id| format!("{id:08X}"));
+                let package = entry
+                    .package
+                    .map_or_else(|| "none".to_owned(), |id| format!("{id:08X}"));
+                log::info!(target: "vibe_rm::diagnostics",
+                    "schedule_entry redraw={sequence} index={} actor={:08X} base={base} package={package} total={:.3}ms{detail}",
+                    entry.index, entry.actor, entry.total.as_secs_f64() * 1000.0);
+            }
         }
         STATE.with_borrow_mut(|state| state.last_end = Some(Instant::now()));
     }
@@ -183,6 +230,119 @@ pub fn count(name: &'static str, amount: usize) {
     }
 }
 
+// Fixed phase arrays avoid per-phase allocations and map lookups; only the
+// bounded list of slow entries allocates storage per frame.
+#[derive(Clone, Copy)]
+pub enum SchedulePhase {
+    Disabled,
+    Body,
+    Away,
+    Reference,
+    EditorPlace,
+    BaseNpc,
+    ScenePackages,
+    AliasPackages,
+    OwnPackages,
+    Select,
+    Place,
+    Heading,
+    Store,
+}
+
+const SCHEDULE_PHASES: [&str; 13] = [
+    "disabled",
+    "body",
+    "away",
+    "reference",
+    "editor_place",
+    "base_npc",
+    "scene_packages",
+    "alias_packages",
+    "own_packages",
+    "select",
+    "place",
+    "heading",
+    "store",
+];
+
+struct ScheduleRecord {
+    index: usize,
+    actor: u32,
+    base: Option<u32>,
+    package: Option<u32>,
+    total: Duration,
+    phases: [Duration; SCHEDULE_PHASES.len()],
+}
+
+/// RAII keeps timings for entries that exit early (disabled, dead, missing, etc.).
+/// IDs are recorded directly; no name/record lookup is performed for diagnostics.
+pub struct ScheduleEntry {
+    start: Option<Instant>,
+    phase_start: Option<Instant>,
+    phase: SchedulePhase,
+    entry: ScheduleRecord,
+}
+
+impl ScheduleEntry {
+    pub fn new(actor: u32, index: usize) -> Self {
+        let active = threshold().is_some() && STATE.with_borrow(|s| s.sample.is_some());
+        let start = active.then(Instant::now);
+        Self {
+            start,
+            phase_start: start,
+            phase: SchedulePhase::Disabled,
+            entry: ScheduleRecord {
+                index,
+                actor,
+                base: None,
+                package: None,
+                total: Duration::ZERO,
+                phases: [Duration::ZERO; SCHEDULE_PHASES.len()],
+            },
+        }
+    }
+
+    pub fn base(&mut self, base: u32) {
+        self.entry.base = Some(base);
+    }
+    pub fn package(&mut self, package: Option<u32>) {
+        self.entry.package = package;
+    }
+
+    pub fn next(&mut self, phase: SchedulePhase) {
+        if let Some(start) = &mut self.phase_start {
+            let now = Instant::now();
+            self.entry.phases[self.phase as usize] += now - *start;
+            *start = now;
+        }
+        self.phase = phase;
+    }
+}
+
+impl Drop for ScheduleEntry {
+    fn drop(&mut self) {
+        let Some(start) = self.start else { return };
+        let now = Instant::now();
+        self.entry.phases[self.phase as usize] += now - self.phase_start.unwrap();
+        self.entry.total = now - start;
+        STATE.with_borrow_mut(|s| {
+            if let Some(sample) = &mut s.sample {
+                sample.schedule_entry(ScheduleRecord { ..self.entry });
+            }
+        });
+    }
+}
+
+pub fn schedule_batch(start: usize, end: usize, total: usize) {
+    if threshold().is_some() {
+        STATE.with_borrow_mut(|s| {
+            if let Some(sample) = &mut s.sample {
+                sample.schedule_batches.push((start, end, total));
+            }
+        });
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -227,6 +387,85 @@ mod tests {
                 >= sample.stages["cell.references"] + sample.stages["cell.objects"]
         );
         record("outside_frame", Duration::from_secs(1));
+        STATE.with_borrow(|s| assert!(s.sample.is_none()));
+    }
+
+    #[test]
+    fn schedule_top_is_bounded_but_totals_include_every_entry() {
+        let mut sample = Sample::default();
+        // Ascending entries exercise replacement, then a cheap entry is rejected.
+        for index in 0..20 {
+            let time = Duration::from_micros((index + 1) as u64);
+            let mut phases = [Duration::ZERO; SCHEDULE_PHASES.len()];
+            phases[SchedulePhase::Select as usize] = time;
+            sample.schedule_entry(ScheduleRecord {
+                index,
+                actor: 0x100 + index as u32,
+                base: Some(0x200),
+                package: Some(0x300),
+                total: time,
+                phases,
+            });
+        }
+        sample.schedule_entry(ScheduleRecord {
+            index: 20,
+            actor: 0x999,
+            base: None,
+            package: None,
+            total: Duration::from_micros(1),
+            phases: [Duration::ZERO; SCHEDULE_PHASES.len()],
+        });
+        assert_eq!(sample.schedule_top.len(), 8);
+        assert_eq!(
+            sample
+                .schedule_top
+                .iter()
+                .map(|e| e.index)
+                .collect::<Vec<_>>(),
+            (12..20).rev().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            sample.schedule_phases[SchedulePhase::Select as usize],
+            Duration::from_micros(210)
+        );
+        let top = &sample.schedule_top[0];
+        assert_eq!(
+            (top.actor, top.base, top.package),
+            (0x113, Some(0x200), Some(0x300))
+        );
+    }
+
+    #[test]
+    fn skipped_schedule_entries_keep_identity_and_completed_phases() {
+        STATE.with_borrow_mut(|s| s.sample = Some(Sample::default()));
+        for index in 0..2 {
+            let mut entry = ScheduleEntry::new(0xABC, index);
+            // Enable just this guard, without mutating process environment or
+            // the global configuration shared by parallel tests.
+            entry.start = Some(Instant::now());
+            entry.phase_start = entry.start;
+            if index == 0 {
+                continue;
+            }
+            entry.next(SchedulePhase::Reference);
+            entry.base(0xDEF);
+            entry.next(SchedulePhase::Select);
+            entry.package(Some(0x123));
+        }
+        let sample = STATE.with_borrow_mut(|s| s.sample.take().unwrap());
+        assert_eq!(sample.schedule_top.len(), 2);
+        for entry in &sample.schedule_top {
+            assert_eq!(entry.actor, 0xABC);
+            assert_eq!(entry.total, entry.phases.iter().copied().sum::<Duration>());
+            if entry.index == 0 {
+                assert_eq!((entry.base, entry.package), (None, None));
+                assert_eq!(entry.total, entry.phases[SchedulePhase::Disabled as usize]);
+            } else {
+                assert_eq!((entry.base, entry.package), (Some(0xDEF), Some(0x123)));
+            }
+        }
+        // Work outside a redraw must not leak into the next sample.
+        drop(ScheduleEntry::new(0xBAD, 99));
         STATE.with_borrow(|s| assert!(s.sample.is_none()));
     }
 }

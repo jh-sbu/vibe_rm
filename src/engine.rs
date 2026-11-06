@@ -3205,12 +3205,20 @@ impl Engine {
         self.update_loose();
         self.update_traps();
         timing.next("sim.ai");
-        self.update_whereabouts(world_dt);
-        self.update_away();
-        self.update_nav_obstacles();
-        self.update_actors(world_dt);
-        self.update_package_dialogue();
-        self.update_npc_hellos();
+        {
+            let mut ai_timing = crate::diagnostics::Span::new("ai.whereabouts");
+            self.update_whereabouts(world_dt);
+            ai_timing.next("ai.away");
+            self.update_away();
+            ai_timing.next("ai.nav_obstacles");
+            self.update_nav_obstacles();
+            ai_timing.next("ai.loaded");
+            self.update_actors(world_dt);
+            ai_timing.next("ai.package_dialogue");
+            self.update_package_dialogue();
+            ai_timing.next("ai.npc_hellos");
+            self.update_npc_hellos();
+        }
         timing.next("sim.gameplay");
         self.update_triggers(world_dt);
         self.update_hazards(world_dt);

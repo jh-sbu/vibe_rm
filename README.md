@@ -87,6 +87,45 @@ no such work was recorded. `objects.instances_collision` covers object placement
 and collision insertion after model loading; navigation, furniture, actor setup,
 terrain, grass, decals, and water also have timings.
 
+Within `sim.ai`, `ai.whereabouts`, `ai.away`, `ai.nav_obstacles`, `ai.loaded`,
+`ai.package_dialogue`, and `ai.npc_hellos` separate the six main operations.
+Scheduling breaks down refresh/evaluation, publishing the schedule, door locks,
+and departures/arrivals. Offscreen actors have queue, package evaluation,
+procedure, and movement timings. Loaded actors have package selection, procedure
+execution, actor behavior/grounding/animation, equipment, combat, detection,
+events, and synchronization timings. `ai.packages.*` further splits loaded
+package evaluation into alias refresh, selection, applying decisions, and locks.
+
+Counters help distinguish a larger batch from an expensive operation:
+`ai.schedule.visited` counts schedule entries visited (including skipped entries),
+`ai.schedule.completed` counts finished schedule passes, `ai.away.visited` counts
+queued offscreen entries visited, `ai.away.evaluated` counts package evaluations,
+`ai.packages.decisions` counts loaded package decisions, `ai.actor.visited` counts
+entries in the loaded actor loop (including dead actors), and
+`ai.obstacles.checked`/`ai.obstacles.rebuilt` distinguish obstacle scans from
+recomputations. The loaded/offscreen actor phase times are summed.
+Helper timings also include calls from outside the main AI block, if any occur
+in the same redraw (for example, scheduling work during loading).
+
+Schedule evaluation additionally records `schedule_batch=start..end/total` (zero
+based indices, end exclusive), and `ai.schedule.entry.*` totals across **all**
+visited entries. The phases separate disabled/dead/offscreen checks, reference,
+editor-place and base-NPC lookup, scene/alias/own package collection, package
+selection (including conditions), destination resolution, heading, and storing
+results. These phases include bookkeeping between the named operations.
+
+After each emitted frame report, up to eight `schedule_entry` lines identify the
+slowest entry occurrences, sorted by total time. `redraw` links them to the parent
+`frame`; `index` identifies the position in the schedule list; `actor`, `base`, and
+`package` are hexadecimal FormIDs. `base` is the reference's authored base and
+`package` is the selected package. `none` means no value was resolved before the
+entry finished or skipped. Each line includes its phase breakdown, even for an
+early exit. Entries below 1 ms are eligible too: an expensive batch can consist
+of many small costs. Only the eight slowest entries are retained; aggregate
+phase totals include the others. No extra record/name lookups or logging happen
+inside the measured loop. Use the existing environment variables to enable these
+details; no additional flag is needed.
+
 Timings are **inclusive**: do not add parent and child stages together. For
 example, `engine.update` includes `sim.streaming`, which includes `stream.total`,
 which includes `cell.total`; asset loading is nested within the cell phases.

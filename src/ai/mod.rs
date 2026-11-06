@@ -3643,7 +3643,9 @@ impl Engine {
 
     /// Choose each actor's package and goal.
     fn evaluate_packages(&mut self, dt: f32) {
+        let mut timing = crate::diagnostics::Span::new("ai.packages.aliases");
         self.refresh_alias_packages();
+        timing.next("ai.packages.select");
         let mut seed = self.rand() | 1;
         let mut rand = move || {
             seed ^= seed << 13;
@@ -3809,6 +3811,8 @@ impl Engine {
                 decisions.push((*key, i, pick, goal, cursor));
             }
         }
+        crate::diagnostics::count("ai.packages.decisions", decisions.len());
+        timing.next("ai.packages.apply");
         for rt in self.cells.values_mut() {
             for a in &mut rt.actors {
                 a.exec.next_eval -= dt;
@@ -3930,23 +3934,32 @@ impl Engine {
             }
         }
         if !lock_changes.is_empty() {
+            timing.next("ai.packages.door_locks");
             self.package_door_locks(lock_changes);
         }
     }
 
     /// Run AI and animation for every loaded actor.
     pub(crate) fn update_actors(&mut self, dt: f32) {
+        let mut timing = crate::diagnostics::Span::new("ai.loaded.door_access");
         self.refresh_actor_door_access();
+        timing.next("ai.loaded.state");
         self.update_swimming_states();
         self.update_force_greets(dt);
+        timing.next("ai.loaded.procedures");
         self.advance_loaded_trees(dt);
         self.update_sleep_warnings();
+        timing.next("ai.loaded.packages");
         self.evaluate_packages(dt);
         self.update_sleep_warnings();
+        timing.next("ai.loaded.procedure_locks");
         self.loaded_procedure_locks();
+        timing.next("ai.loaded.mounts_flight");
         self.prepare_mounts(dt);
         self.update_flights(dt);
+        timing.next("ai.loaded.finds");
         self.run_loaded_finds();
+        timing.next("ai.loaded.combat_prepare");
         self.update_practice_weapons();
         // Choose before the AI requests landings, so a newly needed heal does
         // not replace the offensive spell that an earlier step already threw.
@@ -3954,6 +3967,7 @@ impl Engine {
         self.update_combat_spells(dt);
         self.update_actor_encumbrance();
         self.update_weapon_readiness(dt);
+        timing.next("ai.loaded.world_prepare");
         let talking = self.conversation.as_ref().map(|c| c.npc_ref).or(self
             .barks
             .current
@@ -4189,11 +4203,14 @@ impl Engine {
             }
             log::trace!("actor overlaps: {overlaps}");
         }
+        timing.next("ai.loaded.actor_loop");
         for (key, rt) in self.cells.iter_mut() {
             let Some(rc) = self.scene.cells.get_mut(key) else {
                 continue;
             };
             for (index, (inst, a)) in rc.actors.iter_mut().zip(rt.actors.iter_mut()).enumerate() {
+                let mut actor_timing = crate::diagnostics::Span::new("ai.actor.behavior");
+                crate::diagnostics::count("ai.actor.visited", 1);
                 if a.dead {
                     if let Some((rd, mapping)) = &a.ragdoll {
                         let bodies = self.physics.ragdoll_bodies(rd);
@@ -4356,13 +4373,16 @@ impl Engine {
                     a.exec.pos.z = surface.height - crate::water::FLOAT_DEPTH;
                     a.lift = 0.0;
                 }
+                actor_timing.next("ai.actor.ground");
                 if !a.flight_controlled && !self.passengers.contains_key(&a.ref_id) {
                     a.stand_on_ground(&self.physics, dt);
                     a.find_ground(&self.physics);
                 }
+                actor_timing.next("ai.actor.animation");
                 if let Some(pose) = a.animate(dt, &mut world.clips) {
                     inst.pose = pose;
                 }
+                actor_timing.next("ai.actor.events");
                 inst.transform = a.transform();
                 if std::mem::take(&mut a.objects_changed) {
                     log::debug!("{} holds {:?}", a.ref_id, a.objects);
@@ -4423,6 +4443,7 @@ impl Engine {
                 }
             }
         }
+        timing.next("ai.loaded.equipment");
         self.nav = nav;
         self.furniture = furniture;
         for (key, index, objects) in held {
@@ -4431,6 +4452,7 @@ impl Engine {
         for (key, index, actor) in equip {
             self.refresh_equipment(key, index, actor);
         }
+        timing.next("ai.loaded.combat_resolve");
         for r in lost {
             self.lose_target(r);
         }
@@ -4444,17 +4466,23 @@ impl Engine {
         self.update_combat_shouts(dt);
         self.update_npc_sprint_stamina(dt);
         self.update_stamina(dt);
+        timing.next("ai.loaded.threat");
         self.update_threat(dt);
         if self.ai_enabled {
+            timing.next("ai.loaded.detection");
             self.update_detection(dt);
+            timing.next("ai.loaded.enemies");
             self.detect_enemies(dt);
+            timing.next("ai.loaded.commanded_crime");
             self.update_commanded();
             self.update_arrests(dt);
             self.update_witnesses();
         }
+        timing.next("ai.loaded.reports");
         self.report_combat_states();
         self.complete_arrivals();
         self.report_package_runs();
+        timing.next("ai.loaded.sounds_events");
         for (sound, at) in sounds {
             self.play_sound_at(&sound, at);
         }
@@ -4483,11 +4511,13 @@ impl Engine {
         for step in &steps {
             self.play_footstep(step);
         }
+        timing.next("ai.loaded.idles_worn");
         self.play_furniture_idles();
         self.play_standing_meals();
         self.play_action_idles();
         self.update_torches();
         self.update_worn();
+        timing.next("ai.loaded.movement_sync");
         for r in gone {
             if let Some(door) = self.actor_ref(r).and_then(|a| a.exiting)
                 && self.npc_may_open(r, door)

@@ -74,9 +74,12 @@ impl Engine {
     /// Find again the triangles of obstacles that moved, were enabled or
     /// disabled, or whose navmeshes loaded or unloaded since.
     pub(crate) fn update_nav_obstacles(&mut self) {
+        let mut checked = 0;
+        let mut rebuilt = 0;
         let generation = self.nav.generation();
         for rt in self.cells.values_mut() {
             for o in &mut rt.obstacles {
+                checked += 1;
                 let poses = self.physics.collider_poses(&o.colliders);
                 if o.seen
                     .as_ref()
@@ -84,6 +87,7 @@ impl Engine {
                 {
                     continue;
                 }
+                rebuilt += 1;
                 let blocked = self
                     .physics
                     .colliders_bounds(&o.colliders)
@@ -114,6 +118,8 @@ impl Engine {
                 o.seen = Some((generation, poses));
             }
         }
+        crate::diagnostics::count("ai.obstacles.checked", checked);
+        crate::diagnostics::count("ai.obstacles.rebuilt", rebuilt);
     }
 
     /// Forget the triangles of a cell's obstacles (it unloads).

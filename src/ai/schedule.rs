@@ -434,6 +434,9 @@ impl Engine {
     /// and the new table took effect, unloaded actors' home doors following
     /// their packages' changes when `doors`.
     fn refresh_whereabouts_step(&mut self, budget: usize, doors: bool) -> bool {
+        use crate::diagnostics::{ScheduleEntry, SchedulePhase as Phase};
+
+        let mut timing = crate::diagnostics::Span::new("ai.schedule.prepare");
         if !self.whereabouts.built {
             // Every actor reference, flagged persistent or not: the game
             // moves both alike while their cell is unloaded (autotest8).
@@ -458,17 +461,23 @@ impl Engine {
         } else {
             std::mem::take(&mut self.whereabouts.pending_headings)
         };
-        for &a in &actors[start..end] {
+        crate::diagnostics::count("ai.schedule.visited", end - start);
+        crate::diagnostics::schedule_batch(start, end, actors.len());
+        timing.next("ai.schedule.evaluate");
+        for (offset, &a) in actors[start..end].iter().enumerate() {
+            let mut entry_timing = ScheduleEntry::new(a.0, start + offset);
             pending_headings.remove(&a);
             if self.is_disabled(a) {
                 continue;
             }
+            entry_timing.next(Phase::Body);
             // The dead lie where they fell.
             if let Some(body) = self.body_of(a) {
                 pending.insert(a, body);
                 pending_packages.insert(a, None);
                 continue;
             }
+            entry_timing.next(Phase::Away);
             // One away is where its execution has it (`step_away`).
             if let Some(x) = self.away.get(&a)
                 && let Some(place) = x.place
@@ -480,27 +489,37 @@ impl Engine {
                 }
                 continue;
             }
+            entry_timing.next(Phase::Reference);
             let Some(rf) = self.reference_of(a) else {
                 continue;
             };
+            entry_timing.base(rf.base.0);
             if rf.deleted() {
                 continue;
             }
+            entry_timing.next(Phase::EditorPlace);
             let Some(editor_place) = self.place_of_ref(a, rf.position) else {
                 continue;
             };
+            entry_timing.next(Phase::BaseNpc);
             let Some(npc) = self.base_npc(rf.base) else {
                 continue;
             };
             // Those a scene or alias gives first, then the NPC's own (not
             // copied: there are many actors).
+            entry_timing.next(Phase::ScenePackages);
             let mut first = self.scene_packages(a);
+            entry_timing.next(Phase::AliasPackages);
             first.extend(self.alias_packages(a));
+            entry_timing.next(Phase::OwnPackages);
             let own = self.npc_packages_cached(a, npc);
+            entry_timing.next(Phase::Select);
             let current = self
                 .current_package(a, &first)
                 .map(|i| &first[i])
                 .or_else(|| self.current_package(a, &own).map(|i| &own[i]));
+            entry_timing.package(current.map(|p| p.id.0));
+            entry_timing.next(Phase::Place);
             // Without a package place: where scripts moved it, else its editor place.
             let home = self
                 .world_state
@@ -510,6 +529,7 @@ impl Engine {
             let (place, pos, heading) =
                 match current.and_then(|p| Some((p, self.package_place(a, p)?))) {
                     Some((p, (place, target))) => {
+                        entry_timing.next(Phase::Heading);
                         let radius = p.location.map_or(0.0, |l| l.radius);
                         (
                             place,
@@ -519,6 +539,7 @@ impl Engine {
                     }
                     None => (home.0, home.1, None),
                 };
+            entry_timing.next(Phase::Store);
             pending_packages.insert(a, current.map(|p| p.id));
             if let Some(heading) = heading {
                 pending_headings.insert(a, heading);
@@ -531,6 +552,7 @@ impl Engine {
             }
             pending.insert(a, (place, pos));
         }
+        timing.next("ai.schedule.publish");
         let done = end >= actors.len();
         self.whereabouts.actors = actors;
         self.whereabouts.cursor = end;
@@ -540,6 +562,7 @@ impl Engine {
             self.whereabouts.pending_headings = pending_headings;
             return false;
         }
+        crate::diagnostics::count("ai.schedule.completed", 1);
         let mut by_place: HashMap<Place, Vec<FormId>> = HashMap::new();
         for (&a, &(place, _)) in &pending {
             by_place.entry(place).or_default().push(a);
@@ -561,6 +584,7 @@ impl Engine {
         if !doors {
             return true;
         }
+        timing.next("ai.schedule.door_locks");
         // Loaded actors' doors follow their AI's own picks (`evaluate_packages`).
         let changed: Vec<_> = self
             .whereabouts
@@ -699,9 +723,11 @@ impl Engine {
         if self.whereabouts.next_refresh > 0.0 || !self.ai_enabled {
             return;
         }
+        let mut timing = crate::diagnostics::Span::new("ai.whereabouts.refresh");
         if !self.refresh_whereabouts_step(REFRESH_BUDGET, true) {
             return;
         }
+        timing.next("ai.whereabouts.departures");
         let player = self
             .ref_position(crate::engine::PLAYER_REF)
             .unwrap_or_default();
@@ -744,6 +770,7 @@ impl Engine {
         for r in despawn {
             self.despawn_actor(r);
         }
+        timing.next("ai.whereabouts.arrivals");
         // Arriving.
         let loaded: Vec<CellKey> = self.cells.keys().copied().collect();
         for key in loaded {

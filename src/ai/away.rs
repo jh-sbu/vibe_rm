@@ -179,6 +179,7 @@ impl Engine {
         if !self.ai_enabled {
             return;
         }
+        let mut timing = crate::diagnostics::Span::new("ai.away.queue");
         let s = &mut self.away_steps;
         if s.cursor >= s.queue.len() {
             s.queue = self
@@ -193,6 +194,8 @@ impl Engine {
         let end = (s.cursor + BUDGET).min(s.queue.len());
         let batch = s.queue[s.cursor..end].to_vec();
         s.cursor = end;
+        crate::diagnostics::count("ai.away.visited", batch.len());
+        timing.next("ai.away.steps");
         for r in batch {
             self.step_away(r);
         }
@@ -212,6 +215,7 @@ impl Engine {
     }
 
     pub(super) fn step_away_at(&mut self, r: FormId, clock: f64, stamp: f64) {
+        let mut timing = crate::diagnostics::Span::new("ai.away.check");
         if self.mount_driver(r).is_some() || self.passengers.contains_key(&r) {
             return;
         }
@@ -221,6 +225,7 @@ impl Engine {
         let Some(x) = self.away.get(&r) else {
             return;
         };
+        timing.next("ai.away.refresh_packages");
         let dt = (clock - x.stepped_at).max(0.0) as f32;
         self.refresh_away_packages(r);
         let hours = self.game_hours_total();
@@ -231,10 +236,14 @@ impl Engine {
         x.stamp(stamp, hours);
         x.next_eval -= dt;
         let due = x.next_eval <= 0.0 || x.eval_slot != Some(slot);
+        timing.next("ai.away.advance_tree");
         self.advance_away_tree(r, dt);
+        timing.next("ai.away.evaluate");
         if due || self.away.get(&r).is_some_and(|x| x.next_eval <= 0.0) {
+            crate::diagnostics::count("ai.away.evaluated", 1);
             self.evaluate_away(r, slot, tier);
         }
+        timing.next("ai.away.procedures");
         self.procedure_locks(r);
         for _ in 0..8 {
             if !(self.run_find(r)
@@ -247,12 +256,14 @@ impl Engine {
             }
             self.advance_away_tree(r, 0.);
         }
+        timing.next("ai.away.movement");
         self.prepare_away_mount(r);
         if !self.step_flight(r, dt, true) {
             self.move_away(r, dt, tier, clock);
         }
         self.sync_away_mount(r);
         self.sync_away_vehicles(r);
+        timing.next("ai.away.practice_bleed");
         self.advance_away_practice(r, dt);
         let Some(x) = self.away.get_mut(&r) else {
             return;
