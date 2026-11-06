@@ -212,6 +212,27 @@ pub(crate) fn resolve_items(
     globals: &Globals,
     depth: u32,
 ) -> Vec<(FormId, i32)> {
+    resolve_items_at(
+        lo,
+        id,
+        count,
+        seed,
+        globals,
+        crate::skills::player_level(),
+        depth,
+    )
+}
+
+/// The same roll at an explicit recipient level; nested lists keep that level.
+pub(crate) fn resolve_items_at(
+    lo: &LoadOrder,
+    id: FormId,
+    count: i32,
+    seed: u64,
+    globals: &Globals,
+    level: u16,
+    depth: u32,
+) -> Vec<(FormId, i32)> {
     let Some(rec) = lo.get(id) else {
         return Vec::new();
     };
@@ -228,11 +249,20 @@ pub(crate) fn resolve_items(
     if flags & LVL_EACH_ITEM != 0 && count > 1 {
         return (0..count.min(64))
             .flat_map(|i| {
-                resolve_items_once(lo, &rec, id, 1, mix(seed, FormId(i as u32)), globals, depth)
+                resolve_items_once(
+                    lo,
+                    &rec,
+                    id,
+                    1,
+                    mix(seed, FormId(i as u32)),
+                    globals,
+                    level,
+                    depth,
+                )
             })
             .collect();
     }
-    resolve_items_once(lo, &rec, id, count, seed, globals, depth)
+    resolve_items_once(lo, &rec, id, count, seed, globals, level, depth)
 }
 
 fn resolve_items_once(
@@ -242,6 +272,7 @@ fn resolve_items_once(
     count: i32,
     seed: u64,
     globals: &Globals,
+    level: u16,
     depth: u32,
 ) -> Vec<(FormId, i32)> {
     let flags = rec
@@ -252,18 +283,36 @@ fn resolve_items_once(
     if (roll % 100) < chance_none(lo, rec, globals) {
         return Vec::new();
     }
-    let entries = eligible(rec, id, globals);
+    let entries = eligible_at(rec, id, level, globals);
     if flags & LVL_USE_ALL != 0 {
         return entries
             .into_iter()
-            .flat_map(|(e, n)| resolve_items(lo, e, n * count, seed, globals, depth + 1))
+            .flat_map(|(e, n)| {
+                resolve_items_at(
+                    lo,
+                    e,
+                    n.saturating_mul(count),
+                    seed,
+                    globals,
+                    level,
+                    depth + 1,
+                )
+            })
             .collect();
     }
     if entries.is_empty() {
         return Vec::new();
     }
     let (e, n) = entries[((roll >> 8) % entries.len() as u64) as usize];
-    resolve_items(lo, e, n * count, seed, globals, depth + 1)
+    resolve_items_at(
+        lo,
+        e,
+        n.saturating_mul(count),
+        seed,
+        globals,
+        level,
+        depth + 1,
+    )
 }
 
 /// The spells a leveled spell list (`LVSP`, or a plain spell) gives an actor

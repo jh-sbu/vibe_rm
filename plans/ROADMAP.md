@@ -1869,6 +1869,12 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
     (`known_ambiguities/package-dialogue.md`).
     Record actor/furniture notifications through a sawmill load/cut cycle and
     compare Wait's StopMovement behavior (`known_ambiguities/furniture.md`).
+    Compare Find ordering/retries, inventory acquisition and autonomous theft,
+    Flee destinations/flags (`known_ambiguities/find-acquire-flee.md`); fixed idle
+    markers, observation/group spacing and crouched travel (`package-trees.md`);
+    escort rosters/initial legs/preferred paths (`escort.md`); force-greet fade,
+    sitting and alias/carriage gates (`package-dialogue.md`); reference-location
+    aliases and leveled alias grants (`alias-fills.md`, `locks.md`).
   - `test-mod autotest23` isn't written yet. It should cover autotest22's
     follow-up list ("Faults and open items").
   - Built and waiting for the user's run: `loadscreens`
@@ -2016,7 +2022,8 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      travellers walk, applied).
    - **Unblocked work: `plans/ai-depth.md`** (in progress 2026-11-05; step 0,
      the all-PACK census tool, is done; step 1 has bound trees, saved cursors and
-     initial loaded/away execution, with remaining integration tracked there). It plans
+     initial loaded/away execution. Steps 2–10 are now implemented (2026-11-06);
+     steps 11–16 remain, with integration tracked there). It plans
      these in steps: a procedure-tree interpreter (`Sequence` /
      `Simultaneous` / `Random` run as written; Wait, Lock / UnlockDoors,
      multi-location stops' per-stop unlocking, "in cell" stops elsewhere and

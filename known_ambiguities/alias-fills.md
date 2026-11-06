@@ -123,3 +123,19 @@ deleted, its 3D still loaded, 2 s after each step.
 - Location aliases don't reserve locations; location keyword data is only
   what scripts set (`SetKeywordData`); cleared locations:
   `known_ambiguities/cleared.md`.
+
+## Reference-derived location aliases during travel (2026-11-06)
+
+RefLocation now recomputes its location/keyword ancestor when the filled source
+reference or its current location changes. OnLocationChange refreshes it before
+that event reaches scripts; regular loaded package evaluation also catches
+movement and changed source fills. Away actors use their execution's actual
+place, and exterior actors use their position's grid rather than a stale render
+attachment cell. A source losing its location clears the dependent alias.
+
+A remembered (source reference, source location) pair prevents each evaluation
+from overwriting explicit ForceLocationTo/Clear overrides. Overrides last until
+the source changes again. Optional ALSC saves retain that memory; legacy saves
+synchronize once on their first evaluation. This is an implementation choice,
+not a claim about SE's internal save layout. Probe live reference travel,
+keyword-parent changes, explicit overrides, source clearing and save/reload.

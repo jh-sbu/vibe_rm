@@ -8,8 +8,10 @@
 //! can't be filled doesn't start. Based on the Creation Kit wiki's *Quest Alias
 //! Tab* and UESP *Mod File Format/QUST*.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+
+pub(crate) type LocationSources = HashMap<(FormId, u32), (Option<FormId>, Option<FormId>)>;
 
 use esp::FormId;
 
@@ -261,16 +263,33 @@ impl Engine {
             .map(|a| a.inventory.clone())
             .unwrap_or_default();
         for (item, count) in inventory {
-            // Alias inventory supports direct carried items. Form lists and
-            // leveled lists need their own provenance/roll semantics and are
-            // intentionally left unsupported here.
-            if count <= 0 || crate::world::inventory::item_info(&self.lo, item).is_none() {
+            if count <= 0 {
                 continue;
             }
-            let held = self.inventory_mut(reference).count(item);
-            let granted = count.min(i32::MAX.saturating_sub(held));
-            if granted > 0 {
-                self.add_item(reference, item, granted);
+            let items = if self.lo.tag_of(item).is_some_and(|t| t.0 == *b"LVLI") {
+                let level = self.actor_level(reference).clamp(1, u16::MAX as i32) as u16;
+                let seed = self.rand();
+                crate::world::actor::resolve_items_at(
+                    &self.lo,
+                    item,
+                    count,
+                    seed,
+                    &self.scripts.globals,
+                    level,
+                    0,
+                )
+            } else {
+                vec![(item, count)]
+            };
+            for (item, count) in items {
+                if count <= 0 || crate::world::inventory::item_info(&self.lo, item).is_none() {
+                    continue;
+                }
+                let held = self.inventory_mut(reference).count(item);
+                let granted = count.min(i32::MAX.saturating_sub(held));
+                if granted > 0 {
+                    self.add_item(reference, item, granted);
+                }
             }
         }
     }
@@ -287,6 +306,66 @@ impl Engine {
         self.scripts.alias_gen += 1;
         if previous != Some(reference) {
             self.grant_alias_inventory(q, alias, reference);
+        }
+        self.refresh_ref_location_aliases();
+    }
+
+    /// Recompute automatic location aliases only when their source changes.
+    /// Remembering the source preserves explicit ForceLocationTo/Clear overrides.
+    pub(crate) fn refresh_ref_location_aliases(&mut self) {
+        let mut changes = Vec::new();
+        let mut valid = HashSet::new();
+        let mut quests: Vec<_> = self
+            .scripts
+            .quests
+            .iter()
+            .filter(|(_, s)| s.running)
+            .map(|(&q, _)| q)
+            .collect();
+        quests.sort();
+        for q in quests {
+            for a in self.alias_specs(q).iter() {
+                let Fill::RefLocation { ref_alias, keyword } = a.fill else {
+                    continue;
+                };
+                let reference = self.alias_ref(q, ref_alias);
+                let location = reference.and_then(|r| self.ref_current_location(r));
+                let key = (q, a.id);
+                valid.insert(key);
+                if self.alias_location_sources.get(&key) == Some(&(reference, location)) {
+                    continue;
+                }
+                self.alias_location_sources
+                    .insert(key, (reference, location));
+                let filled = location.and_then(|l| self.location_with_keyword(l, keyword));
+                if self.alias_ref(q, a.id) != filled {
+                    changes.push((q, a.id, filled));
+                }
+            }
+        }
+        self.alias_location_sources
+            .retain(|key, _| valid.contains(key));
+        for (q, alias, location) in changes {
+            let state = self.scripts.quests.get_mut(&q).unwrap();
+            if let Some(location) = location {
+                self.scripts.fill_seq += 1;
+                state.aliases.insert(alias, location);
+                state.filled_at.insert(alias, self.scripts.fill_seq);
+            } else {
+                state.aliases.remove(&alias);
+                state.filled_at.remove(&alias);
+            }
+            self.scripts.alias_gen += 1;
+        }
+    }
+
+    pub(crate) fn remember_alias_locations(&mut self, q: FormId) {
+        for a in self.alias_specs(q).iter() {
+            if let Fill::RefLocation { ref_alias, .. } = a.fill {
+                let r = self.alias_ref(q, ref_alias);
+                self.alias_location_sources
+                    .insert((q, a.id), (r, r.and_then(|r| self.ref_current_location(r))));
+            }
         }
     }
 
@@ -666,9 +745,14 @@ impl Engine {
         for (alias, reference) in grants {
             self.grant_alias_inventory(q, alias, reference);
         }
+        self.remember_alias_locations(q);
         true
     }
 }
+
+#[cfg(test)]
+#[path = "alias_depth_tests.rs"]
+mod depth_tests;
 
 #[cfg(test)]
 mod tests {

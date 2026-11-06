@@ -243,3 +243,22 @@ no such doors completes without changing locks. This reuses the already
 researched home-door policy; whether SE's procedure instead considers radius,
 ownership or non-load doors remains uncertain. A probe should compare two
 owned doors and an unowned door within/outside a procedure location radius.
+
+### Leveled alias inventories (2026-11-06)
+
+The five-master census finds 160 LVLI alias CNTO entries and no FLST entries.
+Alias grants now use the existing container-item roll rules (flags, chance-none,
+counts and nesting), with the recipient's current actor level instead of the
+player's. Non-actor inventory holders use actor_level's existing fallback 1.
+The roll occurs only after every required alias fills successfully, once per
+new placement, including ForceRefTo replacing or refilling an alias; repeating
+the same placement and loading a save do not reroll. Nested lists retain the
+recipient level and rolled results are ordinary persistent inventory. Counts
+are saturated against existing inventory, as for direct grants. FLST remains
+unneeded by vanilla and is not added as a separate alias grant mechanism.
+
+The recipient-level and timing choices follow this plan and the existing grant
+policy; exact SE roll-level behavior is not publicly established. Compare a
+low/high-level recipient with a two-level nested list, a failed quest start,
+clear/refill, replacing the recipient and save/reload. Direct-grant permanence
+remains subject to the earlier English/German documentation ambiguity above.

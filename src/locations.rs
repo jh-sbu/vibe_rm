@@ -190,11 +190,16 @@ impl Engine {
         if let Some(key) = self.actor_cells.get(&r) {
             return match (*key, self.location) {
                 (CellKey::Interior(c), _) => self.cell_location(c),
-                (CellKey::Exterior(x, y), crate::engine::Location::Exterior { world, .. }) => {
-                    self.grid_location(world, (x, y))
-                }
+                (CellKey::Exterior(_, _), crate::engine::Location::Exterior { world, .. }) => self
+                    .grid_location(
+                        world,
+                        crate::engine::grid_of(self.ref_position(r)?.truncate()),
+                    ),
                 _ => None,
             };
+        }
+        if let Some(place) = self.away.get(&r).and_then(|x| x.place) {
+            return self.place_location(place);
         }
         if let Some((place, _)) = self.whereabouts.of.get(&r) {
             return self.place_location(*place);

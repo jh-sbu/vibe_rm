@@ -130,6 +130,7 @@ impl Engine {
     /// Loaded actors whose aliases changed take up their new package stacks,
     /// keeping their current package if it is still on it.
     pub(crate) fn refresh_alias_packages(&mut self) {
+        self.refresh_ref_location_aliases();
         let generation = self.scripts.alias_gen;
         let stale: Vec<(FormId, FormId)> = self
             .cells

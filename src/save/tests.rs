@@ -6923,3 +6923,34 @@ fn continuity_explicit_look_at_payload_is_bounded_and_legacy_defaults_clear_it()
         .insert(FormId(0x803), (FormId::NULL, false));
     assert!(Snapshot::read(&s.write()).is_err());
 }
+
+#[test]
+fn alias_location_source_memory_round_trips_and_rejects_invalid_or_duplicate_sections() {
+    let mut s = Snapshot::default();
+    s.continuity.alias_location_sources.insert(
+        (FormId(0x801), 3),
+        (Some(FormId(0x802)), Some(FormId(0x803))),
+    );
+    let f = s.write();
+    assert_eq!(
+        Snapshot::read(&f)
+            .unwrap()
+            .continuity
+            .alias_location_sources,
+        s.continuity.alias_location_sources
+    );
+    check_continuity_payload(&f, b"ALSC");
+    s.continuity
+        .alias_location_sources
+        .insert((FormId(0x804), 5), (None, Some(FormId(0x805))));
+    assert!(Snapshot::read(&s.write()).is_err());
+    let mut legacy = f;
+    legacy.sections.retain(|(tag, _)| tag != b"ALSC");
+    assert!(
+        Snapshot::read(&legacy)
+            .unwrap()
+            .continuity
+            .alias_location_sources
+            .is_empty()
+    );
+}

@@ -810,6 +810,9 @@ impl Engine {
     /// Send a Papyrus event to the scripts on a reference and on the quest aliases
     /// it fills (delivered with the next script update).
     pub fn send_script_event(&mut self, r: FormId, event: &str, args: Vec<papyrus::Value>) {
+        if event.eq_ignore_ascii_case("OnLocationChange") {
+            self.refresh_ref_location_aliases();
+        }
         for obj in self.objects_of_ref(r) {
             self.scripts
                 .pending_events

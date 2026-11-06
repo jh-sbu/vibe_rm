@@ -2404,6 +2404,7 @@ pub fn call(
             if let (Some(Value::Object(ObjectId::Alias { quest, alias }, _)), Some(l)) =
                 (this, form_arg(args, 0))
             {
+                e.refresh_ref_location_aliases();
                 e.scripts
                     .quests
                     .entry(FormId(*quest))
@@ -2411,11 +2412,15 @@ pub fn call(
                     .aliases
                     .insert(*alias, l);
                 e.scripts.alias_gen += 1;
+                e.remember_alias_locations(FormId(*quest));
             }
             none()
         }
         ("referencealias", "clear") | ("locationalias", "clear") => {
             if let Some(Value::Object(ObjectId::Alias { quest, alias }, _)) = this {
+                if class == "locationalias" {
+                    e.refresh_ref_location_aliases();
+                }
                 e.scripts
                     .quests
                     .entry(FormId(*quest))
@@ -2423,6 +2428,11 @@ pub fn call(
                     .aliases
                     .remove(alias);
                 e.scripts.alias_gen += 1;
+                if class == "locationalias" {
+                    e.remember_alias_locations(FormId(*quest));
+                } else {
+                    e.refresh_ref_location_aliases();
+                }
             }
             none()
         }

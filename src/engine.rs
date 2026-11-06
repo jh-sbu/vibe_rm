@@ -193,6 +193,7 @@ pub struct Engine {
     pub(crate) pending_load: Option<crate::loading::LoadRequest>,
     /// The loading state, while a load's screen is up.
     pub(crate) loading: Option<crate::loading::Loading>,
+    pub(crate) alias_location_sources: crate::aliases::LocationSources,
     /// Load-door transition, including the destination's final world fade-in.
     pub(crate) door_transition: bool,
     /// The loading screen's scene, while its screen is up.
@@ -621,6 +622,7 @@ impl Engine {
             pending_save_load: None,
             pending_load: None,
             loading: None,
+            alias_location_sources: HashMap::new(),
             door_transition: false,
             loading_view: None,
             load_screen_cache: Default::default(),

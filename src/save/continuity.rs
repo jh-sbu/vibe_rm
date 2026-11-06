@@ -103,6 +103,7 @@ pub(crate) struct Continuity {
     pub executions: HashMap<FormId, SavedExec>,
     pub package_speech: Vec<crate::ai::speech::SavedSpeech>,
     pub look_at: HashMap<FormId, (FormId, bool)>,
+    pub alias_location_sources: crate::aliases::LocationSources,
 }
 
 fn optional<'a>(file: &'a SaveFile, tag: &[u8; 4]) -> Result<Option<Reader<'a>>> {
@@ -524,6 +525,7 @@ impl Continuity {
     pub fn capture(e: &Engine) -> Self {
         let (journal_floor, fill_floor) = sequence_floors(e);
         Self {
+            alias_location_sources: e.alias_location_sources.clone(),
             look_at: e.scripts.look_at.clone(),
             script_fade: e.imagespace.fade,
             image_modifiers: e.imagespace.active.clone(),
@@ -1109,9 +1111,38 @@ impl Continuity {
             w.bool(pathing);
         }
         file.add(b"LOOK", w.0);
+        let mut w = Writer::default();
+        w.len(self.alias_location_sources.len());
+        for ((quest, alias), &(reference, location)) in sorted(&self.alias_location_sources) {
+            w.form(quest);
+            w.u32(alias);
+            w.form(reference.unwrap_or_default());
+            w.form(location.unwrap_or_default());
+        }
+        file.add(b"ALSC", w.0);
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
+        if let Some(mut r) = optional(file, b"ALSC")? {
+            let n = r.count(16)?;
+            let mut previous = None;
+            for _ in 0..n {
+                let quest = r.form()?;
+                nonnull(quest)?;
+                let alias = r.u32()?;
+                ordered(&mut previous, (quest, alias))?;
+                let reference = r.form()?;
+                let location = r.form()?;
+                s.alias_location_sources.insert(
+                    (quest, alias),
+                    (
+                        (!reference.is_null()).then_some(reference),
+                        (!location.is_null()).then_some(location),
+                    ),
+                );
+            }
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"LOOK")? {
             let n = r.count(9)?;
             let mut previous = None;
@@ -1709,6 +1740,18 @@ impl Continuity {
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        for (&(quest, _), &(reference, location)) in &self.alias_location_sources {
+            nonnull(quest)?;
+            if let Some(r) = reference {
+                nonnull(r)?;
+            }
+            if let Some(l) = location {
+                nonnull(l)?;
+            }
+            if reference.is_none() && location.is_some() {
+                return Err(Corrupt("alias location source without reference".into()));
+            }
+        }
         for (&actor, &(target, _)) in &self.look_at {
             nonnull(actor)?;
             nonnull(target)?;
@@ -2044,6 +2087,7 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.alias_location_sources = self.alias_location_sources;
         e.door_transition = false;
         e.scripts.look_at = self.look_at;
         e.imagespace.fade = self.script_fade;

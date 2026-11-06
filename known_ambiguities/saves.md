@@ -529,3 +529,10 @@ Optional LOOK stores explicit Actor.SetLookAt targets and the pathing-look flag
 in sorted actor order. It rejects null forms, duplicate/unsorted actors, invalid
 booleans and truncated/trailing data. Older saves clear explicit look targets.
 Package observation is derived from its current procedure and is not duplicated.
+
+Optional ALSC stores sorted (quest, location-alias) keys and the remembered
+source reference/current location used by RefLocation refresh. Null optional
+values represent an unfilled source or no current location; a location without
+a source reference is rejected. Duplicate/unsorted keys, duplicate sections,
+truncation and trailing data are rejected. Absence starts with empty memory and
+resynchronizes automatic location aliases at the next evaluation.

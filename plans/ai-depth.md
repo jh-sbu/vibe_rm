@@ -9,7 +9,8 @@ Step 6 is complete, including acquisition, fleeing and UseWeapon preparation tre
 Step 7 implements fixed idle markers, observation, FollowTo, group spacing and
 crouched final travel legs. Step 8 adds escort lists/initial legs and preferred
 paths. Step 9 implements force-greet transition, sitting and alias-trigger
-leftovers. Steps 10–16 are not implemented.
+leftovers. Step 10 completes reference-location refresh and leveled alias grants.
+Steps 11–16 are not implemented.
 
 This plan covers ROADMAP Next item 4 (AI depth): everything in it that can be
 built today from public sources, the game's data and the readings we already
@@ -562,6 +563,20 @@ tree and the actual vanilla furniture hold/exit difference.
   alias-filled trigger.
 
 ### 10. Alias leftovers
+
+**Status: done** (2026-11-06). RefLocation follows changes of its source
+reference/current location, before OnLocationChange delivery and during package
+evaluation. Away execution places and loaded exterior positions supply current
+locations. Remembered source pairs preserve ForceLocationTo/Clear overrides
+until the source changes, with optional ALSC save continuity. LVLI alias CNTO
+grants roll at the recipient level through nested lists, once per successful
+new placement under the existing direct-item grant policy. FLST has no vanilla
+entries and needs no additional mechanism. A real synthetic Story Manager event
+starts a quest, fills its FromEvent alias and supplies ALPC to the event actor.
+
+Validated: four alias tests, three leveled-list regressions, nine lock/grant
+regressions, 234 AI tests and 195 save tests with ignored fixtures included.
+Choices/probes are in `known_ambiguities/alias-fills.md`, `locks.md`, `saves.md`.
 
 - **"From alias" locations followed through travel**: a location filled from
   a reference alias's current location (`Fill::RefLocation`) is recomputed
