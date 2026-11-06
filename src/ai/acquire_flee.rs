@@ -258,6 +258,13 @@ impl Engine {
     pub(super) fn project_consumer(&self, actor: FormId, p: &Package, c: &Cursor) -> Package {
         let mut effective = p.for_procedure(c.body(p.tree.as_ref().unwrap()));
         if let Some((_, n)) = c.moving(p.tree.as_ref().unwrap()) {
+            if n.procedure == "UseIdleMarker"
+                && !self
+                    .package_target_of(actor, &effective, effective.target)
+                    .is_some_and(|r| self.furniture.get(r).is_some())
+            {
+                effective.behaviour = Behaviour::Hold;
+            }
             if matches!(n.procedure.as_str(), "Acquire" | "Flee") {
                 effective.behaviour = Behaviour::Travel;
                 effective.location = Some(Location {

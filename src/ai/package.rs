@@ -952,6 +952,14 @@ impl Package {
                 p.start_nearest = flag(3, false);
             }
             "Follow" => p.follow_radius = (number(1, 128.0), number(2, 384.0)),
+            "FollowTo" => p.follow_radius = (number(2, 128.0), number(3, 384.0)),
+            "UseIdleMarker" => {
+                p.behaviour = Behaviour::Sit;
+                p.allow = Allow {
+                    idle_markers: true,
+                    ..Allow::NONE
+                };
+            }
             "Escort" => {
                 p.escort_wait = number(3, 512.0);
                 p.escort_run = number(8, 500.0);
@@ -966,7 +974,23 @@ impl Package {
             }
             _ => {}
         }
+        if p.template_is("TravelCrouchWhenNearTemplate") {
+            p.sneak = n.args.first() == Some(&3);
+        }
         p
+    }
+}
+
+impl Package {
+    pub(crate) fn template_is(&self, name: &str) -> bool {
+        if self.template.is_empty() {
+            self.editor_id
+                .split('#')
+                .next()
+                .is_some_and(|id| id.eq_ignore_ascii_case(name))
+        } else {
+            self.template.eq_ignore_ascii_case(name)
+        }
     }
 }
 
@@ -1137,7 +1161,7 @@ fn behaviour_of_procedure(name: &str) -> Behaviour {
         "Sandbox" => Behaviour::Sandbox,
         "Travel" | "HoldPosition" | "DialogueActivate" => Behaviour::Travel,
         "Patrol" => Behaviour::Patrol,
-        "Follow" => Behaviour::Follow,
+        "Follow" | "FollowTo" => Behaviour::Follow,
         "Escort" => Behaviour::Escort,
         "Sit" => Behaviour::Sit,
         "Sleep" => Behaviour::Sleep,

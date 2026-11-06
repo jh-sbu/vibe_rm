@@ -155,6 +155,8 @@ pub struct ScriptState {
     /// The player's teammates (`SetPlayerTeammate`) and whether the player
     /// can ask each for favors.
     pub teammates: HashMap<FormId, bool>,
+    /// Explicit NPC head tracking: target and whether idle body facing may turn.
+    pub look_at: HashMap<FormId, (FormId, bool)>,
 }
 
 impl ScriptState {

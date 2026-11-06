@@ -241,3 +241,26 @@ fn resumed_whole_cell_sandboxer_keeps_its_upstairs_position() {
     assert!(a.seat.is_none());
     assert_eq!(a.exec.pos, before);
 }
+
+#[test]
+#[ignore = "requires installed Skyrim SE animation assets and a headless GPU"]
+fn fixed_idle_marker_uses_only_its_authored_marker_and_holds_it() {
+    let (mut e, mut a, _) = fixture();
+    let marker = e.furniture.items[1].ref_id;
+    let mut goal = Goal::travel(Vec3::ZERO);
+    goal.behaviour = Behaviour::Sit;
+    goal.furniture = Some(marker);
+    goal.any_furniture = true;
+    a.exec.goal = Some(goal);
+    a.exec.pos = Vec3::ZERO;
+    a.fresh = false;
+    a.load_cell = None;
+    plan(&mut e, &mut a);
+    assert_eq!(a.seat.as_ref().unwrap().furniture, marker);
+    assert!(matches!(
+        a.state,
+        State::Walk { to_seat: true, .. } | State::Enter(_) | State::Use(_)
+    ));
+    assert_eq!(a.exec.goal.unwrap().furniture, Some(marker));
+    assert!(a.seat.as_ref().unwrap().duration.is_infinite());
+}

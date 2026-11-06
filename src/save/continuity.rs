@@ -102,6 +102,7 @@ pub(crate) struct Continuity {
     /// and their actors are placed by their schedules.
     pub executions: HashMap<FormId, SavedExec>,
     pub package_speech: Vec<crate::ai::speech::SavedSpeech>,
+    pub look_at: HashMap<FormId, (FormId, bool)>,
 }
 
 fn optional<'a>(file: &'a SaveFile, tag: &[u8; 4]) -> Result<Option<Reader<'a>>> {
@@ -523,6 +524,7 @@ impl Continuity {
     pub fn capture(e: &Engine) -> Self {
         let (journal_floor, fill_floor) = sequence_floors(e);
         Self {
+            look_at: e.scripts.look_at.clone(),
             script_fade: e.imagespace.fade,
             image_modifiers: e.imagespace.active.clone(),
             player_marker: e.player_marker,
@@ -1099,9 +1101,30 @@ impl Continuity {
         if !self.package_speech.is_empty() {
             file.add(b"PDLG", super::speech::put(&self.package_speech));
         }
+        let mut w = Writer::default();
+        w.len(self.look_at.len());
+        for (actor, &(target, pathing)) in sorted(&self.look_at) {
+            w.form(actor);
+            w.form(target);
+            w.bool(pathing);
+        }
+        file.add(b"LOOK", w.0);
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
+        if let Some(mut r) = optional(file, b"LOOK")? {
+            let n = r.count(9)?;
+            let mut previous = None;
+            for _ in 0..n {
+                let actor = r.form()?;
+                nonnull(actor)?;
+                ordered(&mut previous, actor)?;
+                let target = r.form()?;
+                nonnull(target)?;
+                s.look_at.insert(actor, (target, r.bool()?));
+            }
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"PDLG")? {
             s.package_speech = super::speech::get(&mut r)?;
             r.finish()?;
@@ -1686,6 +1709,10 @@ impl Continuity {
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        for (&actor, &(target, _)) in &self.look_at {
+            nonnull(actor)?;
+            nonnull(target)?;
+        }
         super::speech::validate(&self.package_speech)?;
         for s in self.package_speech.iter().filter(|s| !s.finish) {
             let owned = self
@@ -2017,6 +2044,7 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.scripts.look_at = self.look_at;
         e.imagespace.fade = self.script_fade;
         e.clear_image_shakes_for_load();
         e.imagespace.active = self.image_modifiers;

@@ -6,7 +6,8 @@ finite Patrol completion and away practice counts are implemented. Step 2 is
 complete, including menu-time catch-up, door travel and vanilla sequence fixtures.
 Steps 3–5 are complete.
 Step 6 is complete, including acquisition, fleeing and UseWeapon preparation trees.
-Steps 7–16 are not implemented.
+Step 7 implements fixed idle markers, observation, FollowTo, group spacing and
+crouched final travel legs. Steps 8–16 are not implemented.
 
 This plan covers ROADMAP Next item 4 (AI depth): everything in it that can be
 built today from public sources, the game's data and the readings we already
@@ -449,6 +450,24 @@ pickpocket/crime regressions, with ignored fixtures included. Research and choic
 - **KeepDistanceFrom** (1, a deer): flee only while nearer than the distance.
 
 ### 7. Idle markers, keeping an eye on, and groups
+
+**Status: done** (2026-11-06). UseIdleMarker holds its exact marker using the
+existing animation path; missing/occupied markers wait. KeepAnEyeOn tracks only
+inside ObservationArea and turns while idle, without freezing sandbox timing.
+SetLookAt/ClearLookAt add explicit tracking and optional LOOK save continuity.
+GroupMovement and SingleFileFollow run their authored role/succession branches,
+with follower distance bands based on the vanilla 192-unit spacing. FollowTo
+switches to Travel when its target enters the destination. FollowPlayer and
+FollowerPackageTemplate retain their authored repeated MinRadius arguments.
+TravelCrouchWhenNear has a standing first Travel and crouched final Travel;
+its shipped tree supplies two locations, with no separate sneak radius.
+Research: `research/package-observation-groups.md`; policies/probes are in
+`known_ambiguities/package-trees.md`. Guard remains blocked as planned.
+
+Validation includes synthetic observation/native, group spacing and FollowTo
+regressions, a real vanilla idle-marker animation fixture, and vanilla template
+structure/argument checks. All AI and native-save regressions run with ignored
+fixtures included.
 
 - **UseIdleMarker** (65): go to the marker and play its idles (the sandbox's
   idle-marker code, `src/ai/idles.rs`), for as long as the package runs.

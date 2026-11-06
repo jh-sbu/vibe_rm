@@ -524,3 +524,8 @@ exceeding an ownership stack are rejected. Runtime magic caches are invalidated
 when FORM is replaced. Active effects on created items validate against the
 incoming FORM records before live state changes. ENKN stores learned base
 enchantments, ALFL failed ingredient pairs, and CHLP first-use crafting help.
+
+Optional LOOK stores explicit Actor.SetLookAt targets and the pathing-look flag
+in sorted actor order. It rejects null forms, duplicate/unsorted actors, invalid
+booleans and truncated/trailing data. Older saves clear explicit look targets.
+Package observation is derived from its current procedure and is not duplicated.

@@ -199,6 +199,7 @@ impl Engine {
                 changed |= self.run_find(actor);
                 changed |= self.run_acquire(actor);
                 changed |= self.run_package_flee(actor);
+                changed |= self.run_follow_to(actor);
             }
             if !changed {
                 break;

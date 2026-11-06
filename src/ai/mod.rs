@@ -17,6 +17,7 @@ pub mod idles;
 mod influence;
 pub mod magic_practice;
 pub mod nav;
+mod observation;
 pub mod package;
 pub mod practice;
 pub(crate) mod procedure;
@@ -3628,7 +3629,7 @@ impl Engine {
                     // Walking up to the player: stop within the force greet distance.
                     let follow_radius = match p.greet {
                         Some(g) if behaviour == Behaviour::Follow => (g.distance * 0.5, g.distance),
-                        _ => p.follow_radius,
+                        _ => self.group_follow_radius(a.ref_id, p, target, p.follow_radius),
                     };
                     let practice = p.use_weapon.map(|u| {
                         let targets = u.targets.map(|t| self.package_target_ref(a, p, t));
@@ -3855,6 +3856,20 @@ impl Engine {
                         .map(|a| a.exec.pos + Vec3::Z * 110.0 * a.scale)?
                 };
                 Some((r, (at, face)))
+            })
+            .collect();
+        let observe: std::collections::HashMap<_, _> = self
+            .observation_targets()
+            .into_iter()
+            .filter_map(|(actor, (target, face))| {
+                let at = if target == PLAYER_REF {
+                    Some(eye)
+                } else {
+                    self.actor_ref(target)
+                        .map(|a| a.feet() + Vec3::Z * a.height() * 0.9)
+                        .or_else(|| self.ref_position(target))
+                }?;
+                Some((actor, (at, face)))
             })
             .collect();
         let mut seed = self.rand() | 1;
@@ -4181,6 +4196,19 @@ impl Engine {
                 }
                 if let Some(&(at, _)) = scene_look.get(&a.ref_id) {
                     a.look_at = Some(at);
+                }
+                if let Some(&(at, face)) =
+                    observe.get(&a.ref_id).filter(|_| a.exec.combat.is_none())
+                {
+                    a.look_at = Some(at);
+                    if face
+                        && matches!(a.state, State::Idle(_))
+                        && a.turn_request.is_none()
+                        && !a.in_furniture()
+                        && !scene_look.contains_key(&a.ref_id)
+                    {
+                        a.turn_towards((at - a.exec.pos).normalize_or_zero(), dt);
+                    }
                 }
                 if a.swimming
                     && let Some(surface) = crate::water::surface_at(&water, a.exec.pos)

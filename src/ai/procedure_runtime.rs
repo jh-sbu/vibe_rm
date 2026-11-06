@@ -333,6 +333,9 @@ impl Node {
                     | "Acquire"
                     | "Flee"
                     | "UseWeapon"
+                    | "UseIdleMarker"
+                    | "KeepAnEyeOn"
+                    | "FollowTo"
             ))
             && self.children.iter().all(Node::executable)
     }

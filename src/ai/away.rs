@@ -227,7 +227,11 @@ impl Engine {
         }
         self.procedure_locks(r);
         for _ in 0..8 {
-            if !(self.run_find(r) | self.run_acquire(r) | self.run_package_flee(r)) {
+            if !(self.run_find(r)
+                | self.run_acquire(r)
+                | self.run_package_flee(r)
+                | self.run_follow_to(r))
+            {
                 break;
             }
             self.advance_away_tree(r, 0.);

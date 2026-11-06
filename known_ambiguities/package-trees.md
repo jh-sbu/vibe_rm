@@ -300,3 +300,35 @@ search distance defaults remain unmeasured in SE. A probe should compare
 equidistant targets, ownership, occupied multi-marker furniture, no positive
 search radius and the aggregate object categories. Do not treat these choices
 as evidence for the blocked location/target kinds.
+
+## Observation, fixed idles and groups (2026-11-06)
+
+Research is in `research/package-observation-groups.md`. A UseIdleMarker leaf
+uses only its named furniture/idle marker, with the existing entry/idle/exit
+machinery and an infinite hold. A missing or occupied marker waits; it does not
+select another chair. KeepAnEyeOn observes only inside ObservationArea: head
+tracking while moving, body facing when standing idle. EndPursuitArea is not
+interpreted: pursuit semantics remain unread; the implemented choice is to
+stop observing once the target leaves the observation area.
+
+SetLookAt/ClearLookAt store an explicit target per actor, including away and
+save/load continuity. Explicit requests override package observation. Combat
+retains combat tracking. We read abPathingLookAt as permitting an idle body
+turn as well as head tracking; false turns only the head. This is a controller
+policy, not a verified SE priority or a claim about moving path constraints.
+
+GroupMovement's authored tree selects leaders and successors; stable reference
+order gives followers separate distance bands, adding the vanilla
+fFollowSpaceBetweenFollowers (192) per earlier follower. SingleFileFollow uses
+its authored predecessor/fallback chain with at least one 192-unit spacing.
+The stable order and distance-band policy need an SE comparison; the input
+radii and setting alone do not specify a geometric formation.
+FollowTo finishes following when its target enters the destination and then
+runs the authored Travel leaf. TravelCrouchWhenNear uses a standing first leg
+and sneaking second leg, as the template's location names describe; no extra
+radius is invented. FollowPlayer's repeated MinRadius argument is preserved.
+
+Probe observation across both area boundaries, SetLookAt during locomotion and
+scenes, grouped actors approaching a narrow doorway and a leader dying, and
+the standing-to-crouched travel transition. These compare the remaining policy
+choices without holding the authored functionality back.

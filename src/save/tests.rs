@@ -6896,3 +6896,30 @@ fn execution_practice_origin_space_and_version_one_cursor() {
         old
     );
 }
+
+#[test]
+fn continuity_explicit_look_at_payload_is_bounded_and_legacy_defaults_clear_it() {
+    let mut s = Snapshot::default();
+    s.continuity
+        .look_at
+        .insert(FormId(0x801), (FormId(0x802), true));
+    let file = s.write();
+    assert_eq!(
+        Snapshot::read(&file).unwrap().continuity.look_at,
+        s.continuity.look_at
+    );
+    check_continuity_payload(&file, b"LOOK");
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"LOOK");
+    assert!(
+        Snapshot::read(&legacy)
+            .unwrap()
+            .continuity
+            .look_at
+            .is_empty()
+    );
+    s.continuity
+        .look_at
+        .insert(FormId(0x803), (FormId::NULL, false));
+    assert!(Snapshot::read(&s.write()).is_err());
+}

@@ -640,6 +640,24 @@ pub fn call(
             let package = me.and_then(|r| e.running_package(r));
             v(package.map_or(Value::None, |p| e.object_value(p)))
         }
+        ("actor", "setlookat") => {
+            if let Some(actor) = me {
+                if let Some(target) = form_arg(args, 0).filter(|r| !r.is_null()) {
+                    e.scripts
+                        .look_at
+                        .insert(actor, (target, args.get(1).is_some_and(|v| v.as_bool())));
+                } else {
+                    e.scripts.look_at.remove(&actor);
+                }
+            }
+            v(Value::None)
+        }
+        ("actor", "clearlookat") => {
+            if let Some(actor) = me {
+                e.scripts.look_at.remove(&actor);
+            }
+            v(Value::None)
+        }
         ("actor", "getdialoguetarget") => {
             let target = me
                 .filter(|r| *r != crate::engine::PLAYER_REF)
