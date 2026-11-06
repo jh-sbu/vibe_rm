@@ -6,7 +6,8 @@ but do not settle these details. Choices made to execute riding packages:
 
 - Reserve one living, enabled horse in the same space, in stable rider order.
   Prefer XHOR, then a linked horse, then nearest horse owned by the NPC base.
-  Do not borrow arbitrary unowned horses. Approach within 128 units, play
+  Only the NPC's own ownership counts: faction-owned horses are not used, and
+  arbitrary unowned horses are not borrowed. Approach within 128 units, play
   HorseEnter, and enter the riding idle after 2.5 seconds. Exit takes 2.5 seconds
   and places the actor 100 units to the side, floor checked. IsOnMount and
   IsRidingMount include entering and exiting, but exclude approaching.

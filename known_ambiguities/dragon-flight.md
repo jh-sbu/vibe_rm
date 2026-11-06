@@ -17,7 +17,8 @@ steering, combat selection or completion rules. These choices make them run:
   Glide begins two seconds into cruise. These timings are not measured in SE.
 - CSFL hover, ground, perch and flying weights choose combat flight phases.
   Their duration uses fCombatHoverTimeMin scaled by the matching CSFL time
-  multiplier. Perches are chosen by nearest loaded dragon furniture, with stable
+  multiplier, capped at the 3600-second flight clock limit (vanilla's 5.5
+  gives at most 11 seconds; only a modded setting reaches the cap). Perches are chosen by nearest loaded dragon furniture, with stable
   ties. This weighting and landing search are choices, not documented algorithms.
   Missing combat ground/perch destinations fall back to orbit; with flight
   prohibited, no usable landing surface means holding in air. Forced markers constrain a

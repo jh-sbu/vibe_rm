@@ -2052,6 +2052,23 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      alias packages run on whatever fills an alias); the College's UseMagic
      practice target (`00098B98`) is an `XMarker`, so there is nothing to
      react.
+   - Open performance work found auditing the plan (2026-11-06):
+     - Menu-time catch-up (`Engine::advance_menu_time`, `src/ai/time.rs`)
+       steps at most `AWAY_CADENCE` (3 s) at a time and steps every away
+       actor at each boundary, so its cost grows with the seconds passed
+       times the away actors; before the plan it was flat (about 0.3 s per
+       call). Measured with the vanilla masters in the dev profile: a
+       3600 s fast travel took 6.0 s with 48 away actors (0.33 s before);
+       one hour of sleep took 59 s with all 1,645 persistent NPCs away
+       (0.32 s before); fast travel's 129,600 s cap took 207 s with 48.
+       Fix direction: let only actors with a pending Wait, walk or practice
+       boundary choose the step, and advance the others once across the
+       span, keeping step 2's phase-by-phase consumption for those actors.
+     - Failed horse searches (`Engine::horse_for`, `src/ai/mounts.rs`)
+       repeat every frame for each rider whose package allows riding but
+       finds no horse. The scan is now over the 76 cached placed horses,
+       ownership first; if profiling shows it matters, retry only when the
+       rider's package changes or a horse becomes available.
    - Blocked, waiting on evidence (details in `plans/ai-depth.md`, "Left
      out: blocked"):
      - The Guard procedure (75 tree uses: GuardPost,
