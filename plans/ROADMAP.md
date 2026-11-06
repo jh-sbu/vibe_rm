@@ -2025,7 +2025,7 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
    - **Unblocked work: `plans/ai-depth.md`** (in progress 2026-11-05; step 0,
      the all-PACK census tool, is done; step 1 has bound trees, saved cursors and
      initial loaded/away execution. Steps 2–10 are now implemented (2026-11-06);
-     steps 11–13 are now complete; steps 14–16 remain, with integration tracked there). It plans
+     steps 11–14 are now complete; steps 15–16 remain, with integration tracked there). It plans
      these in steps: a procedure-tree interpreter (`Sequence` /
      `Simultaneous` / `Random` run as written; Wait, Lock / UnlockDoors,
      multi-location stops' per-stop unlocking, "in cell" stops elsewhere and

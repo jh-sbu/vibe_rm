@@ -361,6 +361,7 @@ pub struct Engine {
     pub nav: crate::ai::nav::NavWorld,
     pub(crate) offscreen: std::cell::OnceCell<crate::ai::offscreen::Network>,
     pub(crate) offscreen_routes: HashMap<FormId, crate::ai::offscreen::Journey>,
+    pub(crate) rides: HashMap<FormId, crate::ai::mounts::Ride>,
     pub furniture: crate::ai::furniture::FurnitureWorld,
     /// Patrol routes by start reference.
     pub(crate) patrol_paths: HashMap<FormId, std::sync::Arc<Vec<crate::ai::PatrolPoint>>>,
@@ -680,6 +681,7 @@ impl Engine {
             nav: Default::default(),
             offscreen: Default::default(),
             offscreen_routes: Default::default(),
+            rides: Default::default(),
             furniture: Default::default(),
             patrol_paths: Default::default(),
             moved_refs: HashMap::new(),

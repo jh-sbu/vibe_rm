@@ -6954,3 +6954,43 @@ fn alias_location_source_memory_round_trips_and_rejects_invalid_or_duplicate_sec
             .is_empty()
     );
 }
+
+#[test]
+fn mount_payload_rejects_bad_phases_speeds_and_duplicate_claims_and_accepts_legacy() {
+    use crate::ai::mounts::{MOUNTED, Ride};
+    let mut s = Snapshot::default();
+    let ride = Ride {
+        horse: FormId(0x801),
+        package: FormId(0x802),
+        phase: MOUNTED,
+        elapsed: 1.,
+        walk: 125.,
+        run: 450.,
+    };
+    s.continuity.rides.insert(FormId(0x800), ride);
+    let file = s.write();
+    assert_eq!(
+        Snapshot::read(&file).unwrap().continuity.rides,
+        s.continuity.rides
+    );
+    let mut legacy = file.clone();
+    legacy.sections.retain(|(tag, _)| tag != b"MOUN");
+    assert!(Snapshot::read(&legacy).unwrap().continuity.rides.is_empty());
+    for ride in [
+        Ride { phase: 255, ..ride },
+        Ride {
+            walk: f32::NAN,
+            ..ride
+        },
+        Ride {
+            horse: FormId(0x800),
+            ..ride
+        },
+    ] {
+        s.continuity.rides.insert(FormId(0x800), ride);
+        assert!(Snapshot::read(&s.write()).is_err());
+    }
+    s.continuity.rides.insert(FormId(0x800), ride);
+    s.continuity.rides.insert(FormId(0x803), ride);
+    assert!(Snapshot::read(&s.write()).is_err());
+}

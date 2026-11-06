@@ -2027,7 +2027,8 @@ pub fn call(
             }
             none()
         }
-        ("actor", "isonmount") => v(Value::Bool(false)),
+        ("actor", "isonmount") => v(Value::Bool(me.is_some_and(|r| e.is_on_mount(r)))),
+        ("actor", "dismount") => v(Value::Bool(me.is_some_and(|r| e.dismount(r)))),
         ("actor", "issneaking") => v(Value::Bool(me.is_some_and(|r| e.is_sneaking(r)))),
         ("actor", "isdetectedby") => v(Value::Bool(
             me.zip(form_arg(args, 0))

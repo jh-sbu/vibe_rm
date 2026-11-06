@@ -418,8 +418,8 @@ object one).
 
 ## IsRidingMount
 
-`IsRidingMount` (327) reports false while mounted actors are not implemented,
-matching the existing vanilla `Actor.IsOnMount` native in this engine.
+`IsRidingMount` (327) now follows the mounted association, as does vanilla
+`Actor.IsOnMount`. Transition timing choices are in `npc-mounts.md`.
 
 Evidence: the installed Skyrim.esm `CharacterMoveStart` (000959FA) and
 `CharacterMoveStop` (000959FB) both require `IsRidingMount == 0`; the same check
@@ -429,7 +429,5 @@ the comparison with zero, leaving a moving player in the standing state.
 These are asset and project-engine observations, not Skyrim SE measurements.
 
 Local UESP searches for `IsRidingMount` and `IsOnMount`, including all namespaces,
-found no explanatory pages. Choice: answer unmounted explicitly until the
-mounted-actor system exists, without relaxing the evaluator's refusal of other
-unsupported conditions. Mount transitions and their query timing remain part
-of ROADMAP's riding work.
+found no explanatory pages. The earlier explicit-unmounted fallback has been replaced by the mounted-actor
+system, without relaxing evaluation of other unsupported conditions.

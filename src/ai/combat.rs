@@ -1023,6 +1023,9 @@ impl ActorRuntime {
     }
 
     pub(crate) fn run_speed(&self) -> f32 {
+        if let Some((_, run)) = self.mount_speeds {
+            return run;
+        }
         let walk = self.walk_speed();
         if self.swimming {
             return self.swim_moves.map_or(walk, |(m, _)| m.run) * self.armor_speed_mult;

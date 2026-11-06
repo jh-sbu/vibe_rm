@@ -104,6 +104,7 @@ pub(crate) struct Continuity {
     pub package_speech: Vec<crate::ai::speech::SavedSpeech>,
     pub look_at: HashMap<FormId, (FormId, bool)>,
     pub alias_location_sources: crate::aliases::LocationSources,
+    pub rides: HashMap<FormId, crate::ai::mounts::Ride>,
 }
 
 fn optional<'a>(file: &'a SaveFile, tag: &[u8; 4]) -> Result<Option<Reader<'a>>> {
@@ -525,6 +526,7 @@ impl Continuity {
     pub fn capture(e: &Engine) -> Self {
         let (journal_floor, fill_floor) = sequence_floors(e);
         Self {
+            rides: e.rides.clone(),
             alias_location_sources: e.alias_location_sources.clone(),
             look_at: e.scripts.look_at.clone(),
             script_fade: e.imagespace.fade,
@@ -1120,9 +1122,40 @@ impl Continuity {
             w.form(location.unwrap_or_default());
         }
         file.add(b"ALSC", w.0);
+        let mut w = Writer::default();
+        w.len(self.rides.len());
+        for (actor, ride) in sorted(&self.rides) {
+            w.form(actor);
+            w.form(ride.horse);
+            w.form(ride.package);
+            w.u8(ride.phase);
+            w.f32(ride.elapsed);
+            w.f32(ride.walk);
+            w.f32(ride.run);
+        }
+        file.add(b"MOUN", w.0);
+
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
+        if let Some(mut r) = optional(file, b"MOUN")? {
+            let n = r.count(25)?;
+            let mut previous = None;
+            for _ in 0..n {
+                let actor = r.form()?;
+                ordered(&mut previous, actor)?;
+                let ride = crate::ai::mounts::Ride {
+                    horse: r.form()?,
+                    package: r.form()?,
+                    phase: r.u8()?,
+                    elapsed: r.f32()?,
+                    walk: r.f32()?,
+                    run: r.f32()?,
+                };
+                s.rides.insert(actor, ride);
+            }
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"ALSC")? {
             let n = r.count(16)?;
             let mut previous = None;
@@ -1740,6 +1773,14 @@ impl Continuity {
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        let mut claimed = std::collections::HashSet::new();
+        for (&actor, &ride) in &self.rides {
+            if !ride.valid(actor)
+                || (ride.phase != crate::ai::mounts::DISMOUNTED && !claimed.insert(ride.horse))
+            {
+                return Err(Corrupt("invalid or multiply claimed mount".into()));
+            }
+        }
         for (&(quest, _), &(reference, location)) in &self.alias_location_sources {
             nonnull(quest)?;
             if let Some(r) = reference {
@@ -2088,6 +2129,8 @@ impl Continuity {
     }
     pub fn apply(self, e: &mut Engine) {
         e.offscreen_routes.clear();
+        e.clear_mount_bodies();
+        e.rides = self.rides;
         e.alias_location_sources = self.alias_location_sources;
         e.door_transition = false;
         e.scripts.look_at = self.look_at;

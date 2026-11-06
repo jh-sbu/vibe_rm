@@ -18,6 +18,7 @@ mod greet;
 pub mod idles;
 mod influence;
 pub mod magic_practice;
+pub(crate) mod mounts;
 pub mod nav;
 mod observation;
 pub(crate) mod offscreen;
@@ -367,6 +368,10 @@ pub struct ActorRuntime {
     pub idle: Option<Arc<BoundClip>>,
     pub walk: Option<Arc<BoundClip>>,
     pub capsule: Option<rapier3d::prelude::ColliderHandle>,
+    pub(crate) mount_speeds: Option<(f32, f32)>,
+    pub(crate) mount_capsule: Option<rapier3d::prelude::ColliderHandle>,
+    pub(crate) mount_driver: Option<FormId>,
+    pub(crate) attachment: Option<Mat4>,
     /// What it is doing, where it stands and how it is: what outlasts its
     /// unloading.
     pub exec: exec::ActorExec,
@@ -541,6 +546,10 @@ impl ActorRuntime {
             idle: None,
             walk: None,
             capsule: None,
+            mount_speeds: None,
+            mount_capsule: None,
+            mount_driver: None,
+            attachment: None,
             exec: exec::ActorExec::new(packages, pos, f.x.atan2(f.y), stagger),
             scale: scale.x,
             editor_pos: pos,
@@ -627,6 +636,9 @@ impl ActorRuntime {
     }
 
     pub fn transform(&self) -> Mat4 {
+        if let Some(m) = self.attachment {
+            return m;
+        }
         Mat4::from_scale_rotation_translation(
             Vec3::splat(self.scale),
             Quat::from_rotation_z(-self.exec.heading),
@@ -979,7 +991,7 @@ impl ActorRuntime {
     /// of furniture, nor jumps a step can't make (moved by a script).
     fn collide(&mut self, physics: &crate::physics::Physics, nav: &nav::NavWorld, was: Vec3) {
         const MAX_STEP: f32 = 100.0;
-        let Some(capsule) = self.capsule else {
+        let Some(capsule) = self.mount_capsule.or(self.capsule) else {
             return;
         };
         let moved = (self.exec.pos - was).truncate().length();
@@ -2036,6 +2048,9 @@ impl ActorRuntime {
     /// Walking speed: the movement type's, else the graph's or walk clip's root
     /// motion, so feet don't slide.
     pub fn walk_speed(&self) -> f32 {
+        if let Some((walk, _)) = self.mount_speeds {
+            return walk;
+        }
         if let Some(v) = self
             .moves
             .map(|(m, _)| m.walk)
@@ -2106,7 +2121,12 @@ impl ActorRuntime {
     /// Speed for the package's gait: walking at the graph's walk, running at its
     /// movement type's run, sneaking at its sneaking movement type's walk.
     pub fn move_speed(&self) -> f32 {
-        self.base_move_speed() * self.armor_speed_mult
+        self.base_move_speed()
+            * if self.mount_speeds.is_some() {
+                1.
+            } else {
+                self.armor_speed_mult
+            }
     }
 
     fn base_move_speed(&self) -> f32 {
@@ -2134,8 +2154,9 @@ impl ActorRuntime {
             });
         }
         let run = self
-            .moves
-            .map(|(m, _)| m.run)
+            .mount_speeds
+            .map(|v| v.1)
+            .or(self.moves.map(|(m, _)| m.run))
             .filter(|r| *r > walk)
             .unwrap_or(walk * 3.0);
         if self.hurry {
@@ -2192,8 +2213,9 @@ impl ActorRuntime {
     /// Drive the behaviour graph from the AI state, run it, and follow its root
     /// motion while in furniture. Anim objects come and go with its events.
     fn animate_graph(&mut self, dt: f32, clips: &mut Clips) -> Vec<Mat4> {
-        let walking =
-            self.speed > 5.0 && matches!(self.state, State::Walk { .. } | State::Approach(_));
+        let walking = self.speed > 5.0
+            && (self.mount_driver.is_some()
+                || matches!(self.state, State::Walk { .. } | State::Approach(_)));
         let furniture =
             self.in_furniture() && self.seat.as_ref().is_some_and(|s| !s.furniture.is_null());
         // Turn rate in degrees per second, counter-clockwise (left) positive as Havok
@@ -2279,14 +2301,22 @@ impl ActorRuntime {
         }
         g.set_variable("isInFurniture", if furniture { 1.0 } else { 0.0 });
         if walking != self.moving {
-            self.actions.send(
-                g,
-                if walking {
-                    "ActionMoveStart"
+            if self.mount_speeds.is_some() {
+                g.send_event(if walking {
+                    "HorseLocomotion"
                 } else {
-                    "ActionMoveStop"
-                },
-            );
+                    "HorseIdle"
+                });
+            } else {
+                self.actions.send(
+                    g,
+                    if walking {
+                        "ActionMoveStart"
+                    } else {
+                        "ActionMoveStop"
+                    },
+                );
+            }
             if walking {
                 // Walking, not sprinting (horses' locomotion starts out in its sprint).
                 if !self.sprinting {
@@ -3602,6 +3632,9 @@ impl Engine {
         let mut creature_ways = Vec::new();
         for (key, rt) in &self.cells {
             for (i, a) in rt.actors.iter().enumerate() {
+                if a.mount_driver.is_some() {
+                    continue;
+                }
                 if a.exec.next_eval - dt > 0.0 || a.exiting.is_some() {
                     continue;
                 }
@@ -3887,6 +3920,7 @@ impl Engine {
         self.evaluate_packages(dt);
         self.update_sleep_warnings();
         self.loaded_procedure_locks();
+        self.prepare_mounts(dt);
         self.run_loaded_finds();
         self.update_practice_weapons();
         // Choose before the AI requests landings, so a newly needed heal does
@@ -4159,7 +4193,9 @@ impl Engine {
                 if a.exec.combat.is_none() {
                     a.sprinting = false;
                 }
-                if talking == Some(a.ref_id) {
+                if a.mount_driver.is_some() {
+                    // Its rider's package supplies movement; animate the horse below.
+                } else if talking == Some(a.ref_id) {
                     // Seated actors talk from where they are.
                     if !a.in_furniture() {
                         a.halt(3.0);
@@ -4251,12 +4287,16 @@ impl Engine {
                             clutter::steer(before, a.exec.pos, &clutter, dt, |p| nav.height_at(p));
                     }
                 }
-                a.collide(&self.physics, &nav, was);
-                a.velocity = if dt > 0.0 {
-                    (a.exec.pos - was) / dt
-                } else {
-                    Vec3::ZERO
-                };
+                if a.mount_driver.is_none() {
+                    a.collide(&self.physics, &nav, was);
+                }
+                if a.mount_driver.is_none() {
+                    a.velocity = if dt > 0.0 {
+                        (a.exec.pos - was) / dt
+                    } else {
+                        Vec3::ZERO
+                    };
+                }
                 // NPCs look at the player close by, and while talking to them.
                 let near = a.exec.pos.distance(player) < HEAD_TRACK_DISTANCE;
                 a.look_at = (near || talking == Some(a.ref_id)).then_some(eye);
@@ -4416,5 +4456,6 @@ impl Engine {
             }
             self.moved_refs.insert(r, pos);
         }
+        self.sync_riding_bodies();
     }
 }

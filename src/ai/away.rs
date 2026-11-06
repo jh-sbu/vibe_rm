@@ -212,6 +212,9 @@ impl Engine {
     }
 
     pub(super) fn step_away_at(&mut self, r: FormId, clock: f64, stamp: f64) {
+        if self.mount_driver(r).is_some() {
+            return;
+        }
         let Some(tier) = self.processing(r).filter(|&t| t != Processing::Full) else {
             return;
         };
@@ -244,7 +247,9 @@ impl Engine {
             }
             self.advance_away_tree(r, 0.);
         }
+        self.prepare_away_mount(r);
         self.move_away(r, dt, tier, clock);
+        self.sync_away_mount(r);
         self.advance_away_practice(r, dt);
         let Some(x) = self.away.get_mut(&r) else {
             return;
@@ -388,6 +393,7 @@ impl Engine {
     /// Move away actor `r`, run at `tier`, as its package has it, `dt` real
     /// seconds on, at real time `clock` (time passed in a menu included).
     fn move_away(&mut self, r: FormId, dt: f32, tier: Processing, clock: f64) {
+        let mount_speed = self.away_mount_speed(r);
         let Some(x) = self.away.get(&r) else {
             return;
         };
@@ -574,9 +580,9 @@ impl Engine {
                         return;
                     }
                     x.strode_at = Some(now);
-                    AWAY_WALK_SPEED * since as f32
+                    mount_speed.unwrap_or(AWAY_WALK_SPEED) * since as f32
                 } else {
-                    BUFFERED_WALK_SPEED * dt
+                    mount_speed.unwrap_or(BUFFERED_WALK_SPEED) * dt
                 };
                 self.walk_offscreen(r, there, end, stride, ends);
             }
@@ -655,9 +661,9 @@ impl Engine {
                         return;
                     }
                     x.strode_at = Some(now);
-                    AWAY_WALK_SPEED * since as f32
+                    mount_speed.unwrap_or(AWAY_WALK_SPEED) * since as f32
                 } else {
-                    BUFFERED_WALK_SPEED * dt
+                    mount_speed.unwrap_or(BUFFERED_WALK_SPEED) * dt
                 };
                 let left = end - pos;
                 let arrived = left.length() <= stride;

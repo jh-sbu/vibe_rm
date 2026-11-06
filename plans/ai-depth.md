@@ -14,7 +14,8 @@ Step 11 completes follower travel/wait continuity, verifies scripted death
 dismissal and adds AllyKilled lines. Step 12 completes merged NAVI routing,
 local mesh refinement, door/worldspace crossings, actor-specific locked portals
 and local clutter avoidance.
-Step 13 completes sleeper warning approaches and awake holds. Steps 14–16 remain.
+Step 13 completes sleeper warning approaches and awake holds. Step 14 completes
+NPC riding, including away horse speed and save continuity. Steps 15–16 remain.
 
 This plan covers ROADMAP Next item 4 (AI depth): everything in it that can be
 built today from public sources, the game's data and the readings we already
@@ -717,6 +718,16 @@ locks up. Record the approach distance and the staying-up choice in
 `known_ambiguities/locks.md`.
 
 ### 14. NPCs riding (mounts)
+
+**Status: done** (2026-11-06). Package leaves select XHOR/linked/owned horses,
+reserve one rider per horse, approach and animate entering/exiting, attach the
+rider to SaddleBone, and drive horse locomotion with the rider's package and
+the horse's speeds/collider. Away riders retain the relationship and move their
+horse with them. IsRidingMount, IsOnMount and Boolean Dismount use that state.
+MOUN persists it with validation and legacy fallback. Research and queued SE
+comparisons: `research/npc-mounts.md`, `known_ambiguities/npc-mounts.md`.
+Validated mount lifecycle, continuity, vanilla XHOR associations and corrupt-save
+regressions with GPU access.
 
 Inputs named "Ride Horse if possible?" appear in Travel, Patrol, Escort,
 Follow, GroupMovement and Acquire. Nothing in the engine mounts an actor
