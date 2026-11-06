@@ -15,6 +15,7 @@ mod crafting;
 mod created;
 mod crime;
 mod detection;
+mod diagnostics;
 mod dialogue;
 mod difficulty;
 mod disarm;

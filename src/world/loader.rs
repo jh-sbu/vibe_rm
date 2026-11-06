@@ -141,6 +141,8 @@ impl ModelCache {
         if missing.is_empty() {
             return;
         }
+        crate::diagnostics::count("models.missed", missing.len());
+        let mut timing = crate::diagnostics::Span::new("assets.models_parse");
         let t0 = std::time::Instant::now();
         let addons = self.addons.clone();
         #[allow(clippy::type_complexity)]
@@ -295,6 +297,7 @@ impl ModelCache {
             })
             .collect();
         let t1 = std::time::Instant::now();
+        timing.next("assets.model_textures");
 
         // Textures referenced by the new models.
         let mut tex: HashSet<String> = HashSet::new();
@@ -331,6 +334,7 @@ impl ModelCache {
         }
         load_textures(renderer, vfs, tex.into_iter().collect());
         let t2 = std::time::Instant::now();
+        timing.next("assets.models_upload");
 
         for (p, mut m, col, furn, graph, controllers, start) in cpu {
             self.collision.insert(p.clone(), col.map(Arc::new));
@@ -408,6 +412,8 @@ impl ModelCache {
 }
 
 pub fn load_textures(renderer: &mut Renderer, vfs: &vfs::Vfs, paths: Vec<String>) {
+    crate::diagnostics::count("textures.requested", paths.len());
+    let mut timing = crate::diagnostics::Span::new("assets.textures_read_parse");
     let parsed: Vec<(String, Option<dds::Dds>)> = paths
         .into_par_iter()
         .map(|p| {
@@ -434,6 +440,7 @@ pub fn load_textures(renderer: &mut Renderer, vfs: &vfs::Vfs, paths: Vec<String>
             (p, d)
         })
         .collect();
+    timing.next("assets.textures_upload");
     for (p, d) in parsed {
         renderer.add_texture(&p, d.as_ref());
     }

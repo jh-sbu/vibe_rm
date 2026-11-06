@@ -1256,6 +1256,7 @@ impl Engine {
 
     /// Keep the distant LOD quadtree in sync with the camera.
     fn update_lod(&mut self) {
+        let _timing = crate::diagnostics::Span::new("lod.total");
         let Location::Exterior { center, .. } = self.location else {
             self.scene.lod.clear();
             return;
@@ -1431,6 +1432,8 @@ impl Engine {
     /// Draw objects in a loaded cell, with their collision: loose objects as
     /// bodies of their own (falling at once when `fresh`ly made).
     pub(crate) fn add_objects(&mut self, key: CellKey, objects: &[PlacedObject], fresh: bool) {
+        let mut timing = crate::diagnostics::Span::new("objects.models");
+        crate::diagnostics::count("objects.requested", objects.len());
         // Placed objects run their standalone node controllers. Other model
         // users (attachments, far references) keep their existing static form.
         let placed: Vec<PlacedObject> = objects
@@ -1448,6 +1451,7 @@ impl Engine {
         let objects = &placed;
         let paths: Vec<String> = objects.iter().map(|o| o.model.clone()).collect();
         self.models.load_all(&mut self.renderer, &self.vfs, &paths);
+        timing.next("objects.instances_collision");
         let (Some(mut rc), Some(mut rt)) = (self.scene.cells.remove(&key), self.cells.remove(&key))
         else {
             return;
@@ -2354,6 +2358,7 @@ impl Engine {
     }
 
     fn load_navmeshes(&mut self, key: CellKey, cell: FormId) {
+        let _timing = crate::diagnostics::Span::new("navigation.load");
         let ids = self.nav.load_cell(&self.lo, cell);
         log::debug!("{cell}: {} navmeshes", ids.len());
         if let Some(rt) = self.cells.get_mut(&key) {
@@ -2369,6 +2374,7 @@ impl Engine {
     }
 
     fn load_furniture(&mut self, key: CellKey, refs: &[FormId]) {
+        let _timing = crate::diagnostics::Span::new("furniture.load");
         let off: Vec<FormId> = refs
             .iter()
             .copied()
@@ -2393,6 +2399,8 @@ impl Engine {
     }
 
     fn unload_cell(&mut self, key: CellKey) {
+        let _timing = crate::diagnostics::Span::new("stream.unload");
+        crate::diagnostics::count("cells.unloaded", 1);
         self.forget_impact_decals(key);
         self.remember_actors(key);
         self.scene.cells.remove(&key);
@@ -2423,6 +2431,7 @@ impl Engine {
     }
 
     pub(crate) fn rebuild_lights(&mut self) {
+        let _timing = crate::diagnostics::Span::new("lights.rebuild");
         let lights: Vec<PointLight> = self
             .cells
             .values()
@@ -2700,6 +2709,9 @@ impl Engine {
             None => return,
         };
         let cell_id = wi.cells.get(&(x, y)).copied();
+        let _cell_timing = crate::diagnostics::Span::cell(x, y);
+        let mut timing = crate::diagnostics::Span::new("cell.references");
+        crate::diagnostics::count("cells.loaded", 1);
         if let Some(cid) = cell_id {
             self.apply_cell_reset(cid);
         }
@@ -2728,7 +2740,9 @@ impl Engine {
         let made_ids: Vec<FormId> = made.iter().map(|o| o.ref_id).collect();
         objects.extend(made);
         self.apply_scales(&mut objects);
+        timing.next("cell.objects");
         self.instantiate(key, &objects, lights, doors);
+        timing.next("cell.navigation_furniture");
         let mut refs: Vec<FormId> = cell_id
             .and_then(|c| self.lo.cell(c))
             .map(|c| {
@@ -2750,8 +2764,10 @@ impl Engine {
             self.load_navmeshes(key, cid);
         }
         self.load_furniture(key, &refs);
+        timing.next("cell.actors");
         let actors = self.actors_for_cell(key, &refs);
         self.spawn_scheduled_actors_inner(key, &actors, true);
+        timing.next("cell.triggers_scripts_audio");
         self.load_triggers(key, &refs);
         self.load_hazards(key, &refs);
         self.load_activate_parents(&refs);
@@ -2760,6 +2776,7 @@ impl Engine {
         self.send_cell_load(&attached);
         self.start_cell_sounds(key, &refs);
 
+        timing.next("cell.terrain");
         // Landscape
         let dnam = self.world_field(world, b"DNAM", 0x1).map(|d| d.0);
         let default_height = dnam
@@ -2800,6 +2817,7 @@ impl Engine {
                     Some(i.water_height.unwrap_or(default_water))
                 })
                 .filter(|&h| h < 1.0e30);
+            timing.next("cell.grass");
             self.load_grass(key, &l, water);
             if let Some(rt) = self.cells.get_mut(&key) {
                 rt.colliders.extend(h);
@@ -2807,9 +2825,11 @@ impl Engine {
             }
         }
 
+        timing.next("cell.decals");
         // Decals project onto the landscape too.
         self.load_decals(key, &refs);
 
+        timing.next("cell.water");
         // Water
         if let Some(cid) = cell_id
             && let Some(info) = records::cell_info(&self.lo, cid)
@@ -2899,6 +2919,7 @@ impl Engine {
     /// Exterior streaming: keep cells around the player loaded. Loads at most a
     /// couple of cells per call to bound frame hitches.
     pub fn update_streaming(&mut self) {
+        let _timing = crate::diagnostics::Span::new("stream.total");
         let Location::Exterior { world, center } = self.location else {
             return;
         };
@@ -2940,6 +2961,7 @@ impl Engine {
         if loaded {
             self.rebuild_lights();
         }
+        crate::diagnostics::count("cells.pending", self.pending_loads.len());
     }
 
     /// Diagnostics (console `probe`): what collision lies along a vertical line at
@@ -3107,6 +3129,7 @@ impl Engine {
 
     /// Advance the simulation by `dt` seconds.
     pub fn update(&mut self, mut input: crate::player::MoveInput, dt: f32, time_scale: f32) {
+        let mut timing = crate::diagnostics::Span::new("sim.prepare");
         self.scripts.wall_time += dt as f64;
         self.frame_seconds = dt;
         self.apply_pending_load();
@@ -3155,6 +3178,7 @@ impl Engine {
             self.day += 1;
         }
         self.hour = h.rem_euclid(24.0);
+        timing.next("sim.scripts_weather");
         self.update_scripts(dt);
         self.update_activations();
         self.update_scenes();
@@ -3169,19 +3193,25 @@ impl Engine {
         self.renderer.grass_clock += dt * crate::world::grass::wave_rate(wind);
         // Slow Time: the world (not the player) runs at a share of real time.
         let world_dt = dt * self.world_speed();
+        timing.next("sim.particles_physics");
         self.update_particles(world_dt);
         self.update_grab(dt);
         self.update_tethers();
-        self.physics.step(world_dt);
+        {
+            let _timing = crate::diagnostics::Span::new("physics.step");
+            self.physics.step(world_dt);
+        }
         self.place_decals();
         self.update_loose();
         self.update_traps();
+        timing.next("sim.ai");
         self.update_whereabouts(world_dt);
         self.update_away();
         self.update_nav_obstacles();
         self.update_actors(world_dt);
         self.update_package_dialogue();
         self.update_npc_hellos();
+        timing.next("sim.gameplay");
         self.update_triggers(world_dt);
         self.update_hazards(world_dt);
         self.update_story();
@@ -3196,6 +3226,7 @@ impl Engine {
         self.draw_impact_effects();
         self.update_animated(world_dt);
         self.update_skin_decals();
+        timing.next("sim.player");
         let cam = self.camera_copy();
         let mut input = input;
         if self.passengers.contains_key(&PLAYER_REF) {
@@ -3250,7 +3281,9 @@ impl Engine {
             self.sync_passengers();
         }
         self.update_third_person_camera(dt);
+        timing.next("sim.streaming");
         self.update_streaming();
+        timing.next("sim.effects");
         self.update_spell_fx(world_dt);
         self.update_held_lights();
         let forward = self.camera_copy().forward();
@@ -3259,7 +3292,9 @@ impl Engine {
         self.step_spell_fx(world_dt, right, right.cross(forward), &mut batches);
         self.step_first_person_equipment(world_dt, right, right.cross(forward));
         self.scene.particles = batches;
+        timing.next("sim.lod");
         self.update_lod();
+        timing.next("sim.audio_ui");
         self.update_look_target();
         if let Some(a) = self.audio.as_mut() {
             a.set_listener(self.camera.position, self.camera.right());

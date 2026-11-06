@@ -916,6 +916,8 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::RedrawRequested => {
+                let _timing_frame = crate::diagnostics::Frame::begin();
+                let mut timing = crate::diagnostics::Span::new("app.prepare");
                 let now = Instant::now();
                 let dt = (now - s.last).as_secs_f32().min(0.1);
                 s.last = now;
@@ -939,7 +941,9 @@ impl ApplicationHandler for App {
                 }
                 s.engine.console_open = s.ui.console.open;
                 s.engine.apply_pending_save_load();
+                timing.next("engine.update");
                 s.engine.update(input, dt, scale);
+                timing.next("ui.update");
                 if let Some(swf) = &mut s.swf {
                     swf.update(&mut s.engine, dt);
                 }
@@ -949,6 +953,7 @@ impl ApplicationHandler for App {
                 }
                 // Includes menus and dialogue opened or closed by scripts/SWF.
                 s.sync_mouse_capture();
+                timing.next("surface.acquire");
                 let frame = match s.surface.get_current_texture() {
                     wgpu::CurrentSurfaceTexture::Success(t)
                     | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
@@ -958,6 +963,7 @@ impl ApplicationHandler for App {
                     }
                     _ => return,
                 };
+                timing.next("render.cpu");
                 let view = frame.texture.create_view(&Default::default());
                 let (scene, camera) = frame_parts(
                     &s.engine.loading_view,
@@ -972,6 +978,7 @@ impl ApplicationHandler for App {
                     s.engine.view_camera(),
                 );
                 s.engine.renderer.render(scene, &camera, &view);
+                timing.next("ui.draw");
                 if let Some(swf) = &mut s.swf {
                     swf.draw(&view, crate::swf_ui::SwfUi::visible(&s.engine));
                 }
@@ -998,7 +1005,9 @@ impl ApplicationHandler for App {
                 // egui's cursor output must respect gameplay capture and the
                 // game's cursor, while retaining the console's system cursor.
                 s.window.set_cursor_visible(!s.grabbed && !swf_cursor);
+                timing.next("present.cpu");
                 s.engine.renderer.queue.present(frame);
+                timing.next("app.finish");
                 s.frames += 1;
                 if s.fps_timer.elapsed().as_secs_f32() >= 1.0 {
                     s.ui.fps = s.frames;

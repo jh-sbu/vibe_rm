@@ -61,6 +61,51 @@ the `tcam x y z yaw pitch` console command holds the `--wait` camera elsewhere, 
 `VRM_AI_NO_SNAP=1` makes actors walk into furniture on cell load instead of starting
 out in it.
 
+Traversal diagnostics are opt-in with `VRM_FRAME_TIMINGS_MS=<milliseconds>`:
+
+```sh
+cargo build --release
+VRM_FRAME_TIMINGS_MS=20 RUST_LOG=warn,vibe_rm::diagnostics=info \
+  ./target/release/vibe_rm --cell Riverwood 2> /tmp/vibe-rm-frames.log
+```
+
+Each report identifies a redraw by `frame`, gives its CPU wall time as `work`,
+and records `gap_before` (time between the preceding redraw's diagnostics finishing
+and this redraw starting). A report is emitted when work plus that gap reaches
+the threshold, or whenever exterior cells load. Set the threshold to `0` to
+record every redraw for a short baseline capture; unset it to disable collection.
+Startup loading and offscreen `--wait`/screenshot runs are outside this collector.
+
+The report separates `engine.update`, `render.cpu`, `ui.*`, `surface.acquire`,
+and `present.cpu`. `sim.*` partitions the engine update; streaming has individual
+`cell(x,y)` totals, aggregated `cell.*` phases, unload and light-rebuild timings,
+and loaded/unloaded/pending cell counts. Asset timings separate model read/parse
+(including conversion and collision-shape preparation), texture read/parse, and
+GPU upload calls. `models.missed` counts uncached model requests, including failed
+loads; `textures.requested` counts texture load attempts. Missing counters mean
+no such work was recorded. `objects.instances_collision` covers object placement
+and collision insertion after model loading; navigation, furniture, actor setup,
+terrain, grass, decals, and water also have timings.
+
+Timings are **inclusive**: do not add parent and child stages together. For
+example, `engine.update` includes `sim.streaming`, which includes `stream.total`,
+which includes `cell.total`; asset loading is nested within the cell phases.
+Repeated stage names are summed across the redraw. These are CPU wall timings,
+not GPU execution timings; render/upload/present calls can include driver waits.
+No extra GPU synchronization is performed. `gap_before` can include frame pacing
+or scheduling delays and is not attributed to simulation. Logging overhead is
+excluded from work and the following gap, but can still perturb pacing, especially
+when logging every frame.
+
+For a comparison, use a release build, the same starting location, direction,
+movement speed, graphics settings, and route. Record a first traversal, then
+return and repeat it in the **same process** to retain asset caches; go far enough
+that the tested cells actually unload. Compare the same cell coordinates in the
+reports. Large streaming times with model misses suggest asset preparation;
+large cell times with few misses point toward world setup. Large simulation,
+render, acquire, or present times without streaming identify other areas to
+investigate. Keep the log alongside a note of where the visible hitch occurred.
+
 The HUD and message boxes are the game's own (`Interface/hudmenu.swf`,
 `messagebox.swf`; a box takes the mouse and the keys: W/A/S/D or the arrows,
 E or Enter); `--egui-hud` draws egui's instead (also used when the Interface
