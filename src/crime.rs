@@ -885,6 +885,10 @@ impl Engine {
                         .actor_ref(r)
                         .is_some_and(|a| !a.dead && a.exec.combat.is_none())
                     && self.sit_sleep_state(r, true) != 3.0
+                    && self
+                        .ref_position(r)
+                        .zip(self.ref_position(PLAYER_REF))
+                        .is_some_and(|(a, b)| a.distance(b) <= 600.)
             })
             .map(|(&r, _)| r)
             .min();

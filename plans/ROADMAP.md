@@ -1876,7 +1876,8 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
     sitting and alias/carriage gates (`package-dialogue.md`); reference-location
     aliases and leveled alias grants (`alias-fills.md`, `locks.md`); follower
     travel/death/AllyKilled (`followers.md`) and bent off-screen routes, locked
-    doors and clutter steering (`offscreen-navigation.md`).
+    doors and clutter steering (`offscreen-navigation.md`); sleeper approach,
+    staying awake, bed resumption and later lock timing (`locks.md`).
   - `test-mod autotest23` isn't written yet. It should cover autotest22's
     follow-up list ("Faults and open items").
   - Built and waiting for the user's run: `loadscreens`
@@ -2024,7 +2025,7 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
    - **Unblocked work: `plans/ai-depth.md`** (in progress 2026-11-05; step 0,
      the all-PACK census tool, is done; step 1 has bound trees, saved cursors and
      initial loaded/away execution. Steps 2–10 are now implemented (2026-11-06);
-     steps 11–12 are now complete; steps 13–16 remain, with integration tracked there). It plans
+     steps 11–13 are now complete; steps 14–16 remain, with integration tracked there). It plans
      these in steps: a procedure-tree interpreter (`Sequence` /
      `Simultaneous` / `Random` run as written; Wait, Lock / UnlockDoors,
      multi-location stops' per-stop unlocking, "in cell" stops elsewhere and

@@ -14,7 +14,7 @@ Step 11 completes follower travel/wait continuity, verifies scripted death
 dismissal and adds AllyKilled lines. Step 12 completes merged NAVI routing,
 local mesh refinement, door/worldspace crossings, actor-specific locked portals
 and local clutter avoidance.
-Steps 13–16 are not implemented.
+Step 13 completes sleeper warning approaches and awake holds. Steps 14–16 remain.
 
 This plan covers ROADMAP Next item 4 (AI depth): everything in it that can be
 built today from public sources, the game's data and the readings we already
@@ -695,6 +695,19 @@ below stay put for minutes; the inference is that they had no path.
   build this.
 
 ### 13. Sleepers asking the player to leave
+
+**Status: done** (2026-11-06). Warning sleepers approach on a Follow body goal
+with 350–500 unit bands, while keeping their actual Sleep package/run/cursor.
+TimeToGo speech waits until within 600 units. They stay out of bed until the
+player leaves/dies or existing trespass escalation reports the crime; combat
+and script control keep priority. The same run resumes its bed goal afterwards.
+All 244 AI regressions pass with ignored fixtures included; the new synthetic
+fixture covers approach, package continuity, escalation and leaving.
+
+The old “locks up” wording below is constrained by the already observed policy:
+autotest12 found the door still unlocked 18 game minutes after leaving. This
+step preserves that measured lock behavior, recorded in
+`known_ambiguities/locks.md`, rather than inventing a later relock.
 
 The asking already works (`test-mod autotest12`, ROADMAP Done). An actor
 with "Warn Before Locking?" whose home holds the player walks to the player

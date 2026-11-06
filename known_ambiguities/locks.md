@@ -270,3 +270,23 @@ keys and ownership permit unlocking, other actors route around or stay put.
 Explicit package jumps retain the observed bypass described above. This is the
 plan's chosen walking access policy; the exact original-game eligibility is
 still an SE probe. See `offscreen-navigation.md` for path/obstacle choices.
+
+## Warning approach and staying awake (AI depth step 13)
+
+Autotest12 records Arcadia moving towards the player and remaining awake on her
+sleep package, with settled distances about 490/800 in its two runs. It does
+not establish a single stopping distance. Choose Follow bands of 350–500 units
+and allow TimeToGo speech within 600; this avoids shouting immediately from
+the bed. Detection is not required, as the unseen run already demonstrated.
+The body goal follows the player while retaining the actual Sleep package and
+cursor, and exits any bed through the ordinary furniture exit.
+
+Keep that goal until the player leaves the home, dies, or existing trespass
+escalation reaches its crime-report level; combat and script-pinned actors keep
+their ordinary control. Then reevaluate the same sleep run to find its bed.
+The plan's phrase “locks up” conflicts with the existing measured lock policy:
+autotest12 still found the door unlocked 18 game minutes after the player left.
+Preserve that measured warning lock policy (no new relocking) while implementing
+the approach and awake behavior. This is not a deliberate deviation. A later
+SE probe should measure re-entry and several hours after leaving, plus approach
+distance, bed entry and any warning escalation.

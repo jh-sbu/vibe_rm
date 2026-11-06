@@ -26,6 +26,7 @@ pub mod practice;
 pub(crate) mod procedure;
 mod procedure_runtime;
 pub mod schedule;
+mod sleep_warnings;
 pub(crate) mod speech;
 mod summons;
 pub(crate) mod targets;
@@ -3719,7 +3720,7 @@ impl Engine {
                             dual: u.dual,
                         })
                     });
-                    Goal {
+                    let goal = Goal {
                         practice,
                         magic,
                         activate: p.activate,
@@ -3741,6 +3742,11 @@ impl Engine {
                         escort_run: p.escort_run,
                         gait: p.gait,
                         sneak: p.sneak,
+                    };
+                    if behaviour == Behaviour::Sleep {
+                        self.sleep_warning_goal(a.ref_id).unwrap_or(goal)
+                    } else {
+                        goal
                     }
                 });
                 decisions.push((*key, i, pick, goal, cursor));
@@ -3877,7 +3883,9 @@ impl Engine {
         self.update_swimming_states();
         self.update_force_greets(dt);
         self.advance_loaded_trees(dt);
+        self.update_sleep_warnings();
         self.evaluate_packages(dt);
+        self.update_sleep_warnings();
         self.loaded_procedure_locks();
         self.run_loaded_finds();
         self.update_practice_weapons();
