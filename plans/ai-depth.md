@@ -7,7 +7,8 @@ complete, including menu-time catch-up, door travel and vanilla sequence fixture
 Steps 3–5 are complete.
 Step 6 is complete, including acquisition, fleeing and UseWeapon preparation trees.
 Step 7 implements fixed idle markers, observation, FollowTo, group spacing and
-crouched final travel legs. Steps 8–16 are not implemented.
+crouched final travel legs. Step 8 adds escort lists/initial legs and preferred
+paths. Steps 9–16 are not implemented.
 
 This plan covers ROADMAP Next item 4 (AI depth): everything in it that can be
 built today from public sources, the game's data and the readings we already
@@ -491,6 +492,24 @@ fixtures included.
   sneaking within its radius of the target, as read from its tree.
 
 ### 8. Escort and preferred paths
+
+**Status: done** (2026-11-06). Escort consumes all selected followers up to its
+bound count, choosing the last lagging one for pacing and holding for followers
+in other spaces. Min/max waiting bands use durable cursor hysteresis. Optional
+named InitialLocation/extra follower inputs are bound and the initial leg
+cannot complete the Escort leaf. The full template census finds those optional
+names absent from the current masters, correcting the older sample note.
+PatrolAndHerd consumes its faction Find list for Travel and Escort and leads
+along its linked route while Wait bounds the interval. Hadvar’s MQ102 fixture
+checks the authored near/far Escort/Travel switch and all pacing inputs.
+
+Preferred Travel/Patrol/Escort paths apply a documented fourfold cost to
+unpreferred triangle entries; sandbox/wander PreferredOnly restricts destinations
+and route transitions. Ordinary routes keep their old costs. Menu-time paths
+use the same policy. Synthetic tests compare a short unpreferred corridor with
+a longer preferred route, roster pacing, cross-space followers, initial-leg
+continuity, away waiting/resumption and optional input-name binding. Research:
+`research/escort-preferred-paths.md`; choices/probes: `known_ambiguities/escort.md`.
 
 - **Escort inputs**: Follower Min / Max Distance (stand between them while
   waiting), Number of Followers with the Follower(s) list and ObjectList

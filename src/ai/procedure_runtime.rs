@@ -77,6 +77,25 @@ impl ActorExec {
                 .and_then(|p| p.tree.clone())
                 .unwrap();
             if tree.at(&path).is_some_and(|n| {
+                if n.procedure == "Escort"
+                    && self
+                        .current
+                        .and_then(|i| self.packages.get(i))
+                        .is_some_and(|p| p.template_is("PatrolAndHerd"))
+                {
+                    return true;
+                }
+                if n.procedure == "Escort"
+                    && matches!(n.values.get(9), Some(super::package::Input::Location(_)))
+                    && !self
+                        .run
+                        .as_ref()
+                        .and_then(|r| r.cursor.as_ref())
+                        .and_then(|c| c.states.get(&path))
+                        .is_some_and(|s| s.arrived)
+                {
+                    return true;
+                }
                 matches!(
                     n.procedure.as_str(),
                     "HoldPosition" | "DialogueActivate" | "Acquire" | "Flee"

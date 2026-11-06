@@ -16,6 +16,14 @@ const MAX_EXPANSIONS: usize = 30_000;
 /// Searching for the nearest point to a target it can't reach explores all it
 /// can: this far, then the nearest found (later repaths carry on from there).
 const MAX_NEAREST_EXPANSIONS: usize = 5_000;
+/// Policy chosen in known_ambiguities/escort.md; the data supplies no weight.
+const NON_PREFERRED_COST: f32 = 4.;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct Policy {
+    pub prefer: bool,
+    pub only: bool,
+}
 
 struct Mesh {
     verts: Vec<Vec3>,
@@ -386,19 +394,36 @@ impl NavWorld {
 
     /// Find a path from `from` to `to`, returning waypoints (excluding the start).
     pub fn find_path(&self, from: Vec3, to: Vec3) -> Option<Vec<Vec3>> {
-        self.route(from, to, true).map(|(path, _)| path)
+        self.find_path_with(from, to, Policy::default())
+    }
+
+    pub(crate) fn find_path_with(&self, from: Vec3, to: Vec3, policy: Policy) -> Option<Vec<Vec3>> {
+        self.route(from, to, true, policy).map(|(path, _)| path)
     }
 
     /// A path to `to`, or where it can't be reached (off the navmesh, on a part
     /// the actor can't get to), to the reachable point nearest it; and whether
     /// it reaches `to`. None when `from` is off the navmesh.
     pub fn path_towards(&self, from: Vec3, to: Vec3) -> Option<(Vec<Vec3>, bool)> {
-        self.route(from, to, false)
+        self.route(from, to, false, Policy::default())
     }
 
-    fn route(&self, from: Vec3, to: Vec3, exact: bool) -> Option<(Vec<Vec3>, bool)> {
+    fn route(
+        &self,
+        from: Vec3,
+        to: Vec3,
+        exact: bool,
+        policy: Policy,
+    ) -> Option<(Vec<Vec3>, bool)> {
         let (start, _) = self.locate(from)?;
         let goal = self.locate(to);
+        if policy.only
+            && goal.is_some_and(|(n, _)| {
+                self.mesh(n).tris[n.tri as usize].flags & NavTriangle::PREFERRED == 0
+            })
+        {
+            return None;
+        }
         if exact && goal.is_none() {
             return None;
         }
@@ -454,8 +479,18 @@ impl NavWorld {
             let here = entry[&node];
             self.neighbours(node, &mut buf);
             for &(nb, a, b) in &buf {
+                let preferred =
+                    self.mesh(nb).tris[nb.tri as usize].flags & NavTriangle::PREFERRED != 0;
+                if policy.only && !preferred {
+                    continue;
+                }
                 let mid = (a + b) * 0.5;
-                let ng = g + here.distance(mid);
+                let ng = g + here.distance(mid)
+                    * if policy.prefer && !preferred {
+                        NON_PREFERRED_COST
+                    } else {
+                        1.
+                    };
                 if cost.get(&nb).is_none_or(|&c| ng < c) {
                     cost.insert(nb, ng);
                     entry.insert(nb, mid);
@@ -524,6 +559,16 @@ impl NavWorld {
         &self,
         centre: Vec3,
         radius: f32,
+        rand: impl FnMut() -> u64,
+    ) -> Option<Vec3> {
+        self.random_point_with(centre, radius, Policy::default(), rand)
+    }
+
+    pub(crate) fn random_point_with(
+        &self,
+        centre: Vec3,
+        radius: f32,
+        policy: Policy,
         mut rand: impl FnMut() -> u64,
     ) -> Option<Vec3> {
         let c = centre.truncate();
@@ -537,6 +582,9 @@ impl NavWorld {
                 continue;
             }
             for (i, t) in m.tris.iter().enumerate() {
+                if policy.only && t.flags & NavTriangle::PREFERRED == 0 {
+                    continue;
+                }
                 if t.flags & (NavTriangle::WATER | NavTriangle::DOOR) != 0
                     || self.blocked.contains(&Node {
                         mesh: id,
@@ -753,5 +801,111 @@ mod tests {
         let goal = v(300.0, 250.0);
         let p = string_pull(Vec3::ZERO, goal, &portals);
         assert_eq!(p, vec![v(26.0, 200.0), v(50.0, 224.0), goal]);
+    }
+    #[test]
+    fn preferred_routes_take_a_flagged_detour_and_only_wandering_stays_flagged() {
+        let mut vertices = Vec::new();
+        for y in 0..3 {
+            for x in 0..5 {
+                vertices.push([x as f32 * 100., y as f32 * 100., 0.]);
+            }
+        }
+        let mut corners = Vec::new();
+        let mut flags = Vec::new();
+        for y in 0..2 {
+            for x in 0..4 {
+                let a = y * 5 + x;
+                let b = a + 1;
+                let c = a + 5;
+                let d = c + 1;
+                corners.extend([[a, c, b], [b, c, d]]);
+                flags.extend(
+                    [if y == 1 || x == 0 || x == 3 {
+                        NavTriangle::PREFERRED
+                    } else {
+                        0
+                    }; 2],
+                );
+            }
+        }
+        let triangles = corners
+            .iter()
+            .enumerate()
+            .map(|(i, v)| NavTriangle {
+                vertices: *v,
+                flags: flags[i],
+                cover: 0,
+                edges: std::array::from_fn(|edge| {
+                    let (a, b) = (v[edge], v[(edge + 1) % 3]);
+                    corners
+                        .iter()
+                        .enumerate()
+                        .find(|(j, w)| *j != i && w.contains(&a) && w.contains(&b))
+                        .map_or(-1, |(j, _)| j as i16)
+                }),
+            })
+            .collect();
+        let mut nav = NavWorld::default();
+        nav.meshes.insert(
+            FormId(1),
+            Mesh::new(NavMesh {
+                version: 12,
+                world: FormId::NULL,
+                cell: FormId(1),
+                grid: (0, 0),
+                vertices,
+                triangles,
+                edge_links: vec![],
+                doors: vec![],
+            })
+            .unwrap(),
+        );
+        let from = Vec3::new(20., 20., 0.);
+        let to = Vec3::new(380., 20., 0.);
+        assert!(nav.find_path(from, to).unwrap().iter().all(|v| v.y <= 24.));
+        let preferred = nav
+            .find_path_with(
+                from,
+                to,
+                Policy {
+                    prefer: true,
+                    only: false,
+                },
+            )
+            .unwrap();
+        assert!(preferred.iter().any(|v| v.y >= 76.), "{preferred:?}");
+        assert!(
+            nav.find_path_with(
+                from,
+                Vec3::new(180., 20., 0.),
+                Policy {
+                    prefer: false,
+                    only: true
+                }
+            )
+            .is_none()
+        );
+        for seed in 0u64..100 {
+            let mut state = seed;
+            let at = nav
+                .random_point_with(
+                    from,
+                    500.,
+                    Policy {
+                        prefer: false,
+                        only: true,
+                    },
+                    || {
+                        state = state.wrapping_mul(6364136223846793005u64).wrapping_add(1);
+                        state
+                    },
+                )
+                .unwrap();
+            let (node, _) = nav.locate(at).unwrap();
+            assert_ne!(
+                nav.mesh(node).tris[node.tri as usize].flags & NavTriangle::PREFERRED,
+                0
+            );
+        }
     }
 }

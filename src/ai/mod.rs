@@ -8,6 +8,7 @@ pub(crate) mod away_practice;
 pub mod casters;
 pub mod combat;
 mod equipment;
+mod escort;
 pub mod exec;
 mod find;
 pub mod furniture;
@@ -1580,10 +1581,18 @@ impl ActorRuntime {
                 // isn't waited for).
                 let ahead = t.is_some_and(|t| t.truncate().distance(goal.centre.truncate()) < left);
                 let apart = t.map_or(0.0, |t| self.exec.pos.distance(t));
+                let min = goal.follow_radius.0.max(0.);
+                let max = goal.follow_radius.1.max(min);
+                let waiting = self.exec.escort_waiting(
+                    !ahead && t.is_some() && apart > goal.escort_wait,
+                    ahead || apart <= min,
+                );
                 if left <= near {
                     self.face_towards(goal.target, face);
                     None
-                } else if !ahead && t.is_some() && apart > goal.escort_wait {
+                } else if waiting && max > 0. && apart > max {
+                    t.map(|at| at + (self.exec.pos - at).normalize_or_zero() * max)
+                } else if waiting {
                     // Wait for the escorted actor to catch up, facing them.
                     log::debug!(
                         "{} waiting for {:?} ({apart:.0} behind)",
@@ -1616,13 +1625,17 @@ impl ActorRuntime {
                     travelling = true;
                     Some(goal.centre)
                 } else if goal.allow.wandering || (w.rand)().is_multiple_of(4) {
-                    w.nav.random_point(goal.centre, r, &mut *w.rand)
+                    w.nav
+                        .random_point_with(goal.centre, r, self.exec.path_policy(), &mut *w.rand)
                 } else {
                     None
                 }
             }
         };
-        let path = target.and_then(|t| w.nav.find_path(self.exec.pos, t));
+        let path = target.and_then(|t| {
+            w.nav
+                .find_path_with(self.exec.pos, t, self.exec.path_policy())
+        });
         match path {
             Some(path) if !path.is_empty() => {
                 let len = path_length(self.exec.pos, &path);
@@ -3588,11 +3601,11 @@ impl Engine {
                     let base = &a.exec.packages[pi];
                     let effective = cursor
                         .as_ref()
-                        .map(|c| self.project_consumer(a.ref_id, base, c));
+                        .map(|c| self.project_procedure(a.ref_id, base, c));
                     let p = effective.as_ref().unwrap_or(base);
                     let (centre, radius) = cursor
                         .as_ref()
-                        .and_then(|c| self.consumer_destination(a.ref_id, base, c))
+                        .and_then(|c| self.procedure_destination(a.ref_id, base, c))
                         .map(|(_, at)| (at, p.location.map_or(64., |l| l.radius)))
                         .unwrap_or_else(|| self.package_target(a, p));
                     let target = self.package_target_ref(a, p, p.target);

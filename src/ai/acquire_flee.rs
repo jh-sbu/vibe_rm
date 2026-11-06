@@ -143,7 +143,7 @@ impl Engine {
     }
 
     /// Current procedure's explicit destination, shared by loaded and away goals.
-    pub(super) fn consumer_destination(
+    pub(super) fn procedure_destination(
         &self,
         actor: FormId,
         p: &Package,
@@ -151,6 +151,15 @@ impl Engine {
     ) -> Option<(Place, Vec3)> {
         let (path, n) = c.moving(p.tree.as_ref()?)?;
         match n.procedure.as_str() {
+            "Escort" => self.escort_destination(actor, p, n, c, path),
+            "Travel" => match n.values.first() {
+                Some(Input::ObjectList(slot)) => c
+                    .lists
+                    .get(slot)?
+                    .iter()
+                    .find_map(|f| self.current_place_of(source(*f))),
+                _ => None,
+            },
             "Acquire" => {
                 let (_, f) = self.acquire_candidate(actor, n, c, path)?;
                 self.current_place_of(source(f))
@@ -255,9 +264,12 @@ impl Engine {
         }
     }
 
-    pub(super) fn project_consumer(&self, actor: FormId, p: &Package, c: &Cursor) -> Package {
+    pub(super) fn project_procedure(&self, actor: FormId, p: &Package, c: &Cursor) -> Package {
         let mut effective = p.for_procedure(c.body(p.tree.as_ref().unwrap()));
-        if let Some((_, n)) = c.moving(p.tree.as_ref().unwrap()) {
+        if let Some((path, n)) = c.moving(p.tree.as_ref().unwrap()) {
+            if n.procedure == "Escort" {
+                self.project_escort(actor, p, n, c, path, &mut effective);
+            }
             if n.procedure == "UseIdleMarker"
                 && !self
                     .package_target_of(actor, &effective, effective.target)

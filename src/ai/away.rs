@@ -230,7 +230,8 @@ impl Engine {
             if !(self.run_find(r)
                 | self.run_acquire(r)
                 | self.run_package_flee(r)
-                | self.run_follow_to(r))
+                | self.run_follow_to(r)
+                | self.advance_escort(r))
             {
                 break;
             }
@@ -401,16 +402,62 @@ impl Engine {
             .run
             .as_ref()
             .and_then(|r| r.cursor.as_ref())
-            .and_then(|c| self.consumer_destination(r, base, c));
+            .and_then(|c| self.procedure_destination(r, base, c));
         let p = x
             .run
             .as_ref()
             .and_then(|r| r.cursor.as_ref())
             .filter(|_| base.tree.is_some())
-            .map(|c| std::borrow::Cow::Owned(self.project_consumer(r, base, c)))
+            .map(|c| std::borrow::Cow::Owned(self.project_procedure(r, base, c)))
             .unwrap_or_else(|| x.effective(base));
         let p = &*p;
-        let step = if let Some((there, target)) = consumer {
+        let mut escort_wait = None;
+        let escort_step = if p.behaviour == Behaviour::Escort {
+            consumer
+                .zip(
+                    p.target
+                        .and_then(|t| self.package_target_of(r, p, Some(t)))
+                        .and_then(|t| self.ref_position(t)),
+                )
+                .map(|((_, destination), follower)| {
+                    let apart = pos.distance(follower);
+                    let ahead = follower.distance(destination) < pos.distance(destination);
+                    let lag = !ahead && apart > p.escort_wait;
+                    let caught = ahead || apart <= p.follow_radius.0;
+                    let was_waiting = base
+                        .tree
+                        .as_ref()
+                        .zip(x.run.as_ref().and_then(|r| r.cursor.as_ref()))
+                        .and_then(|(tree, c)| {
+                            c.moving(tree).and_then(|(path, _)| c.states.get(path))
+                        })
+                        .is_some_and(|s| s.spoken);
+                    let waiting = lag || (was_waiting && !caught);
+                    escort_wait = Some((lag, caught));
+                    if waiting {
+                        Some(if p.follow_radius.1 > 0. && apart > p.follow_radius.1 {
+                            Move::Walk {
+                                end: follower
+                                    + (pos - follower).normalize_or_zero() * p.follow_radius.1,
+                                strides: false,
+                                jump: false,
+                            }
+                        } else {
+                            Move::Settle
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .flatten()
+        } else {
+            None
+        };
+        let step = if p.behaviour == Behaviour::Hold {
+            Move::Settle
+        } else if let Some(step) = escort_step {
+            step
+        } else if let Some((there, target)) = consumer {
             if same_space(place, there) {
                 Move::Walk {
                     end: target,
@@ -443,6 +490,11 @@ impl Engine {
             _ => None,
         };
         let now = clock;
+        if let Some((lag, caught)) = escort_wait
+            && let Some(x) = self.away.get_mut(&r)
+        {
+            x.escort_waiting(lag, caught);
+        }
         match step {
             Move::Settle => {
                 if let Some(x) = self.away.get_mut(&r) {

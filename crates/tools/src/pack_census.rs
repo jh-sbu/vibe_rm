@@ -20,6 +20,7 @@ struct Census {
     packages: usize,
     templates: BTreeMap<String, Template>,
     procedures: BTreeMap<String, usize>,
+    procedure_users: BTreeMap<String, Vec<(FormId, String)>>,
     locations: BTreeMap<u32, usize>,
     targets: BTreeMap<u32, usize>,
     object_types: BTreeMap<u32, usize>,
@@ -82,7 +83,13 @@ impl Census {
                 match &sr.tag.0 {
                     b"XNAM" => tree = true,
                     b"UNAM" if tree => break,
-                    b"PNAM" if tree => *out.procedures.entry(sr.zstring()).or_default() += 1,
+                    b"PNAM" if tree => {
+                        *out.procedures.entry(sr.zstring()).or_default() += 1;
+                        out.procedure_users
+                            .entry(sr.zstring())
+                            .or_default()
+                            .push((id, rec.editor_id().unwrap_or_default()));
+                    }
                     b"PLDT" if sr.data.len() >= 12 => {
                         *out.locations.entry(sr.u32(0)).or_default() += 1
                     }
@@ -179,6 +186,17 @@ impl Census {
         s.push_str("Procedures in records' own trees (each tree counted once):\n");
         for (name, count) in &self.procedures {
             writeln!(s, "{count:6} {name}").unwrap();
+            if show.is_some_and(|s| {
+                s.strip_prefix("procedure:")
+                    .is_some_and(|p| p.eq_ignore_ascii_case(name))
+            }) {
+                let mut users = self.procedure_users.get(name).cloned().unwrap_or_default();
+                users.sort();
+                users.dedup();
+                for (id, name) in users {
+                    writeln!(s, "         {id} {name}").unwrap();
+                }
+            }
         }
         s.push_str("Location kinds (PLDT):\n");
         for (kind, count) in &self.locations {
@@ -303,6 +321,10 @@ mod tests {
         assert_eq!(c.templates["Travel"].count, 1);
         assert_eq!(c.templates["Travel"].behaviours["Travel"], 1);
         assert_eq!(c.procedures["Travel"], 1);
+        assert_eq!(
+            c.procedure_users["Travel"],
+            vec![(FormId(0x800), "Travel".into())]
+        );
         assert_eq!(c.targets[&2], 1);
         assert_eq!(c.object_types[&10], 1);
         assert_eq!(c.omitted_defaults["Travel"], (1, 1));

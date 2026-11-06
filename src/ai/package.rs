@@ -825,6 +825,30 @@ pub fn parse(lo: &LoadOrder, id: FormId) -> Option<Package> {
         schedule,
         tree: procedure_tree(lo, tree_src).map(|mut tree| {
             tree.bind(&inputs);
+            fn extend(
+                node: &mut Node,
+                initial: Option<Input>,
+                followers: Option<Input>,
+                list: Option<Input>,
+            ) {
+                if node.procedure == "Escort"
+                    && (initial.is_some() || followers.is_some() || list.is_some())
+                {
+                    node.values.resize(12, Input::Other);
+                    node.values[9] = initial.unwrap_or(Input::Other);
+                    node.values[10] = followers.unwrap_or(Input::Other);
+                    node.values[11] = list.unwrap_or(Input::Other);
+                }
+                for child in &mut node.children {
+                    extend(child, initial, followers, list);
+                }
+            }
+            extend(
+                &mut tree,
+                named("initiallocationtofind"),
+                named("followers"),
+                named("followersobjectlist"),
+            );
             std::sync::Arc::new(tree)
         }),
         // The procedure tree's conditions belong to its branches.
@@ -961,7 +985,15 @@ impl Package {
                 };
             }
             "Escort" => {
+                p.target = n.values.first().and_then(|v| {
+                    if let Input::Target(t) = v {
+                        Some(*t)
+                    } else {
+                        None
+                    }
+                });
                 p.escort_wait = number(3, 512.0);
+                p.follow_radius = (number(4, 120.), number(5, 256.));
                 p.escort_run = number(8, 500.0);
             }
             "HoldPosition" => {

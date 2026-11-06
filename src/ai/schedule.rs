@@ -288,7 +288,7 @@ impl Engine {
             .execution(achr)
             .and_then(|x| x.run.as_ref())
             .and_then(|r| r.cursor.as_ref())
-            .and_then(|c| self.consumer_destination(achr, p, c))
+            .and_then(|c| self.procedure_destination(achr, p, c))
         {
             return Some(destination);
         }

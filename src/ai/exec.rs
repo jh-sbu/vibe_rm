@@ -215,6 +215,39 @@ pub enum RunEvent {
 }
 
 impl ActorExec {
+    pub(crate) fn path_policy(&self) -> super::nav::Policy {
+        let node = self
+            .current
+            .and_then(|i| self.packages.get(i))
+            .and_then(|p| self.run.as_ref()?.cursor.as_ref()?.body(p.tree.as_ref()?));
+        let Some(n) = node else {
+            return Default::default();
+        };
+        let on = |i| matches!(n.values.get(i), Some(super::package::Input::Bool(true)));
+        match n.procedure.as_str() {
+            "Travel" => super::nav::Policy {
+                prefer: on(2),
+                only: false,
+            },
+            "Patrol" => super::nav::Policy {
+                prefer: on(5),
+                only: false,
+            },
+            "Escort" => super::nav::Policy {
+                prefer: on(7),
+                only: false,
+            },
+            "Sandbox" => super::nav::Policy {
+                prefer: false,
+                only: on(7),
+            },
+            "Wander" => super::nav::Policy {
+                prefer: false,
+                only: on(1),
+            },
+            _ => Default::default(),
+        }
+    }
     /// The package it runs.
     pub fn package(&self) -> Option<FormId> {
         self.run.as_ref().map(|r| r.id)

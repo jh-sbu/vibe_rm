@@ -207,7 +207,7 @@ impl Engine {
                 {
                     if let Some(path) = self
                         .nav
-                        .find_path(a.exec.pos, target)
+                        .find_path_with(a.exec.pos, target, a.exec.path_policy())
                         .filter(|p| !p.is_empty())
                     {
                         paths.push((a.ref_id, path));

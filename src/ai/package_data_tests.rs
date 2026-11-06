@@ -771,3 +771,37 @@ fn vanilla_dialogue_templates_preserve_response_flags_and_talk_from() {
             .any(|c| c.func == 358)
     );
 }
+
+#[test]
+fn optional_escort_initial_location_is_bound_by_its_template_label() {
+    let f = Fixture::new();
+    let template = location_input(
+        RecordBuilder::new(b"PACK", FormId(0x800)).zstring(b"EDID", "Escort"),
+        9,
+        12,
+        0,
+        50,
+    )
+    .zstring(b"ANAM", "ObjectList")
+    .field(b"CNAM", &[0; 4])
+    .field(b"UNAM", &[2])
+    .field(b"XNAM", &[])
+    .zstring(b"ANAM", "Procedure")
+    .zstring(b"PNAM", "Escort")
+    .field(b"PKC2", &[2])
+    .field(b"PKC2", &[1])
+    .field(b"PKC2", &[3])
+    .field(b"UNAM", &[9])
+    .zstring(b"BNAM", "Initial Location to find");
+    let lo = f.load(vec![template]);
+    let p = parse(&lo, id(0x800)).unwrap();
+    let n = p.tree.as_ref().unwrap();
+    assert!(matches!(n.values[0], Input::ObjectList(2)));
+    assert!(matches!(
+        n.values[9],
+        Input::Location(Location {
+            kind: LocationKind::NearSelf,
+            radius: 50.
+        })
+    ));
+}
