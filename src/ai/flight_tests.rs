@@ -559,3 +559,19 @@ fn combat_without_a_landing_surface_stays_in_flight_and_disallowed_ground_stays_
     assert!(!e.step_flight(ACTOR, 1., false));
     assert_eq!(e.flying_state(ACTOR), GROUND);
 }
+
+#[test]
+fn combat_phase_time_scales_vanilla_settings_and_caps_at_the_saved_clock_limit() {
+    let style = [0.5, 1., 0.5, 0.25, 1., 0.5, 0.5, 0.75];
+    // Vanilla fCombatHoverTimeMin (5.5): hover x 0.25, ground x 1, flying x 1.
+    assert_eq!(combat_mode_time(5.5, 1, &style), 2.75);
+    assert_eq!(combat_mode_time(5.5, 2, &style), 11.);
+    assert_eq!(combat_mode_time(5.5, 0, &style), 11.);
+    // A modded setting can't make a phase the clock never finishes or a save
+    // that FLGT validation rejects.
+    for huge in [1e6, f32::INFINITY] {
+        for mode in 0..4 {
+            assert_eq!(combat_mode_time(huge, mode, &style), MAX_CLOCK);
+        }
+    }
+}

@@ -68,6 +68,23 @@ fn orbit_target(
     center + Vec3::new(angle.cos() * radius, angle.sin() * radius, height)
 }
 
+/// Flight clocks stop here; saves reject anything longer (`FLGT`).
+pub(crate) const MAX_CLOCK: f32 = 3600.;
+
+/// How long a combat flight phase lasts: `fCombatHoverTimeMin` scaled by the
+/// phase's CSFL time multiplier (`known_ambiguities/dragon-flight.md`). Capped
+/// at the clock limit, or a modded setting would leave a save unloadable and
+/// a phase the capped elapsed clock could never finish.
+fn combat_mode_time(land_after: f32, mode: u8, style: &[f32; 8]) -> f32 {
+    let scale = match mode {
+        1 => style[3].max(0.1) * 2.,
+        2 => style[4].max(0.1) * 2.,
+        3 => style[6].max(0.1) * 2.,
+        _ => 2.,
+    };
+    (land_after * scale).min(MAX_CLOCK)
+}
+
 impl Engine {
     pub(crate) fn flying_state(&self, actor: FormId) -> u8 {
         self.flights.get(&actor).map_or(GROUND, |f| f.phase)
@@ -241,9 +258,9 @@ impl Engine {
             .and_then(|x| x.combat.as_ref())
             .map(|c| c.target);
         let f = self.flights.entry(actor).or_default();
-        f.elapsed = (f.elapsed + dt).min(3600.);
+        f.elapsed = (f.elapsed + dt).min(MAX_CLOCK);
         f.combat_elapsed = if combat.is_some() {
-            (f.combat_elapsed + dt).min(3600.)
+            (f.combat_elapsed + dt).min(MAX_CLOCK)
         } else {
             0.
         };
@@ -277,13 +294,7 @@ impl Engine {
                     roll -= weight;
                 }
                 f.combat_elapsed = 0.;
-                f.mode_time = land_after
-                    * match f.combat_mode {
-                        1 => style[3].max(0.1) * 2.,
-                        2 => style[4].max(0.1) * 2.,
-                        3 => style[6].max(0.1) * 2.,
-                        _ => 2.,
-                    };
+                f.mode_time = combat_mode_time(land_after, f.combat_mode, &style);
                 let state = self.flights.get_mut(&actor).unwrap();
                 state.combat_mode = f.combat_mode;
                 state.combat_elapsed = 0.;

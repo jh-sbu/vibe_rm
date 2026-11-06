@@ -1889,7 +1889,7 @@ impl Continuity {
                 || f.combat_mode > 3
                 || [f.elapsed, f.combat_elapsed, f.mode_time]
                     .iter()
-                    .any(|s| !s.is_finite() || !(0. ..=3600.).contains(s))
+                    .any(|s| !s.is_finite() || !(0. ..=crate::ai::flight::MAX_CLOCK).contains(s))
                 || f.grabbed == Some(actor)
             {
                 return Err(Corrupt("invalid flight state".into()));
