@@ -24,20 +24,13 @@ Acquire counts matching own items toward its quota without transferring them.
 It walks within 96 units of each eligible result, preserves copy/charge/ownership
 state and sends inventory/OnContainerChanged events. Loose reference stacks are
 taken whole, as player pickup does; container/corpse transfers stop at the quota.
-Permission filtering skips living pockets unless both stealing and pickpocketing
-are allowed. Live attempts reuse the picker-specific player chance/perk formula.
-The actual Ralof use is corpse loot, so this extension is a policy, not an
-observed NPC pickpocket rule. Killing remains unimplemented (no enabled users).
 Exhausted lists search again every three seconds while retaining the quota; own
-items already counted are excluded from retries.
-
-Autonomous theft preserves the stolen owner, uses actor-specific detection and
-crime faction reporting rules, sends ADCR with the actual culprit, and reuses
-theft reactions; reporting guards attack that culprit. It never adds to the
-player’s bounty or statistics. Public Crime documentation does not describe
-autonomous NPC arrest; this uses the existing actor combat/reaction machinery,
-with no NPC arrest simulation invented. Probe owned-item acquisition in front
-of owners/guards and live-pocket success/failure, including commanded followers.
+items already counted are excluded from retries. These approach, stack and
+retry rules are implementation policies, not SE observations. Owned items and
+living holders are never eligible, whatever AllowStealing/AllowPickpocketing
+say: NPC theft is blocked (`plans/ai-depth.md`, "Left out: blocked"), and
+Killing remains unimplemented (no enabled users). Probe corpse/container
+acquisition and save/reload between Find and Acquire.
 
 Flee reuses combat’s open-ground navmesh sampling and running gait. It finishes
 at the destination’s goal radius or when all same-space named threats are at

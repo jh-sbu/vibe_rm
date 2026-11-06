@@ -111,7 +111,9 @@ impl Engine {
                 if self.is_disabled(r) || self.reference_deleted(r) {
                     return false;
                 }
-                if !flag(n, 2) && self.acquisition_owner(actor, *f).is_some() {
+                // Taking owned items and pickpocketing are blocked whatever
+                // AllowStealing / AllowPickpocketing say (plans/ai-depth.md).
+                if self.acquisition_owner(actor, *f).is_some() {
                     return false;
                 }
                 match *f {
@@ -126,12 +128,7 @@ impl Engine {
                         {
                             return false;
                         }
-                        let living =
-                            owner != actor && self.is_actor_ref(owner) && !self.is_dead(owner);
-                        !living
-                            || (flag(n, 3)
-                                && flag(n, 2)
-                                && self.can_pickpocket_item_by(actor, owner, item))
+                        owner == actor || !self.is_actor_ref(owner) || self.is_dead(owner)
                     }
                 }
             })
@@ -355,64 +352,34 @@ impl Engine {
         if !same_space(here, there) || pos.distance(at) > 96. {
             return false;
         }
-        let mark = self.acquisition_owner(actor, found);
         let remaining = (quantity - count).min(i32::MAX as u32) as i32;
-        let (moved, item, pocket) = match found {
+        // The candidate check above admits only unowned items, own items and
+        // non-living holders, so no transfer here is a theft.
+        let moved = match found {
             Found::Reference(r) => {
                 let item = self.base_of(r).unwrap();
                 let before = self.item_count(actor, item);
-                self.take_item_by(actor, r, mark);
-                (self.item_count(actor, item) - before, item, false)
+                self.take_item_by(actor, r);
+                self.item_count(actor, item) - before
             }
-            Found::Inventory { owner, item } if owner == actor => (
+            Found::Inventory { owner, item } if owner == actor => {
                 if self.has_spell(actor, item) {
                     1
                 } else {
                     self.item_count(actor, item).min(remaining)
-                },
-                item,
-                false,
-            ),
-            Found::Inventory { owner, item } => {
-                let pocket = self.is_actor_ref(owner) && !self.is_dead(owner);
-                if pocket
-                    && (self.rand() % 100) as f32
-                        >= self.pickpocket_chance_by(actor, owner, item, remaining)
-                {
-                    self.report_package_theft(actor, Some(owner), mark, 0, true);
-                    (0, item, false)
-                } else {
-                    let moved = self
-                        .remove_stack_with_copy(
-                            owner,
-                            item,
-                            remaining,
-                            None,
-                            Some(actor),
-                            mark,
-                            None,
-                        )
-                        .parts
-                        .iter()
-                        .map(|(_, n)| n)
-                        .sum();
-                    self.unequip_if_gone(owner, item);
-                    (moved, item, pocket)
                 }
             }
+            Found::Inventory { owner, item } => {
+                let moved = self
+                    .remove_stack_with_copy(owner, item, remaining, None, Some(actor), None, None)
+                    .parts
+                    .iter()
+                    .map(|(_, n)| n)
+                    .sum();
+                self.unequip_if_gone(owner, item);
+                moved
+            }
         };
-        if moved > 0 && mark.is_some() {
-            let value = crate::world::inventory::item_info(&self.lo, item)
-                .map_or(0, |i| i.value)
-                .saturating_mul(moved);
-            self.report_package_theft(
-                actor,
-                self.is_actor_ref(r).then_some(r),
-                mark,
-                value,
-                pocket,
-            );
-        }
         if let Some(state) = self
             .execution_mut(actor)
             .and_then(|x| x.run.as_mut())

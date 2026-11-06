@@ -407,10 +407,10 @@ Faction and nested/dynamic FLST Object IDs share the target resolver, with cycle
 protection. AEXC version 3 preserves results, including suspended runs, and reads
 versions 0–2. The MQ101 fixture traces Ralof’s key to a soldier alias inventory
 and the scene’s stage-280 death gate. Acquire approaches eligible loose/container/corpse/own-inventory results and
-counts its quota, retaining ownership, item copies and script events. Living
-pockets require both permissions and use the picker-specific chance formula.
-Exhausted searches retry without recounting own inventory. Autonomous theft
-reports its actual actor and does not charge the player. Flee uses shared combat
+counts its quota, retaining ownership, item copies and script events. Owned
+items and living pockets are skipped even when AllowStealing /
+AllowPickpocketing are set: NPC theft is blocked (see "Left out: blocked").
+Exhausted searches retry without recounting own inventory. Flee uses shared combat
 open-ground sampling, destinations/distances, forget-dead/quiet/counts-as-fleeing
 inputs, and the vanilla 3000/5000 distance defaults. UseWeapon preparation trees
 are enabled; practice is projected only while its leaf is active.
@@ -427,8 +427,9 @@ pickpocket/crime regressions, with ignored fixtures included. Research and choic
   WIRemoveItem bystanders): Travel → (Find ∥ Wander) → Acquire. Walk to each
   found item and pick it up (`Engine::transfer_item`, with the pick-up as the
   player's activation would do it), until "Num to acquire".
-  - AllowStealing: taking owned items is a crime, as the player's is
-    (`src/crime.rs`); without it, owned items are skipped.
+  - AllowStealing: owned items are skipped, with or without it. NPC theft
+    is blocked ("Left out: blocked"); the player's crime rules are not
+    borrowed for it.
   - AllowPickpocketing: step 0 found `MQ101RalofGetDoorKey` (`0008C816`)
     explicitly sets it, and AllowStealing, true. Trace that package's target
     and MQ101 scripts before deciding what inventory transfers it requires;
@@ -839,6 +840,15 @@ These are recorded in ROADMAP item 4 with the same reasons.
   behaviour. No public page says NPCs pick weapons up; *Skyrim:Stalleo's
   Bodyguard* only has her fall back on a carried dagger, which is done. It
   needs an SE observation (shout-disarm an NPC with no spare weapon).
+- **NPCs stealing and pickpocketing** (Acquire's AllowStealing /
+  AllowPickpocketing): the only vanilla package that sets them,
+  `MQ101RalofGetDoorKey`, takes a key from a corpse, which is not theft (UESP
+  *Skyrim:Crime*, revision 3639929). No public source says who notices an
+  NPC's theft, how it is reported or punished, or how an NPC's pickpocket
+  attempt succeeds. Mods can set the flags, so this needs its own plan (an SE
+  probe of an NPC taking owned items before their owner and guards, and
+  picking a living pocket), not borrowed player rules. Until then Acquire
+  skips owned items and living holders whatever the flags say.
 - **Followers' other combat behaviour** (friendly-fire tolerance, orders,
   fleeing): no source (`known_ambiguities/followers.md`).
 - **NPC encumbrance effects** beyond `IsOverEncumbered`: unconfirmed

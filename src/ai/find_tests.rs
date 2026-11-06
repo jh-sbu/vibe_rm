@@ -430,28 +430,24 @@ fn acquire_approaches_a_corpse_takes_only_its_quota_and_finishes_the_package() {
 
 #[test]
 #[ignore = "needs a headless GPU adapter; synthetic records only"]
-fn acquire_skips_living_pockets_and_owned_loose_items_unless_permitted() {
+fn acquire_skips_living_pockets_and_owned_loose_items_even_when_permitted() {
+    // Stealing and pickpocketing are blocked (plans/ai-depth.md): the
+    // permission flags must not make an owned item or a living pocket eligible.
     for allow in [false, true] {
         let mut e = engine();
         e.scripts.owners.insert(MARKER, Some(FormId(0x7)));
-        loaded(&mut e, acquire_package(1, allow, false, false));
+        loaded(&mut e, acquire_package(1, allow, allow, false));
         e.run_loaded_finds();
         assert_eq!(
             e.item_count(HOLDER, KEY),
             2,
-            "living inventory requires pickpocket permission"
+            "living inventory is never taken"
         );
         e.actor_mut(ACTOR).unwrap().exec.pos.x = 150.;
         e.run_loaded_finds();
-        assert_eq!(e.is_disabled(MARKER), allow);
-        assert_eq!(e.item_count(ACTOR, KEY), if allow { 4 } else { 3 });
-        if allow {
-            assert_eq!(e.inventory_mut(ACTOR).count_owned(KEY, Some(FormId(7))), 1);
-        }
-        assert!(
-            e.crime.bounties.is_empty(),
-            "autonomous theft never charges the player"
-        );
+        assert!(!e.is_disabled(MARKER), "owned loose items are never taken");
+        assert_eq!(e.item_count(ACTOR, KEY), 3);
+        assert!(e.crime.bounties.is_empty());
     }
 }
 

@@ -41,14 +41,6 @@ impl Engine {
     /// Equipped Item: Misdirection for weapons, Perfect Touch for anything
     /// on someone not essential).
     pub fn can_pickpocket_item(&self, victim: FormId, item: FormId) -> bool {
-        self.can_pickpocket_item_by(PLAYER_REF, victim, item)
-    }
-    pub(crate) fn can_pickpocket_item_by(
-        &self,
-        picker: FormId,
-        victim: FormId,
-        item: FormId,
-    ) -> bool {
         let worn = self
             .inventories
             .get(&victim)
@@ -56,7 +48,7 @@ impl Engine {
         !worn
             || self.perk_flag(
                 crate::perks::ep::CAN_PICKPOCKET_EQUIPPED_ITEM,
-                picker,
+                PLAYER_REF,
                 &[Some(victim), Some(item)],
             )
     }
@@ -70,15 +62,6 @@ impl Engine {
     /// settings that is UESP's `15 + skill - target skill / 4 - 4 x weight -
     /// gold / 10`.
     pub fn pickpocket_chance(&self, victim: FormId, item: FormId, count: i32) -> f32 {
-        self.pickpocket_chance_by(PLAYER_REF, victim, item, count)
-    }
-    pub(crate) fn pickpocket_chance_by(
-        &self,
-        picker: FormId,
-        victim: FormId,
-        item: FormId,
-        count: i32,
-    ) -> f32 {
         let g = |name: &str, default: f32| crate::ai::combat::gmst_f32(&self.lo, name, default);
         let info = crate::world::inventory::item_info(&self.lo, item);
         let (weight, gold) = if item == crate::crime::GOLD {
@@ -88,20 +71,20 @@ impl Engine {
         };
         let mut chance = g("fPickPocketActorSkillBase", 20.0)
             + g("fPickPocketActorSkillMult", 1.0)
-                * self.actor_value(picker, esp::actor_value::PICKPOCKET)
+                * self.actor_value(PLAYER_REF, esp::actor_value::PICKPOCKET)
             + g("fPickPocketTargetSkillMult", -0.25)
                 * (g("fPickPocketTargetSkillBase", 20.0)
                     + self.actor_value(victim, esp::actor_value::PICKPOCKET))
             + g("fPickPocketWeightMult", -4.0) * weight
             + g("fPickPocketAmountMult", -0.1) * gold;
-        if self.detects(victim, picker) {
+        if self.detects(victim, PLAYER_REF) {
             chance -= DETECTED_PENALTY;
         }
         // Pickpocket perks add to it (Light Fingers, Night Thief, Cutpurse; UESP)
         // or set it (Keymaster), before the limits.
         let chance = self.perk_entry_point(
             crate::perks::ep::MOD_PICKPOCKET_CHANCE,
-            picker,
+            PLAYER_REF,
             &[Some(victim), Some(item)],
             chance,
         );

@@ -1869,7 +1869,7 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
     (`known_ambiguities/package-dialogue.md`).
     Record actor/furniture notifications through a sawmill load/cut cycle and
     compare Wait's StopMovement behavior (`known_ambiguities/furniture.md`).
-    Compare Find ordering/retries, inventory acquisition and autonomous theft,
+    Compare Find ordering/retries, inventory acquisition,
     Flee destinations/flags (`known_ambiguities/find-acquire-flee.md`); fixed idle
     markers, observation/group spacing and crouched travel (`package-trees.md`);
     escort rosters/initial legs/preferred paths (`escort.md`); force-greet fade,
@@ -2076,6 +2076,11 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      - Package target kind 5 ("interrupt data" here; xEdit: "Unknown 5", no
        vanilla use) and location kind 11 (xEdit: "Unknown 11", 18 uses in
        packages' own trees): meaning unknown.
+     - NPCs stealing and pickpocketing (Acquire's AllowStealing /
+       AllowPickpocketing): no vanilla package reaches them (Ralof's key comes
+       off a corpse) and nothing public says how an NPC's theft is noticed,
+       reported or punished. Mods can set the flags, so it needs dedicated
+       work and an SE probe; Acquire skips owned items and living pockets.
      - Followers' other combat behaviour (`known_ambiguities/followers.md`).
      - Ambush triggers (sleepers' reduced detection: see Detection).
    - NPC encumbrance: `IsOverEncumbered` is False for NPCs over their carry

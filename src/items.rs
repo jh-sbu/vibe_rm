@@ -139,11 +139,13 @@ impl Engine {
     /// Pick up an item reference: into the player's inventory (as many as the
     /// reference stands for, `XCNT`) and gone from the world.
     pub fn take_item(&mut self, r: FormId) -> bool {
-        self.take_item_by(PLAYER_REF, r, None)
+        self.take_item_by(PLAYER_REF, r)
     }
 
     /// Whole reference-stack pickup, including its persistent copy extras.
-    pub(crate) fn take_item_by(&mut self, actor: FormId, r: FormId, mark: Option<FormId>) -> bool {
+    /// Another actor's pickup keeps an already stolen stack stolen but is never
+    /// judged as a theft of its own (package acquisition takes no owned items).
+    pub(crate) fn take_item_by(&mut self, actor: FormId, r: FormId) -> bool {
         if self.is_disabled(r) {
             return false;
         }
@@ -166,7 +168,7 @@ impl Engine {
             .max(1);
         // A dropped stolen item stays stolen: its theft was judged when the
         // player took it, so it isn't judged again where it lies.
-        let stolen = self.created(r).and_then(|c| c.owner).or(mark).or_else(|| {
+        let stolen = self.created(r).and_then(|c| c.owner).or_else(|| {
             (actor == PLAYER_REF)
                 .then(|| self.stolen_from(base, r, false))
                 .flatten()
