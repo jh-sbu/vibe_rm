@@ -6994,3 +6994,54 @@ fn mount_payload_rejects_bad_phases_speeds_and_duplicate_claims_and_accepts_lega
     s.continuity.rides.insert(FormId(0x803), ride);
     assert!(Snapshot::read(&s.write()).is_err());
 }
+
+#[test]
+fn vehicle_payload_rejects_cycles_and_nonfinite_frames_and_reads_legacy() {
+    use crate::ai::vehicles::{Passenger, Tether};
+    let mut s = Snapshot::default();
+    let p = Passenger {
+        vehicle: FormId(0x801),
+        offset: Vec3::Z * 100.,
+        rotation: Vec3::ZERO,
+    };
+    s.continuity.passengers.insert(FormId(0x800), p);
+    s.continuity.tethers.insert(
+        FormId(0x801),
+        Tether {
+            horse: FormId(0x802),
+            horse_point: Vec3::ZERO,
+            cart_point: Vec3::Y * 180.,
+        },
+    );
+    assert_eq!(
+        Snapshot::read(&s.write()).unwrap().continuity.passengers,
+        s.continuity.passengers
+    );
+    let mut legacy = s.write();
+    legacy
+        .sections
+        .retain(|(tag, _)| tag != b"VEHI" && tag != b"TETH");
+    assert!(
+        Snapshot::read(&legacy)
+            .unwrap()
+            .continuity
+            .passengers
+            .is_empty()
+    );
+    s.continuity.passengers.insert(
+        FormId(0x801),
+        Passenger {
+            vehicle: FormId(0x800),
+            ..p
+        },
+    );
+    assert!(Snapshot::read(&s.write()).is_err());
+    s.continuity.passengers.remove(&FormId(0x801));
+    s.continuity
+        .passengers
+        .get_mut(&FormId(0x800))
+        .unwrap()
+        .offset
+        .x = f32::NAN;
+    assert!(Snapshot::read(&s.write()).is_err());
+}

@@ -362,6 +362,9 @@ pub struct Engine {
     pub(crate) offscreen: std::cell::OnceCell<crate::ai::offscreen::Network>,
     pub(crate) offscreen_routes: HashMap<FormId, crate::ai::offscreen::Journey>,
     pub(crate) rides: HashMap<FormId, crate::ai::mounts::Ride>,
+    pub(crate) passengers: HashMap<FormId, crate::ai::vehicles::Passenger>,
+    pub(crate) tethers: HashMap<FormId, crate::ai::vehicles::Tether>,
+    pub(crate) hitches: HashMap<FormId, crate::ai::vehicles::Hitch>,
     pub furniture: crate::ai::furniture::FurnitureWorld,
     /// Patrol routes by start reference.
     pub(crate) patrol_paths: HashMap<FormId, std::sync::Arc<Vec<crate::ai::PatrolPoint>>>,
@@ -682,6 +685,9 @@ impl Engine {
             offscreen: Default::default(),
             offscreen_routes: Default::default(),
             rides: Default::default(),
+            passengers: Default::default(),
+            tethers: Default::default(),
+            hitches: Default::default(),
             furniture: Default::default(),
             patrol_paths: Default::default(),
             moved_refs: HashMap::new(),
@@ -3159,6 +3165,7 @@ impl Engine {
         let world_dt = dt * self.world_speed();
         self.update_particles(world_dt);
         self.update_grab(dt);
+        self.update_tethers();
         self.physics.step(world_dt);
         self.place_decals();
         self.update_loose();
@@ -3185,6 +3192,9 @@ impl Engine {
         self.update_skin_decals();
         let cam = self.camera_copy();
         let mut input = input;
+        if self.passengers.contains_key(&PLAYER_REF) {
+            input = crate::player::MoveInput::default();
+        }
         self.encumber_player(&mut input);
         self.update_player_attack(dt);
         self.update_casting(dt);
@@ -3230,6 +3240,9 @@ impl Engine {
         self.update_player_footsteps(dt, stride, run, sprint);
         self.camera.position = self.player.eye();
         self.update_player_body(self.player.position - before, dt);
+        if self.passengers.contains_key(&PLAYER_REF) {
+            self.sync_passengers();
+        }
         self.update_third_person_camera(dt);
         self.update_streaming();
         self.update_spell_fx(world_dt);
@@ -3727,6 +3740,9 @@ impl Engine {
     }
 
     pub fn has_keyword(&self, form: FormId, kw: FormId) -> bool {
+        if kw == FormId(0xDD631) && self.passengers.contains_key(&form) {
+            return true;
+        }
         if let Some(c) = self.created(form).filter(|c| !c.actor) {
             return self.has_keyword(c.base, kw);
         }

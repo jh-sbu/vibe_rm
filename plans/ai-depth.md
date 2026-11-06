@@ -15,7 +15,8 @@ dismissal and adds AllyKilled lines. Step 12 completes merged NAVI routing,
 local mesh refinement, door/worldspace crossings, actor-specific locked portals
 and local clutter avoidance.
 Step 13 completes sleeper warning approaches and awake holds. Step 14 completes
-NPC riding, including away horse speed and save continuity. Steps 15–16 remain.
+NPC riding, including away horse speed and save continuity. Step 15 completes
+carriage passengers and horse tethers. Step 16 remains.
 
 This plan covers ROADMAP Next item 4 (AI depth): everything in it that can be
 built today from public sources, the game's data and the readings we already
@@ -748,6 +749,15 @@ Follow, GroupMovement and Acquire. Nothing in the engine mounts an actor
 - The player riding is not part of this plan.
 
 ### 15. Carts
+
+**Status: done** (2026-11-06). Vanilla SetVehicle preserves each passenger's
+relative frame, retains script-selected idles, moves them with the simulated
+cart, and supports release and the player's RidingInCarriage keyword/input
+hold. TetherToHorse creates a spherical horse hitch alongside the cart's
+existing NIF wheel/steering constraints; joints rebuild after load. VEHI/TETH
+save validated relationships, with legacy defaults. Passenger, physical hitch,
+rebuild/release and corrupt-save tests pass with GPU access. Research and SE
+comparison choices: `research/carriages.md`, `known_ambiguities/carriages.md`.
 
 Depends on 14. The carriages and the MQ101 cart: `TetherToHorse` (the
 carriage held to the horse by a physics constraint) and `SetVehicle`

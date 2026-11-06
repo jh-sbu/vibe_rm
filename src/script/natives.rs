@@ -2027,6 +2027,18 @@ pub fn call(
             }
             none()
         }
+        ("actor", "setvehicle") => {
+            if let Some(actor) = me {
+                e.set_vehicle(actor, form_arg(args, 0));
+            }
+            none()
+        }
+        ("objectreference", "tethertohorse") => {
+            if let Some(cart) = me {
+                e.tether_to_horse(cart, form_arg(args, 0));
+            }
+            none()
+        }
         ("actor", "isonmount") => v(Value::Bool(me.is_some_and(|r| e.is_on_mount(r)))),
         ("actor", "dismount") => v(Value::Bool(me.is_some_and(|r| e.dismount(r)))),
         ("actor", "issneaking") => v(Value::Bool(me.is_some_and(|r| e.is_sneaking(r)))),

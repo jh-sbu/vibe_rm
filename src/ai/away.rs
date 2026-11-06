@@ -212,7 +212,7 @@ impl Engine {
     }
 
     pub(super) fn step_away_at(&mut self, r: FormId, clock: f64, stamp: f64) {
-        if self.mount_driver(r).is_some() {
+        if self.mount_driver(r).is_some() || self.passengers.contains_key(&r) {
             return;
         }
         let Some(tier) = self.processing(r).filter(|&t| t != Processing::Full) else {

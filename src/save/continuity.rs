@@ -105,6 +105,8 @@ pub(crate) struct Continuity {
     pub look_at: HashMap<FormId, (FormId, bool)>,
     pub alias_location_sources: crate::aliases::LocationSources,
     pub rides: HashMap<FormId, crate::ai::mounts::Ride>,
+    pub passengers: HashMap<FormId, crate::ai::vehicles::Passenger>,
+    pub tethers: HashMap<FormId, crate::ai::vehicles::Tether>,
 }
 
 fn optional<'a>(file: &'a SaveFile, tag: &[u8; 4]) -> Result<Option<Reader<'a>>> {
@@ -527,6 +529,8 @@ impl Continuity {
         let (journal_floor, fill_floor) = sequence_floors(e);
         Self {
             rides: e.rides.clone(),
+            passengers: e.passengers.clone(),
+            tethers: e.tethers.clone(),
             alias_location_sources: e.alias_location_sources.clone(),
             look_at: e.scripts.look_at.clone(),
             script_fade: e.imagespace.fade,
@@ -1134,10 +1138,61 @@ impl Continuity {
             w.f32(ride.run);
         }
         file.add(b"MOUN", w.0);
-
+        let mut w = Writer::default();
+        w.len(self.passengers.len());
+        for (actor, p) in sorted(&self.passengers) {
+            w.form(actor);
+            w.form(p.vehicle);
+            w.vec3(p.offset);
+            w.vec3(p.rotation);
+        }
+        file.add(b"VEHI", w.0);
+        let mut w = Writer::default();
+        w.len(self.tethers.len());
+        for (cart, t) in sorted(&self.tethers) {
+            w.form(cart);
+            w.form(t.horse);
+            w.vec3(t.horse_point);
+            w.vec3(t.cart_point);
+        }
+        file.add(b"TETH", w.0);
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
+        if let Some(mut r) = optional(file, b"VEHI")? {
+            let n = r.count(32)?;
+            let mut previous = None;
+            for _ in 0..n {
+                let actor = r.form()?;
+                ordered(&mut previous, actor)?;
+                s.passengers.insert(
+                    actor,
+                    crate::ai::vehicles::Passenger {
+                        vehicle: r.form()?,
+                        offset: r.vec3()?,
+                        rotation: r.vec3()?,
+                    },
+                );
+            }
+            r.finish()?;
+        }
+        if let Some(mut r) = optional(file, b"TETH")? {
+            let n = r.count(32)?;
+            let mut previous = None;
+            for _ in 0..n {
+                let cart = r.form()?;
+                ordered(&mut previous, cart)?;
+                s.tethers.insert(
+                    cart,
+                    crate::ai::vehicles::Tether {
+                        horse: r.form()?,
+                        horse_point: r.vec3()?,
+                        cart_point: r.vec3()?,
+                    },
+                );
+            }
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"MOUN")? {
             let n = r.count(25)?;
             let mut previous = None;
@@ -1773,6 +1828,24 @@ impl Continuity {
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        for (&actor, p) in &self.passengers {
+            nonnull(actor)?;
+            nonnull(p.vehicle)?;
+            if actor == p.vehicle
+                || self.passengers.contains_key(&p.vehicle)
+                || !p.offset.is_finite()
+                || !p.rotation.is_finite()
+            {
+                return Err(Corrupt("invalid vehicle attachment".into()));
+            }
+        }
+        for (&cart, t) in &self.tethers {
+            nonnull(cart)?;
+            nonnull(t.horse)?;
+            if cart == t.horse || !t.horse_point.is_finite() || !t.cart_point.is_finite() {
+                return Err(Corrupt("invalid horse tether".into()));
+            }
+        }
         let mut claimed = std::collections::HashSet::new();
         for (&actor, &ride) in &self.rides {
             if !ride.valid(actor)
@@ -2131,6 +2204,9 @@ impl Continuity {
         e.offscreen_routes.clear();
         e.clear_mount_bodies();
         e.rides = self.rides;
+        e.clear_vehicle_bodies();
+        e.passengers = self.passengers;
+        e.tethers = self.tethers;
         e.alias_location_sources = self.alias_location_sources;
         e.door_transition = false;
         e.scripts.look_at = self.look_at;

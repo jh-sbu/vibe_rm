@@ -33,6 +33,7 @@ mod summons;
 pub(crate) mod targets;
 pub mod threat;
 mod time;
+pub(crate) mod vehicles;
 
 #[cfg(test)]
 mod movement_tests;
@@ -4193,7 +4194,7 @@ impl Engine {
                 if a.exec.combat.is_none() {
                     a.sprinting = false;
                 }
-                if a.mount_driver.is_some() {
+                if a.mount_driver.is_some() || self.passengers.contains_key(&a.ref_id) {
                     // Its rider's package supplies movement; animate the horse below.
                 } else if talking == Some(a.ref_id) {
                     // Seated actors talk from where they are.
@@ -4287,7 +4288,7 @@ impl Engine {
                             clutter::steer(before, a.exec.pos, &clutter, dt, |p| nav.height_at(p));
                     }
                 }
-                if a.mount_driver.is_none() {
+                if a.mount_driver.is_none() && !self.passengers.contains_key(&a.ref_id) {
                     a.collide(&self.physics, &nav, was);
                 }
                 if a.mount_driver.is_none() {
@@ -4325,8 +4326,10 @@ impl Engine {
                     a.exec.pos.z = surface.height - crate::water::FLOAT_DEPTH;
                     a.lift = 0.0;
                 }
-                a.stand_on_ground(&self.physics, dt);
-                a.find_ground(&self.physics);
+                if !self.passengers.contains_key(&a.ref_id) {
+                    a.stand_on_ground(&self.physics, dt);
+                    a.find_ground(&self.physics);
+                }
                 if let Some(pose) = a.animate(dt, &mut world.clips) {
                     inst.pose = pose;
                 }
@@ -4457,5 +4460,6 @@ impl Engine {
             self.moved_refs.insert(r, pos);
         }
         self.sync_riding_bodies();
+        self.sync_passengers();
     }
 }
