@@ -1189,7 +1189,13 @@ impl ActorRuntime {
             .and_then(|i| self.exec.packages.get(i))
             .and_then(|p| p.tree.as_ref())
             .zip(self.exec.run.as_ref().and_then(|r| r.cursor.as_ref()))
-            .is_some_and(|(tree, c)| c.waits_in_place(tree));
+            .is_some_and(|(tree, c)| c.waits_in_place(tree))
+            || self
+                .exec
+                .current
+                .and_then(|i| self.exec.packages.get(i))
+                .zip(self.exec.run.as_ref().and_then(|r| r.cursor.as_ref()))
+                .is_some_and(|(p, c)| c.seated_greeting(p));
         match &mut self.state {
             State::Idle(t) => {
                 self.speed = 0.0;
@@ -3401,6 +3407,27 @@ impl Engine {
             }
             _ => {}
         }
+        // A trigger with an unresolved alias/link has no area. Never substitute
+        // the observer's editor position for a missing trigger reference.
+        let anchor = match loc.kind {
+            LocationKind::NearAlias(alias) => Some(quest.and_then(|q| self.alias_ref(q, alias))?),
+            LocationKind::NearLinkedRef(keyword) => {
+                Some(self.linked_ref(actor, (!keyword.is_null()).then_some(keyword))?)
+            }
+            LocationKind::NearReference(r) => Some(r),
+            LocationKind::NearSelf => Some(actor),
+            _ => None,
+        };
+        if let Some(anchor) = anchor {
+            self.ref_position(anchor)?;
+            if let (Some(a), Some(b)) = (
+                self.ref_current_place(subject),
+                self.ref_current_place(anchor),
+            ) && !schedule::same_space(a, b)
+            {
+                return Some(false);
+            }
+        }
         let (centre, radius) = self.location_target(self.actor_ref(actor)?, loc, quest);
         Some(self.ref_position(subject)?.distance(centre) <= radius)
     }
@@ -3770,7 +3797,11 @@ impl Engine {
                 .as_ref()
                 .zip(pick.and_then(|i| a.exec.packages[i].tree.as_ref()))
                 .is_some_and(|(c, tree)| c.stops_movement(tree));
-            let retain_body = waiting_in_place && (a.in_furniture() || !stops_wait);
+            let retain_body = (waiting_in_place && (a.in_furniture() || !stops_wait))
+                || cursor
+                    .as_ref()
+                    .zip(pick.and_then(|i| a.exec.packages.get(i)))
+                    .is_some_and(|(c, p)| c.seated_greeting(p));
             if pick != a.exec.current {
                 if let Some(p) = pick.map(|pi| &a.exec.packages[pi]) {
                     log::debug!(

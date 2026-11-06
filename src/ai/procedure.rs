@@ -182,6 +182,14 @@ impl Cursor {
                 .any(|p| root.at(p).is_some_and(|n| n.procedure == "Wait"))
     }
 
+    pub(crate) fn seated_greeting(&self, p: &super::package::Package) -> bool {
+        p.greet.is_some_and(|g| g.seated)
+            && p.tree
+                .as_ref()
+                .and_then(|tree| self.body(tree))
+                .is_some_and(|n| n.procedure == "ForceGreet")
+    }
+
     pub(crate) fn stops_movement(&self, root: &Node) -> bool {
         self.active.iter().any(|path| {
             root.at(path).is_some_and(|n| {

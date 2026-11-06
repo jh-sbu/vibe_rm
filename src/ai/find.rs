@@ -201,6 +201,7 @@ impl Engine {
                 changed |= self.run_package_flee(actor);
                 changed |= self.run_follow_to(actor);
                 changed |= self.advance_escort(actor);
+                changed |= self.finish_force_greet(actor);
             }
             if !changed {
                 break;

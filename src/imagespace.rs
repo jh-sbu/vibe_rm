@@ -411,11 +411,20 @@ impl Engine {
 
     pub(crate) fn update_sleep_imagespace(&mut self, dt: f32) {
         self.imagespace.advance_sleep_fade(dt);
+        if self.loading.is_none()
+            && self.pending_load.is_none()
+            && self.imagespace.sleep_fade_amount() == 0.
+        {
+            self.door_transition = false;
+        }
         self.scene.post = self.imagespace.sleep_post();
     }
 
     pub(crate) fn clear_sleep_imagespace(&mut self) {
         self.imagespace.clear_sleep_fade();
+        if self.loading.is_none() && self.pending_load.is_none() {
+            self.door_transition = false;
+        }
         self.scene.post = self.imagespace.sleep_post();
     }
 

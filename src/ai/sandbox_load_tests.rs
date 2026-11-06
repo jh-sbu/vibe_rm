@@ -264,3 +264,41 @@ fn fixed_idle_marker_uses_only_its_authored_marker_and_holds_it() {
     assert_eq!(a.exec.goal.unwrap().furniture, Some(marker));
     assert!(a.seat.as_ref().unwrap().duration.is_infinite());
 }
+
+#[test]
+#[ignore = "requires installed Skyrim SE animation assets and a headless GPU"]
+fn seated_force_greet_preserves_the_seat_but_wait_sitting_gets_up() {
+    for seated in [false, true] {
+        let (mut e, mut a, key) = fixture();
+        plan(&mut e, &mut a);
+        a.state = State::Use(f32::INFINITY);
+        a.leave = false;
+        let mut p = Package::bare(FormId(0xFF000800), Behaviour::ForceGreet);
+        p.schedule.hour = -1;
+        p.schedule.day_of_week = -1;
+        p.greet = Some(package::ForceGreet {
+            topic: package::GreetTopic::Subtype(*b"HELO"),
+            trigger: None,
+            distance: 300.,
+            must_detect: false,
+            sandbox: false,
+            seated,
+        });
+        p.tree = Some(Arc::new(package::Node {
+            kind: "Procedure".into(),
+            procedure: "ForceGreet".into(),
+            flags: 0,
+            conditions: vec![],
+            children: vec![],
+            args: vec![],
+            values: vec![],
+        }));
+        a.exec.packages = vec![p];
+        a.exec.alias_gen = e.scripts.alias_gen;
+        a.exec.next_eval = 0.;
+        let id = a.ref_id;
+        e.cells.get_mut(&key).unwrap().actors.insert(0, a);
+        e.evaluate_packages(0.);
+        assert_eq!(e.actor_ref(id).unwrap().leave, !seated);
+    }
+}

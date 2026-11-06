@@ -193,6 +193,8 @@ pub struct Engine {
     pub(crate) pending_load: Option<crate::loading::LoadRequest>,
     /// The loading state, while a load's screen is up.
     pub(crate) loading: Option<crate::loading::Loading>,
+    /// Load-door transition, including the destination's final world fade-in.
+    pub(crate) door_transition: bool,
     /// The loading screen's scene, while its screen is up.
     pub loading_view: Option<crate::loading_view::LoadingView>,
     /// The load order's loading screens, read on first use.
@@ -619,6 +621,7 @@ impl Engine {
             pending_save_load: None,
             pending_load: None,
             loading: None,
+            door_transition: false,
             loading_view: None,
             load_screen_cache: Default::default(),
             load_screen_rng: std::time::SystemTime::now()

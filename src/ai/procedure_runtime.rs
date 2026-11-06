@@ -241,7 +241,12 @@ impl Engine {
                     .zip(a.exec.run.as_ref().and_then(|r| r.cursor.as_ref()))
                     .is_some_and(|(tree, c)| {
                         c.waits_in_place(tree) && (a.in_furniture() || !c.stops_movement(tree))
-                    });
+                    })
+                    || a.exec
+                        .current
+                        .and_then(|i| a.exec.packages.get(i))
+                        .zip(a.exec.run.as_ref().and_then(|r| r.cursor.as_ref()))
+                        .is_some_and(|(p, c)| c.seated_greeting(p));
                 if !retain_body {
                     a.interrupt(&mut self.furniture);
                 }
@@ -355,6 +360,7 @@ impl Node {
                     | "UseIdleMarker"
                     | "KeepAnEyeOn"
                     | "FollowTo"
+                    | "ForceGreet"
             ))
             && self.children.iter().all(Node::executable)
     }

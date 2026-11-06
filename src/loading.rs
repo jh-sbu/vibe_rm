@@ -106,7 +106,12 @@ impl Engine {
             log::warn!("load {request:?} dropped: {busy:?} comes first");
             return;
         }
+        self.door_transition = request.cause == LoadCause::Door;
         self.pending_load = Some(request);
+    }
+
+    pub(crate) fn player_moving_into_new_space(&self) -> bool {
+        self.door_transition
     }
 
     /// Start the queued load's loading state, if any. Menus close; from the
@@ -428,5 +433,60 @@ mod tests {
         e.complete_load();
         assert_eq!(e.menu, Some(crate::items::Menu::Main));
         assert!(e.messages.boxes[0].text.contains("cannot be loaded"));
+    }
+}
+
+#[cfg(test)]
+mod transition_tests {
+    use super::*;
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn door_transition_covers_pending_loading_and_the_final_world_fade_only() {
+        let (_f, mut e) = crate::ai::exec::tests::fixture();
+        let request = LoadRequest::new(
+            LoadTarget::Interior {
+                cell: crate::ai::exec::tests::CELL,
+                spawn: None,
+            },
+            LoadCause::Door,
+        );
+        assert!(!e.player_moving_into_new_space());
+        e.request_load(request);
+        let condition = crate::condition::Condition {
+            func: 358,
+            value: 1.,
+            ..Default::default()
+        };
+        assert!(crate::condition::evaluate_one(
+            &e,
+            &condition,
+            Default::default()
+        ));
+        e.apply_pending_load();
+        assert!(e.player_moving_into_new_space());
+        // Complete the already loaded destination's screen without depending on I/O timing.
+        let l = e.loading.as_mut().unwrap();
+        l.phase = Phase::ScreenOut;
+        l.t = SCREEN_OUT_SECONDS;
+        l.shown = MIN_SCREEN_SECONDS;
+        e.update_loading(0.);
+        assert!(!e.is_loading());
+        assert!(e.player_moving_into_new_space());
+        e.update_sleep_imagespace(crate::imagespace::SLEEP_FADE_SECONDS + 0.1);
+        assert!(!e.player_moving_into_new_space());
+        e.imagespace.start_sleep_fade_out();
+        e.update_sleep_imagespace(0.1);
+        assert!(
+            !e.player_moving_into_new_space(),
+            "waiting/sleeping fade does not revive an old door transition"
+        );
+        e.request_load(LoadRequest::new(
+            LoadTarget::Interior {
+                cell: crate::ai::exec::tests::CELL,
+                spawn: None,
+            },
+            LoadCause::FastTravel,
+        ));
+        assert!(!e.player_moving_into_new_space());
     }
 }

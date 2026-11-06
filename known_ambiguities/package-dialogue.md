@@ -58,3 +58,38 @@ An SE probe should compare cancellation with each Finish Speaking value,
 multi-response INFO fragments, unload/reload, forced subtitles with general
 subtitles disabled, and DialogueActivate's completion relative to its ADIA
 scene. Queued in ROADMAP Test plugins.
+
+## Force-greet leftovers (2026-11-06)
+
+Vanilla ForceGreet 0003C1C4 and ForceGreetWaitSitting 000B7869 gate their
+approach on IsPlayerMovingIntoNewSpace == 0; ForceGreet also checks player
+keyword RidingInCarriage 000DD631. ForceGreetFromSitting 0009C220 has a Sit
+waiting branch and a ForceGreet branch without an approach Travel. WaitSitting
+instead has Travel then ForceGreet, with Sit as the fallback branch. These
+are game-asset observations from pack-tree. The interpreter now runs those
+branches and SayToPlayer's existing transition conditions can pass.
+
+We read IsPlayerMovingIntoNewSpace as a load-door transition: true as soon as
+a door load request is accepted, throughout loading and until the destination's
+world fade-in is finished. Other load causes and wait/sleep fades do not set it;
+it is transient and is cleared on save load. The exact SE timing remains
+unverified. Force-greet selection also checks this state directly so a due
+check cannot race ahead of a branch reevaluation.
+
+The conversation opens only at the active ForceGreet leaf; WaitSitting exits
+its furniture first, while FromSitting retains it. The leaf records when the
+conversation starts and completes after it closes. Native saves already close
+player conversations; a saved started leaf therefore completes on return,
+consistent with the existing scene force-greet completion policy. Legacy
+collapsed force-greet packages retain their old handling.
+
+Alias/link trigger areas use GetWithinPackageLocation resolution. Missing
+aliases/links have no area, rather than borrowing the NPC's editor position;
+anchors in another space cannot pass a distance-only coincidence. The carriage
+keyword check is covered with synthetic player KWDA data; step 15 supplies it
+for actual passengers.
+
+SE probes: compare a nearby greeter during both sides of a load door's fade,
+unfilled/refilled trigger aliases, sitting wait versus from-sitting greets,
+and a player riding in a carriage. Record conversation end and save/reload
+behavior to check the chosen completion timing.

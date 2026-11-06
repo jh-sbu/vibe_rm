@@ -293,6 +293,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         543 => b(e.scripts.quests.get(&p1).is_some_and(|q| q.completed)), // GetQuestCompleted
         72 => b(subj_base == Some(p1) || subject == Some(p1)), // GetIsID
         136 => b(subject == Some(p1)),            // GetIsReference
+        358 => b(e.player_moving_into_new_space()), // IsPlayerMovingIntoNewSpace
         // IsHostileToActor: either fights the other. With no actor (a
         // magic effect's: cloaks' damage), the effect's caster.
         719 => {

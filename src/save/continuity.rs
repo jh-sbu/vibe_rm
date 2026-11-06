@@ -2044,6 +2044,7 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.door_transition = false;
         e.scripts.look_at = self.look_at;
         e.imagespace.fade = self.script_fade;
         e.clear_image_shakes_for_load();

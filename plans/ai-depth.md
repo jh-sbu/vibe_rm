@@ -8,7 +8,8 @@ Steps 3–5 are complete.
 Step 6 is complete, including acquisition, fleeing and UseWeapon preparation trees.
 Step 7 implements fixed idle markers, observation, FollowTo, group spacing and
 crouched final travel legs. Step 8 adds escort lists/initial legs and preferred
-paths. Steps 9–16 are not implemented.
+paths. Step 9 implements force-greet transition, sitting and alias-trigger
+leftovers. Steps 10–16 are not implemented.
 
 This plan covers ROADMAP Next item 4 (AI depth): everything in it that can be
 built today from public sources, the game's data and the readings we already
@@ -528,6 +529,22 @@ continuity, away waiting/resumption and optional input-name binding. Research:
 - Riding inputs wait for step 14.
 
 ### 9. Force greet leftovers
+
+**Status: done** (2026-11-06). IsPlayerMovingIntoNewSpace covers accepted door
+loads through the final world fade-in; other loads/waiting fades do not set it.
+ForceGreet, FromSitting and WaitSitting now run their authored trees. Conversation
+opening waits for the active ForceGreet leaf and for WaitSitting to get up;
+FromSitting retains its seat. The leaf completes when its conversation closes.
+SayToPlayer’s transition condition now evaluates normally. Alias/link triggers
+share GetWithinPackageLocation, fail when unfilled and check the anchor’s space.
+RidingInCarriage’s existing keyword condition has a player KWDA regression;
+step 15 will assign it to passengers. Preferred approach Travel uses step 8.
+Choices/probes: `known_ambiguities/package-dialogue.md`.
+
+Validated with ignored fixtures: 234 AI tests, load/fade transition tests,
+all condition, scene and native-save regressions. Fixtures cover opening and
+completion timing, alias triggers, carriage keywords, the vanilla wait-sitting
+tree and the actual vanilla furniture hold/exit difference.
 
 - `IsPlayerMovingIntoNewSpace` (358) is unsupported, so it fails, and it
   gates ForceGreet's, ForceGreetFromSitting's and SayToPlayer's branches.

@@ -35,6 +35,10 @@ fn say(finish: bool) -> Node {
 }
 
 fn engine(n: Node) -> Engine {
+    engine_with_player_keyword(n, false)
+}
+
+fn engine_with_player_keyword(n: Node, riding: bool) -> Engine {
     use esp::writer::{Node as RecordNode, RecordBuilder, write_plugin};
     let (_f, mut e) = fixture();
     let dir = std::env::temp_dir().join(format!(
@@ -58,7 +62,21 @@ fn engine(n: Node) -> Engine {
     let mut at = [0; 24];
     at[..4].copy_from_slice(&3000f32.to_le_bytes());
     let groups = vec![
-        RecordNode::top(b"NPC_", vec![RecordBuilder::new(b"NPC_", BASE)]),
+        RecordNode::top(
+            b"NPC_",
+            vec![
+                RecordBuilder::new(b"NPC_", BASE),
+                if riding {
+                    RecordBuilder::new(b"NPC_", FormId(7)).field(b"KWDA", &0xDD631u32.to_le_bytes())
+                } else {
+                    RecordBuilder::new(b"NPC_", FormId(7))
+                },
+            ],
+        ),
+        RecordNode::top(
+            b"KYWD",
+            vec![RecordBuilder::new(b"KYWD", FormId(0xDD631)).zstring(b"EDID", "RidingInCarriage")],
+        ),
         RecordNode::Group {
             label: *b"CELL",
             group_type: 0,
@@ -304,4 +322,122 @@ fn restored_package_speech_keeps_the_selected_response_and_rejects_invalid_respo
     e.update_package_dialogue();
     e.advance_loaded_trees(0.);
     assert!(e.actor_ref(ACTOR).unwrap().exec.run_completed());
+}
+
+fn force_greet_engine() -> Engine {
+    let mut e = engine(leaf(
+        "ForceGreet",
+        vec![
+            Input::Topic(GreetTopic::Topic(TOPIC)),
+            Input::Location(Location {
+                kind: LocationKind::NearSelf,
+                radius: 0.,
+            }),
+            Input::Location(Location {
+                kind: LocationKind::NearSelf,
+                radius: 0.,
+            }),
+        ],
+    ));
+    let p = &mut e.actor_mut(ACTOR).unwrap().exec.packages[0];
+    p.behaviour = Behaviour::ForceGreet;
+    p.greet = Some(super::super::package::ForceGreet {
+        topic: GreetTopic::Topic(TOPIC),
+        trigger: Some(Location {
+            kind: LocationKind::NearSelf,
+            radius: 1000.,
+        }),
+        distance: 300.,
+        must_detect: false,
+        sandbox: false,
+        seated: false,
+    });
+    e
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic dialogue only"]
+fn force_greet_waits_for_transition_and_finishes_its_leaf_after_the_conversation() {
+    let mut e = force_greet_engine();
+    e.door_transition = true;
+    e.update_force_greets(0.);
+    e.update_force_greets(1.);
+    assert!(e.conversation.is_none());
+    e.door_transition = false;
+    e.actor_mut(ACTOR).unwrap().exec.greet_check = 0.;
+    e.update_force_greets(0.);
+    e.update_force_greets(0.);
+    assert_eq!(e.conversation.as_ref().unwrap().npc_ref, ACTOR);
+    assert!(!e.finish_force_greet(ACTOR));
+    e.conversation = None;
+    e.run_loaded_finds();
+    assert_eq!(e.execution(ACTOR).unwrap().done_once, Some(PACKAGE));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic dialogue only"]
+fn force_greet_alias_trigger_uses_the_alias_location_and_fails_when_unfilled() {
+    let mut e = force_greet_engine();
+    let p = &mut e.actor_mut(ACTOR).unwrap().exec.packages[0];
+    p.quest = Some(QUEST);
+    p.greet.as_mut().unwrap().trigger = Some(Location {
+        kind: LocationKind::NearAlias(3),
+        radius: 200.,
+    });
+    e.update_force_greets(0.);
+    assert!(!e.actor_ref(ACTOR).unwrap().exec.greeting);
+    e.scripts
+        .quests
+        .entry(QUEST)
+        .or_default()
+        .aliases
+        .insert(3, MARKER);
+    e.actor_mut(ACTOR).unwrap().exec.greet_check = 0.;
+    e.update_force_greets(0.);
+    assert!(!e.actor_ref(ACTOR).unwrap().exec.greeting);
+    e.player.position.x = 3000.;
+    e.actor_mut(ACTOR).unwrap().exec.pos.x = 3000.;
+    e.actor_mut(ACTOR).unwrap().exec.greet_check = 0.;
+    e.update_force_greets(0.);
+    e.update_force_greets(0.);
+    assert!(e.conversation.is_some());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn force_greet_carriage_gate_reads_the_player_keyword() {
+    for riding in [false, true] {
+        let e = engine_with_player_keyword(leaf("Wait", vec![Input::Float(0.)]), riding);
+        let c = crate::condition::Condition {
+            func: 560,
+            p1: 0xDD631,
+            value: 0.,
+            run_on: 2,
+            reference: PLAYER_REF,
+            ..Default::default()
+        };
+        assert_eq!(
+            crate::condition::evaluate_one(&e, &c, Default::default()),
+            !riding
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires installed Skyrim SE masters and a headless GPU"]
+fn vanilla_force_greet_wait_sitting_and_say_to_player_trees_are_enabled() {
+    let data = vfs::locate_data_dir().unwrap();
+    let names: Vec<_> = esp::BASE_MASTERS.iter().map(|s| s.to_string()).collect();
+    let e = crate::stats::action_tests::headless_engine_plugins(&data, &names);
+    for id in [0x3C1C4, 0x9C220, 0xB7869] {
+        let p = crate::ai::package::parse(&e.lo, FormId(id)).unwrap();
+        assert!(p.tree.as_ref().unwrap().executable());
+    }
+    let p = crate::ai::package::parse(&e.lo, FormId(0xB7869)).unwrap();
+    let tree = p.tree.as_ref().unwrap();
+    assert_eq!(tree.children.last().unwrap().procedure, "Sit");
+    assert!(matches!(
+        tree.children.last().unwrap().values.first(),
+        Some(Input::Target(_))
+    ));
 }

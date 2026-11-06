@@ -100,6 +100,15 @@ impl Engine {
             if self.scenes.packages.contains_key(&r) {
                 self.scenes.force_greeted.insert(r);
             }
+            if let Some((_, path, _, _)) = self.active_procedure(r, "ForceGreet")
+                && let Some(s) = self
+                    .execution_mut(r)
+                    .and_then(|x| x.run.as_mut())
+                    .and_then(|r| r.cursor.as_mut())
+                    .and_then(|c| c.states.get_mut(&path))
+            {
+                s.spoken = true;
+            }
             self.open_conversation(r, Some(greeting));
         }
     }
@@ -107,6 +116,7 @@ impl Engine {
     /// Whether `r` should greet the player now: the line it would open with.
     fn force_greet_due(&mut self, r: FormId, g: &ForceGreet) -> Option<(Topic, Info)> {
         if self.conversation.is_some()
+            || self.player_moving_into_new_space()
             || self.is_package_speaking(r)
             || self.menu.is_some()
             || self.player_dead()
@@ -116,6 +126,17 @@ impl Engine {
             return None;
         }
         let a = self.actor_ref(r)?;
+        if !g.seated && a.in_furniture() {
+            return None;
+        }
+        if a.exec
+            .current
+            .and_then(|i| a.exec.packages.get(i))
+            .is_some_and(|p| p.tree.as_ref().is_some_and(|tree| tree.executable()))
+            && self.active_procedure(r, "ForceGreet").is_none()
+        {
+            return None;
+        }
         if a.dead
             || a.exec.bleeding.is_some()
             || a.exec.combat.is_some()
@@ -130,15 +151,37 @@ impl Engine {
             .current
             .and_then(|i| a.exec.packages.get(i))
             .and_then(|p| p.quest);
-        let (centre, radius) = self.location_target(a, g.trigger.unwrap_or(DEFAULT_TRIGGER), quest);
-        let player = self.player_feet();
-        if player.distance(centre) > radius {
+        if self.within_package_location(PLAYER_REF, r, g.trigger.unwrap_or(DEFAULT_TRIGGER), quest)
+            != Some(true)
+        {
             return None;
         }
         if g.must_detect && !self.detects(r, PLAYER_REF) {
             return None;
         }
         self.greet_line(r, g.topic)
+    }
+
+    pub(crate) fn finish_force_greet(&mut self, actor: FormId) -> bool {
+        let Some((_, path, _, c)) = self.active_procedure(actor, "ForceGreet") else {
+            return false;
+        };
+        if self
+            .conversation
+            .as_ref()
+            .is_some_and(|c| c.npc_ref == actor)
+            || !c.states.get(&path).is_some_and(|s| s.spoken)
+        {
+            return false;
+        }
+        if let Some(x) = self.execution_mut(actor) {
+            if let Some(c) = x.run.as_mut().and_then(|r| r.cursor.as_mut()) {
+                c.finish(&path);
+            }
+            x.next_eval = 0.;
+            x.settled = false;
+        }
+        true
     }
 
     /// The topic and line a force greet opens with: the package's topic, or the
