@@ -1102,7 +1102,7 @@ impl ActorRuntime {
         if c.repath <= 0.0 || (c.next >= c.path.len() && !still_unreachable) {
             let (path, reached) = w
                 .nav
-                .path_towards(pos, target)
+                .path_towards_for(pos, target, &self.exec.door_access)
                 .unwrap_or_else(|| (vec![target], true));
             c.path = path;
             c.next = 0;

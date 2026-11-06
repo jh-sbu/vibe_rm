@@ -19,6 +19,8 @@ const ARRIVED_SLACK: f32 = 150.0;
 /// one that unloaded keeps it in `Engine::away` until it loads again.
 #[derive(Debug, Clone, Default)]
 pub struct ActorExec {
+    /// Transient permission view of loaded navigation portals; rebuilt per frame.
+    pub(crate) door_access: super::nav::DoorAccess,
     pub packages: Vec<Package>,
     pub current: Option<usize>,
     pub goal: Option<Goal>,

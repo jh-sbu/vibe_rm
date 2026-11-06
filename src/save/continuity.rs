@@ -2087,6 +2087,7 @@ impl Continuity {
         Ok(())
     }
     pub fn apply(self, e: &mut Engine) {
+        e.offscreen_routes.clear();
         e.alias_location_sources = self.alias_location_sources;
         e.door_transition = false;
         e.scripts.look_at = self.look_at;

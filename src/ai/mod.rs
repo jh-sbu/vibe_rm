@@ -6,6 +6,7 @@ pub mod archery;
 pub mod away;
 pub(crate) mod away_practice;
 pub mod casters;
+mod clutter;
 pub mod combat;
 mod equipment;
 mod escort;
@@ -19,6 +20,7 @@ mod influence;
 pub mod magic_practice;
 pub mod nav;
 mod observation;
+pub(crate) mod offscreen;
 pub mod package;
 pub mod practice;
 pub(crate) mod procedure;
@@ -1639,8 +1641,12 @@ impl ActorRuntime {
             }
         };
         let path = target.and_then(|t| {
-            w.nav
-                .find_path_with(self.exec.pos, t, self.exec.path_policy())
+            w.nav.find_path_for(
+                self.exec.pos,
+                t,
+                self.exec.path_policy(),
+                &self.exec.door_access,
+            )
         });
         match path {
             Some(path) if !path.is_empty() => {
@@ -3867,6 +3873,7 @@ impl Engine {
 
     /// Run AI and animation for every loaded actor.
     pub(crate) fn update_actors(&mut self, dt: f32) {
+        self.refresh_actor_door_access();
         self.update_swimming_states();
         self.update_force_greets(dt);
         self.advance_loaded_trees(dt);
@@ -4041,6 +4048,14 @@ impl Engine {
         };
         let mut moved = Vec::new();
         let mut gone = Vec::new();
+        let clutter: Vec<_> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.loose)
+            .filter_map(|o| self.physics.dynamic_bounds(o.ref_id))
+            .filter(|(lo, hi, mass)| *mass >= 0.2 && hi.z - lo.z >= 12.)
+            .map(|(lo, hi, _)| (lo, hi))
+            .collect();
         let mut held = Vec::new();
         let mut equip = Vec::new();
         let mut sounds: Vec<(String, Vec3)> = Vec::new();
@@ -4224,6 +4239,8 @@ impl Engine {
                     let before = a.exec.pos;
                     if a.step(dt, &mut world) && a.is_walking() {
                         a.keep_clear(&bodies, &nav, dt, before);
+                        a.exec.pos =
+                            clutter::steer(before, a.exec.pos, &clutter, dt, |p| nav.height_at(p));
                     }
                 }
                 a.collide(&self.physics, &nav, was);
@@ -4378,6 +4395,11 @@ impl Engine {
         self.update_torches();
         self.update_worn();
         for r in gone {
+            if let Some(door) = self.actor_ref(r).and_then(|a| a.exiting)
+                && self.npc_may_open(r, door)
+            {
+                self.set_locked(door, false);
+            }
             self.despawn_actor(r);
         }
         for (r, pos, capsule) in moved {

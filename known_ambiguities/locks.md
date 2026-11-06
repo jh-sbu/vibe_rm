@@ -262,3 +262,11 @@ policy; exact SE roll-level behavior is not publicly established. Compare a
 low/high-level recipient with a two-level nested list, a failed quest start,
 clear/refill, replacing the recipient and save/reload. Direct-grant permanence
 remains subject to the earlier English/German documentation ambiguity above.
+
+## Walking through locked portals (AI depth step 12)
+
+Loaded and away navmesh routing now apply `npc_may_open` to both door halves:
+keys and ownership permit unlocking, other actors route around or stay put.
+Explicit package jumps retain the observed bypass described above. This is the
+plan's chosen walking access policy; the exact original-game eligibility is
+still an SE probe. See `offscreen-navigation.md` for path/obstacle choices.

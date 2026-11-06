@@ -1874,7 +1874,9 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
     markers, observation/group spacing and crouched travel (`package-trees.md`);
     escort rosters/initial legs/preferred paths (`escort.md`); force-greet fade,
     sitting and alias/carriage gates (`package-dialogue.md`); reference-location
-    aliases and leveled alias grants (`alias-fills.md`, `locks.md`).
+    aliases and leveled alias grants (`alias-fills.md`, `locks.md`); follower
+    travel/death/AllyKilled (`followers.md`) and bent off-screen routes, locked
+    doors and clutter steering (`offscreen-navigation.md`).
   - `test-mod autotest23` isn't written yet. It should cover autotest22's
     follow-up list ("Faults and open items").
   - Built and waiting for the user's run: `loadscreens`
@@ -1998,9 +2000,8 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      (autotest15). Saves keep every execution, loaded actors' too
      (`AEXC`, step 8). Calibrated against autotest13 to autotest16, step 9).
    - Processing policies: detailed updates nearby and coarse advancement away
-     (done, step 6), still to add: travel walked along the navmesh and
-     through load doors rather than in a straight line and put through
-     (`plans/ai-depth.md` step 12) (execution state, travel progress and
+     (done, step 6); NAVI/NAVM travel through load doors/worldspaces,
+     locked portals and clutter steering are done in `plans/ai-depth.md` step 12 (execution state, travel progress and
      timestamps are saved: step 8).
      CommonLibSSE exposes High, MiddleHigh, MiddleLow and Low processing levels,
      but their exact eligibility, update cadence and subsystem behavior need
@@ -2023,7 +2024,7 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
    - **Unblocked work: `plans/ai-depth.md`** (in progress 2026-11-05; step 0,
      the all-PACK census tool, is done; step 1 has bound trees, saved cursors and
      initial loaded/away execution. Steps 2–10 are now implemented (2026-11-06);
-     steps 11–16 remain, with integration tracked there). It plans
+     steps 11–12 are now complete; steps 13–16 remain, with integration tracked there). It plans
      these in steps: a procedure-tree interpreter (`Sequence` /
      `Simultaneous` / `Random` run as written; Wait, Lock / UnlockDoors,
      multi-location stops' per-stop unlocking, "in cell" stops elsewhere and

@@ -465,6 +465,19 @@ impl Physics {
             .any(|&h| self.world.bodies.get(h).is_some_and(|b| b.is_dynamic()))
     }
 
+    /// Combined bounds and mass of an owner's dynamic colliders.
+    pub(crate) fn dynamic_bounds(&self, owner: esp::FormId) -> Option<(Vec3, Vec3, f32)> {
+        self.owner_bodies(owner)
+            .iter()
+            .filter_map(|&h| self.world.bodies.get(h))
+            .filter(|b| b.is_dynamic())
+            .filter_map(|b| {
+                self.colliders_bounds(b.colliders())
+                    .map(|(lo, hi)| (lo, hi, b.mass()))
+            })
+            .reduce(|a, b| (a.0.min(b.0), a.1.max(b.1), a.2 + b.2))
+    }
+
     /// A body's mass (kg) and speed (game units / s).
     pub fn body_mass_speed(&self, h: RigidBodyHandle) -> (f32, f32) {
         self.world

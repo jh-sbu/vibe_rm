@@ -25,10 +25,17 @@ pub(crate) struct Policy {
     pub only: bool,
 }
 
+#[derive(Debug, Clone, Default)]
+pub(crate) struct DoorAccess {
+    pub blocked: HashSet<FormId>,
+    pub openable: HashSet<FormId>,
+}
+
 struct Mesh {
     verts: Vec<Vec3>,
     tris: Vec<NavTriangle>,
     links: Vec<esp::navmesh::EdgeLink>,
+    doors: Vec<esp::navmesh::DoorTriangle>,
     min: Vec2,
     max: Vec2,
     cols: usize,
@@ -54,6 +61,7 @@ impl Mesh {
             verts,
             tris: m.triangles,
             links: m.edge_links,
+            doors: m.doors,
             min,
             max,
             cols,
@@ -170,6 +178,41 @@ impl PartialOrd for Open {
 }
 
 impl NavWorld {
+    pub(crate) fn door_references(&self) -> Vec<FormId> {
+        self.meshes
+            .values()
+            .flat_map(|m| m.doors.iter().map(|d| d.door))
+            .chain(self.obstacles.keys().copied())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
+    fn blocked_for(&self, n: Node, access: &DoorAccess) -> bool {
+        self.mesh(n)
+            .doors
+            .iter()
+            .any(|d| d.triangle == n.tri && access.blocked.contains(&d.door))
+            || (self.blocked.contains(&n)
+                && !self
+                    .obstacles
+                    .iter()
+                    .filter(|(_, nodes)| nodes.contains(&n))
+                    .all(|(owner, _)| access.openable.contains(owner)))
+    }
+    pub(crate) fn mesh_at_point(&self, pos: Vec3) -> Option<FormId> {
+        self.locate(pos).map(|(n, _)| n.mesh)
+    }
+
+    pub(crate) fn point_on_mesh(&self, mesh: FormId, near: Vec3) -> Option<Vec3> {
+        let m = self.meshes.get(&mesh)?;
+        (0..m.tris.len())
+            .map(|i| m.closest_in(i, near.truncate()))
+            .min_by(|a, b| {
+                a.distance_squared(near)
+                    .total_cmp(&b.distance_squared(near))
+            })
+    }
     #[cfg(test)]
     pub(crate) fn insert_fixture(&mut self, id: FormId, mesh: NavMesh) {
         self.meshes.insert(id, Mesh::new(mesh).unwrap());
@@ -357,7 +400,7 @@ impl NavWorld {
 
     /// Neighbours of `n` with the shared edge (as two endpoints of `n`'s
     /// triangle), but those an obstacle blocks.
-    fn neighbours(&self, n: Node, out: &mut Vec<(Node, Vec3, Vec3)>) {
+    fn neighbours(&self, n: Node, out: &mut Vec<(Node, Vec3, Vec3)>, access: &DoorAccess) {
         out.clear();
         let m = self.mesh(n);
         let t = &m.tris[n.tri as usize];
@@ -389,7 +432,7 @@ impl NavWorld {
                 }
             }
         }
-        out.retain(|(nb, ..)| !self.blocked.contains(nb));
+        out.retain(|(nb, ..)| !self.blocked_for(*nb, access));
     }
 
     /// Find a path from `from` to `to`, returning waypoints (excluding the start).
@@ -398,14 +441,34 @@ impl NavWorld {
     }
 
     pub(crate) fn find_path_with(&self, from: Vec3, to: Vec3, policy: Policy) -> Option<Vec<Vec3>> {
-        self.route(from, to, true, policy).map(|(path, _)| path)
+        self.find_path_for(from, to, policy, &DoorAccess::default())
+    }
+
+    pub(crate) fn find_path_for(
+        &self,
+        from: Vec3,
+        to: Vec3,
+        policy: Policy,
+        access: &DoorAccess,
+    ) -> Option<Vec<Vec3>> {
+        self.route(from, to, true, policy, access)
+            .map(|(path, _)| path)
     }
 
     /// A path to `to`, or where it can't be reached (off the navmesh, on a part
     /// the actor can't get to), to the reachable point nearest it; and whether
     /// it reaches `to`. None when `from` is off the navmesh.
     pub fn path_towards(&self, from: Vec3, to: Vec3) -> Option<(Vec<Vec3>, bool)> {
-        self.route(from, to, false, Policy::default())
+        self.path_towards_for(from, to, &DoorAccess::default())
+    }
+
+    pub(crate) fn path_towards_for(
+        &self,
+        from: Vec3,
+        to: Vec3,
+        access: &DoorAccess,
+    ) -> Option<(Vec<Vec3>, bool)> {
+        self.route(from, to, false, Policy::default(), access)
     }
 
     fn route(
@@ -414,9 +477,13 @@ impl NavWorld {
         to: Vec3,
         exact: bool,
         policy: Policy,
+        access: &DoorAccess,
     ) -> Option<(Vec<Vec3>, bool)> {
         let (start, _) = self.locate(from)?;
         let goal = self.locate(to);
+        if exact && goal.is_some_and(|(n, _)| self.blocked_for(n, access)) {
+            return None;
+        }
         if policy.only
             && goal.is_some_and(|(n, _)| {
                 self.mesh(n).tris[n.tri as usize].flags & NavTriangle::PREFERRED == 0
@@ -477,7 +544,7 @@ impl NavWorld {
             }
             let g = cost[&node];
             let here = entry[&node];
-            self.neighbours(node, &mut buf);
+            self.neighbours(node, &mut buf, access);
             for &(nb, a, b) in &buf {
                 let preferred =
                     self.mesh(nb).tris[nb.tri as usize].flags & NavTriangle::PREFERRED != 0;
@@ -748,6 +815,52 @@ mod tests {
         // Off the navmesh: as it is.
         let off = Vec3::new(150.0, 500.0, 30.0);
         assert_eq!(w.floor_below(off), off);
+    }
+
+    #[test]
+    fn locked_portal_permissions_and_overlapping_obstacles_are_actor_specific() {
+        let mut w = corridor(4);
+        let door = FormId(30);
+        let node = Node {
+            mesh: FormId(2),
+            tri: 3,
+        };
+        w.meshes
+            .get_mut(&node.mesh)
+            .unwrap()
+            .doors
+            .push(esp::navmesh::DoorTriangle {
+                triangle: node.tri,
+                door,
+            });
+        let from = Vec3::new(20., 50., 0.);
+        let to = Vec3::new(380., 50., 0.);
+        let mut access = DoorAccess::default();
+        access.blocked.insert(door);
+        assert!(
+            w.find_path_for(from, to, Policy::default(), &access)
+                .is_none()
+        );
+        access.blocked.clear();
+        assert!(
+            w.find_path_for(from, to, Policy::default(), &access)
+                .is_some()
+        );
+        w.set_obstacle(door, vec![node]);
+        assert!(
+            w.find_path_for(from, to, Policy::default(), &access)
+                .is_none()
+        );
+        access.openable.insert(door);
+        assert!(
+            w.find_path_for(from, to, Policy::default(), &access)
+                .is_some()
+        );
+        w.set_obstacle(FormId(31), vec![node]);
+        assert!(
+            w.find_path_for(from, to, Policy::default(), &access)
+                .is_none()
+        );
     }
 
     #[test]

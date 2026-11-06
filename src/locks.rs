@@ -12,6 +12,66 @@ use crate::world::records::{self, Lock};
 mod tests;
 
 impl Engine {
+    /// Refresh each loaded actor's view of locked navmesh portals. Geometry is
+    /// shared, but a key or ownership can make one actor's route passable.
+    pub(crate) fn refresh_actor_door_access(&mut self) {
+        let mut doors = self.nav.door_references();
+        doors.extend(
+            self.cells
+                .values()
+                .flat_map(|rt| rt.doors.iter().map(|d| d.ref_id)),
+        );
+        doors.sort();
+        doors.dedup();
+        let animated: std::collections::HashSet<_> = self
+            .cells
+            .values()
+            .flat_map(|rt| rt.animated.iter().filter(|o| o.door).map(|o| o.ref_id))
+            .collect();
+        let mut actors: Vec<_> = self.actor_cells.keys().copied().collect();
+        actors.sort();
+        let mut activate = Vec::new();
+        for actor in actors {
+            self.inventory_mut(actor);
+            let mut access = crate::ai::nav::DoorAccess::default();
+            for &door in &doors {
+                if self.is_disabled(door) {
+                    continue;
+                }
+                let partner = self
+                    .reference_of(door)
+                    .and_then(|r| r.teleport)
+                    .map(|(r, _, _)| r);
+                let permitted = self.npc_may_open(actor, door)
+                    && partner.is_none_or(|r| self.npc_may_open(actor, r));
+                if !permitted {
+                    access.blocked.insert(door);
+                } else if animated.contains(&door) || self.is_locked(door) {
+                    access.openable.insert(door);
+                    if !animated.contains(&door)
+                        && partner.is_none()
+                        && self.is_locked(door)
+                        && self
+                            .actor_ref(actor)
+                            .is_some_and(|a| !a.dead && a.is_walking())
+                        && self
+                            .ref_position(actor)
+                            .zip(self.ref_position(door))
+                            .is_some_and(|(a, b)| a.distance(b) < 110.)
+                    {
+                        activate.push((actor, door));
+                    }
+                }
+            }
+            if let Some(x) = self.execution_mut(actor) {
+                x.door_access = access;
+            }
+        }
+        for (actor, door) in activate {
+            self.set_locked(door, false);
+            self.activate_ref(door, Some(actor), false);
+        }
+    }
     /// Papyrus Lock's owner mode also changes access to the adjoining interior.
     pub fn lock_reference(&mut self, r: FormId, locked: bool, as_owner: bool) {
         self.set_locked(r, locked);
@@ -132,9 +192,9 @@ impl Engine {
     }
 
     /// Whether an actor gets past a locked door or container: with its key, or when
-    /// it (or one of its factions) owns it (`XOWN`, else the cell's owner). Only
-    /// animated doors ask: packages take actors through locked load doors that
-    /// aren't theirs (`known_ambiguities/locks.md`).
+    /// it (or one of its factions) owns it (`XOWN`, else the cell's owner).
+    /// Animated doors and navmesh portals ask before planning a route; explicit
+    /// package jumps retain their observed travel rules.
     pub fn npc_may_open(&self, achr: FormId, r: FormId) -> bool {
         if !self.is_locked(r) {
             return true;

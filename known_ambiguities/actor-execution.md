@@ -175,14 +175,14 @@ hour passed), a change of package logs the usual events, and its package
 moves it:
 
 - **Travel in the same space walks** (autotest16), from the cells just
-  left at 80 a second in a straight line, elsewhere in strides: one every
+  left at 80 a second, elsewhere in strides: one every
   2.6 s, as far as 84 a second takes it in the time since the last (time
   passed in a menu included), to the end point on the line to its target,
   40 short (or 10 inside a wider radius: `unloaded_arrival`, as for actors
-  new to a save). Its run ends as it arrives. Not walked along the navmesh
-  and not through doors; height doesn't matter, and so nothing stays put
-  for want of a path (autotest13's and autotest14's that stayed had, we
-  infer, none).
+  new to a save). Its run ends as it arrives. Step 12 now refines a merged
+  NAVI route through NAVM triangles and linked load doors. Without a route it
+  stays put, consistent with the inference from autotest13/14; explicit asked
+  jumps keep their measured rules. See `offscreen-navigation.md`.
 - **Asked to evaluate its packages** (`EvaluatePackage`, or a scene giving
   it a package) with its target within 4,200 in 3D, outside the cells just
   left, it is put at the end point at once instead, `OnPackageEnd` 2.5 s

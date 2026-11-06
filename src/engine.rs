@@ -359,6 +359,8 @@ pub struct Engine {
     lod: Option<crate::world::lod::Lod>,
     tree_lod: Option<crate::world::tree_lod::Trees>,
     pub nav: crate::ai::nav::NavWorld,
+    pub(crate) offscreen: std::cell::OnceCell<crate::ai::offscreen::Network>,
+    pub(crate) offscreen_routes: HashMap<FormId, crate::ai::offscreen::Journey>,
     pub furniture: crate::ai::furniture::FurnitureWorld,
     /// Patrol routes by start reference.
     pub(crate) patrol_paths: HashMap<FormId, std::sync::Arc<Vec<crate::ai::PatrolPoint>>>,
@@ -676,6 +678,8 @@ impl Engine {
             lod: None,
             tree_lod: None,
             nav: Default::default(),
+            offscreen: Default::default(),
+            offscreen_routes: Default::default(),
             furniture: Default::default(),
             patrol_paths: Default::default(),
             moved_refs: HashMap::new(),

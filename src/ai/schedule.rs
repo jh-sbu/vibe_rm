@@ -653,10 +653,21 @@ impl Engine {
 
     /// The load door nearest `from` (in any loaded cell) leading to `target`, or failing
     /// that to `target`'s worldspace. Returns the door and the spot in front of it.
-    pub(super) fn door_towards(&self, from: Vec3, target: Place) -> Option<(FormId, Vec3)> {
+    pub(super) fn door_towards(
+        &self,
+        actor: FormId,
+        from: Vec3,
+        target: Place,
+    ) -> Option<(FormId, Vec3)> {
         let mut best: Option<(bool, f32, FormId, Vec3)> = None;
         for rt in self.cells.values() {
             for d in rt.doors.iter().filter(|d| !self.is_disabled(d.ref_id)) {
+                if !self.npc_may_open(actor, d.ref_id)
+                    || d.destination
+                        .is_some_and(|(r, _, _)| !self.npc_may_open(actor, r))
+                {
+                    continue;
+                }
                 let Some(p) = self.door_place(d) else {
                     continue;
                 };
@@ -708,7 +719,7 @@ impl Engine {
                 if place == here || self.key_of_place(place).is_some() || a.exiting.is_some() {
                     continue;
                 }
-                match self.door_towards(a.exec.pos, place) {
+                match self.door_towards(a.ref_id, a.exec.pos, place) {
                     Some((door, spot)) => exits.push((key, a.ref_id, door, spot)),
                     None if a.exec.pos.distance(player) > UNSEEN_DISTANCE => despawn.push(a.ref_id),
                     None => {}
@@ -783,7 +794,7 @@ impl Engine {
             }
             // Enter through the door from where they were, else appear if unseen.
             let near = if pos.is_nan() { player } else { pos };
-            let door = from.and_then(|f| self.door_towards(near, f));
+            let door = from.and_then(|f| self.door_towards(r, near, f));
             match door {
                 Some((_, spot)) => {
                     spawn.push((r, Some(spot)));

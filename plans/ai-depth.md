@@ -11,8 +11,9 @@ crouched final travel legs. Step 8 adds escort lists/initial legs and preferred
 paths. Step 9 implements force-greet transition, sitting and alias-trigger
 leftovers. Step 10 completes reference-location refresh and leveled alias grants.
 Step 11 completes follower travel/wait continuity, verifies scripted death
-dismissal and adds AllyKilled lines. Step 12 has bounded NAVI/NVPP parsing
-and incremental master merging; routing and local movement remain.
+dismissal and adds AllyKilled lines. Step 12 completes merged NAVI routing,
+local mesh refinement, door/worldspace crossings, actor-specific locked portals
+and local clutter avoidance.
 Steps 13–16 are not implemented.
 
 This plan covers ROADMAP Next item 4 (AI depth): everything in it that can be
@@ -633,7 +634,7 @@ integration and 195 native-save tests, all with ignored fixtures included.
 
 ### 12. Off-screen travel along the navmesh, through doors and between worldspaces
 
-**Status: in progress** (2026-11-06). First subcommit adds bounded NVMI/NVPP
+**Status: done** (2026-11-06). First subcommit adds bounded NVMI/NVPP
 parsers, load-order FormID remapping and incremental NAVI merging, including
 NVSI removals/deleted NAVM filtering. The five masters override NAVI 00012FB4
 incrementally: taking only the winning Dragonborn version loses most of Skyrim.
@@ -641,8 +642,24 @@ The merged census has 18,693 active entries, 33,418 edge links, 2,162 door links
 and 500 preferred-path groups, with no malformed NVMI entries in any master.
 `vrm-tool nav-census <data>` reproduces the coverage. Parser tests check island
 payloads, signed grid axes, truncation/size bounds, remapping and incremental
-merge/removal; a vanilla fixture checks all five masters. Coarse route execution,
-locked portals and clutter steering remain in this step.
+merge/removal; a vanilla fixture checks all five masters. The second subcommit
+refines coarse routes through local NAVM paths, consumes buffered/coarse strides,
+crosses XTEL doors/worldspaces and emits location changes. Unreachable targets
+stay put; explicit asked jumps keep their measured timing. Route caches are
+transient and replan after saves/target movement or changed door access.
+
+Loaded navmesh portals use actor-specific key/ownership access; permitted doors
+unlock as they open, without ignoring overlapping obstacles. Loose objects at
+least 0.2 kg and 12 units high receive slow, floor-checked sidestepping with a
+90-unit look-ahead. Choices and SE comparison probe are recorded in
+`known_ambiguities/offscreen-navigation.md`.
+
+Validated: all 1,148 engine tests with ignored fixtures included (the map movie
+fixture needed its documented SKYRIM_DATA and temporary VRM_SETTINGS paths on
+re-run). Synthetic tests cover cross-world doors, location events, cached-route
+replanning, locked/keyed portals, no-route/height cases, explicit jumps,
+overlapping obstacles and clutter steering. The full ESP suite and vanilla
+navigation census also pass.
 
 Away travellers walk in a straight line within their space and are put onto
 targets in other spaces (`known_ambiguities/actor-execution.md`, "Away").

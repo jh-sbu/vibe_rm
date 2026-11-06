@@ -144,6 +144,7 @@ impl Engine {
     /// Plan the next loaded Travel after a Wait, and walk already planned
     /// routes. Furniture interaction and attack graphs do not run in a menu.
     fn menu_paths(&mut self, seconds: f32, clock: f64) {
+        self.refresh_actor_door_access();
         for rt in self.cells.values_mut() {
             for a in &mut rt.actors {
                 if !a.dead
@@ -192,7 +193,7 @@ impl Engine {
                     .filter(|(there, _)| !same_space(here, *there))
                 {
                     if a.exiting.is_none() {
-                        if let Some((door, spot)) = self.door_towards(a.exec.pos, there) {
+                        if let Some((door, spot)) = self.door_towards(a.ref_id, a.exec.pos, there) {
                             departures.push((a.ref_id, door, spot, there, at));
                             target = spot;
                         } else {
@@ -207,7 +208,12 @@ impl Engine {
                 {
                     if let Some(path) = self
                         .nav
-                        .find_path_with(a.exec.pos, target, a.exec.path_policy())
+                        .find_path_for(
+                            a.exec.pos,
+                            target,
+                            a.exec.path_policy(),
+                            &a.exec.door_access,
+                        )
                         .filter(|p| !p.is_empty())
                     {
                         paths.push((a.ref_id, path));

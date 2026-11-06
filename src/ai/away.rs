@@ -88,6 +88,13 @@ enum Move {
     },
     /// Keeping up with whom it follows.
     Follow { place: Place, pos: Vec3 },
+    Route {
+        place: Place,
+        end: Vec3,
+        strides: bool,
+        jump: bool,
+        ends: bool,
+    },
 }
 
 /// Where a package has an actor away at `pos` in `place` go, its package's
@@ -483,6 +490,46 @@ impl Engine {
                 None => Move::Settle,
             }
         };
+        let step = if self.route_navigation_available() {
+            let ends = matches!(p.behaviour, Behaviour::Travel | Behaviour::Escort);
+            match step {
+                Move::Walk { end, strides, jump } => Move::Route {
+                    place,
+                    end,
+                    strides,
+                    jump,
+                    ends,
+                },
+                Move::Late { place, pos, .. } => Move::Route {
+                    place,
+                    end: pos,
+                    strides: !matches!(tier, Processing::Buffered { .. }),
+                    jump: false,
+                    ends,
+                },
+                Move::Follow { place, pos } => Move::Route {
+                    place,
+                    end: pos,
+                    strides: false,
+                    jump: false,
+                    ends: false,
+                },
+                Move::Put {
+                    place: there,
+                    pos: to,
+                    ..
+                } if !x.prompted && p.behaviour == Behaviour::Escort => Move::Route {
+                    place: there,
+                    end: to,
+                    strides: false,
+                    jump: false,
+                    ends,
+                },
+                other => other,
+            }
+        } else {
+            step
+        };
         let heading = match step {
             Move::Put { target, .. } | Move::Late { target, .. } if pos.is_finite() => {
                 self.package_placement_heading(r, p, pos, target)
@@ -496,6 +543,43 @@ impl Engine {
             x.escort_waiting(lag, caught);
         }
         match step {
+            Move::Route {
+                place: there,
+                end,
+                strides,
+                jump,
+                ends,
+            } => {
+                let Some(x) = self.away.get_mut(&r) else {
+                    return;
+                };
+                if jump {
+                    x.jump_at.get_or_insert(now + LATE_JUMP);
+                }
+                if x.jump_at.is_some_and(|t| clock >= t) {
+                    x.settled = true;
+                    x.jump_at = None;
+                    x.strode_at = None;
+                    self.offscreen_routes.remove(&r);
+                    self.put_away(r, there, end);
+                    if ends && let Some(x) = self.away.get_mut(&r) {
+                        x.complete_procedure(false);
+                    }
+                    return;
+                }
+                let stride = if strides {
+                    let last = *x.strode_at.get_or_insert(now);
+                    let since = clock - last;
+                    if since < STRIDE_TIME {
+                        return;
+                    }
+                    x.strode_at = Some(now);
+                    AWAY_WALK_SPEED * since as f32
+                } else {
+                    BUFFERED_WALK_SPEED * dt
+                };
+                self.walk_offscreen(r, there, end, stride, ends);
+            }
             Move::Settle => {
                 if let Some(x) = self.away.get_mut(&r) {
                     x.settled = true;
@@ -770,6 +854,7 @@ impl Engine {
         };
         log::info!("{actor} dies away, in {place:?}");
         self.away.remove(&actor);
+        self.offscreen_routes.remove(&actor);
         self.world_state.dead.insert(actor, (place, pos));
         self.whereabouts.put(actor, place, pos);
         true

@@ -999,13 +999,20 @@ impl Engine {
                 if at.is_empty() {
                     continue;
                 }
-                if !self.is_locked(obj.ref_id)
-                    || at.iter().any(|&w| self.npc_may_open(w, obj.ref_id))
+                if let Some(by) = at
+                    .iter()
+                    .copied()
+                    .find(|&w| self.npc_may_open(w, obj.ref_id))
                 {
-                    opening.push((obj.ref_id, at[0]));
+                    opening.push((obj.ref_id, by));
                 } else {
                     log::trace!("locked door {} stays shut for {at:?}", obj.ref_id);
                 }
+            }
+        }
+        for &(door, _) in &opening {
+            if self.is_locked(door) {
+                self.set_locked(door, false);
             }
         }
         if log::log_enabled!(log::Level::Trace) {
