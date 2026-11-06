@@ -1877,7 +1877,11 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
     aliases and leveled alias grants (`alias-fills.md`, `locks.md`); follower
     travel/death/AllyKilled (`followers.md`) and bent off-screen routes, locked
     doors and clutter steering (`offscreen-navigation.md`); sleeper approach,
-    staying awake, bed resumption and later lock timing (`locks.md`).
+    staying awake, bed resumption and later lock timing (`locks.md`). Compare
+    horse selection, transition queries and away mounted speed (`npc-mounts.md`);
+    carriage hitch/passenger frames and reloads (`carriages.md`); dragon Orbit,
+    Hover/perch completion, flight/landing permissions, CSFL phases, FlightGrab
+    release/damage and Shout word/timing (`dragon-flight.md`).
   - `test-mod autotest23` isn't written yet. It should cover autotest22's
     follow-up list ("Faults and open items").
   - Built and waiting for the user's run: `loadscreens`
@@ -2022,11 +2026,8 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      Built and run: `test-mod autotest13`, `autotest14` and `autotest15`
      (scenes with unloaded actors), and `autotest16` for step 9 (unloaded
      travellers walk, applied).
-   - **Unblocked work: `plans/ai-depth.md`** (in progress 2026-11-05; step 0,
-     the all-PACK census tool, is done; step 1 has bound trees, saved cursors and
-     initial loaded/away execution. Steps 2–10 are now implemented (2026-11-06);
-     steps 11–15 are now complete; step 16 remains, with integration tracked there). It plans
-     these in steps: a procedure-tree interpreter (`Sequence` /
+   - **Unblocked work: `plans/ai-depth.md`** (complete 2026-11-06, steps 0–16).
+     It implements these in steps: a procedure-tree interpreter (`Sequence` /
      `Simultaneous` / `Random` run as written; Wait, Lock / UnlockDoors,
      multi-location stops' per-stop unlocking, "in cell" stops elsewhere and
      progress kept across loads); package-data defaults and Object ID / Type

@@ -12,6 +12,7 @@ mod equipment;
 mod escort;
 pub mod exec;
 mod find;
+pub(crate) mod flight;
 pub mod furniture;
 mod furniture_events;
 mod greet;
@@ -23,6 +24,7 @@ pub mod nav;
 mod observation;
 pub(crate) mod offscreen;
 pub mod package;
+mod package_shouts;
 pub mod practice;
 pub(crate) mod procedure;
 mod procedure_runtime;
@@ -373,6 +375,9 @@ pub struct ActorRuntime {
     pub(crate) mount_capsule: Option<rapier3d::prelude::ColliderHandle>,
     pub(crate) mount_driver: Option<FormId>,
     pub(crate) attachment: Option<Mat4>,
+    pub(crate) flight_controlled: bool,
+    flight_release: bool,
+    combat_voice: Option<package_shouts::CombatVoice>,
     /// What it is doing, where it stands and how it is: what outlasts its
     /// unloading.
     pub exec: exec::ActorExec,
@@ -551,6 +556,9 @@ impl ActorRuntime {
             mount_capsule: None,
             mount_driver: None,
             attachment: None,
+            flight_controlled: false,
+            flight_release: false,
+            combat_voice: None,
             exec: exec::ActorExec::new(packages, pos, f.x.atan2(f.y), stagger),
             scale: scale.x,
             editor_pos: pos,
@@ -2339,11 +2347,15 @@ impl ActorRuntime {
             self.sprint_told = sprint;
         }
         let frame = g.update(dt, clips.vfs, clips.anims, &self.skeleton);
+        let flight_action = self.flight_controlled
+            && g.active_states()
+                .iter()
+                .any(|s| s.starts_with("ST_Flight_Kill"));
         self.sneaking = g.variable("IsSneaking").map_or(self.sneaking, |v| v != 0.0);
         if let Some(request) = self.turn_request.take() {
             self.exec.heading += (-frame.character_turn).clamp(request.min(0.0), request.max(0.0));
         }
-        if self.in_furniture() {
+        if self.in_furniture() || flight_action {
             let (t, yaw) = frame.motion;
             self.exec.pos += furniture::to_world(t * self.scale, self.exec.heading);
             self.exec.heading -= yaw;
@@ -2357,6 +2369,9 @@ impl ActorRuntime {
                 self.graph_events.push(r.event.clone());
             }
             let e = r.event.to_ascii_lowercase();
+            if e == "flightactionrelease" {
+                self.flight_release = true;
+            }
             if self.exec.combat.is_some()
                 && log::log_enabled!(target: "combat_events", log::Level::Trace)
             {
@@ -2506,6 +2521,14 @@ fn xorshift(seed: u64) -> impl FnMut() -> u64 {
 }
 
 impl Engine {
+    /// Queue locomotion/voice state events without reserving an idle marker or
+    /// installing furniture root motion on the actor's independently driven body.
+    pub(crate) fn send_actor_graph_event(&mut self, actor: FormId, event: &str) -> bool {
+        self.actor_mut(actor)
+            .and_then(|a| a.graph.as_mut())
+            .is_some_and(|g| g.send_event(event))
+    }
+
     /// Play behaviour `event` on a loaded humanoid actor (Papyrus `PlayIdle` /
     /// `Debug.SendAnimationEvent`). Idle-stopping events return it to its AI.
     pub fn play_animation_event(&mut self, actor: FormId, event: &str) -> bool {
@@ -3922,6 +3945,7 @@ impl Engine {
         self.update_sleep_warnings();
         self.loaded_procedure_locks();
         self.prepare_mounts(dt);
+        self.update_flights(dt);
         self.run_loaded_finds();
         self.update_practice_weapons();
         // Choose before the AI requests landings, so a newly needed heal does
@@ -4194,7 +4218,10 @@ impl Engine {
                 if a.exec.combat.is_none() {
                     a.sprinting = false;
                 }
-                if a.mount_driver.is_some() || self.passengers.contains_key(&a.ref_id) {
+                if a.mount_driver.is_some()
+                    || a.flight_controlled
+                    || self.passengers.contains_key(&a.ref_id)
+                {
                     // Its rider's package supplies movement; animate the horse below.
                 } else if talking == Some(a.ref_id) {
                     // Seated actors talk from where they are.
@@ -4288,10 +4315,13 @@ impl Engine {
                             clutter::steer(before, a.exec.pos, &clutter, dt, |p| nav.height_at(p));
                     }
                 }
-                if a.mount_driver.is_none() && !self.passengers.contains_key(&a.ref_id) {
+                if a.mount_driver.is_none()
+                    && !a.flight_controlled
+                    && !self.passengers.contains_key(&a.ref_id)
+                {
                     a.collide(&self.physics, &nav, was);
                 }
-                if a.mount_driver.is_none() {
+                if a.mount_driver.is_none() && !a.flight_controlled {
                     a.velocity = if dt > 0.0 {
                         (a.exec.pos - was) / dt
                     } else {
@@ -4326,7 +4356,7 @@ impl Engine {
                     a.exec.pos.z = surface.height - crate::water::FLOAT_DEPTH;
                     a.lift = 0.0;
                 }
-                if !self.passengers.contains_key(&a.ref_id) {
+                if !a.flight_controlled && !self.passengers.contains_key(&a.ref_id) {
                     a.stand_on_ground(&self.physics, dt);
                     a.find_ground(&self.physics);
                 }
@@ -4371,7 +4401,8 @@ impl Engine {
                     }));
                 }
                 a.footsteps.clear();
-                if a.is_walking()
+                if a.flight_controlled
+                    || a.is_walking()
                     || matches!(
                         a.state,
                         State::Approach(_) | State::Enter(_) | State::Exit(_) | State::Use(_)
@@ -4409,6 +4440,8 @@ impl Engine {
         self.update_clear_shots();
         self.loose_arrows();
         self.npc_casts();
+        self.update_package_shouts();
+        self.update_combat_shouts(dt);
         self.update_npc_sprint_stamina(dt);
         self.update_stamina(dt);
         self.update_threat(dt);
@@ -4425,7 +4458,17 @@ impl Engine {
         for (sound, at) in sounds {
             self.play_sound_at(&sound, at);
         }
+        let released = self
+            .cells
+            .values_mut()
+            .flat_map(|rt| &mut rt.actors)
+            .filter_map(|a| std::mem::take(&mut a.flight_release).then_some(a.ref_id))
+            .collect::<Vec<_>>();
+        for actor in released {
+            self.flight_graph_events(actor, &["FlightActionRelease".into()]);
+        }
         for (r, events) in anim_events {
+            self.flight_graph_events(r, &events);
             self.raise_anim_events(r, &events);
         }
         for (furniture, events) in furniture_events {

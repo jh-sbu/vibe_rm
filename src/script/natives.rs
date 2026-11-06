@@ -2027,6 +2027,32 @@ pub fn call(
             }
             none()
         }
+        ("actor", "setallowflying") | ("actor", "setallowflyingex") => {
+            if let Some(actor) = me {
+                e.set_allow_flying(
+                    actor,
+                    args.get(0).is_none_or(Value::as_bool),
+                    args.get(1).is_none_or(Value::as_bool),
+                    args.get(2).is_none_or(Value::as_bool),
+                );
+            }
+            none()
+        }
+        ("actor", "setforcedlandingmarker") => {
+            if let Some(actor) = me {
+                e.set_landing_marker(actor, form_arg(args, 0));
+            }
+            none()
+        }
+        ("actor", "getforcedlandingmarker") => v(me
+            .and_then(|actor| e.flights.get(&actor).and_then(|f| f.marker))
+            .map_or(Value::None, |m| e.object_value(m))),
+        ("actor", "isflying") => v(Value::Bool(
+            me.is_some_and(|actor| e.flying_state(actor) != 0),
+        )),
+        ("actor", "getflyingstate") => v(Value::Int(
+            me.map_or(0, |actor| e.flying_state(actor) as i32),
+        )),
         ("actor", "setvehicle") => {
             if let Some(actor) = me {
                 e.set_vehicle(actor, form_arg(args, 0));

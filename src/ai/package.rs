@@ -938,6 +938,13 @@ impl Package {
             p.location = kind.map(|kind| Location { kind, radius: 0.0 });
         }
         match n.procedure.as_str() {
+            "Shout" => {
+                p.behaviour = Behaviour::Travel;
+                p.target = match n.values.get(2) {
+                    Some(Input::Target(t)) => Some(*t),
+                    _ => None,
+                };
+            }
             "Say" => {
                 p.location = Some(Location {
                     kind: LocationKind::NearSelf,

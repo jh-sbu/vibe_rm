@@ -14,6 +14,7 @@ pub(crate) struct Tether {
     /// Position of the hitch in the horse's frame and in the cart reference.
     pub horse_point: Vec3,
     pub cart_point: Vec3,
+    pub rotation: Vec3,
 }
 pub(crate) struct Hitch {
     anchor: RigidBodyHandle,
@@ -101,6 +102,7 @@ impl Engine {
                 horse,
                 horse_point: horse_transform.inverse().transform_point3(point),
                 cart_point,
+                rotation: self.ref_rotation(cart) - self.ref_rotation(horse),
             },
         );
     }
@@ -202,6 +204,74 @@ impl Engine {
         }
     }
 
+    /// Away carts retain their hitch relation without simulating wheel bodies.
+    pub(super) fn sync_away_vehicles(&mut self, horse: FormId) {
+        let Some((place, pos, heading)) = self
+            .execution(horse)
+            .and_then(|x| Some((x.place?, x.pos, x.heading)))
+        else {
+            return;
+        };
+        let carts = self
+            .tethers
+            .iter()
+            .filter(|(_, t)| t.horse == horse)
+            .map(|(&r, &t)| (r, t))
+            .collect::<Vec<_>>();
+        for (cart, t) in carts {
+            if self
+                .cells
+                .values()
+                .any(|rt| rt.refs.contains(&cart) || rt.loose.iter().any(|l| l.ref_id == cart))
+            {
+                continue;
+            }
+            let horse_turn = crate::world::records::rotation_from_euler(Vec3::new(0., 0., heading));
+            let rotation = Vec3::new(0., 0., heading) + t.rotation;
+            let turn = crate::world::records::rotation_from_euler(rotation);
+            let point = pos + horse_turn * t.horse_point;
+            let cart_pos = point - turn * t.cart_point;
+            self.move_ref(cart, horse, cart_pos, rotation);
+            let passengers = self
+                .passengers
+                .iter()
+                .filter(|(_, p)| p.vehicle == cart)
+                .map(|(&r, &p)| (r, p))
+                .collect::<Vec<_>>();
+            for (actor, p) in passengers {
+                if actor == PLAYER_REF {
+                    continue;
+                }
+                let pos = cart_pos + turn * p.offset;
+                if self.actor_ref(actor).is_some() {
+                    self.move_ref(actor, cart, pos, rotation + p.rotation);
+                } else if self.run_away(actor) {
+                    self.put_away(actor, place, pos);
+                }
+            }
+        }
+    }
+
+    pub(super) fn actor_node_transform(&self, actor: FormId, name: &str) -> Option<Mat4> {
+        let a = self.actor_ref(actor)?;
+        let bone = a.skeleton.find(name)?;
+        let bind = a.skeleton.model_space(&[]);
+        let key = self.actor_cells.get(&actor)?;
+        let index = self
+            .cells
+            .get(key)?
+            .actors
+            .iter()
+            .position(|a| a.ref_id == actor)?;
+        let inst = self.scene.cells.get(key)?.actors.get(index)?;
+        Some(
+            a.transform()
+                * *inst.pose.get(bone)?
+                * bind.get(bone)?.inverse()
+                * Mat4::from_translation(bind[bone].w_axis.truncate()),
+        )
+    }
+
     pub(crate) fn sync_passengers(&mut self) {
         let mut passengers = self
             .passengers
@@ -210,18 +280,29 @@ impl Engine {
             .collect::<Vec<_>>();
         passengers.sort_by_key(|p| p.0);
         for (actor, p) in passengers {
-            if self.is_dead(actor) || self.is_disabled(actor) || self.is_disabled(p.vehicle) {
+            if self.is_dead(actor)
+                || self.is_disabled(actor)
+                || self.is_disabled(p.vehicle)
+                || (self.is_actor_ref(p.vehicle) && self.is_dead(p.vehicle))
+            {
                 self.set_vehicle(actor, None);
                 continue;
             }
             let Some(vehicle) = self.vehicle_transform(p.vehicle) else {
                 continue;
             };
-            let transform = vehicle
-                * Mat4::from_rotation_translation(
-                    crate::world::records::rotation_from_euler(p.rotation),
-                    p.offset,
-                );
+            let talon = self
+                .flights
+                .get(&p.vehicle)
+                .filter(|f| f.grabbed == Some(actor))
+                .and_then(|_| self.actor_node_transform(p.vehicle, "NPC RLegFoot"));
+            let transform = talon.unwrap_or(
+                vehicle
+                    * Mat4::from_rotation_translation(
+                        crate::world::records::rotation_from_euler(p.rotation),
+                        p.offset,
+                    ),
+            );
             let pos = transform.w_axis.truncate();
             if actor == PLAYER_REF {
                 self.player.position =
@@ -365,5 +446,44 @@ mod tests {
         e.tether_to_horse(MARKER, None);
         assert!(e.hitches.is_empty());
         assert!(e.tethers.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod away_tests {
+    use super::*;
+    use crate::ai::exec::tests::{ACTOR, BASE, CELL, MARKER, fixture, loaded_actor};
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn away_horse_moves_its_cart_and_passenger_after_unloading() {
+        let (_f, mut e) = fixture();
+        loaded_actor(&mut e);
+        e.location = crate::engine::Location::Interior(CELL);
+        let passenger = FormId(0xFF000820);
+        e.created_refs.refs.insert(
+            passenger,
+            crate::created::Created {
+                base: BASE,
+                position: Vec3::new(3000., 10., 100.),
+                rotation: Vec3::ZERO,
+                origin: None,
+                place: Some(Place::Interior(CELL)),
+                container: None,
+                location: None,
+                actor: true,
+                count: 1,
+                owner: None,
+            },
+        );
+        e.set_vehicle(passenger, Some(MARKER));
+        e.tether_to_horse(MARKER, Some(ACTOR));
+        e.unload_all();
+        e.location = crate::engine::Location::Nowhere;
+        let before = e.ref_position(MARKER).unwrap();
+        e.away.get_mut(&ACTOR).unwrap().pos.x += 400.;
+        e.sync_away_vehicles(ACTOR);
+        let after = e.ref_position(MARKER).unwrap();
+        assert!((after - before - Vec3::X * 400.).length() < 0.01);
+        assert!((e.away[&passenger].pos - Vec3::new(3400., 10., 100.)).length() < 0.01);
     }
 }

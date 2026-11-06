@@ -98,7 +98,14 @@ impl ActorExec {
                 }
                 matches!(
                     n.procedure.as_str(),
-                    "HoldPosition" | "DialogueActivate" | "Acquire" | "Flee"
+                    "HoldPosition"
+                        | "DialogueActivate"
+                        | "Acquire"
+                        | "Flee"
+                        | "Shout"
+                        | "Orbit"
+                        | "Hover"
+                        | "FlightGrab"
                 )
             }) {
                 return;
@@ -361,6 +368,10 @@ impl Node {
                     | "KeepAnEyeOn"
                     | "FollowTo"
                     | "ForceGreet"
+                    | "Shout"
+                    | "Orbit"
+                    | "Hover"
+                    | "FlightGrab"
             ))
             && self.children.iter().all(Node::executable)
     }

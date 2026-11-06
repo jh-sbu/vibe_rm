@@ -72,6 +72,14 @@ observer-to-player detection values and schedules an immediate fresh observation
 This persists the engine's reservoir values only: searches, combat targets
 and detection state transitions remain outside save state.
 
+Transportation continuity uses optional MOUN (horse/rider transitions), VEHI
+(passenger frames), TETH (horse hitch frames) and FLGT (flight permissions,
+landing/perch/grab state and clocks). Missing sections load empty; physics
+handles and behavior instances are rebuilt. TETH also accepts its original
+32-byte rows, defaulting the later relative-rotation field to zero. These are
+this engine's format choices, not claims about Skyrim's internal save layout.
+Behavior choices are in `npc-mounts.md`, `carriages.md` and `dragon-flight.md`.
+
 Actors' executions (`ai::exec::ActorExec`) are stored in optional `AEXC`, one
 entry per actor with a place or a package run: those away and those loaded,
 the loaded ones as they would be were their cells to unload as the save is

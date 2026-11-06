@@ -34,7 +34,8 @@
 //! modifiers/script fades, active magic effects (`AEFF`) and their
 //! tapers (`TAPR`), and actors' executions (`AEXC`: package runs, how far
 //! their procedure cursors and start positions, where they are and their clocks, for actors away and
-//! loaded alike; their wounds stay in `WRLD`).
+//! loaded alike; their wounds stay in `WRLD`), mounted relationships (`MOUN`),
+//! carriage passengers/hitches (`VEHI`/`TETH`) and dragon flight state (`FLGT`).
 //! Not yet saved: actors' goals set by hand, fights, searches and greetings,
 //! the rest of AI progress (animation, procedures' loaded-only state) and
 //! objects' behaviour graphs; see `plans/ROADMAP.md`.

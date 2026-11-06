@@ -144,6 +144,8 @@ impl Engine {
     /// Plan the next loaded Travel after a Wait, and walk already planned
     /// routes. Furniture interaction and attack graphs do not run in a menu.
     fn menu_paths(&mut self, seconds: f32, clock: f64) {
+        self.prepare_mounts(seconds);
+        self.update_flights(seconds);
         self.refresh_actor_door_access();
         for rt in self.cells.values_mut() {
             for a in &mut rt.actors {
@@ -174,6 +176,9 @@ impl Engine {
                     || a.exec.pinned
                     || a.exec.combat.is_some()
                     || a.exec.bleeding.is_some()
+                    || a.flight_controlled
+                    || a.mount_driver.is_some()
+                    || self.passengers.contains_key(&a.ref_id)
                     || player_follower(a.exec.goal)
                 {
                     continue;
@@ -247,6 +252,9 @@ impl Engine {
                     || a.exec.pinned
                     || a.exec.combat.is_some()
                     || a.exec.bleeding.is_some()
+                    || a.flight_controlled
+                    || a.mount_driver.is_some()
+                    || self.passengers.contains_key(&a.ref_id)
                     || player_follower(a.exec.goal)
                 {
                     continue;
@@ -281,6 +289,8 @@ impl Engine {
                 self.put_away(id, there, pos);
             }
         }
+        self.sync_riding_bodies();
+        self.sync_passengers();
     }
 
     pub(crate) fn advance_menu_time(&mut self, seconds: f32) {

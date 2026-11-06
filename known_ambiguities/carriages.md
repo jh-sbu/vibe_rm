@@ -17,6 +17,9 @@ preserve its initial relation to the horse. The native joint's exact pivot,
 limits and compliance remain unmeasured. Existing NIF wheel/steering hinges
 continue to run; static carts remain static. Rebuild joints after cell loads;
 save the relationship and passenger offsets rather than physics handles.
+Unloaded carts preserve their initial relative angle and hitch position while
+following the horse; their passengers follow their saved local frames. This
+logical away movement does not simulate the cart's individual wheel bodies.
 
 Queued SE comparison: move and turn the horse with one and several passengers;
 measure the hitch location, cart yaw, passenger offset, SetVehicle(None), keyword

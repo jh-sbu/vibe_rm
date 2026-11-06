@@ -107,6 +107,7 @@ pub(crate) struct Continuity {
     pub rides: HashMap<FormId, crate::ai::mounts::Ride>,
     pub passengers: HashMap<FormId, crate::ai::vehicles::Passenger>,
     pub tethers: HashMap<FormId, crate::ai::vehicles::Tether>,
+    pub flights: HashMap<FormId, crate::ai::flight::Flight>,
 }
 
 fn optional<'a>(file: &'a SaveFile, tag: &[u8; 4]) -> Result<Option<Reader<'a>>> {
@@ -531,6 +532,7 @@ impl Continuity {
             rides: e.rides.clone(),
             passengers: e.passengers.clone(),
             tethers: e.tethers.clone(),
+            flights: e.flights.clone(),
             alias_location_sources: e.alias_location_sources.clone(),
             look_at: e.scripts.look_at.clone(),
             script_fade: e.imagespace.fade,
@@ -1154,11 +1156,54 @@ impl Continuity {
             w.form(t.horse);
             w.vec3(t.horse_point);
             w.vec3(t.cart_point);
+            w.vec3(t.rotation);
         }
         file.add(b"TETH", w.0);
+        let mut w = Writer::default();
+        w.len(self.flights.len());
+        for (actor, f) in sorted(&self.flights) {
+            w.form(actor);
+            w.bool(f.allowed);
+            w.bool(f.allow_crash);
+            w.bool(f.allow_search);
+            w.form(f.marker.unwrap_or_default());
+            w.u8(f.phase);
+            w.f32(f.elapsed);
+            w.f32(f.combat_elapsed);
+            w.form(f.grabbed.unwrap_or_default());
+            w.form(f.perched.unwrap_or_default());
+            w.u8(f.combat_mode);
+            w.f32(f.mode_time);
+        }
+        file.add(b"FLGT", w.0);
     }
     pub fn read(file: &SaveFile) -> Result<Self> {
         let mut s = Self::default();
+        if let Some(mut r) = optional(file, b"FLGT")? {
+            let n = r.count(33)?;
+            let mut previous = None;
+            for _ in 0..n {
+                let actor = r.form()?;
+                ordered(&mut previous, actor)?;
+                s.flights.insert(
+                    actor,
+                    crate::ai::flight::Flight {
+                        allowed: r.bool()?,
+                        allow_crash: r.bool()?,
+                        allow_search: r.bool()?,
+                        marker: r.opt_form()?,
+                        phase: r.u8()?,
+                        elapsed: r.f32()?,
+                        combat_elapsed: r.f32()?,
+                        grabbed: r.opt_form()?,
+                        perched: r.opt_form()?,
+                        combat_mode: r.u8()?,
+                        mode_time: r.f32()?,
+                    },
+                );
+            }
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"VEHI")? {
             let n = r.count(32)?;
             let mut previous = None;
@@ -1178,6 +1223,10 @@ impl Continuity {
         }
         if let Some(mut r) = optional(file, b"TETH")? {
             let n = r.count(32)?;
+            let rotation = r.left() == n * 44;
+            if !rotation && r.left() != n * 32 {
+                return Err(Corrupt("invalid tether row length".into()));
+            }
             let mut previous = None;
             for _ in 0..n {
                 let cart = r.form()?;
@@ -1188,6 +1237,11 @@ impl Continuity {
                         horse: r.form()?,
                         horse_point: r.vec3()?,
                         cart_point: r.vec3()?,
+                        rotation: if rotation {
+                            r.vec3()?
+                        } else {
+                            glam::Vec3::ZERO
+                        },
                     },
                 );
             }
@@ -1828,6 +1882,19 @@ impl Continuity {
         Ok(s)
     }
     pub fn validate(&self) -> Result<()> {
+        for (&actor, f) in &self.flights {
+            nonnull(actor)?;
+            if actor == crate::engine::PLAYER_REF
+                || f.phase > 4
+                || f.combat_mode > 3
+                || [f.elapsed, f.combat_elapsed, f.mode_time]
+                    .iter()
+                    .any(|s| !s.is_finite() || !(0. ..=3600.).contains(s))
+                || f.grabbed == Some(actor)
+            {
+                return Err(Corrupt("invalid flight state".into()));
+            }
+        }
         for (&actor, p) in &self.passengers {
             nonnull(actor)?;
             nonnull(p.vehicle)?;
@@ -1842,7 +1909,11 @@ impl Continuity {
         for (&cart, t) in &self.tethers {
             nonnull(cart)?;
             nonnull(t.horse)?;
-            if cart == t.horse || !t.horse_point.is_finite() || !t.cart_point.is_finite() {
+            if cart == t.horse
+                || !t.horse_point.is_finite()
+                || !t.cart_point.is_finite()
+                || !t.rotation.is_finite()
+            {
                 return Err(Corrupt("invalid horse tether".into()));
             }
         }
@@ -2207,6 +2278,7 @@ impl Continuity {
         e.clear_vehicle_bodies();
         e.passengers = self.passengers;
         e.tethers = self.tethers;
+        e.flights = self.flights;
         e.alias_location_sources = self.alias_location_sources;
         e.door_transition = false;
         e.scripts.look_at = self.look_at;

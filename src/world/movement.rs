@@ -36,7 +36,7 @@ pub fn movement_types(lo: &LoadOrder) -> HashMap<String, MoveSpeeds> {
             continue;
         };
         // Left, right, forward and back (walk, run each), then the three turn rates.
-        let Some(d) = rec.get(b"SPED").filter(|d| d.len() >= 44) else {
+        let Some(d) = rec.get(b"SPED").filter(|d| d.len() >= 40) else {
             continue;
         };
         let f = |i: usize| f32::from_le_bytes(d[i * 4..i * 4 + 4].try_into().unwrap());
@@ -49,7 +49,7 @@ pub fn movement_types(lo: &LoadOrder) -> HashMap<String, MoveSpeeds> {
                 back_run: f(7),
                 turn_walk: f(8),
                 turn_run: f(9),
-                turn_moving: f(10),
+                turn_moving: if d.len() >= 44 { f(10) } else { f(9) },
             },
         );
     }

@@ -7011,11 +7011,24 @@ fn vehicle_payload_rejects_cycles_and_nonfinite_frames_and_reads_legacy() {
             horse: FormId(0x802),
             horse_point: Vec3::ZERO,
             cart_point: Vec3::Y * 180.,
+            rotation: Vec3::ZERO,
         },
     );
     assert_eq!(
         Snapshot::read(&s.write()).unwrap().continuity.passengers,
         s.continuity.passengers
+    );
+    let mut legacy_tether = s.write();
+    let bytes = &mut legacy_tether
+        .sections
+        .iter_mut()
+        .find(|(tag, _)| tag == b"TETH")
+        .unwrap()
+        .1;
+    bytes.truncate(4 + 32);
+    assert_eq!(
+        Snapshot::read(&legacy_tether).unwrap().continuity.tethers[&FormId(0x801)].rotation,
+        Vec3::ZERO
     );
     let mut legacy = s.write();
     legacy
@@ -7044,4 +7057,42 @@ fn vehicle_payload_rejects_cycles_and_nonfinite_frames_and_reads_legacy() {
         .offset
         .x = f32::NAN;
     assert!(Snapshot::read(&s.write()).is_err());
+}
+
+#[test]
+fn flight_payload_keeps_phases_and_rejects_bad_clocks_modes_and_self_grabs() {
+    use crate::ai::flight::{Flight, HOVER};
+    let mut s = Snapshot::default();
+    let f = Flight {
+        phase: HOVER,
+        marker: Some(FormId(0x801)),
+        elapsed: 2.,
+        ..Default::default()
+    };
+    s.continuity.flights.insert(FormId(0x800), f);
+    assert_eq!(
+        Snapshot::read(&s.write()).unwrap().continuity.flights,
+        s.continuity.flights
+    );
+    let mut old = s.write();
+    old.sections.retain(|(tag, _)| tag != b"FLGT");
+    assert!(Snapshot::read(&old).unwrap().continuity.flights.is_empty());
+    for f in [
+        Flight { phase: 9, ..f },
+        Flight {
+            elapsed: f32::NAN,
+            ..f
+        },
+        Flight {
+            combat_mode: 9,
+            ..f
+        },
+        Flight {
+            grabbed: Some(FormId(0x800)),
+            ..f
+        },
+    ] {
+        s.continuity.flights.insert(FormId(0x800), f);
+        assert!(Snapshot::read(&s.write()).is_err());
+    }
 }

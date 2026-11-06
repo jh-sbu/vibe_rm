@@ -365,6 +365,7 @@ pub struct Engine {
     pub(crate) passengers: HashMap<FormId, crate::ai::vehicles::Passenger>,
     pub(crate) tethers: HashMap<FormId, crate::ai::vehicles::Tether>,
     pub(crate) hitches: HashMap<FormId, crate::ai::vehicles::Hitch>,
+    pub(crate) flights: HashMap<FormId, crate::ai::flight::Flight>,
     pub furniture: crate::ai::furniture::FurnitureWorld,
     /// Patrol routes by start reference.
     pub(crate) patrol_paths: HashMap<FormId, std::sync::Arc<Vec<crate::ai::PatrolPoint>>>,
@@ -688,6 +689,7 @@ impl Engine {
             passengers: Default::default(),
             tethers: Default::default(),
             hitches: Default::default(),
+            flights: Default::default(),
             furniture: Default::default(),
             patrol_paths: Default::default(),
             moved_refs: HashMap::new(),

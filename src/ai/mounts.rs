@@ -125,7 +125,7 @@ impl Engine {
                 EXIT
             };
             ride.elapsed = 0.;
-            self.play_animation_event(actor, "HorseExit");
+            self.send_actor_graph_event(actor, "HorseExit");
             return true;
         }
         false
@@ -190,7 +190,7 @@ impl Engine {
             if let Some(ride) = self.rides.get(&actor).copied() {
                 if self.is_dead(ride.horse) || self.is_disabled(ride.horse) {
                     self.rides.remove(&actor);
-                    self.play_animation_event(actor, "HorseExitOut");
+                    self.send_actor_graph_event(actor, "HorseExitOut");
                     continue;
                 }
                 if ride.phase == DISMOUNTED {
@@ -246,8 +246,8 @@ impl Engine {
                 {
                     ride.phase = ENTER;
                     ride.elapsed = 0.;
-                    self.play_animation_event(actor, "HorseEnter");
-                    self.play_animation_event(ride.horse, "IdleStart");
+                    self.send_actor_graph_event(actor, "HorseEnter");
+                    self.send_actor_graph_event(ride.horse, "IdleStart");
                 } else {
                     let key = self.actor_cells[&actor];
                     if let Some(a) = self
@@ -270,7 +270,7 @@ impl Engine {
             if ride.phase == ENTER && ride.elapsed >= 2.5 {
                 ride.phase = MOUNTED;
                 ride.elapsed = 0.;
-                self.play_animation_event(actor, "HorseEnterInstant");
+                self.send_actor_graph_event(actor, "HorseEnterInstant");
                 if let Some(a) = self.actor_mut(actor) {
                     a.state = State::Idle(0.);
                     a.exec.next_eval = 0.;
@@ -279,7 +279,7 @@ impl Engine {
             if ride.phase == EXIT && ride.elapsed >= 2.5 {
                 ride.phase = DISMOUNTED;
                 ride.elapsed = 0.;
-                self.play_animation_event(actor, "HorseExitOut");
+                self.send_actor_graph_event(actor, "HorseExitOut");
                 let heading = self.actor_ref(ride.horse).map_or(0., |h| h.exec.heading);
                 let pos = self
                     .nav
@@ -293,7 +293,7 @@ impl Engine {
             self.rides.insert(actor, ride);
             if ride.mounted() {
                 if !previous.contains(&actor) && ride.phase == MOUNTED {
-                    self.play_animation_event(actor, "HorseEnterInstant");
+                    self.send_actor_graph_event(actor, "HorseEnterInstant");
                 }
                 let (velocity, speed) = self
                     .actor_ref(actor)
@@ -569,7 +569,10 @@ mod integration_tests {
         a.exec.current = Some(0);
         a.exec.begin_run(Some(0), 0., false);
         let tree = a.exec.packages[0].tree.as_ref().unwrap();
-        let mut c = procedure::Cursor::default();
+        let mut c = procedure::Cursor {
+            tree_key: a.exec.packages[0].editor_id.clone(),
+            ..Default::default()
+        };
         c.step(tree, 0., false, |_| true, || 0);
         a.exec.run.as_mut().unwrap().cursor = Some(c);
         a.exec.pos = Vec3::ZERO;

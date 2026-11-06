@@ -1,22 +1,11 @@
 # Plan: the unblocked AI depth work
 
-**Status: in progress** (2026-11-05). Step 0 is complete. Step 1 has bound
-trees, durable cursors, loaded/away execution and multi-location migration;
-finite Patrol completion and away practice counts are implemented. Step 2 is
-complete, including menu-time catch-up, door travel and vanilla sequence fixtures.
-Steps 3–5 are complete.
-Step 6 is complete, including acquisition, fleeing and UseWeapon preparation trees.
-Step 7 implements fixed idle markers, observation, FollowTo, group spacing and
-crouched final travel legs. Step 8 adds escort lists/initial legs and preferred
-paths. Step 9 implements force-greet transition, sitting and alias-trigger
-leftovers. Step 10 completes reference-location refresh and leveled alias grants.
-Step 11 completes follower travel/wait continuity, verifies scripted death
-dismissal and adds AllyKilled lines. Step 12 completes merged NAVI routing,
-local mesh refinement, door/worldspace crossings, actor-specific locked portals
-and local clutter avoidance.
-Step 13 completes sleeper warning approaches and awake holds. Step 14 completes
-NPC riding, including away horse speed and save continuity. Step 15 completes
-carriage passengers and horse tethers. Step 16 remains.
+**Status: complete** (2026-11-06). All steps 0–16 are implemented. The
+procedure interpreter, package inputs, dialogue/carry/acquisition/observation,
+escorts, aliases, followers, navigation, sleeper warnings, NPC mounts, carts and
+dragon procedures now use the shared loaded/away execution foundation.
+Original-game comparisons remain queued for recorded ambiguity choices; the
+items under "Left out: blocked" remain outside this completed plan.
 
 This plan covers ROADMAP Next item 4 (AI depth): everything in it that can be
 built today from public sources, the game's data and the readings we already
@@ -57,12 +46,12 @@ This census covers all 7,573 `PACK` records in the five masters, by
 template. The current `vrm-tool pack-templates` counts only NPC `PKID` slots
 and its top 40. `pack-census <data> --masters` reproduces this census.
 
-- Run today by their main procedure (single-procedure templates, and trees
+- At the starting census, run by their main procedure (single-procedure templates, and trees
   collapsed by `package::main_procedure`): Travel 2,488, Sandbox 1,243, Eat
   431, ForceGreet 409, Patrol 392, Sleep 365, SitTarget 324, HoldPosition 168,
   Follow 158, Sit 136, SandboxWorking 88, UseMagic 70, SandboxMultiLocation
   66, UseWeapon 58, Escort 51.
-- Not run as designed (falling back to `Behaviour::Hold`, or one procedure of
+- At the starting census, not run as designed (falling back to `Behaviour::Hold`, or one procedure of
   a sequence): UseIdleMarker 65, Orbit 58, SandboxAndKeepEyeOn 36,
   CarryAndDropItem 32, PatrolStaticPathing 30,
   GroupMovement 23, Shout 22, EscortPlayerWhenNear 18,
@@ -122,7 +111,8 @@ designed" list above. This needs no engine changes.
 
 ### 1. A procedure-tree interpreter (the foundation)
 
-**Status: in progress** (2026-11-05). First subcommit retains the selected
+**Status: done** (2026-11-06). Integration completed with steps 2–16, including
+finite Patrol, FollowTo, acquisition, dialogue and dragon leaves. First subcommit retains the selected
 branch on `Package`, with typed inputs and conditions bound once; string
 condition parameters are preserved (needed by carry trees). `ai::procedure`
 defines a body-independent cursor with Sequence, Simultaneous, Random and
@@ -158,9 +148,8 @@ Loaded practice transfers on unloading/despawning and reattachment; pending
 actions do not fire twice. AEXC version 2 retains the counters and repeat epoch,
 reads both earlier layouts, and also adds the origin's space. HoldPosition
 returns to that origin without completing. The vanilla Shimmermist single-cast
-fixture passes with no projectile or magicka use. Remaining step 1 integration:
-completion for procedures in steps 4–7 as they become available and enabling
-their trees. The overall plan is not complete.
+fixture passes with no projectile or magicka use. The subsequent procedure steps complete the remaining integrations and enable
+their trees, including the dragon leaves in step 16.
 
 Before this work, `package::expand` split a `Stacked` root into one package
 per branch, and every other tree collapsed to one `main_procedure`.
@@ -768,9 +757,26 @@ uses the Havok constraints already simulated for ragdolls.
 
 ### 16. Dragons
 
+**Status: done** (2026-11-06). Race-speed flight drives takeoff, cruise/glide,
+Hover, bounded Orbit, landing/perching and finite airborne Patrol. CSFL weights
+and time multipliers choose combat phases. Vanilla allow-flying/forced-marker
+natives and flight queries use persisted FLGT state. Shout leaves cast backing
+SHOU spells with durable charge/count progress and existing voice recovery;
+combat voices select their known hostile shouts. Alduin's FlightGrab trees
+approach, attach at the talon and release from the asset's payload event before continuing their patrols. Direct graph state events
+avoid generic idle/furniture side effects. Research, choices and queued SE
+comparisons: `research/dragon-flight.md`, `known_ambiguities/dragon-flight.md`.
+The prior assertion that package shouting was already implemented was corrected
+while checking the code. Validated: 1,170 engine regressions and 91 tools tests,
+all with ignored fixtures included and GPU/installed-asset access. The map movie
+fixture used explicit SKYRIM_DATA and a temporary VRM_SETTINGS path. Tests cover
+live graph transitions/payloads, finite procedures, voice cooldown/cancellation,
+loaded/away/menu continuity, physical cart constraints and legacy/corrupt saves.
+SE comparison runs remain queued; they are not claimed as validation here.
+
 This is the biggest item, and it comes last because nothing else waits on it.
-NPC and dragon shouting are already done (ROADMAP Done), and so is the dragon
-behaviour graph project.
+The dragon behavior graph project is already supported. Shout execution was
+found missing during this step and is included here for packages and combat.
 
 - **Flight locomotion**: the dragon graph's flight states (take-off, fly,
   hover, glide, land), driven by a flight controller that steers to a target

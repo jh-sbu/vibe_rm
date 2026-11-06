@@ -248,8 +248,11 @@ impl Engine {
             self.advance_away_tree(r, 0.);
         }
         self.prepare_away_mount(r);
-        self.move_away(r, dt, tier, clock);
+        if !self.step_flight(r, dt, true) {
+            self.move_away(r, dt, tier, clock);
+        }
         self.sync_away_mount(r);
+        self.sync_away_vehicles(r);
         self.advance_away_practice(r, dt);
         let Some(x) = self.away.get_mut(&r) else {
             return;

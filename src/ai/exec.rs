@@ -582,7 +582,7 @@ impl Engine {
     pub(crate) fn complete_arrivals(&mut self) {
         let mut done = Vec::new();
         for a in self.cells.values().flat_map(|rt| &rt.actors) {
-            if a.dead || a.exec.pinned || a.exec.combat.is_some() {
+            if a.dead || a.flight_controlled || a.exec.pinned || a.exec.combat.is_some() {
                 continue;
             }
             let (Some(run), Some(goal)) = (a.exec.run.as_ref(), a.exec.goal) else {
