@@ -298,9 +298,11 @@ impl Engine {
 
     /// IsFleeing.
     pub fn is_fleeing(&self, actor: FormId) -> bool {
-        self.actor_ref(actor)
-            .and_then(|a| a.exec.combat.as_ref())
-            .is_some_and(|c| c.fleeing)
+        self.package_is_fleeing(actor)
+            || self
+                .actor_ref(actor)
+                .and_then(|a| a.exec.combat.as_ref())
+                .is_some_and(|c| c.fleeing)
     }
 
     /// Strength updates and flee checks for everyone fighting; those who start to

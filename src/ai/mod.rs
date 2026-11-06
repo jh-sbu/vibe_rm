@@ -1,5 +1,6 @@
 //! Actor AI: package selection, sandboxing / travelling over the navmesh.
 
+mod acquire_flee;
 pub mod alias;
 pub mod archery;
 pub mod away;
@@ -3586,9 +3587,13 @@ impl Engine {
                     let base = &a.exec.packages[pi];
                     let effective = cursor
                         .as_ref()
-                        .map(|c| base.for_procedure(c.body(base.tree.as_ref().unwrap())));
+                        .map(|c| self.project_consumer(a.ref_id, base, c));
                     let p = effective.as_ref().unwrap_or(base);
-                    let (centre, radius) = self.package_target(a, p);
+                    let (centre, radius) = cursor
+                        .as_ref()
+                        .and_then(|c| self.consumer_destination(a.ref_id, base, c))
+                        .map(|(_, at)| (at, p.location.map_or(64., |l| l.radius)))
+                        .unwrap_or_else(|| self.package_target(a, p));
                     let target = self.package_target_ref(a, p, p.target);
                     // A force greeter waits (standing, sandboxing or seated) until it
                     // sets off to the player.

@@ -120,10 +120,13 @@ impl Cursor {
                 .all(|(&slot, list)| has_list(root, slot) && list.len() <= 4096)
             && self.states.iter().all(|(path, state)| {
                 root.at(path).is_some_and(|node| {
-                    state.next as usize <= node.children.len()
-                        && state
-                            .selected
-                            .is_none_or(|i| (i as usize) < node.children.len())
+                    (if node.procedure == "Acquire" {
+                        state.next <= 4096
+                    } else {
+                        state.next as usize <= node.children.len()
+                    }) && state
+                        .selected
+                        .is_none_or(|i| (i as usize) < node.children.len())
                         && state
                             .last
                             .is_none_or(|i| (i as usize) < node.children.len())

@@ -1585,11 +1585,20 @@ impl ActorRuntime {
 /// Somewhere on the navmesh within `step` of `pos`, as far from `threat` as a
 /// few tries find, and further from it than `pos` is.
 pub(crate) fn place_away(w: &mut World, pos: Vec3, threat: Vec3, step: f32) -> Option<Vec3> {
+    place_away_on(w.nav, pos, threat, step, &mut *w.rand)
+}
+
+pub(crate) fn place_away_on(
+    nav: &super::nav::NavWorld,
+    pos: Vec3,
+    threat: Vec3,
+    step: f32,
+    mut rand: impl FnMut() -> u64,
+) -> Option<Vec3> {
     let away = (pos - threat).truncate().normalize_or(glam::Vec2::X);
     let centre = pos + (away * step * 0.5).extend(0.0);
-    let rand = &mut *w.rand;
     (0..FLEE_TRIES)
-        .filter_map(|_| w.nav.random_point(centre, step, &mut *rand))
+        .filter_map(|_| nav.random_point(centre, step, &mut rand))
         .max_by(|a, b| a.distance(threat).total_cmp(&b.distance(threat)))
         .filter(|p| p.distance(threat) > pos.distance(threat))
 }

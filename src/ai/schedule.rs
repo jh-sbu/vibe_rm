@@ -284,6 +284,14 @@ impl Engine {
     /// Where a package puts an actor, when its location names a place (a reference,
     /// linked reference or interior cell). The position is NaN for a whole cell.
     pub(crate) fn package_place(&self, achr: FormId, p: &Package) -> Option<(Place, Vec3)> {
+        if let Some(destination) = self
+            .execution(achr)
+            .and_then(|x| x.run.as_ref())
+            .and_then(|r| r.cursor.as_ref())
+            .and_then(|c| self.consumer_destination(achr, p, c))
+        {
+            return Some(destination);
+        }
         let effective = self
             .actor_ref(achr)
             .map(|a| a.exec.effective(p))

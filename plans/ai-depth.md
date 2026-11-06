@@ -5,7 +5,7 @@ trees, durable cursors, loaded/away execution and multi-location migration;
 finite Patrol completion and away practice counts are implemented. Step 2 is
 complete, including menu-time catch-up, door travel and vanilla sequence fixtures.
 Steps 3–5 are complete.
-Step 6 has Find, Wander and saved ObjectLists; Acquire and Flee remain.
+Step 6 is complete, including acquisition, fleeing and UseWeapon preparation trees.
 Steps 7–16 are not implemented.
 
 This plan covers ROADMAP Next item 4 (AI depth): everything in it that can be
@@ -64,6 +64,8 @@ and its top 40. `pack-census <data> --masters` reproduces this census.
 - Now interpreted as sequences: TravelBackAndForth 24, the travel half of
   TravelBackAndForthAndGuard 26 (Guard remains blocked), ActivateInSequence 2,
   StayAtCurrentLocation 14, DoNothing 12 and SandboxLockOnArrival 4.
+  Acquire 5, FleeFrom 11, FleeTo 8 and KeepDistanceFrom 1 now run their
+  Find/Wander/acquisition/flee trees; human UseWeapon preparation is interpreted.
   Say 5 and StartConversation 1 run their dialogue procedures; SayToPlayer's
   transition condition remains for step 9. CarryAndDropItem and
   CarryAndKeepItem use their Activate/Travel trees; their remaining carry
@@ -399,14 +401,23 @@ replacement script or hardcoded resource-state change.
 
 ### 6. Find, Acquire and Flee procedures
 
-**Status: in progress** (2026-11-06). Find fills run-scoped ObjectLists with
+**Status: done** (2026-11-06). Find fills run-scoped ObjectLists with
 nearby matching references, holder inventories, and optional own inventory/spells.
 Empty searches retry beside Wander; randomized results retain the selected order.
 Faction and nested/dynamic FLST Object IDs share the target resolver, with cycle
 protection. AEXC version 3 preserves results, including suspended runs, and reads
 versions 0–2. The MQ101 fixture traces Ralof’s key to a soldier alias inventory
-and the scene’s stage-280 death gate. Acquire/Flee and UseWeapon tree enablement
-remain in this step. Research and choices: `research/find-acquire-flee.md` and
+and the scene’s stage-280 death gate. Acquire approaches eligible loose/container/corpse/own-inventory results and
+counts its quota, retaining ownership, item copies and script events. Living
+pockets require both permissions and use the picker-specific chance formula.
+Exhausted searches retry without recounting own inventory. Autonomous theft
+reports its actual actor and does not charge the player. Flee uses shared combat
+open-ground sampling, destinations/distances, forget-dead/quiet/counts-as-fleeing
+inputs, and the vanilla 3000/5000 distance defaults. UseWeapon preparation trees
+are enabled; practice is projected only while its leaf is active.
+
+Validated: 217 AI tests, 193 save regressions, 9 item tests and the matching
+pickpocket/crime regressions, with ignored fixtures included. Research and choices: `research/find-acquire-flee.md` and
 `known_ambiguities/find-acquire-flee.md`.
 
 - **Find** (36 tree uses): fill the package's ObjectList with the matching

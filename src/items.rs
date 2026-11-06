@@ -139,6 +139,11 @@ impl Engine {
     /// Pick up an item reference: into the player's inventory (as many as the
     /// reference stands for, `XCNT`) and gone from the world.
     pub fn take_item(&mut self, r: FormId) -> bool {
+        self.take_item_by(PLAYER_REF, r, None)
+    }
+
+    /// Whole reference-stack pickup, including its persistent copy extras.
+    pub(crate) fn take_item_by(&mut self, actor: FormId, r: FormId, mark: Option<FormId>) -> bool {
         if self.is_disabled(r) {
             return false;
         }
@@ -161,41 +166,47 @@ impl Engine {
             .max(1);
         // A dropped stolen item stays stolen: its theft was judged when the
         // player took it, so it isn't judged again where it lies.
-        let stolen = self
-            .created(r)
-            .and_then(|c| c.owner)
-            .or_else(|| self.stolen_from(base, r, false));
-        self.inventory_mut(PLAYER_REF)
-            .add_owned(base, stolen, count);
+        let stolen = self.created(r).and_then(|c| c.owner).or(mark).or_else(|| {
+            (actor == PLAYER_REF)
+                .then(|| self.stolen_from(base, r, false))
+                .flatten()
+        });
+        self.inventory_mut(actor).add_owned(base, stolen, count);
         if let Some(copies) = self.ref_state.item_copies.remove(&r) {
             for mut copy in copies {
                 copy.owner = stolen;
-                self.inventory_mut(PLAYER_REF).add_copy_state(copy);
+                self.inventory_mut(actor).add_copy_state(copy);
             }
         }
         if let Some(charges) = self.world_state.item_charges.remove(&r) {
             let full = self.weapon_capacity(base);
             for left in charges {
-                self.inventory_mut(PLAYER_REF).add_charge(base, left, full);
+                self.inventory_mut(actor).add_charge(base, left, full);
             }
         }
-        if stolen.is_some() {
+        if stolen.is_some() && actor == PLAYER_REF {
             self.increment_stat("Items Stolen", count);
         }
-        if base == crate::crime::GOLD {
+        if base == crate::crime::GOLD && actor == PLAYER_REF {
             self.increment_stat("Gold Found", count);
         }
-        self.inventory_event(PLAYER_REF, true, base, count, None);
+        self.inventory_event(actor, true, base, count, None);
         self.set_disabled(r, true);
-        self.send_player_add_item(base, count, r, false);
-        self.scripts.notify(if count > 1 {
-            format!("{} ({count}) added", info.name)
-        } else {
-            format!("{} added", info.name)
-        });
+        if actor == PLAYER_REF {
+            self.send_player_add_item(base, count, r, false);
+            self.scripts.notify(if count > 1 {
+                format!("{} ({count}) added", info.name)
+            } else {
+                format!("{} added", info.name)
+            });
+        }
         log::info!("took {r} ({base} x{count})");
-        let player = self.object_value(PLAYER_REF);
-        self.send_script_event(r, "OnContainerChanged", vec![player, papyrus::Value::None]);
+        let receiver = self.object_value(actor);
+        self.send_script_event(
+            r,
+            "OnContainerChanged",
+            vec![receiver, papyrus::Value::None],
+        );
         true
     }
 

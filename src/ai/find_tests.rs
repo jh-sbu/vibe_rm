@@ -390,3 +390,191 @@ fn vanilla_ralof_key_search_names_the_soldiers_alias_inventory_and_a_bound_objec
     }
     assert!(consumers > 0);
 }
+
+fn acquire_package(quantity: i32, stealing: bool, pockets: bool, own: bool) -> Package {
+    let mut p = package(own, false, false);
+    Arc::make_mut(p.tree.as_mut().unwrap()).children[1] = leaf(
+        "Acquire",
+        vec![
+            Input::ObjectList(2),
+            Input::Int(quantity),
+            Input::Bool(stealing),
+            Input::Bool(pockets),
+            Input::Bool(false),
+        ],
+    );
+    p
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn acquire_approaches_a_corpse_takes_only_its_quota_and_finishes_the_package() {
+    let mut e = engine();
+    e.world_state
+        .dead
+        .insert(HOLDER, (Place::Interior(CELL), Vec3::X * 100.));
+    loaded(&mut e, acquire_package(1, false, false, false));
+    e.run_loaded_finds();
+    assert_eq!(e.item_count(ACTOR, KEY), 3);
+    assert_eq!(
+        e.actor_ref(ACTOR).unwrap().exec.goal.unwrap().centre,
+        Vec3::X * 100.
+    );
+    e.actor_mut(ACTOR).unwrap().exec.pos.x = 10.;
+    e.run_loaded_finds();
+    assert_eq!(e.item_count(ACTOR, KEY), 4);
+    assert_eq!(e.item_count(HOLDER, KEY), 1);
+    assert_eq!(e.execution(ACTOR).unwrap().done_once, Some(PACKAGE));
+    assert!(e.crime.bounties.is_empty());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn acquire_skips_living_pockets_and_owned_loose_items_unless_permitted() {
+    for allow in [false, true] {
+        let mut e = engine();
+        e.scripts.owners.insert(MARKER, Some(FormId(0x7)));
+        loaded(&mut e, acquire_package(1, allow, false, false));
+        e.run_loaded_finds();
+        assert_eq!(
+            e.item_count(HOLDER, KEY),
+            2,
+            "living inventory requires pickpocket permission"
+        );
+        e.actor_mut(ACTOR).unwrap().exec.pos.x = 150.;
+        e.run_loaded_finds();
+        assert_eq!(e.is_disabled(MARKER), allow);
+        assert_eq!(e.item_count(ACTOR, KEY), if allow { 4 } else { 3 });
+        if allow {
+            assert_eq!(e.inventory_mut(ACTOR).count_owned(KEY, Some(FormId(7))), 1);
+        }
+        assert!(
+            e.crime.bounties.is_empty(),
+            "autonomous theft never charges the player"
+        );
+    }
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn acquire_counts_owned_inventory_without_moving_it_or_counting_it_twice_on_retry() {
+    let mut e = engine();
+    e.scripts.disabled.insert(MARKER, true);
+    e.inventory_mut(HOLDER).remove_split(KEY, 2, None);
+    loaded(&mut e, acquire_package(4, false, false, true));
+    e.run_loaded_finds();
+    assert_eq!(e.item_count(ACTOR, KEY), 3);
+    for _ in 0..3 {
+        e.advance_loaded_trees(3.);
+        e.run_loaded_finds();
+    }
+    let c = e
+        .execution(ACTOR)
+        .unwrap()
+        .run
+        .as_ref()
+        .unwrap()
+        .cursor
+        .as_ref()
+        .unwrap();
+    assert_eq!(c.states[&vec![1]].count, 3);
+    assert!(!c.completed);
+    assert!(
+        c.valid_for(
+            e.execution(ACTOR).unwrap().packages[0]
+                .tree
+                .as_ref()
+                .unwrap(),
+            &c.tree_key
+        )
+    );
+    e.scripts.disabled.insert(MARKER, false);
+    e.actor_mut(ACTOR).unwrap().exec.pos.x = 150.;
+    e.advance_loaded_trees(3.);
+    e.run_loaded_finds();
+    assert_eq!(e.item_count(ACTOR, KEY), 4);
+    assert_eq!(e.execution(ACTOR).unwrap().done_once, Some(PACKAGE));
+}
+
+fn flee_package(from: bool, dead: bool, quiet: bool, counts: bool) -> Package {
+    let mut p = Package::bare(PACKAGE, Behaviour::Hold);
+    p.schedule.hour = -1;
+    p.schedule.day_of_week = -1;
+    p.tree = Some(Arc::new(leaf(
+        "Flee",
+        vec![
+            Input::Target(Target::Ref(HOLDER)),
+            Input::Location(Location {
+                kind: LocationKind::NearReference(MARKER),
+                radius: 20.,
+            }),
+            Input::Bool(from),
+            Input::Float(20.),
+            Input::Float(20.),
+            Input::Float(400.),
+            Input::Bool(false),
+            Input::Bool(dead),
+            Input::Bool(quiet),
+            Input::Bool(counts),
+        ],
+    )));
+    p
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn flee_to_location_counts_as_fleeing_only_when_requested_and_finishes_at_destination() {
+    for counts in [false, true] {
+        let mut e = engine();
+        loaded(&mut e, flee_package(false, false, true, counts));
+        assert_eq!(e.is_fleeing(ACTOR), counts);
+        assert_eq!(
+            e.actor_ref(ACTOR).unwrap().exec.goal.unwrap().centre,
+            Vec3::X * 200.
+        );
+        assert!(!e.run_package_flee(ACTOR));
+        e.actor_mut(ACTOR).unwrap().exec.pos.x = 190.;
+        e.run_loaded_finds();
+        assert_eq!(e.execution(ACTOR).unwrap().done_once, Some(PACKAGE));
+        assert!(!e.is_fleeing(ACTOR));
+    }
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn flee_from_distance_ignores_dead_threats_only_with_the_flag() {
+    for forget in [false, true] {
+        let mut e = engine();
+        e.world_state
+            .dead
+            .insert(HOLDER, (Place::Interior(CELL), Vec3::X * 100.));
+        loaded(&mut e, flee_package(true, forget, true, true));
+        assert_eq!(e.run_package_flee(ACTOR), forget);
+        if !forget {
+            e.actor_mut(ACTOR).unwrap().exec.pos.x = -310.;
+            assert!(e.run_package_flee(ACTOR));
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires installed Skyrim SE masters and a headless GPU"]
+fn vanilla_acquire_flee_and_weapon_preparation_trees_are_executable() {
+    let data = vfs::locate_data_dir().unwrap();
+    let names: Vec<_> = esp::BASE_MASTERS.iter().map(|s| s.to_string()).collect();
+    let e = crate::stats::action_tests::headless_engine_plugins(&data, &names);
+    for id in [
+        0x18969, 0x35B6B, 0x8C816, 0xFEDCD, 0x197F1, 0xC7039, 0x46BA9, 0x1C338,
+    ] {
+        let p = crate::ai::package::parse(&e.lo, FormId(id)).unwrap();
+        assert!(p.tree.as_ref().unwrap().executable(), "{}", p.editor_id);
+    }
+    assert_eq!(
+        super::super::combat::gmst_f32(&e.lo, "fFleeDistanceInterior", 0.),
+        3000.
+    );
+    assert_eq!(
+        super::super::combat::gmst_f32(&e.lo, "fFleeDistanceExterior", 0.),
+        5000.
+    );
+}

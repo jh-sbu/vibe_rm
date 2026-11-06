@@ -875,6 +875,12 @@ impl Package {
             Some(Input::Bool(v)) => *v,
             _ => default,
         };
+        if n.procedure != "UseWeapon" {
+            p.use_weapon = None;
+        }
+        if n.procedure != "UseMagic" {
+            p.use_magic = None;
+        }
         let number = |i: usize, default| match n.values.get(i) {
             Some(Input::Float(v)) => *v,
             Some(Input::Int(v)) => *v as f32,

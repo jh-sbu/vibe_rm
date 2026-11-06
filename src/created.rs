@@ -160,6 +160,11 @@ impl Engine {
     /// its own cell's.
     pub fn current_place_of(&self, r: FormId) -> Option<(Place, Vec3)> {
         let pos = self.ref_position(r)?;
+        if !self.actor_cells.contains_key(&r)
+            && let Some(place) = self.away.get(&r).and_then(|x| x.place)
+        {
+            return Some((place, pos));
+        }
         if r == PLAYER_REF {
             return match self.location {
                 Location::Interior(c) => Some((Place::Interior(c), pos)),

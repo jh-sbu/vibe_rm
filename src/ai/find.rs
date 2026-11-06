@@ -29,6 +29,41 @@ struct Request {
 }
 
 impl Engine {
+    /// Revisit an exhausted acquisition search without forgetting its quota.
+    pub(super) fn refill_acquisition(
+        &mut self,
+        actor: FormId,
+        package: &Package,
+        slot: u8,
+    ) -> Vec<Found> {
+        fn find(node: &super::package::Node, slot: u8) -> Option<&super::package::Node> {
+            if node.procedure == "Find"
+                && matches!(node.values.get(2), Some(Input::ObjectList(i)) if *i == slot)
+            {
+                return Some(node);
+            }
+            node.children.iter().find_map(|n| find(n, slot))
+        }
+        let Some(node) = package.tree.as_ref().and_then(|n| find(n, slot)) else {
+            return vec![];
+        };
+        let Some(Input::Target(target)) = node.values.get(1) else {
+            return vec![];
+        };
+        let mut found = self.search_package(
+            actor,
+            &Request {
+                path: vec![],
+                package: package.for_procedure(Some(node)),
+                list: slot,
+                target: *target,
+                own: false,
+                random: matches!(node.values.get(4), Some(Input::Bool(true))),
+            },
+        );
+        found.retain(|f| !matches!(f, Found::Inventory { owner, .. } if *owner == actor));
+        found
+    }
     fn find_requests(&self, actor: FormId) -> Vec<Request> {
         let Some(x) = self.execution(actor) else {
             return vec![];
@@ -162,6 +197,8 @@ impl Engine {
             let mut changed = false;
             for actor in actors {
                 changed |= self.run_find(actor);
+                changed |= self.run_acquire(actor);
+                changed |= self.run_package_flee(actor);
             }
             if !changed {
                 break;

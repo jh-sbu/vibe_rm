@@ -507,7 +507,7 @@ impl Engine {
         }
         let reporters: Vec<FormId> = told.iter().flat_map(|t| t.2.iter().copied()).collect();
         if !matches!(kind, CrimeType::Pickpocket | CrimeType::Trespass) {
-            self.react_to_crime(kind, victim, owner, &witnesses, &reporters);
+            self.react_to_crime(PLAYER_REF, kind, victim, owner, &witnesses, &reporters);
         }
         !told.is_empty()
     }
@@ -535,6 +535,7 @@ impl Engine {
     /// otherwise.
     fn react_to_crime(
         &mut self,
+        culprit: FormId,
         kind: CrimeType,
         victim: Option<FormId>,
         owner: Option<FormId>,
@@ -562,19 +563,16 @@ impl Engine {
             let Some(a) = self.actor_ref(w) else { continue };
             if a.stats.aggression >= 1
                 && a.stats.confidence > 0
-                && a.exec
-                    .combat
-                    .as_ref()
-                    .is_none_or(|c| c.target != PLAYER_REF)
+                && a.exec.combat.as_ref().is_none_or(|c| c.target != culprit)
             {
                 fighters.push(w);
             }
         }
         for &w in &fighters {
-            log::info!("{w} attacks the player for their {kind:?}");
-            self.start_combat(w, PLAYER_REF);
+            log::info!("{w} attacks {culprit} for their {kind:?}");
+            self.start_combat(w, culprit);
         }
-        let player = self.ref_position(PLAYER_REF).unwrap_or_default();
+        let player = self.ref_position(culprit).unwrap_or_default();
         let speaker = victim
             .filter(|&v| witnesses.contains(&v) && alive(self, v))
             .or_else(|| {
@@ -603,6 +601,76 @@ impl Engine {
         self.crime.reacting_victim = victim;
         self.bark(speaker, topic);
         self.crime.reacting_victim = None;
+    }
+
+    /// Autonomous package theft is attributed to its actor. Player bounties and
+    /// player crime statistics must not be changed by another actor's pickup.
+    pub(crate) fn report_package_theft(
+        &mut self,
+        culprit: FormId,
+        victim: Option<FormId>,
+        owner: Option<FormId>,
+        value: i32,
+        pocket: bool,
+    ) {
+        if self.game_flags.crime_unreported {
+            return;
+        }
+        let kind = if pocket {
+            CrimeType::Pickpocket
+        } else {
+            CrimeType::Steal
+        };
+        let mut witnesses: Vec<_> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| a.ref_id != culprit && !a.dead && self.detects(a.ref_id, culprit))
+            .map(|a| a.ref_id)
+            .collect();
+        if pocket && let Some(v) = victim.filter(|&v| !self.is_dead(v) && !witnesses.contains(&v)) {
+            witnesses.push(v);
+        }
+        let faction = victim
+            .and_then(|v| self.crime_faction(v))
+            .or(owner.filter(|&f| self.lo.tag_of(f).is_some_and(|t| t.0 == *b"FACT")));
+        let mut reporters = Vec::new();
+        let mut told = std::collections::HashSet::new();
+        for &w in &witnesses {
+            let Some(own) = self.crime_faction(w) else {
+                continue;
+            };
+            let f = faction.unwrap_or(own);
+            let Some(values) = CrimeValues::of(&self.lo, f) else {
+                continue;
+            };
+            if faction != Some(f) && values.flags & kind.ignore_flag() != 0 {
+                continue;
+            }
+            if faction == Some(f)
+                && own == f
+                && values.flags & DO_NOT_REPORT_MEMBERS != 0
+                && Some(w) != victim
+            {
+                continue;
+            }
+            reporters.push(w);
+            if told.insert(f) {
+                let mut event = crate::story::StoryEvent::new(b"ADCR");
+                event.refs = [victim.unwrap_or_default(), culprit];
+                event.form = f;
+                event.values = [values.gold(kind, value) as f32, kind as i32 as f32];
+                self.send_story_event(event);
+            }
+        }
+        self.react_to_crime(culprit, kind, victim, owner, &witnesses, &reporters);
+        for guard in reporters
+            .into_iter()
+            .filter(|&w| self.is_guard(w))
+            .collect::<Vec<_>>()
+        {
+            self.start_combat(guard, culprit);
+        }
     }
 
     /// Witnesses of unreported crimes who die are no longer witnesses; when

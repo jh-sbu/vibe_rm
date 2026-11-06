@@ -77,7 +77,10 @@ impl ActorExec {
                 .and_then(|p| p.tree.clone())
                 .unwrap();
             if tree.at(&path).is_some_and(|n| {
-                matches!(n.procedure.as_str(), "HoldPosition" | "DialogueActivate")
+                matches!(
+                    n.procedure.as_str(),
+                    "HoldPosition" | "DialogueActivate" | "Acquire" | "Flee"
+                )
             }) {
                 return;
             }
@@ -327,6 +330,9 @@ impl Node {
                     | "DialogueActivate"
                     | "Find"
                     | "Wander"
+                    | "Acquire"
+                    | "Flee"
+                    | "UseWeapon"
             ))
             && self.children.iter().all(Node::executable)
     }

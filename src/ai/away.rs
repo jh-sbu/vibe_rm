@@ -227,7 +227,7 @@ impl Engine {
         }
         self.procedure_locks(r);
         for _ in 0..8 {
-            if !self.run_find(r) {
+            if !(self.run_find(r) | self.run_acquire(r) | self.run_package_flee(r)) {
                 break;
             }
             self.advance_away_tree(r, 0.);
@@ -392,9 +392,31 @@ impl Engine {
             }
             return;
         };
-        let p = x.effective(p);
+        let base = p;
+        let consumer = x
+            .run
+            .as_ref()
+            .and_then(|r| r.cursor.as_ref())
+            .and_then(|c| self.consumer_destination(r, base, c));
+        let p = x
+            .run
+            .as_ref()
+            .and_then(|r| r.cursor.as_ref())
+            .filter(|_| base.tree.is_some())
+            .map(|c| std::borrow::Cow::Owned(self.project_consumer(r, base, c)))
+            .unwrap_or_else(|| x.effective(base));
         let p = &*p;
-        let step = if matches!(p.behaviour, Behaviour::Follow | Behaviour::Escort) {
+        let step = if let Some((there, target)) = consumer {
+            if same_space(place, there) {
+                Move::Walk {
+                    end: target,
+                    strides: false,
+                    jump: false,
+                }
+            } else {
+                plan_move(p, place, pos, there, target, tier, x.prompted)
+            }
+        } else if matches!(p.behaviour, Behaviour::Follow | Behaviour::Escort) {
             // Keeping up with whom it follows, when they are away too.
             let near = p.follow_radius.1.max(0.0) + FOLLOW_SLACK;
             self.package_target_of(r, p, p.target)
