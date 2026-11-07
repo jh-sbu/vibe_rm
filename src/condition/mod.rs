@@ -340,7 +340,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
                     e.npc_factions(s)
                         .into_iter()
                         .find(|(f, _)| *f == p1)
-                        .map(|x| x.1 as f32)
+                        .map(|x| e.read_faction_rank(s, p1, x.1 as i32) as f32)
                 })
                 .unwrap_or(-1.0),
         ), // GetFactionRank

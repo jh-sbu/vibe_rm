@@ -286,6 +286,30 @@ fn faction_natives_reach_the_engine() {
         Some(&guards),
         &[]
     )));
+    // Expelled, the player stays a member whose rank reads -2 (Skyrim SE,
+    // autotest21).
+    call(
+        &mut e,
+        "actor",
+        "setfactionrank",
+        Some(&player),
+        &[guards.clone(), Value::Int(2)],
+    );
+    let rank = call(
+        &mut e,
+        "actor",
+        "getfactionrank",
+        Some(&player),
+        &[guards.clone()],
+    );
+    assert_eq!(int(rank), -2);
+    assert!(yes(call(
+        &mut e,
+        "actor",
+        "isinfaction",
+        Some(&player),
+        &[guards.clone()]
+    )));
     call(&mut e, "faction", "setplayerenemy", Some(&town), &[]);
     assert!(e.player_enemy_of(TOWN), "true when left out");
     call(

@@ -63,10 +63,15 @@
   read them, the conditions whoever their subject is. Changes are saved in
   optional `FPLR`; legacy saves have none, so factions are as their plugins
   say. Calls on forms that aren't factions do nothing.
-- Unconfirmed: what being expelled does besides these reads. No vanilla
+- Skyrim SE (autotest21, `research/autotest21.md`, FactionNatives): the
+  player at rank 2, `SetPlayerExpelled(true)`: still in the faction, the
+  rank reading -2, `IsPlayerExpelled` True. Ours keeps the membership and
+  the rank, and reads it as -2 for the player while expelled
+  (`GetFactionRank`, the native and condition 73).
+- Unconfirmed: what else being expelled does, and whether clearing the
+  flag gives the rank back (ours does: it was never changed). No vanilla
   script calls `SetPlayerExpelled` or `IsPlayerExpelled` and no vanilla
-  condition uses 193 (`vrm-tool pex-calls`, `ctda-uses`), so we change
-  nothing else. Rank, membership and services stay as they were.
+  condition uses 193 (`vrm-tool pex-calls`, `ctda-uses`).
 
 ## Members of factions the player is an enemy of
 
@@ -114,6 +119,7 @@
   crime group"). It looks one way, and a faction is in its own group only if
   the list names it. Sharing crimes between witnesses
   (`in_shared_crime_faction`) still checks both lists and equal factions.
-- Unconfirmed: whether a faction counts as in its own crime group without
-  being listed, and whether the game checks the other faction's list too.
+- Skyrim SE (autotest21, FactionNatives) agrees: a faction isn't in its
+  own crime group unless listed, and the check is one way (a grouping
+  faction lists Red and has it; Red doesn't have the grouping faction).
   The native has no vanilla callers (`vrm-tool pex-calls`).

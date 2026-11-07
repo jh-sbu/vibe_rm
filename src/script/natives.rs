@@ -1394,7 +1394,7 @@ pub fn call(
         ))),
         ("actor", "getfactionrank") => v(Value::Int(
             me.zip(form_arg(args, 0))
-                .map_or(-1, |(r, f)| e.faction_rank(r, f)),
+                .map_or(-1, |(r, f)| e.read_faction_rank(r, f, e.faction_rank(r, f))),
         )),
         // In a faction, an actor keeps the rank it has; out of it, it joins at 0.
         ("actor", "addtofaction") => {

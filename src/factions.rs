@@ -200,6 +200,18 @@ impl Engine {
         self.faction_player_flags(faction) & PLAYER_EXPELLED != 0
     }
 
+    /// A faction rank as `GetFactionRank` reads it: -2 for the player while
+    /// expelled from a faction they're still in. Skyrim SE (autotest21): at
+    /// rank 2, `SetPlayerExpelled(true)` left the player in the faction with
+    /// the rank reading -2.
+    pub fn read_faction_rank(&self, actor: FormId, faction: FormId, rank: i32) -> i32 {
+        if actor == crate::engine::PLAYER_REF && rank >= 0 && self.player_expelled_from(faction) {
+            -2
+        } else {
+            rank
+        }
+    }
+
     pub fn player_enemy_of(&self, faction: FormId) -> bool {
         self.faction_player_flags(faction) & PLAYER_ENEMY != 0
     }
