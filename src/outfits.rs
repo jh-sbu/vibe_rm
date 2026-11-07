@@ -107,8 +107,14 @@ impl Engine {
         let worn = armors(self, outfit);
         // Make sure the inventory exists (with the old outfit) before changing it.
         self.inventory_mut(actor);
+        // Every copy of the old outfit's armor goes, given ones too: Skyrim SE
+        // (autotest21) left none of an outfit's iron cuirass and a second one
+        // given to the NPC.
         for &a in gone.iter().filter(|a| !worn.contains(a)) {
-            self.remove_item(actor, a, 1, None);
+            let count = self.inventory_mut(actor).count(a);
+            if count > 0 {
+                self.remove_item(actor, a, count, None);
+            }
         }
         for &a in &worn {
             if self.inventory_mut(actor).count(a) == 0 {

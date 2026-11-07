@@ -286,6 +286,9 @@ fn set_outfit_swaps_the_outfits_armor() {
         &[new.clone(), Value::Bool(true)],
     );
     assert_eq!(e.default_outfit(ACTOR), Some(OLD));
+    // A second copy given besides the outfit's goes too (Skyrim SE,
+    // autotest21).
+    e.add_item(ACTOR, CUIRASS, 1);
     call(
         &mut e,
         "actor",
