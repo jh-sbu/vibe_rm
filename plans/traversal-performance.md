@@ -182,8 +182,25 @@ without other builds or heavy work competing for CPU time.
   ([async textures](async-textures.md)): the first-time cells hitch fell from
   243 to 75 ms. Placed objects' models are still parsed synchronously
   (`objects.models` ~17 ms in that frame).
-- The Companions SCPT start (~75 ms, no spawn) is now the largest recurring
-  hitch on the route: CR01/CR04 alias fills (`GetIsVoiceType`-anchored).
+- The Companions SCPT start's script stage fell from ~75 to ~30 ms
+  (2026-11-07): `GetIsVoiceType` narrows matching candidates (CR01 BeastVictim
+  ~15 → ~3 ms); factions are memoized per actor during a fill, and authored
+  reactions per faction (CR04 Brute ~14 → ~6 ms per attempt). Also,
+  `update_scripts`' later passes no longer give a thread that used its budget
+  another 20,000 instructions.
+- **Open: Papyrus busy loops cost ~7 ms every frame.** Vanilla's
+  `CWArrowVolleyParentScript.startFiring` polls `CWBattlePhase` without
+  waiting outside a siege, and each loaded one uses its whole 20,000-instruction
+  budget (~2.3 ms) every frame. How the original game time-slices such a thread
+  (the `[Papyrus]` `fUpdateBudgetMS` / `fExtraTaskletBudgetMS` settings, or
+  frame-synchronized native calls) isn't documented in the sources checked
+  (local UESP only mentions the settings on a talk page). Lowering the budget
+  would change how fast long-running scripts progress, so it needs a decision
+  or an SE probe.
+- The first `Disable` of a session builds the enable-parent index over all
+  878,000 placed references (~170 ms; startup's nirnroot `OnCellAttach`).
+- One run had a 52 ms `cell.triggers_scripts_audio` at a cell load (frame 844);
+  not reproduced or looked into.
 - `ai.loaded.enemies` once took 34 ms (frame 710 of one run); not looked into.
 - Budget schedule evaluation by elapsed time instead of 250 entries per frame.
 - Add permanent sub-stage timings to `sim.scripts_weather` and `sim.gameplay`.
