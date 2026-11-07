@@ -524,12 +524,15 @@ impl Engine {
     }
 
     pub(crate) fn procedure_cell_locks(&mut self, cell: FormId, locked: bool) {
-        let held = if locked {
+        let doors = self.cell_doors(cell);
+        // Which doors sleepers hold locked is only asked when one is locked:
+        // it reads every such sleeper's packages.
+        let held = if locked || !doors.iter().any(|&d| self.is_locked(d)) {
             Default::default()
         } else {
             self.doors_held_locked()
         };
-        for door in self.cell_doors(cell) {
+        for door in doors {
             if locked || !held.contains(&self.lock_holder(door)) {
                 self.set_locked(door, locked);
             }
@@ -636,6 +639,16 @@ impl Engine {
     /// The locks (their holders) of the homes of actors now in a package that
     /// locks doors, as their doors last followed them (not those asking the
     /// player to leave instead).
+    /// Whether package `id`'s record locks doors (none: no such package).
+    fn package_locks_doors(&self, id: FormId) -> Option<bool> {
+        if let Some(&locks) = self.package_locks.borrow().get(&id) {
+            return locks;
+        }
+        let locks = crate::ai::package::parse(&self.lo, id).map(|p| p.lock_doors);
+        self.package_locks.borrow_mut().insert(id, locks);
+        locks
+    }
+
     fn doors_held_locked(&mut self) -> std::collections::HashSet<FormId> {
         let sleepers: Vec<(FormId, FormId)> = self
             .whereabouts
@@ -646,6 +659,11 @@ impl Engine {
             .collect();
         let mut held = std::collections::HashSet::new();
         for (achr, package) in sleepers {
+            // A package whose record doesn't lock doors holds none (asking
+            // the actor's packages for it is much dearer).
+            if self.package_locks_doors(package) == Some(false) {
+                continue;
+            }
             let Some(npc) = self.lo.get(achr).map(|rec| records::reference(&rec).base) else {
                 continue;
             };

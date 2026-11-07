@@ -2064,12 +2064,20 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
        `VRM_MENU_ACTORS`, `VRM_MENU_SECONDS`), one hour, no cells loaded:
        48 away 0.76 → 0.09 s, 200 away 3.5 → 0.7 s, 400 away 8.7 → 1.4 s,
        with the same places and packages at the end; all 9,680 scheduled
-       actors away took over 900 s and now take 174 s. What remains with
-       everyone away is the 3 s readings of about 450 busy actors, mostly
-       empty `Find`s retrying (`search_package`): for an exterior package
-       location each search walks the world's persistent cell and every
-       away actor, 5–20 ms. That cost is the same out of menus, where away
-       actors retry on the same cadence.
+       actors away took over 900 s and now take 174 s. Then package
+       reference searches (`search_package_references`: Find, Sandbox
+       furniture) read each placed reference's record once (`Placed`), look
+       only at the squares of a world's persistent cell near the search
+       (`PersistentGrid`) and at away actors where they are, and unlocking
+       a cell asks which doors sleepers hold locked only when one is locked:
+       one exterior search 21 → 1.9 ms, 119,392 sampled searches returning
+       what they did before; 48 away 0.05 s, 200 0.28 s, 400 0.70 s, all
+       9,680 118 s. Out of menus, away actors' searches gain the same. What
+       remains with everyone away is spread over the 3 s readings of about
+       450 busy actors (movement, Find retries in interiors with hundreds of
+       references, locks); empty Finds could be remembered until something
+       in their place changes if that matters later. Outcomes differ by an
+       actor or two between runs of the same code (hash order).
      - Failed horse searches (`Engine::horse_for`, `src/ai/mounts.rs`)
        repeat every frame for each rider whose package allows riding but
        finds no horse. The scan is now over the 76 cached placed horses,

@@ -376,6 +376,9 @@ pub struct Engine {
     /// Placed references' authored data as read for package searches
     /// (`ai::targets::Placed`; none: not in the load order), when first read.
     pub(crate) placed_refs: std::cell::RefCell<HashMap<FormId, Option<crate::ai::targets::Placed>>>,
+    /// Whether each package locks doors (`Package::lock_doors`; none: no
+    /// such package record), as its record says, when first asked.
+    pub(crate) package_locks: std::cell::RefCell<HashMap<FormId, Option<bool>>>,
     /// Actors' factions while one alias is filled (`Some` only then: nothing
     /// they depend on can change while its conditions are evaluated).
     pub(crate) faction_memo: std::cell::RefCell<Option<HashMap<FormId, Vec<(FormId, i8)>>>>,
@@ -711,6 +714,7 @@ impl Engine {
             alias_spec_cache: Default::default(),
             persistent_grids: Default::default(),
             placed_refs: Default::default(),
+            package_locks: Default::default(),
             faction_memo: Default::default(),
             authored_reactions: Default::default(),
             created_refs: Default::default(),
