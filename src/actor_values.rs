@@ -40,10 +40,9 @@ pub(crate) struct RecordStats {
 }
 
 /// The race's `DATA` (from the traits template).
-fn race_data(lo: &esp::LoadOrder, src: &template::Sources) -> Vec<u8> {
+fn race_data(lo: &esp::LoadOrder, src: &template::Sources) -> Arc<[u8]> {
     src.form(lo, template::TRAITS, b"RNAM")
-        .and_then(|r| lo.get(r))
-        .and_then(|r| r.get(b"DATA").map(<[u8]>::to_vec))
+        .and_then(|r| lo.cached_field(r, b"DATA"))
         .unwrap_or_default()
 }
 
@@ -235,9 +234,10 @@ impl Engine {
     /// `GetActorValuePercent(age)`: what it is now over the most it can be
     /// (0..1); 1 when the most is 0 (`test-mod autotest`).
     pub fn actor_value_fraction(&self, actor: FormId, index: u32) -> f32 {
-        let (current, max) = self
-            .av_live(actor, index)
-            .unwrap_or_else(|| (self.actor_value(actor, index), self.av_max(actor, index)));
+        let (current, max) = self.av_live(actor, index).unwrap_or_else(|| {
+            let max = self.av_max(actor, index);
+            (max + self.av_mods(actor, index).damage, max)
+        });
         if max > 0.0 {
             (current / max).clamp(0.0, 1.0)
         } else {
@@ -465,5 +465,116 @@ impl Engine {
             m.temporary,
             m.damage
         )
+    }
+}
+
+#[cfg(test)]
+mod optimization_tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn health_stats_follow_level_changes_with_cached_race_data() {
+        use esp::writer::{Node, RecordBuilder, write_plugin};
+        let dir = std::env::temp_dir().join(format!("vrm-health-stats-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut race = [0u8; 96];
+        race[36..40].copy_from_slice(&100f32.to_le_bytes());
+        let mut class = [0u8; 36];
+        class[32] = 1; // All distributed attribute points go to health.
+        let mut acbs = [0u8; 24];
+        acbs[..4].copy_from_slice(&0x80u32.to_le_bytes());
+        acbs[8..10].copy_from_slice(&1000u16.to_le_bytes());
+        acbs[10..12].copy_from_slice(&1u16.to_le_bytes());
+        let actor = FormId(0x803);
+        std::fs::write(
+            dir.join("Stats.esp"),
+            write_plugin(
+                0,
+                &[],
+                "",
+                "",
+                0x804,
+                &[
+                    Node::top(
+                        b"RACE",
+                        vec![RecordBuilder::new(b"RACE", FormId(0x800)).field(b"DATA", &race)],
+                    ),
+                    Node::top(
+                        b"CLAS",
+                        vec![RecordBuilder::new(b"CLAS", FormId(0x801)).field(b"DATA", &class)],
+                    ),
+                    Node::top(
+                        b"NPC_",
+                        vec![
+                            RecordBuilder::new(b"NPC_", FormId(0x802))
+                                .field(b"ACBS", &acbs)
+                                .form(b"RNAM", FormId(0x800))
+                                .form(b"CNAM", FormId(0x801)),
+                        ],
+                    ),
+                    Node::top(
+                        b"ACHR",
+                        vec![RecordBuilder::new(b"ACHR", actor).form(b"NAME", FormId(0x802))],
+                    ),
+                ],
+            ),
+        )
+        .unwrap();
+        {
+            let mut e = crate::stats::action_tests::headless_engine(&dir, "Stats.esp");
+            e.skills.level = 1;
+            assert_eq!(e.av_max(actor, av::HEALTH), 100.0);
+            e.scripts.actor_values.insert(
+                (actor, av::HEALTH),
+                Modifiers {
+                    damage: -50.0,
+                    ..Default::default()
+                },
+            );
+            assert_eq!(e.actor_value_fraction(actor, av::HEALTH), 0.5);
+            e.skills.level = 3;
+            assert_eq!(e.av_max(actor, av::HEALTH), 130.0);
+            assert_eq!(e.actor_value_fraction(actor, av::HEALTH), 80.0 / 130.0);
+            e.scripts
+                .actor_values
+                .get_mut(&(actor, av::HEALTH))
+                .unwrap()
+                .base = Some(200.0);
+            assert_eq!(e.actor_value_fraction(actor, av::HEALTH), 0.75);
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// Optional benchmark against externally installed assets; never copies them.
+    #[test]
+    #[ignore = "needs Skyrim SE Data and a headless GPU adapter"]
+    fn health_query_benchmark() {
+        let data = vfs::locate_data_dir().expect("Skyrim SE Data");
+        let names = esp::LoadOrder::default_plugin_list(&data, None);
+        let mut e = crate::stats::action_tests::headless_engine_plugins(&data, &names);
+        let actor = FormId(0x0200ED3A);
+        assert!(e.lo.get(actor).is_some());
+        assert_eq!(e.actor_value_fraction(actor, av::HEALTH), 1.0);
+        for _ in 0..3 {
+            let start = std::time::Instant::now();
+            for _ in 0..100 {
+                std::hint::black_box(
+                    e.actor_value_fraction(std::hint::black_box(actor), av::HEALTH),
+                );
+            }
+            eprintln!(
+                "health query: {:.3} ms/call",
+                start.elapsed().as_secs_f64() * 10.0
+            );
+        }
+        for _ in 0..3 {
+            let start = std::time::Instant::now();
+            e.refresh_whereabouts();
+            eprintln!(
+                "full schedule refresh: {:.3} ms",
+                start.elapsed().as_secs_f64() * 1000.0
+            );
+        }
     }
 }

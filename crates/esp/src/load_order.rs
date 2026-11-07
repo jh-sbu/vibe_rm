@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock, RwLock};
 
 use crate::plugin::{GroupHeader, Item, Plugin, group_type};
 use crate::record::{Record, RecordHeader};
@@ -104,6 +104,8 @@ pub struct LoadOrder {
     topic_infos: HashMap<FormId, Vec<FormId>>,
     editor_ids: OnceLock<HashMap<String, FormId>>,
     strings: HashMap<(usize, u32), String>,
+    /// Small hot fields from immutable winning plugin records, never live state.
+    cached_fields: RwLock<HashMap<(FormId, Tag), Option<Arc<[u8]>>>>,
 }
 
 /// The base game masters, in their mandatory order.
@@ -216,6 +218,7 @@ impl LoadOrder {
             topic_infos: HashMap::new(),
             editor_ids: OnceLock::new(),
             strings: HashMap::new(),
+            cached_fields: RwLock::new(HashMap::new()),
         };
         for i in 0..lo.plugins.len() {
             lo.index_plugin(i)?;
@@ -497,6 +500,27 @@ impl LoadOrder {
         }
     }
 
+    /// Read a small, frequently used field without repeatedly decompressing its
+    /// enclosing record. Bytes retain plugin-local FormIDs, just as `get` does.
+    /// Plugin records cannot change within a load order. Runtime forms bypass
+    /// this cache because saves can clear and reuse their IDs.
+    pub fn cached_field(&self, id: FormId, tag: &[u8; 4]) -> Option<Arc<[u8]>> {
+        let read = || self.get(id)?.get(tag).map(Arc::<[u8]>::from);
+        if id.0 >= 0xFF00_0000 {
+            return read();
+        }
+        let key = (id, Tag(*tag));
+        if let Some(field) = self.cached_fields.read().unwrap().get(&key) {
+            return field.clone();
+        }
+        let field = read();
+        self.cached_fields
+            .write()
+            .unwrap()
+            .insert(key, field.clone());
+        field
+    }
+
     /// DOBJ is a keyed table: later plugins can contain sparse named updates.
     /// Returns each named entry's last value, including explicit null targets.
     pub fn default_objects(&self) -> HashMap<[u8; 4], FormId> {
@@ -658,6 +682,70 @@ mod runtime_tests {
         lo.clear_runtime_records();
         assert!(lo.get(id).is_none());
         assert!(lo.ids_of_type(b"ALCH").is_empty());
+    }
+
+    #[test]
+    fn cached_fields_follow_overrides_and_load_order_lifetime() {
+        use crate::writer::{Node, write_plugin};
+        let dir = std::env::temp_dir().join(format!("vrm-cached-field-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let id = FormId(0x800);
+        for (name, masters, value) in [
+            ("Base.esm", vec![], 1u32),
+            ("Override.esp", vec!["Base.esm"], 2u32),
+        ] {
+            std::fs::write(
+                dir.join(name),
+                write_plugin(
+                    0,
+                    &masters,
+                    "",
+                    "",
+                    0x801,
+                    &[Node::top(
+                        b"RACE",
+                        vec![RecordBuilder::new(b"RACE", id).u32(b"DATA", value)],
+                    )],
+                ),
+            )
+            .unwrap();
+        }
+        {
+            let lo = LoadOrder::load(&dir, &["Base.esm".into(), "Override.esp".into()]).unwrap();
+            let first = lo.cached_field(id, b"DATA").unwrap();
+            assert_eq!(&*first, &2u32.to_le_bytes());
+            assert!(Arc::ptr_eq(&first, &lo.cached_field(id, b"DATA").unwrap()));
+            assert!(lo.cached_field(id, b"NONE").is_none());
+            assert!(lo.cached_field(FormId(0x999), b"DATA").is_none());
+            let other = LoadOrder::load(&dir, &["Base.esm".into()]).unwrap();
+            assert_eq!(
+                &*other.cached_field(id, b"DATA").unwrap(),
+                &1u32.to_le_bytes()
+            );
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn cached_fields_never_retain_runtime_forms() {
+        let mut lo = LoadOrder::load(std::env::temp_dir(), &[]).unwrap();
+        let id = FormId(0xFF00_0800);
+        assert!(lo.cached_field(id, b"FULL").is_none());
+        for text in ["first", "replacement"] {
+            lo.insert_runtime_record(
+                &RecordBuilder::new(b"ALCH", id)
+                    .zstring(b"FULL", text)
+                    .to_bytes(),
+            )
+            .unwrap();
+            assert_eq!(
+                crate::decode_zstring(&lo.cached_field(id, b"FULL").unwrap()),
+                text
+            );
+            lo.clear_runtime_records();
+            assert!(lo.cached_field(id, b"FULL").is_none());
+        }
+        assert!(lo.cached_fields.read().unwrap().is_empty());
     }
 
     #[test]

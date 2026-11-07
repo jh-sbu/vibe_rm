@@ -268,6 +268,48 @@ fn get_health_percentage_is_the_share_of_the_most() {
 
 #[test]
 #[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn health_fraction_preserves_unloaded_modifiers_and_live_wounds() {
+    let (_f, mut e) = fixture();
+    let key = (ALLY_REF, av::HEALTH);
+    e.scripts.actor_values.insert(
+        key,
+        crate::actor_values::Modifiers {
+            base: Some(100.0),
+            permanent: 20.0,
+            temporary: 30.0,
+            damage: -75.0,
+        },
+    );
+    assert_eq!(e.actor_value_fraction(ALLY_REF, av::HEALTH), 0.5);
+    e.scripts.actor_values.get_mut(&key).unwrap().temporary = 80.0;
+    assert_eq!(e.actor_value_fraction(ALLY_REF, av::HEALTH), 0.625);
+    e.scripts.actor_values.get_mut(&key).unwrap().damage = -500.0;
+    assert_eq!(e.actor_value_fraction(ALLY_REF, av::HEALTH), 0.0);
+    e.scripts.actor_values.insert(
+        key,
+        crate::actor_values::Modifiers {
+            base: Some(0.0),
+            ..Default::default()
+        },
+    );
+    assert_eq!(e.actor_value_fraction(ALLY_REF, av::HEALTH), 1.0);
+    // Live offscreen health takes priority over the record/modifier fallback.
+    e.away.insert(
+        ALLY_REF,
+        crate::ai::exec::ActorExec::wounded(crate::world_state::Wounds {
+            health: 25.0,
+            max: 100.0,
+            rate: 0.1,
+            at: e.scripts.real_time,
+        }),
+    );
+    assert_eq!(e.actor_value_fraction(ALLY_REF, av::HEALTH), 0.25);
+    e.scripts.real_time += 1.0;
+    assert!((e.actor_value_fraction(ALLY_REF, av::HEALTH) - 0.35).abs() < 1e-6);
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn is_over_encumbered_is_the_players_carry_weight() {
     let (_f, mut e) = fixture();
     e.set_actor_value(PLAYER_REF, av::CARRY_WEIGHT, 10.0);
