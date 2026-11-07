@@ -256,6 +256,10 @@ pub(crate) struct PersistentIndex {
     by_editor_location: HashMap<FormId, Vec<u32>>,
     /// Placed actors (`ACHR`).
     actors: Vec<u32>,
+    /// Placed actors by their base record's voice type (`VTCK`).
+    by_voice: HashMap<FormId, Vec<u32>>,
+    /// Placed actors whose base names no voice type: their templates give it.
+    voice_from_templates: Vec<u32>,
     position: HashMap<FormId, u32>,
 }
 
@@ -454,6 +458,10 @@ impl Engine {
                 }
                 if self.lo.tag_of(r).is_some_and(|t| t.0 == *b"ACHR") {
                     index.actors.push(i);
+                    match self.base_of(r).and_then(|b| self.npc_voice_type(b)) {
+                        Some(v) => index.by_voice.entry(v).or_default().push(i),
+                        None => index.voice_from_templates.push(i),
+                    }
                 }
                 index.position.entry(r).or_insert(i);
             }
@@ -573,7 +581,19 @@ impl Engine {
             136 => position.into_iter().collect(), // GetIsReference
             67 => index.by_cell.get(&p1).cloned().unwrap_or_default(), // GetInCell
             71 | 641 => actors(),                  // GetInFaction, IsUnique
-            565 => within(Some(p1)),               // GetIsEditorLocation
+            // GetIsVoiceType: the voice type, or one in the list, named.
+            // Only placed actors have one: their base's, else their
+            // templates' (always candidates, as those can change).
+            426 => {
+                let mut voices = self.formlist(p1);
+                voices.push(p1);
+                let mut v = index.voice_from_templates.clone();
+                for voice in voices {
+                    v.extend(index.by_voice.get(&voice).into_iter().flatten());
+                }
+                v
+            }
+            565 => within(Some(p1)), // GetIsEditorLocation
             // GetIsEditorLocAlias: the alias's location, not `p1`.
             567 => within(self.alias_ref(q, c.p1)),
             _ => return Candidates::All,
@@ -1015,7 +1035,7 @@ mod tests {
             e.scripts.quests.remove(&q);
         }
         eprintln!("anchors checked by function: {checked:?}");
-        for (func, least) in [(71, 10), (72, 10), (567, 10), (136, 3)] {
+        for (func, least) in [(71, 10), (72, 10), (567, 10), (136, 3), (426, 3)] {
             assert!(
                 checked.get(&func).is_some_and(|&n| n >= least),
                 "{checked:?}"
