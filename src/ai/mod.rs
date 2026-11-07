@@ -41,6 +41,8 @@ pub(crate) mod vehicles;
 mod movement_tests;
 #[cfg(test)]
 mod sandbox_load_tests;
+#[cfg(test)]
+mod time_bench;
 
 use std::sync::Arc;
 

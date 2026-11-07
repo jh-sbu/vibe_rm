@@ -22,64 +22,164 @@ fn signature(
         x.run_events.len(),
     )
 }
+/// Whether `x`'s package, as far as it has got, has nothing timed to do.
+fn quiet_package(x: &ActorExec) -> bool {
+    let Some(p) = x.current.and_then(|i| x.packages.get(i)) else {
+        return true;
+    };
+    if !matches!(
+        p.behaviour,
+        Behaviour::Sandbox
+            | Behaviour::Travel
+            | Behaviour::Hold
+            | Behaviour::Sleep
+            | Behaviour::Sit
+            | Behaviour::Patrol
+    ) {
+        return false;
+    }
+    let (Some(tree), Some(cursor)) = (
+        p.tree.as_ref(),
+        x.run.as_ref().and_then(|r| r.cursor.as_ref()),
+    ) else {
+        return true;
+    };
+    cursor.active.iter().all(|path| {
+        tree.at(path).is_some_and(|n| {
+            matches!(
+                n.procedure.as_str(),
+                "Travel" | "Sandbox" | "Sit" | "Sleep" | "Patrol"
+            )
+        })
+    })
+}
 fn player_follower(goal: Option<super::Goal>) -> bool {
     goal.is_some_and(|g| {
         matches!(g.behaviour, Behaviour::Follow | Behaviour::Escort) && g.target == Some(PLAYER_REF)
     })
 }
 
+/// Wait procedures active in `x`'s package: the seconds each has left.
+fn waits_left(x: &ActorExec) -> impl Iterator<Item = f64> + '_ {
+    let tree = x
+        .current
+        .and_then(|i| x.packages.get(i))
+        .and_then(|p| p.tree.as_ref());
+    let cursor = x.run.as_ref().and_then(|r| r.cursor.as_ref());
+    tree.zip(cursor).into_iter().flat_map(|(tree, cursor)| {
+        cursor.active.iter().filter_map(move |path| {
+            let n = tree.at(path).filter(|n| n.procedure == "Wait")?;
+            Some(n.seconds() - cursor.states.get(path).map_or(0.0, |p| p.elapsed))
+        })
+    })
+}
+
 impl Engine {
-    fn time_signature(&self) -> Signature {
+    /// `only`: the away actors to look at (none: all of them).
+    fn time_signature(&self, only: Option<&[FormId]>) -> Signature {
+        let away: Vec<_> = match only {
+            Some(ids) => ids
+                .iter()
+                .filter(|id| !self.actor_cells.contains_key(id))
+                .filter_map(|&id| Some(signature(id, self.away.get(&id)?)))
+                .collect(),
+            None => self
+                .away
+                .iter()
+                .filter(|(id, _)| !self.actor_cells.contains_key(id))
+                .map(|(&id, x)| signature(id, x))
+                .collect(),
+        };
         let mut s: Signature = self
             .cells
             .values()
             .flat_map(|rt| &rt.actors)
             .filter(|a| !a.dead)
             .map(|a| signature(a.ref_id, &a.exec))
-            .chain(
-                self.away
-                    .iter()
-                    .filter(|(id, _)| !self.actor_cells.contains_key(id))
-                    .map(|(&id, x)| signature(id, x)),
-            )
+            .chain(away)
             .collect();
         s.sort_by_key(|s| s.0);
         s
     }
 
-    fn step_menu_away(&mut self, clock: f64) {
-        let mut all: Vec<_> = self
+    /// Away actors that time passing in a menu could change before it ends,
+    /// sorted. The others are settled in a package that only travels,
+    /// sandboxes, sits, sleeps, holds or patrols (an away patroller stands
+    /// where it was put), with no timed step (Wait, retries, practice, arrival
+    /// or recovery) pending: they are stepped once, at the end, their packages
+    /// read then. The clock's hour doesn't change during the catch-up, so
+    /// readings between would see the same schedule.
+    fn menu_busy(&self) -> Vec<FormId> {
+        let quiet = |id: FormId, x: &ActorExec| {
+            let cursor = x.run.as_ref().and_then(|r| r.cursor.as_ref());
+            x.settled
+                && x.ends_at.is_none()
+                && x.jump_at.is_none()
+                // Only a procedure's destination walks a settled actor on.
+                && (x.strode_at.is_none() || cursor.is_none())
+                && x.bleeding.is_none()
+                && x.run.as_ref().is_none_or(|r| r.practice.is_none())
+                && !self.offscreen_routes.contains_key(&id)
+                && !self.rides.contains_key(&id)
+                && !self.flights.contains_key(&id)
+                && !self.passengers.contains_key(&id)
+                && quiet_package(x)
+        };
+        let mut busy: Vec<_> = self
             .away
             .iter()
-            .filter(|(_, x)| x.place.is_some())
+            .filter(|&(&id, x)| {
+                x.place.is_some() && !self.actor_cells.contains_key(&id) && !quiet(id, x)
+            })
             .map(|(&id, _)| id)
             .collect();
-        all.sort();
-        for id in all {
-            self.step_away_at(id, clock, clock);
+        busy.sort();
+        busy
+    }
+
+    fn step_menu_away(&mut self, clock: f64, only: Option<&[FormId]>) {
+        let ids = match only {
+            Some(ids) => ids.to_vec(),
+            None => {
+                let mut all: Vec<_> = self
+                    .away
+                    .iter()
+                    .filter(|(_, x)| x.place.is_some())
+                    .map(|(&id, _)| id)
+                    .collect();
+                all.sort();
+                all
+            }
+        };
+        for id in ids {
+            if self.away.get(&id).is_some_and(|x| x.place.is_some()) {
+                self.step_away_at(id, clock, clock);
+            }
         }
     }
 
-    /// Complete zero-time transitions at the current boundary. A zero-duration
+    /// Complete zero-time transitions at the current boundary, for loaded
+    /// actors and the away ones in `only` (none: all). A zero-duration
     /// repeating tree is bounded rather than spinning indefinitely in a menu.
-    fn settle_menu_time(&mut self, clock: f64) {
+    fn settle_menu_time(&mut self, clock: f64, only: Option<&[FormId]>) {
         for _ in 0..32 {
-            let before = self.time_signature();
+            let before = self.time_signature(only);
             self.advance_loaded_trees(0.0);
             self.evaluate_packages(0.0);
             self.loaded_procedure_locks();
             self.run_loaded_finds();
             self.menu_paths(0.0, clock);
             self.complete_arrivals();
-            self.step_menu_away(clock);
-            if self.time_signature() == before {
+            self.step_menu_away(clock, only);
+            if self.time_signature(only) == before {
                 break;
             }
         }
     }
 
-    fn next_menu_boundary(&self, clock: f64, remaining: f64) -> f64 {
-        let mut dt = remaining.min(super::exec::AWAY_CADENCE as f64);
+    /// Seconds until the next loaded actor's Wait ends or walk arrives.
+    fn next_loaded_menu_event(&self) -> f64 {
+        let mut dt = f64::INFINITY;
         let mut consider = |t: f64| {
             if t.is_finite() && t > 1e-6 {
                 dt = dt.min(t);
@@ -88,19 +188,7 @@ impl Engine {
         for a in self.cells.values().flat_map(|rt| &rt.actors).filter(|a| {
             !a.dead && !a.exec.pinned && a.exec.combat.is_none() && a.exec.bleeding.is_none()
         }) {
-            if let (Some(cursor), Some(tree)) = (
-                a.exec.run.as_ref().and_then(|r| r.cursor.as_ref()),
-                a.exec
-                    .current
-                    .and_then(|i| a.exec.packages.get(i))
-                    .and_then(|p| p.tree.as_ref()),
-            ) {
-                for path in &cursor.active {
-                    if let Some(n) = tree.at(path).filter(|n| n.procedure == "Wait") {
-                        consider(n.seconds() - cursor.states.get(path).map_or(0.0, |p| p.elapsed));
-                    }
-                }
-            }
+            waits_left(&a.exec).for_each(&mut consider);
             if let State::Walk { path, next, .. } = &a.state {
                 let mut from = a.exec.pos;
                 let mut distance = 0.0;
@@ -113,32 +201,32 @@ impl Engine {
                 }
             }
         }
-        for (&id, x) in &self.away {
-            if self.actor_cells.contains_key(&id) || self.processing(id).is_none() {
-                continue;
-            }
-            for t in [x.ends_at, x.jump_at].into_iter().flatten() {
-                consider(t - clock);
-            }
-            if self.away_practice_settings(id).is_some() {
-                if let Some(p) = x.run.as_ref().and_then(|r| r.practice.as_ref()) {
-                    consider(p.wait);
-                }
-            }
-            if let (Some(cursor), Some(tree)) = (
-                x.run.as_ref().and_then(|r| r.cursor.as_ref()),
-                x.current
-                    .and_then(|i| x.packages.get(i))
-                    .and_then(|p| p.tree.as_ref()),
-            ) {
-                for path in &cursor.active {
-                    if let Some(n) = tree.at(path).filter(|n| n.procedure == "Wait") {
-                        consider(n.seconds() - cursor.states.get(path).map_or(0.0, |p| p.elapsed));
-                    }
-                }
-            }
+        dt
+    }
+
+    /// Seconds from `clock` until away actor `id`'s next timed step: an
+    /// arrival, a practice action or a Wait's end (none: nothing pending).
+    /// Its Waits and practice count from when it was last stepped.
+    fn next_away_menu_event(&self, id: FormId, clock: f64) -> Option<f64> {
+        let x = self.away.get(&id)?;
+        if self.actor_cells.contains_key(&id) || self.processing(id).is_none() {
+            return None;
         }
-        dt.max(1e-6).min(remaining)
+        let since = clock - x.stepped_at;
+        let practice = self
+            .away_practice_settings(id)
+            .and_then(|_| x.run.as_ref()?.practice.as_ref())
+            .map(|p| p.wait as f64 - since);
+        [
+            x.ends_at.map(|t| t - clock),
+            x.jump_at.map(|t| t - clock),
+            practice,
+        ]
+        .into_iter()
+        .flatten()
+        .chain(waits_left(x).map(|t| t - since))
+        .filter(|t| t.is_finite() && *t > 1e-6)
+        .min_by(f64::total_cmp)
     }
 
     /// Plan the next loaded Travel after a Wait, and walk already planned
@@ -298,19 +386,61 @@ impl Engine {
             return;
         }
         let base = self.scripts.real_time;
-        self.settle_menu_time(base);
+        let seconds = seconds as f64;
+        self.settle_menu_time(base, None);
+        let cadence = super::exec::AWAY_CADENCE as f64;
+        let mut busy = self.menu_busy();
+        let mut next_reading = cadence;
         let mut elapsed = 0.0;
-        while elapsed < seconds as f64 {
-            let dt = self.next_menu_boundary(base + elapsed, seconds as f64 - elapsed);
+        while elapsed < seconds {
+            let clock = base + elapsed;
+            let remaining = seconds - elapsed;
+            // Loaded actors and busy away ones are all stepped every few
+            // seconds; between, only those whose Wait, practice or arrival
+            // falls due. Quiet ones are stepped once, across the whole span.
+            let reading = self
+                .cells
+                .values()
+                .flat_map(|rt| &rt.actors)
+                .any(|a| !a.dead)
+                || !busy.is_empty();
+            let events: Vec<_> = busy
+                .iter()
+                .filter_map(|&id| Some((id, self.next_away_menu_event(id, clock)?)))
+                .collect();
+            let mut dt = remaining.min(self.next_loaded_menu_event());
+            if reading {
+                dt = dt.min(next_reading - elapsed);
+            }
+            for &(_, t) in &events {
+                dt = dt.min(t);
+            }
+            let dt = dt.max(1e-6).min(remaining);
             // Move the old procedure first. A Wait entered at this boundary
             // starts at zero, rather than receiving the old Travel's seconds.
-            self.menu_paths(dt as f32, base + elapsed + dt);
+            self.menu_paths(dt as f32, clock + dt);
             self.complete_arrivals();
             self.advance_loaded_trees(dt as f32);
             self.evaluate_packages(dt as f32);
             elapsed += dt;
-            self.step_menu_away(base + elapsed);
-            self.settle_menu_time(base + elapsed);
+            let now = base + elapsed;
+            if elapsed >= seconds {
+                self.step_menu_away(now, None);
+                self.settle_menu_time(now, None);
+            } else if elapsed >= next_reading - 1e-6 {
+                next_reading += cadence;
+                self.step_menu_away(now, Some(&busy));
+                self.settle_menu_time(now, Some(&busy));
+                busy = self.menu_busy();
+            } else {
+                let due: Vec<_> = events
+                    .iter()
+                    .filter(|&&(_, t)| t <= dt + 1e-6)
+                    .map(|&(id, _)| id)
+                    .collect();
+                self.step_menu_away(now, Some(&due));
+                self.settle_menu_time(now, Some(&due));
+            }
         }
         // Absolute away clocks used the virtual timeline. Papyrus real time
         // stood still, so retain the same remaining delays on its real clock.
@@ -539,6 +669,37 @@ mod tests {
                 .abs()
                 < 1e-5
         );
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn a_settled_away_sandboxer_is_quiet_and_a_waiting_one_busy_until_its_wait_ends() {
+        let (_f, mut e) = fixture();
+        away(&mut e, package(vec![leaf("Sandbox", vec![])], false));
+        e.advance_menu_time(0.0);
+        assert!(e.away[&ACTOR].settled);
+        assert!(!e.menu_busy().contains(&ACTOR));
+        e.pass_time(600.0);
+        // Stepped at the end: its packages were read, on the rebased clock.
+        assert_eq!(e.away[&ACTOR].stepped_at, e.scripts.real_time);
+
+        let (_f, mut e) = fixture();
+        away(
+            &mut e,
+            package(vec![wait(100.), leaf("Sandbox", vec![])], false),
+        );
+        e.advance_menu_time(0.0);
+        assert!(e.menu_busy().contains(&ACTOR));
+        e.pass_time(150.0);
+        let c = e.away[&ACTOR]
+            .run
+            .as_ref()
+            .unwrap()
+            .cursor
+            .as_ref()
+            .unwrap();
+        assert_eq!(c.active, vec![vec![1]]);
+        assert!(!e.menu_busy().contains(&ACTOR));
     }
 
     #[test]

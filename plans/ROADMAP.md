@@ -2054,16 +2054,22 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      react.
    - Open performance work found auditing the plan (2026-11-06):
      - Menu-time catch-up (`Engine::advance_menu_time`, `src/ai/time.rs`)
-       steps at most `AWAY_CADENCE` (3 s) at a time and steps every away
-       actor at each boundary, so its cost grows with the seconds passed
-       times the away actors; before the plan it was flat (about 0.3 s per
-       call). Measured with the vanilla masters in the dev profile: a
-       3600 s fast travel took 6.0 s with 48 away actors (0.33 s before);
-       one hour of sleep took 59 s with all 1,645 persistent NPCs away
-       (0.32 s before); fast travel's 129,600 s cap took 207 s with 48.
-       Fix direction: let only actors with a pending Wait, walk or practice
-       boundary choose the step, and advance the others once across the
-       span, keeping step 2's phase-by-phase consumption for those actors.
+       stepped every away actor at each boundary, at most `AWAY_CADENCE`
+       (3 s) apart, so its cost grew with the seconds passed times the away
+       actors (audit: 6.0 s for a 3600 s fast travel with 48 away, 0.33 s
+       before the plan). Partly fixed (2026-11-07): settled away actors with
+       nothing timed pending (`menu_busy`) are stepped once, at the end;
+       busy ones every 3 s, and between, only those whose Wait, practice or
+       arrival falls due. `menu_time_benchmark` (`src/ai/time_bench.rs`;
+       `VRM_MENU_ACTORS`, `VRM_MENU_SECONDS`), one hour, no cells loaded:
+       48 away 0.76 → 0.09 s, 200 away 3.5 → 0.7 s, 400 away 8.7 → 1.4 s,
+       with the same places and packages at the end; all 9,680 scheduled
+       actors away took over 900 s and now take 174 s. What remains with
+       everyone away is the 3 s readings of about 450 busy actors, mostly
+       empty `Find`s retrying (`search_package`): for an exterior package
+       location each search walks the world's persistent cell and every
+       away actor, 5–20 ms. That cost is the same out of menus, where away
+       actors retry on the same cadence.
      - Failed horse searches (`Engine::horse_for`, `src/ai/mounts.rs`)
        repeat every frame for each rider whose package allows riding but
        finds no horse. The scan is now over the 76 cached placed horses,
