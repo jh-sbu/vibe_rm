@@ -48,14 +48,38 @@ impl Engine {
     /// The plugin's reaction of `from` towards `to`: its first `XNAM`
     /// naming `to`.
     fn authored_reaction(&self, from: FormId, to: FormId) -> Option<Reaction> {
-        let rec = self.lo.get(from)?;
-        rec.subrecords()
-            .filter(|s| s.tag.0 == *b"XNAM" && s.data.len() >= 12)
-            .find(|s| rec.fid(s.form_id(0)) == to)
-            .map(|s| Reaction {
-                modifier: i32::from_le_bytes(s.data[4..8].try_into().unwrap()),
-                combat: u32::from_le_bytes(s.data[8..12].try_into().unwrap()),
-            })
+        self.authored_reactions_of(from)
+            .iter()
+            .find(|(f, _)| *f == to)
+            .map(|(_, r)| *r)
+    }
+
+    /// A faction's reactions as its record gives them (`XNAM`), in order;
+    /// read once, as records don't change.
+    fn authored_reactions_of(&self, from: FormId) -> std::sync::Arc<[(FormId, Reaction)]> {
+        if let Some(r) = self.authored_reactions.borrow().get(&from) {
+            return r.clone();
+        }
+        let list: std::sync::Arc<[(FormId, Reaction)]> = match self.lo.get(from) {
+            Some(rec) => rec
+                .subrecords()
+                .filter(|s| s.tag.0 == *b"XNAM" && s.data.len() >= 12)
+                .map(|s| {
+                    (
+                        rec.fid(s.form_id(0)),
+                        Reaction {
+                            modifier: i32::from_le_bytes(s.data[4..8].try_into().unwrap()),
+                            combat: u32::from_le_bytes(s.data[8..12].try_into().unwrap()),
+                        },
+                    )
+                })
+                .collect(),
+            None => std::sync::Arc::new([]),
+        };
+        self.authored_reactions
+            .borrow_mut()
+            .insert(from, list.clone());
+        list
     }
 
     /// How `from` regards `to` now: a change made since, else the plugin's

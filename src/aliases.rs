@@ -727,6 +727,15 @@ impl Engine {
     /// What alias `a` of quest `q` is filled with now (earlier aliases already in
     /// the quest's fills).
     fn fill_alias(&self, q: FormId, a: &AliasSpec, reserved: &HashSet<FormId>) -> Option<FormId> {
+        // Factions are worked out once per actor while the conditions run.
+        struct Memo<'a>(&'a Engine);
+        impl Drop for Memo<'_> {
+            fn drop(&mut self) {
+                *self.0.faction_memo.borrow_mut() = None;
+            }
+        }
+        *self.faction_memo.borrow_mut() = Some(HashMap::new());
+        let _memo = Memo(self);
         let accepts = |r: FormId| {
             condition::evaluate(
                 self,

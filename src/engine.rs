@@ -368,6 +368,12 @@ pub struct Engine {
     /// Quests' aliases as parsed.
     pub(crate) alias_spec_cache:
         std::cell::RefCell<HashMap<FormId, std::sync::Arc<Vec<crate::aliases::AliasSpec>>>>,
+    /// Actors' factions while one alias is filled (`Some` only then: nothing
+    /// they depend on can change while its conditions are evaluated).
+    pub(crate) faction_memo: std::cell::RefCell<Option<HashMap<FormId, Vec<(FormId, i8)>>>>,
+    /// Factions' reactions as their records give them (`XNAM`), by faction.
+    pub(crate) authored_reactions:
+        std::cell::RefCell<HashMap<FormId, std::sync::Arc<[(FormId, crate::factions::Reaction)]>>>,
     lod: Option<crate::world::lod::Lod>,
     tree_lod: Option<crate::world::tree_lod::Trees>,
     pub nav: crate::ai::nav::NavWorld,
@@ -695,6 +701,8 @@ impl Engine {
             persistent_refs: Default::default(),
             persistent_index: Default::default(),
             alias_spec_cache: Default::default(),
+            faction_memo: Default::default(),
+            authored_reactions: Default::default(),
             created_refs: Default::default(),
             world_state: Default::default(),
             lod: None,

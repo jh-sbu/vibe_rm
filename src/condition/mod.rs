@@ -1214,6 +1214,19 @@ impl Engine {
     /// Factions and ranks of an actor (a reference, or an NPC record), from its
     /// templates when they give them.
     pub fn npc_factions(&self, actor: FormId) -> Vec<(FormId, i8)> {
+        if let Some(memo) = self.faction_memo.borrow().as_ref()
+            && let Some(f) = memo.get(&actor)
+        {
+            return f.clone();
+        }
+        let out = self.npc_factions_now(actor);
+        if let Some(memo) = self.faction_memo.borrow_mut().as_mut() {
+            memo.insert(actor, out.clone());
+        }
+        out
+    }
+
+    fn npc_factions_now(&self, actor: FormId) -> Vec<(FormId, i8)> {
         let mut out = self
             .templates_of(actor)
             .map(|t| t.factions(&self.lo))
