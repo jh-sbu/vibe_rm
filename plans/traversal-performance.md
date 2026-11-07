@@ -178,8 +178,9 @@ without other builds or heavy work competing for CPU time.
   index over all 878,000 placed references takes ~178 ms to build, so it would
   have to be built per cell during streaming to help. That would save roughly
   10–15 ms per world encounter start; not done.
-- Synchronous texture/model loading for actors spawned by quests and for
-  first-time cells: move read/parse off the main thread, or prepare the
-  assets of quest-created actors ahead of their spawn.
+- Textures now load in the background ([async textures](async-textures.md)):
+  the first-time cells hitch fell from 243 to 105 ms. Model (NIF) parsing and
+  actor setup are still synchronous (`cell.actors` ~30 ms, `objects.models`
+  ~16 ms in that frame).
 - Budget schedule evaluation by elapsed time instead of 250 entries per frame.
 - Add permanent sub-stage timings to `sim.scripts_weather` and `sim.gameplay`.

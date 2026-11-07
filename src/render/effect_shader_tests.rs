@@ -6,7 +6,7 @@ use model::{BlendMode, CpuMesh, CpuModel, MaterialDesc, ShaderKind, Vertex};
 
 const SIZE: u32 = 16;
 
-fn renderer() -> Renderer {
+pub(super) fn renderer() -> Renderer {
     let instance =
         wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
     let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
@@ -25,7 +25,7 @@ fn renderer() -> Renderer {
 }
 
 /// A 4x4 texture of one colour.
-fn solid(rgba: [u8; 4]) -> dds::Dds {
+pub(super) fn solid(rgba: [u8; 4]) -> dds::Dds {
     dds::Dds {
         width: 4,
         height: 4,

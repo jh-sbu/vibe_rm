@@ -80,7 +80,7 @@ struct Material {
     tint: vec4<f32>,        // skin / hair tint
     billboard: vec4<f32>,   // a billboard's model-space origin, mode + 1 (0: none)
     env: vec4<f32>,         // environment map scale, has cube map, has environment mask
-    decal: vec4<f32>,       // decal: parallax scale, passes, hard edge (alpha test without blending)
+    decal: vec4<f32>,       // decal: parallax scale, passes, hard edge (alpha test without blending); w: hidden while textures load (see fs_main)
     membrane_fill: vec4<f32>,
     membrane_edge: vec4<f32>,
     membrane_params: vec4<f32>,
@@ -378,6 +378,12 @@ fn soft_fade(px: vec4<f32>, world_pos: vec3<f32>, range: f32) -> f32 {
 @fragment
 fn fs_main(in: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
     // Stable screen-door coverage also works with opaque depth-writing parts.
+    // A material whose textures are still loading, or fading in once they
+    // are: `decal.w` of it hidden, through the same screen door.
+    if (mat.decal.w > 0.0) {
+        let coverage=fract(dot(floor(in.clip.xy),vec2<f32>(0.754877666,0.569840296)));
+        if (coverage<mat.decal.w) {discard;}
+    }
     if (abs(in.distance_fade) < 1.0) {
         let coverage=fract(dot(floor(in.clip.xy),vec2<f32>(0.754877666,0.569840296)));
         if (in.distance_fade>=0.0) {if (coverage>=in.distance_fade) {discard;}}

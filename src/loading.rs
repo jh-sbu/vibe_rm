@@ -214,6 +214,8 @@ impl Engine {
             Phase::ScreenIn if l.t >= SCREEN_IN_SECONDS => Some(Phase::Load),
             Phase::Load => {
                 self.run_load(l.request.clone());
+                // The world is shown whole when the screen lifts.
+                self.renderer.finish_textures();
                 // A failed load from the main menu has its menu back; one
                 // that failed half way ends the session for it.
                 if self.menu.is_some() || self.quit_to_main_menu {

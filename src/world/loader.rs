@@ -332,7 +332,14 @@ impl ModelCache {
                 }
             }
         }
-        load_textures(renderer, vfs, tex.into_iter().collect());
+        // In the windowed game they load in the background, the models'
+        // materials hidden until theirs are in (`plans/async-textures.md`).
+        if renderer.loads_in_background() {
+            crate::diagnostics::count("textures.requested", tex.len());
+            renderer.request_textures(tex.into_iter().collect());
+        } else {
+            load_textures(renderer, vfs, tex.into_iter().collect());
+        }
         let t2 = std::time::Instant::now();
         timing.next("assets.models_upload");
 

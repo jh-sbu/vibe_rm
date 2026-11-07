@@ -61,6 +61,13 @@ the `tcam x y z yaw pitch` console command holds the `--wait` camera elsewhere, 
 `VRM_AI_NO_SNAP=1` makes actors walk into furniture on cell load instead of starting
 out in it.
 
+While playing, new models' textures load in the background: a mesh is hidden
+until its textures are in, then fades in over a quarter second. Loading screens
+wait for everything before they lift, and offscreen runs load synchronously.
+`VRM_SYNC_TEXTURES=1` turns background loading off in the windowed game, and
+`VRM_BACKGROUND_TEXTURES=1` turns it on in offscreen runs (to film the fades).
+See `plans/async-textures.md`.
+
 Traversal diagnostics are opt-in with `VRM_FRAME_TIMINGS_MS=<milliseconds>`:
 
 ```sh

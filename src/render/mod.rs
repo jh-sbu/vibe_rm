@@ -148,7 +148,13 @@ pub struct PipelineKey {
 }
 
 pub struct GpuMaterial {
+    /// Bind [`GpuMaterial::current`]'s: a material made while its textures
+    /// were loading has fallbacks here and its real one made later.
     pub bind_group: wgpu::BindGroup,
+    /// Its uniform buffer (bound in `bind_group`).
+    ubuf: wgpu::Buffer,
+    /// Made while textures it names were still loading in the background.
+    loading: Option<Box<MaterialLoading>>,
     membrane_uniform: Option<(wgpu::Buffer, MaterialUniform)>,
     pub key: PipelineKey,
     /// Cut out by alpha testing (casts shadows through its texture).
@@ -161,6 +167,66 @@ pub struct GpuMaterial {
     /// copied before it's drawn.
     pub soft: bool,
     pub skin: bool,
+}
+
+/// How long a material whose textures arrived takes to fade in.
+pub const TEXTURE_FADE_SECONDS: f32 = 0.25;
+
+/// Background texture jobs' own threads, a quarter of the cores (at least
+/// two), so the global pool stays free for model parsing and physics.
+fn texture_pool() -> &'static rayon::ThreadPool {
+    static POOL: std::sync::OnceLock<rayon::ThreadPool> = std::sync::OnceLock::new();
+    POOL.get_or_init(|| {
+        let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
+        rayon::ThreadPoolBuilder::new()
+            .num_threads((cores / 4).max(2))
+            .thread_name(|i| format!("textures-{i}"))
+            .build()
+            .expect("texture loading threads")
+    })
+}
+
+/// The most time a frame spends uploading background-loaded textures.
+const TEXTURE_UPLOAD_BUDGET: std::time::Duration = std::time::Duration::from_millis(4);
+
+/// A material made while textures it names were loading: drawn hidden
+/// (`decal.w` 1, every fragment dithered away) until they're in, then
+/// replaced by `ready` and faded in.
+struct MaterialLoading {
+    /// The textures it waited for.
+    pending: Vec<String>,
+    desc: MaterialDesc,
+    skinned: bool,
+    ready: std::sync::OnceLock<ReadyMaterial>,
+}
+
+struct ReadyMaterial {
+    material: GpuMaterial,
+    /// Its uniform at rest (for one without controllers).
+    uniform: MaterialUniform,
+    /// The renderer's time when it was made (`-inf`: shown at once).
+    at: f32,
+}
+
+impl GpuMaterial {
+    /// The material to draw with: the real one once a loading material's
+    /// textures have come in, else itself.
+    pub fn current(&self) -> &GpuMaterial {
+        self.loading
+            .as_ref()
+            .and_then(|l| l.ready.get())
+            .map_or(self, |r| &r.material)
+    }
+
+    /// How hidden it is at renderer time `now`: 1 while its textures load,
+    /// falling to 0 as it fades in; always 0 for one made with them.
+    pub fn hidden(&self, now: f32) -> f32 {
+        match self.loading.as_ref().map(|l| l.ready.get()) {
+            None => 0.0,
+            Some(None) => 1.0,
+            Some(Some(r)) => (1.0 - (now - r.at) / TEXTURE_FADE_SECONDS).clamp(0.0, 1.0),
+        }
+    }
 }
 
 /// An animated material's controllers and what they animate.
@@ -306,6 +372,9 @@ impl MaterialUniform {
 
 #[cfg(test)]
 mod effect_shader_tests;
+
+#[cfg(test)]
+mod texture_loading_tests;
 
 #[cfg(test)]
 mod alpha_test_tests {
@@ -1217,6 +1286,10 @@ pub struct Renderer {
     pub grass_clock: f32,
     /// Materials whose controllers animate them, updated each frame.
     animated: std::sync::Mutex<Vec<std::sync::Weak<GpuMaterial>>>,
+    /// Loads model textures in the background when set (the windowed game).
+    background: Option<Arc<vfs::Vfs>>,
+    /// Materials waiting for textures or fading in, updated each frame.
+    loading_materials: std::sync::Mutex<Vec<std::sync::Weak<GpuMaterial>>>,
     /// The frame's particle quads, and how many vertices it holds.
     particle_vbuf: wgpu::Buffer,
     particle_cap: usize,
@@ -1455,6 +1528,8 @@ impl Renderer {
             wind: glam::Vec2::ZERO,
             grass_clock: 0.0,
             animated: Default::default(),
+            background: None,
+            loading_materials: Default::default(),
             particle_vbuf: Self::make_vbuf(
                 &device,
                 4096 * std::mem::size_of::<model::Vertex>(),
@@ -1801,14 +1876,39 @@ impl Renderer {
     }
 
     pub fn create_material(&self, m: &MaterialDesc) -> GpuMaterial {
-        let (diffuse, _) = self.texture_or(&m.diffuse, &self.white);
-        let (normal, has_normal) = self.texture_or(&m.normal, &self.flat_normal);
-        let (glow, has_glow) = self.texture_or(&m.glow, &self.black);
-        let (mut env, mut has_env) = self.texture_or(&m.env, &self.black_cube);
+        self.build_material(m, None).0
+    }
+
+    /// A material and its uniform. With `pending`, textures still loading in
+    /// the background aren't waited for: they're listed there, fallbacks are
+    /// bound and the material is hidden (`decal.w` 1). Without, it waits.
+    fn build_material(
+        &self,
+        m: &MaterialDesc,
+        mut pending: Option<&mut Vec<String>>,
+    ) -> (GpuMaterial, MaterialUniform) {
+        let mut waiting = Vec::new();
+        let mut tex = |path: &Option<String>, fallback: &Arc<GpuTexture>| {
+            if pending.is_some()
+                && let Some(p) = path
+                && matches!(self.textures.peek(p), texture::Peek::Pending)
+            {
+                waiting.push(p.clone());
+                return (fallback.clone(), false);
+            }
+            self.texture_or(path, fallback)
+        };
+        let (diffuse, _) = tex(&m.diffuse, &self.white);
+        let (normal, has_normal) = tex(&m.normal, &self.flat_normal);
+        let (glow, has_glow) = tex(&m.glow, &self.black);
+        let (mut env, mut has_env) = tex(&m.env, &self.black_cube);
         if std::env::var_os("VRM_NO_ENVMAP").is_some() {
             (env, has_env) = (self.black_cube.clone(), false);
         }
-        let (env_mask, has_env_mask) = self.texture_or(&m.env_mask, &self.white);
+        let (env_mask, has_env_mask) = tex(&m.env_mask, &self.white);
+        if let Some(p) = pending.as_deref_mut() {
+            p.extend(waiting.iter().cloned());
+        }
         // The opaque scene's depth is copied before the blended draws: the
         // opaque ones (and skinned ones, drawn with them) see none of it.
         let soft_depth =
@@ -1870,6 +1970,9 @@ impl Renderer {
         if let Some(sample) = m.membrane {
             u.flags[3] = sample.flags;
         }
+        if !waiting.is_empty() {
+            u.decal[3] = 1.0;
+        }
         let ubuf = self
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -1922,8 +2025,10 @@ impl Renderer {
             decal: m.flags1 & (nif::sf1::DECAL | nif::sf1::DYNAMIC_DECAL) != 0,
             grass: m.grass,
         };
-        GpuMaterial {
+        let material = GpuMaterial {
             bind_group,
+            ubuf: ubuf.clone(),
+            loading: None,
             membrane_uniform: m.membrane.map(|_| (ubuf.clone(), u)),
             key,
             alpha_test: m.alpha_test.is_some(),
@@ -1940,10 +2045,13 @@ impl Renderer {
             billboard: m.billboard.is_some(),
             soft: soft_depth > 0.0,
             skin: matches!(m.shader_type, 4 | 5),
-        }
+        };
+        (material, u)
     }
 
     pub fn update_membrane_material(&self, material: &GpuMaterial, desc: &MaterialDesc) {
+        let hidden = material.hidden(self.time);
+        let material = material.current();
         let (Some((buf, base)), Some(sample)) = (&material.membrane_uniform, desc.membrane) else {
             return;
         };
@@ -1958,6 +2066,7 @@ impl Renderer {
         uniform.membrane_edge = sample.edge;
         uniform.membrane_params = sample.params;
         uniform.flags[3] = sample.flags;
+        uniform.decal[3] = hidden;
         self.queue
             .write_buffer(buf, 0, bytemuck::bytes_of(&uniform));
     }
@@ -2003,20 +2112,135 @@ impl Renderer {
 
     /// A material for a model's part, kept for animating if it has controllers.
     fn shared_material(&self, m: &MaterialDesc, skinned: bool) -> Arc<GpuMaterial> {
-        let mut mat = if skinned && m.soft_depth > 0.0 {
-            self.create_material(&MaterialDesc {
+        let desc = if skinned && m.soft_depth > 0.0 {
+            MaterialDesc {
                 soft_depth: 0.0,
                 ..m.clone()
-            })
+            }
         } else {
-            self.create_material(m)
+            m.clone()
         };
+        let mut pending = Vec::new();
+        let (mut mat, _) =
+            self.build_material(&desc, self.background.is_some().then_some(&mut pending));
         mat.key.skinned = skinned;
+        if !pending.is_empty() {
+            mat.loading = Some(Box::new(MaterialLoading {
+                pending,
+                desc,
+                skinned,
+                ready: Default::default(),
+            }));
+        }
         let mat = Arc::new(mat);
         if mat.anim.as_ref().is_some_and(|a| a.anim.started()) {
             self.animated.lock().unwrap().push(Arc::downgrade(&mat));
         }
+        if mat.loading.is_some() {
+            self.loading_materials
+                .lock()
+                .unwrap()
+                .push(Arc::downgrade(&mat));
+        }
         mat
+    }
+
+    /// Load model textures in the background from now on (the windowed game):
+    /// [`Renderer::request_textures`] returns at once and materials made
+    /// meanwhile stay hidden until theirs are in, then fade in.
+    pub fn load_textures_in_background(&mut self, vfs: Arc<vfs::Vfs>) {
+        self.textures
+            .set_gpu(self.device.clone(), self.queue.clone());
+        self.background = Some(vfs);
+    }
+
+    /// Whether model textures load in the background.
+    pub fn loads_in_background(&self) -> bool {
+        self.background.is_some()
+    }
+
+    /// Start loading `paths` in the background (each read, parsed and
+    /// uploaded by a worker); see [`Renderer::load_textures_in_background`].
+    pub fn request_textures(&mut self, paths: Vec<String>) {
+        let Some(vfs) = self.background.clone() else {
+            return;
+        };
+        for p in paths {
+            if !self.textures.mark_pending(&p) {
+                continue;
+            }
+            let (done, vfs) = (self.textures.sender(), vfs.clone());
+            // Reading and parsing only: uploads stay on the main thread
+            // (workers uploading at once held the device from it).
+            texture_pool().spawn(move || {
+                // A panicking job still reports (nothing), so no one waits forever.
+                let t = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    vfs.read(&p).and_then(|data| match dds::parse(&data) {
+                        Ok(d) => Some(d),
+                        Err(e) => {
+                            log::warn!("{p}: {e}");
+                            None
+                        }
+                    })
+                }))
+                .unwrap_or_else(|_| {
+                    log::error!("loading texture {p} panicked");
+                    None
+                });
+                if t.is_none() {
+                    log::debug!("missing texture {p}");
+                }
+                let _ = done.send((p, t));
+            });
+        }
+    }
+
+    /// Wait for every background texture and show the materials that waited
+    /// at once, unfaded (before a loading screen lifts).
+    pub fn finish_textures(&mut self) {
+        self.textures.wait_all();
+        self.update_loading_materials(true);
+    }
+
+    /// Take in finished textures; make the materials whose textures are all
+    /// in, and fade them in. `now`: show them at once.
+    fn update_loading_materials(&self, now: bool) {
+        self.textures.receive(false);
+        {
+            let _timing = crate::diagnostics::Span::new("render.texture_uploads");
+            self.textures.upload(Some(TEXTURE_UPLOAD_BUDGET));
+        }
+        let mut list = self.loading_materials.lock().unwrap();
+        list.retain(|w| {
+            let Some(m) = w.upgrade() else { return false };
+            let Some(l) = &m.loading else { return false };
+            if l.ready.get().is_none() {
+                if l.pending
+                    .iter()
+                    .any(|p| matches!(self.textures.peek(p), texture::Peek::Pending))
+                {
+                    return true;
+                }
+                let (mut material, uniform) = self.build_material(&l.desc, None);
+                material.key.skinned = l.skinned;
+                let at = if now { f32::NEG_INFINITY } else { self.time };
+                let _ = l.ready.set(ReadyMaterial {
+                    material,
+                    uniform,
+                    at,
+                });
+            }
+            let ready = l.ready.get().unwrap();
+            let hidden = m.hidden(self.time);
+            // Controllers write their own uniform each frame (with `hidden`).
+            if ready.material.anim.is_none() {
+                let mut u = ready.uniform;
+                u.decal[3] = hidden;
+                self.queue
+                    .write_buffer(&ready.material.ubuf, 0, bytemuck::bytes_of(&u));
+            }
+            hidden > 0.0
+        });
     }
 
     /// Share geometry but give sequence-controlled materials to this reference
@@ -2138,9 +2362,10 @@ impl Renderer {
         let mut list = self.animated.lock().unwrap();
         list.retain(|w| {
             let Some(m) = w.upgrade() else { return false };
-            if let Some(c) = &m.anim {
-                self.queue
-                    .write_buffer(&c.buf, 0, bytemuck::bytes_of(&c.at(self.time)));
+            if let Some(c) = &m.current().anim {
+                let mut u = c.at(self.time);
+                u.decal[3] = m.hidden(self.time);
+                self.queue.write_buffer(&c.buf, 0, bytemuck::bytes_of(&u));
             }
             true
         });
@@ -2221,6 +2446,7 @@ impl Renderer {
     }
 
     pub fn render(&mut self, scene: &Scene, camera: &Camera, target: &wgpu::TextureView) {
+        self.update_loading_materials(false);
         self.animate_materials();
         let aspect = self.width as f32 / self.height as f32;
         let view_proj = camera.proj(aspect) * camera.view();
@@ -2825,7 +3051,7 @@ impl Renderer {
                     pass.set_pipeline(&self.pipelines[&key]);
                     current.set(Some(key));
                 }
-                pass.set_bind_group(1, &material.bind_group, &[]);
+                pass.set_bind_group(1, &material.current().bind_group, &[]);
                 match d {
                     Draw::Part(part) => {
                         pass.set_vertex_buffer(0, part.vbuf.slice(..));
@@ -2849,7 +3075,7 @@ impl Renderer {
                     pass.set_pipeline(&self.pipelines[&part.material.key]);
                     current.set(Some(part.material.key));
                 }
-                pass.set_bind_group(1, &part.material.bind_group, &[]);
+                pass.set_bind_group(1, &part.material.current().bind_group, &[]);
                 pass.set_vertex_buffer(0, part.vbuf.slice(..));
                 pass.set_vertex_buffer(1, batch.buf.slice(..));
                 pass.set_index_buffer(part.ibuf.slice(..), wgpu::IndexFormat::Uint32);
@@ -2866,7 +3092,7 @@ impl Renderer {
                         pass.set_pipeline(&self.pipelines[&part.material.key]);
                         current.set(Some(part.material.key));
                     }
-                    pass.set_bind_group(1, &part.material.bind_group, &[]);
+                    pass.set_bind_group(1, &part.material.current().bind_group, &[]);
                     pass.set_vertex_buffer(0, part.vbuf.slice(..));
                     pass.set_index_buffer(part.ibuf.slice(..), wgpu::IndexFormat::Uint32);
                     pass.draw_indexed(0..part.index_count, 0, *i..*i + 1);
@@ -2910,7 +3136,7 @@ impl Renderer {
                     dpass.set_vertex_buffer(0, self.decals.cube.slice(..));
                     dpass.set_vertex_buffer(1, self.decal_buf.slice(..));
                     for (i, (d, _)) in decals.iter().enumerate() {
-                        dpass.set_bind_group(1, &d.material.bind_group, &[]);
+                        dpass.set_bind_group(1, &d.material.current().bind_group, &[]);
                         dpass.draw(0..36, i as u32..i as u32 + 1);
                     }
                     drop(dpass);
@@ -3027,7 +3253,7 @@ impl Renderer {
             pass.set_vertex_buffer(1, self.skin_instance_buf.slice(..));
             for (part, i) in &first_skin {
                 pass.set_pipeline(&self.pipelines[&part.material.key]);
-                pass.set_bind_group(1, &part.material.bind_group, &[]);
+                pass.set_bind_group(1, &part.material.current().bind_group, &[]);
                 pass.set_vertex_buffer(0, part.vbuf.slice(..));
                 pass.set_index_buffer(part.ibuf.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..part.index_count, 0, *i..*i + 1);
@@ -3037,7 +3263,7 @@ impl Renderer {
             for (draw, range) in &first_draws {
                 let material = draw.material();
                 pass.set_pipeline(&self.pipelines[&material.key]);
-                pass.set_bind_group(1, &material.bind_group, &[]);
+                pass.set_bind_group(1, &material.current().bind_group, &[]);
                 match draw {
                     Draw::Part(part) => {
                         pass.set_vertex_buffer(0, part.vbuf.slice(..));
@@ -3225,11 +3451,15 @@ impl Renderer {
             pass.set_vertex_buffer(1, self.shadow_instance_buf.slice(..));
             let mut cutout = false;
             for (part, range) in &per_cascade[ci] {
+                // Not cast until its textures are in and it's half faded in.
+                if part.material.hidden(self.time) >= 0.5 {
+                    continue;
+                }
                 if part.material.alpha_test && !cutout {
                     pass.set_pipeline(&sh.static_pipeline);
                     cutout = true;
                 }
-                pass.set_bind_group(1, &part.material.bind_group, &[]);
+                pass.set_bind_group(1, &part.material.current().bind_group, &[]);
                 pass.set_vertex_buffer(0, part.vbuf.slice(..));
                 pass.set_index_buffer(part.ibuf.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..part.index_count, 0, range.clone());
@@ -3237,10 +3467,10 @@ impl Renderer {
             pass.set_pipeline(&sh.skinned_pipeline);
             pass.set_vertex_buffer(1, self.skin_instance_buf.slice(..));
             for (part, i, centre, radius) in skin.iter().filter(|_| ci != shadow::OCCLUSION) {
-                if !c.sees(*centre, *radius) {
+                if !c.sees(*centre, *radius) || part.material.hidden(self.time) >= 0.5 {
                     continue;
                 }
-                pass.set_bind_group(1, &part.material.bind_group, &[]);
+                pass.set_bind_group(1, &part.material.current().bind_group, &[]);
                 pass.set_vertex_buffer(0, part.vbuf.slice(..));
                 pass.set_index_buffer(part.ibuf.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..part.index_count, 0, *i..*i + 1);

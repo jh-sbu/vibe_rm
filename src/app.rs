@@ -182,6 +182,12 @@ pub fn run(opts: Options) -> Result<()> {
         // VRM_AUDIO=1 plays (or at least tracks) sounds offscreen too.
         let audio = std::env::var_os("VRM_AUDIO").map(|_| crate::audio::Audio::new());
         let mut engine = setup_engine(&opts, renderer, lo, vfs, audio)?;
+        // VRM_BACKGROUND_TEXTURES=1 loads textures as the windowed game does,
+        // to film materials fading in (offscreen runs otherwise wait for them).
+        if std::env::var_os("VRM_BACKGROUND_TEXTURES").is_some() {
+            let vfs = engine.vfs.clone();
+            engine.renderer.load_textures_in_background(vfs);
+        }
         // What is drawn behind the main menu, with no game running.
         let blank = blank_scene();
         if let Some(n) = opts.use_door {
@@ -704,13 +710,19 @@ impl App {
         surface.configure(&device, &config);
         let renderer = Renderer::new(device, queue, format, config.width, config.height);
         let (lo, vfs) = self.data.take().context("already initialised")?;
-        let engine = setup_engine(
+        let mut engine = setup_engine(
             &self.opts,
             renderer,
             lo,
             vfs,
             Some(crate::audio::Audio::new()),
         )?;
+        // After the start is loaded: new models' textures load in the
+        // background while playing (`VRM_SYNC_TEXTURES=1`: they don't).
+        if std::env::var_os("VRM_SYNC_TEXTURES").is_none() {
+            let vfs = engine.vfs.clone();
+            engine.renderer.load_textures_in_background(vfs);
+        }
         let mut ui = crate::ui::Ui::new(&engine.renderer.device, format);
         let swf = open_swf_ui(
             &self.opts,
