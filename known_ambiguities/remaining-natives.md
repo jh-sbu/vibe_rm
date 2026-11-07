@@ -177,9 +177,18 @@ known hour, read back through `Debug.Notification`.
 
 Unconfirmed: whether `PlayerKnows` on a magic effect also counts effects learned
 other ways than eating or experimenting with an ingredient (we count only those);
-how a four-digit year prints in `GameTimeToString` (zero-padded: "0201"); whether
+whether
 category changes survive saves (we don't save them); whether `SetFrequency` above 1
 is accepted (we cap it at 1, as the page says 0..1); and whether `SetINI*` rejects
-unknown names (we accept them). **test-mod** wanted: `Utility.GameTimeToString(0.0)`
-shown in a message box, and `Mute` then `UnMute` on the music category while music
-plays.
+unknown names (we accept them). **test-mod** wanted: `Mute` then `UnMute` on the
+music category while music plays.
+
+`GameTimeToString`: Skyrim SE (autotest21, `research/autotest21.md`, a new
+character on the start date) printed `GameTimeToString(0)` as `07/16/0201 00:00`
+and `(1.5)` as `07/16/0201 12:00`: the year zero-padded, the month and day counted
+from 0 (17 Last Seed, month index 7), and 1.5 days not moving the date. Choice
+(2026-11-07): today's date, month and day from 0, with the hour and minute from the
+argument's fraction. Uncertain: whether the date is today's or the start date's (the
+same on that save), and whether a later save's whole days move it. No vanilla
+script calls it. To settle: on a save past its first days,
+`GameTimeToString(Utility.GetCurrentGameTime())` and `(2.25)`.

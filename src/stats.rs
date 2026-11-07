@@ -533,21 +533,22 @@ impl Engine {
     }
 
     /// `Utility.GameTimeToString`: a game time in days passed as
-    /// "MM/DD/YYYY HH:MM" on a 24-hour clock.
+    /// "MM/DD/YYYY HH:MM" on a 24-hour clock. Skyrim SE (autotest21, on the
+    /// start date) printed 0 as `07/16/0201 00:00` and 1.5 as
+    /// `07/16/0201 12:00`: month and day counted from 0, and the whole days
+    /// not moving the date. Ours prints today's date with the time of day
+    /// from the fraction (`known_ambiguities/remaining-natives.md`).
     pub fn game_time_string(&self, game_days: f32) -> String {
         let days = if game_days.is_finite() {
             game_days.max(0.0)
         } else {
             0.0
         };
-        // A thousand years is more than any save will see; it keeps the
-        // calendar walk short whatever a script passes.
-        let whole = (days.floor() as u32).min(365_000);
-        let (_, day, month, year) = self.calendar_on(whole);
-        let minutes = ((days - whole as f32) * 24.0 * 60.0).floor() as u32 % (24 * 60);
+        let (_, day, month, year) = self.calendar();
+        let minutes = (days.fract() * 24.0 * 60.0).floor() as u32 % (24 * 60);
         format!(
-            "{:02}/{day:02}/{year:04} {:02}:{:02}",
-            month + 1,
+            "{month:02}/{:02}/{year:04} {:02}:{:02}",
+            day.saturating_sub(1),
             minutes / 60,
             minutes % 60
         )

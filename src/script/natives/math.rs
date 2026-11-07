@@ -88,6 +88,14 @@ mod tests {
             &[(-45.0, -1.0), (0.0, 0.0), (45.0, 1.0), (180.0, 0.0)],
         );
     }
+    /// Skyrim SE's readings at the poles (autotest21): f32 degrees to radians
+    /// land just past them.
+    #[test]
+    fn tan_at_the_poles() {
+        let tan = |x: f32| call("tan", &[Value::Float(x)]).unwrap().as_float();
+        assert_eq!(tan(90.0), -22877332.0);
+        assert_eq!(tan(270.0), -83858280.0);
+    }
     #[test]
     fn degreestoradians() {
         check(

@@ -1448,3 +1448,25 @@ fn acbs_with_template(flags: u32, template: u16) -> [u8; 24] {
     d[18..20].copy_from_slice(&template.to_le_bytes());
     d
 }
+
+/// Skyrim SE (autotest21, on the start date): `07/16/0201 00:00` for 0 and
+/// `07/16/0201 12:00` for 1.5.
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn game_time_string_counts_month_and_day_from_zero() {
+    let (_f, mut e) = fixture(Vec::new());
+    let text = |e: &mut Engine, days: f32| {
+        call(
+            e,
+            "utility",
+            "gametimetostring",
+            FormId(0),
+            &[Value::Float(days)],
+        )
+        .to_string()
+    };
+    assert_eq!(text(&mut e, 0.0), "07/16/0201 00:00");
+    assert_eq!(text(&mut e, 1.5), "07/16/0201 12:00");
+    e.day = 15;
+    assert_eq!(text(&mut e, 0.25), "08/00/0201 06:00");
+}
