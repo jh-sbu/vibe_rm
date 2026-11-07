@@ -78,6 +78,18 @@ fn apply_damage(
     Some(DestructionState { health, stage })
 }
 
+/// The model damage stage of the stage with `DSTD.index` `index`; -1 stays
+/// -1, and an index no stage has is kept.
+fn script_stage(data: &DestructibleData, index: i32) -> i32 {
+    if index < 0 {
+        return -1;
+    }
+    data.stages
+        .iter()
+        .find(|s| s.index as i32 == index)
+        .map_or(index, |s| s.damage_stage as i32)
+}
+
 impl Engine {
     /// The `DEST` definition of a reference's base object.
     pub fn destructible_data(&self, reference: FormId) -> Option<DestructibleData> {
@@ -85,14 +97,18 @@ impl Engine {
         self.lo.get(base)?.destructible_data()
     }
 
-    /// Current stage of a reference. Untouched references start at -1, as
-    /// documented for Skyrim's `GetCurrentDestructionStage` Papyrus native.
+    /// Current stage of a reference as scripts and conditions see it: the
+    /// stage's model damage stage (`DSTD` byte 2), -1 untouched. Skyrim SE
+    /// (autotest21): a web whose stages have damage stages 1 and 2 read -1,
+    /// then 1, then 2 (`known_ambiguities/destruction.md`).
     pub fn current_destruction_stage(&self, reference: FormId) -> i32 {
-        self.world_state
+        let index = self
+            .world_state
             .destruction
             .get(&reference)
-            .map(|state| state.stage)
-            .unwrap_or(-1)
+            .map_or(-1, |state| state.stage);
+        self.destructible_data(reference)
+            .map_or(index, |data| script_stage(&data, index))
     }
 
     /// Whether a reference has entered a stage that destroys it: `DSTD` flag
@@ -106,7 +122,11 @@ impl Engine {
         if self.world_state.destroyed_flags.contains(&reference) {
             return true;
         }
-        let stage = self.current_destruction_stage(reference);
+        let stage = self
+            .world_state
+            .destruction
+            .get(&reference)
+            .map_or(-1, |state| state.stage);
         data.stages
             .iter()
             .position(|s| s.index as i32 == stage)
@@ -133,12 +153,14 @@ impl Engine {
             let stage_changed = next.stage != old_stage;
             self.world_state.destruction.insert(reference, next);
             if stage_changed {
+                // Damage stages; the undamaged one is 0 here, though
+                // `GetCurrentDestructionStage` reads -1 (autotest21's `(0, 1)`).
                 self.send_script_event(
                     reference,
                     "OnDestructionStageChanged",
                     vec![
-                        papyrus::Value::Int(old_stage),
-                        papyrus::Value::Int(next.stage),
+                        papyrus::Value::Int(script_stage(&data, old_stage).max(0)),
+                        papyrus::Value::Int(script_stage(&data, next.stage)),
                     ],
                 );
             }

@@ -52,19 +52,21 @@ vanilla data (Skyrim.esm, Update.esm and the three DLC; 675 records with
   the first crossed `CAP_DAMAGE` stage's index when a cap applies. The first
   crossed cap stage limits health to its own threshold and prevents that hit
   from recording a later stage. Intermediate crossed stages currently have
-  no event or other side effect. These threshold and cap rules are explicit
-  implementation choices, not confirmed Skyrim behavior.
-- **Stage-number ambiguity.** The same Bellcube [GetCurrentDestructionStage
-  page](https://papyrus.bellcube.dev/skyrimse/script/objectreference/function/getcurrentdestructionstage/)
-  documents untouched `-1`, but does not specify whether later script-visible
-  values correspond to `DSTD.index` or the separate model damage stage. A
-  public [destructible-object author
-  tutorial](https://skyrimmw.weebly.com/skyrim-modding/destructible-object-creation-breakable-stuff-skyrim-modding-tutorial)
-  calls the model damage stage what scripts reference. Runtime uses
-  `DSTD.index` per the current query policy; synthetic tests deliberately use
-  unequal values so this assumption stays visible. Mapping is unresolved.
-  Public vanilla [`ObjectReference.psc`](https://github.com/ianpatt/skse64/blob/master/scripts/vanilla/ObjectReference.psc)
-  declares the native but does not settle the mapping.
+  no event or other side effect. These threshold and cap rules agree with
+  autotest21's web (below); how several caps or a skipped stage behave is
+  unobserved.
+- **Stage numbers.** Skyrim SE settled them (autotest21,
+  `research/autotest21.md`, Destruction): a copy of the Bleak Falls web
+  (damage stages 1 and 2) hit for 5 every 0.5 s read
+  `GetCurrentDestructionStage` -1, then 1, 1, 2, 2, 2, 2, with
+  `OnDestructionStageChanged(0, 1)` at the first hit and `(1, 2)` at the
+  third. Scripts see the model damage stage (`DSTD` byte 2), not
+  `DSTD.index`; the event calls the undamaged state 0 where the query
+  reads -1. The health agrees with the cap rule below: 10 → 9.9 (capped at
+  the 99% stage) → 4.9 → 0. After `ClearDestruction`, 1000 damage at once
+  gave stage 1 only and one `(0, 1)` event, as the cap gives. Ours stores
+  the index and reports the damage stage (queries, condition 470 and the
+  event, 2026-11-07).
 - **`OnDestructionStageChanged` dispatch.** When a `DamageObject` call changes
   stored stage, one event with old and new stage integers is queued after the
   new state is stored, through the normal reference/effect/running-alias
@@ -73,8 +75,9 @@ vanilla data (Skyrim.esm, Update.esm and the three DLC; 675 records with
   [event page](https://papyrus.bellcube.dev/skyrimse/script/objectreference/event/ondestructionstagechanged/)
   describes worsening-stage notifications and old/current arguments. Runtime
   sends one old/final notification per call even when thresholds are skipped;
-  whether Skyrim sends one event per skipped stage is unknown. The unresolved
-  `DSTD.index` versus model-damage-stage mapping also applies to these values.
+  whether Skyrim sends one event per skipped stage is unknown (the web's
+  stages can't skip: its first caps). The values are damage stages, the
+  undamaged one 0 (above).
 - **`ClearDestruction` state reset.** The Papyrus native clears this
   reference's stored health/stage entry regardless of load state; repeated
   calls are no-ops and do not queue `OnDestructionStageChanged` or other

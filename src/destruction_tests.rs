@@ -255,8 +255,8 @@ fn scripted_damage_crosses_authored_indices_and_caps_one_hit_at_first_capped_sta
         health: 100,
         stage_count: 2,
         vats_targetable: false,
-        // Deliberately distinct damage_stage values: Papyrus query state uses
-        // the authored index under the current documented policy.
+        // Deliberately distinct damage_stage values: the stored state keeps
+        // the authored index; scripts see the damage stage.
         stages: vec![stage(4, 90, 1, 0x01), stage(9, 0, 2, 0)],
     };
 
@@ -342,7 +342,7 @@ fn destructible_definitions_and_initial_stage_queries_are_reference_scoped() {
             stage: 0,
         },
     );
-    assert_eq!(e.current_destruction_stage(REF_A), 0);
+    assert_eq!(e.current_destruction_stage(REF_A), 1);
     assert_eq!(e.current_destruction_stage(REF_B), -1);
     assert_eq!(current_stage(&mut e, &this_b), -1);
 
@@ -391,7 +391,7 @@ fn damageobject_is_loaded_reference_gated_and_keeps_health_per_reference() {
 
     // First cap stage prevents this hit from entering stage 1.
     damage_object(&mut e, &this_a, 100.0);
-    assert_eq!(e.current_destruction_stage(REF_A), 0);
+    assert_eq!(e.current_destruction_stage(REF_A), 1);
     assert_eq!(e.world_state.destruction[&REF_A].health, 99.0);
     assert_eq!(e.current_destruction_stage(REF_C), -1);
 
@@ -400,12 +400,12 @@ fn damageobject_is_loaded_reference_gated_and_keeps_health_per_reference() {
     assert!(!e.world_state.destruction.contains_key(&REF_B));
 
     damage_object(&mut e, &this_c, 2.0);
-    assert_eq!(e.current_destruction_stage(REF_C), 0);
+    assert_eq!(e.current_destruction_stage(REF_C), 1);
     // The synthetic base's first stage is a 99% cap, so the hit stops there.
     assert_eq!(e.world_state.destruction[&REF_C].health, 99.0);
     damage_object(&mut e, &this_c, 1.0);
     assert_eq!(e.world_state.destruction[&REF_C].health, 98.0);
-    assert_eq!(current_stage(&mut e, &this_c), 0);
+    assert_eq!(current_stage(&mut e, &this_c), 1);
     assert_eq!(e.world_state.destruction[&REF_A].health, 99.0);
 
     let parsed = crate::condition::parse_all(&e.lo.get(QUEST).unwrap());
@@ -436,7 +436,7 @@ fn weapon_blows_damage_loaded_destructibles_until_the_stage_ignores_external_dam
 
     // The first cap stage holds this blow at 99%, like a scripted hit.
     e.strike(REF_A, crate::engine::PLAYER_REF, Vec3::ZERO, true, 100.0);
-    assert_eq!(e.current_destruction_stage(REF_A), 0);
+    assert_eq!(e.current_destruction_stage(REF_A), 1);
     assert_eq!(e.world_state.destruction[&REF_A].health, 99.0);
 
     // Stage 0 flags Ignore External Damage: further blows do nothing.
@@ -523,9 +523,9 @@ fn destruction_stage_events_report_old_and_final_indices_to_running_receivers() 
     // Entering the authored cap stage queues one old/final notification only
     // after the per-reference state is visible.
     damage_object(&mut e, &this_a, 0.5);
-    assert_eq!(e.current_destruction_stage(REF_A), 0);
+    assert_eq!(e.current_destruction_stage(REF_A), 1);
     assert_eq!(e.world_state.destruction[&REF_A].health, 99.0);
-    assert_stage_event(&stage_events_for(&e, ObjectId::Form(REF_A.0)), -1, 0);
+    assert_stage_event(&stage_events_for(&e, ObjectId::Form(REF_A.0)), 0, 1);
     assert_stage_event(
         &stage_events_for(
             &e,
@@ -534,8 +534,8 @@ fn destruction_stage_events_report_old_and_final_indices_to_running_receivers() 
                 alias: 7,
             },
         ),
-        -1,
         0,
+        1,
     );
     assert!(
         stage_events_for(
@@ -550,19 +550,19 @@ fn destruction_stage_events_report_old_and_final_indices_to_running_receivers() 
 
     // The next damaging hit enters stage 1; a repeat at zero health is silent.
     damage_object(&mut e, &this_a, 99.0);
-    assert_eq!(e.current_destruction_stage(REF_A), 1);
+    assert_eq!(e.current_destruction_stage(REF_A), 2);
     assert_eq!(stage_events_for(&e, ObjectId::Form(REF_A.0)).len(), 2);
-    assert_stage_event(&stage_events_for(&e, ObjectId::Form(REF_A.0))[1..], 0, 1);
+    assert_stage_event(&stage_events_for(&e, ObjectId::Form(REF_A.0))[1..], 1, 2);
     let queued_after_transition = e.scripts.pending_events.len();
     damage_object(&mut e, &this_a, 1.0);
     assert_eq!(e.scripts.pending_events.len(), queued_after_transition);
 
     // A single hit skips the 70% stage and lands at 40%. The chosen policy
-    // sends one -1 -> final-index event, not an event for each skipped stage.
+    // sends one undamaged (0) -> final damage stage event, not an event for each skipped stage.
     damage_object(&mut e, &this_d, 60.0);
-    assert_eq!(e.current_destruction_stage(REF_D), 7);
+    assert_eq!(e.current_destruction_stage(REF_D), 2);
     assert_eq!(e.world_state.destruction[&REF_D].health, 40.0);
-    assert_stage_event(&stage_events_for(&e, ObjectId::Form(REF_D.0)), -1, 7);
+    assert_stage_event(&stage_events_for(&e, ObjectId::Form(REF_D.0)), 0, 2);
 
     // Clear doesn't emit an event or erase any notifications already queued.
     let queued_events = pending_event_summary(&e);
@@ -622,7 +622,7 @@ fn destruction_health_and_stage_save_restore_without_replaying_events() {
     assert!(!e.world_state.destruction.contains_key(&REF_B));
     assert!(e.scripts.pending_events.is_empty());
     assert_eq!(current_stage(&mut e, &this_a), -1);
-    assert_eq!(current_stage(&mut e, &this_c), 0);
+    assert_eq!(current_stage(&mut e, &this_c), 1);
     let parsed = crate::condition::parse_all(&e.lo.get(QUEST).unwrap());
     assert!(crate::condition::evaluate(
         &e,
@@ -687,8 +687,8 @@ fn cleardestruction_resets_one_reference_even_when_unloaded_without_events() {
 
     damage_object(&mut e, &this_a, 100.0);
     damage_object(&mut e, &this_c, 2.0);
-    assert_eq!(e.current_destruction_stage(REF_A), 0);
-    assert_eq!(e.current_destruction_stage(REF_C), 0);
+    assert_eq!(e.current_destruction_stage(REF_A), 1);
+    assert_eq!(e.current_destruction_stage(REF_C), 1);
     assert_eq!(e.world_state.destruction[&REF_A].health, 99.0);
     assert_eq!(e.world_state.destruction[&REF_C].health, 99.0);
     let queued_events = pending_event_summary(&e);
@@ -722,14 +722,14 @@ fn cleardestruction_resets_one_reference_even_when_unloaded_without_events() {
     e.cells.get_mut(&cell).unwrap().refs.push(REF_C);
     damage_object(&mut e, &this_c, 2.0);
     assert_eq!(e.world_state.destruction[&REF_C].health, 99.0);
-    assert_eq!(e.current_destruction_stage(REF_C), 0);
-    assert_eq!(current_stage(&mut e, &this_c), 0);
+    assert_eq!(e.current_destruction_stage(REF_C), 1);
+    assert_eq!(current_stage(&mut e, &this_c), 1);
     assert_eq!(e.world_state.destruction[&REF_A].health, 99.0);
     assert_eq!(pending_event_summary(&e).len(), queued_events.len() + 1);
     let events = stage_events_for(&e, papyrus::ObjectId::Form(REF_C.0));
     assert_eq!(events.len(), 2);
-    assert_stage_event(&events[..1], -1, 0);
-    assert_stage_event(&events[1..], -1, 0);
+    assert_stage_event(&events[..1], 0, 1);
+    assert_stage_event(&events[1..], 0, 1);
 }
 
 #[test]
