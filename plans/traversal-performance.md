@@ -188,15 +188,13 @@ without other builds or heavy work competing for CPU time.
   reactions per faction (CR04 Brute ~14 → ~6 ms per attempt). Also,
   `update_scripts`' later passes no longer give a thread that used its budget
   another 20,000 instructions.
-- **Open: Papyrus busy loops cost ~7 ms every frame.** Vanilla's
+- Papyrus busy loops cost ~7 ms every frame (vanilla
   `CWArrowVolleyParentScript.startFiring` polls `CWBattlePhase` without
-  waiting outside a siege, and each loaded one uses its whole 20,000-instruction
-  budget (~2.3 ms) every frame. How the original game time-slices such a thread
-  (the `[Papyrus]` `fUpdateBudgetMS` / `fExtraTaskletBudgetMS` settings, or
-  frame-synchronized native calls) isn't documented in the sources checked
-  (local UESP only mentions the settings on a talk page). Lowering the budget
-  would change how fast long-running scripts progress, so it needs a decision
-  or an SE probe.
+  waiting outside a siege). The user chose to deviate here
+  ([papyrus budget](../deviations/papyrus-budget.md)): busy threads now share a
+  1.2 ms slice a frame. On the route, the median `sim.scripts_weather` fell
+  from 8.8 to 1.4 ms and `engine.update` from 13.4 to 8.7 ms; the worst frame
+  from 105 to 79 ms.
 - The first `Disable` of a session builds the enable-parent index over all
   878,000 placed references (~170 ms; startup's nirnroot `OnCellAttach`).
 - One run had a 52 ms `cell.triggers_scripts_audio` at a cell load (frame 844);

@@ -277,6 +277,9 @@ struct Thread {
     /// The [`Vm::run`] pass in which it last used up its instruction budget:
     /// [`Vm::run_more`] doesn't run it again in that pass.
     spent_in: u64,
+    /// Its last run ended by using up its budget, not by waiting or
+    /// finishing: a busy loop, run in [`Vm::busy_slice`] when that is set.
+    busy: bool,
 }
 
 #[derive(Default)]
@@ -292,6 +295,13 @@ pub struct Vm {
     threads: Vec<Thread>,
     /// Counts [`Vm::run`] calls (from 1); see [`Vm::run_more`].
     pass: u64,
+    /// When set, busy threads (see `Thread::busy`) don't each get the
+    /// instruction budget: they share this much time a pass, taking turns
+    /// in small slices from a start that moves on each pass. Threads that
+    /// woke from a wait or an event still get the whole budget.
+    pub busy_slice: Option<std::time::Duration>,
+    /// Where the busy threads' turns start (see [`Vm::busy_slice`]).
+    busy_turn: usize,
     pub time: f64,
     /// Real seconds menus included, which `WaitMenuMode` counts on; the host
     /// keeps it, stopping `time` in menu mode.
@@ -616,6 +626,7 @@ impl Vm {
                 let frame = self.make_frame(f, Some((obj, class)), &args, None);
                 self.threads.push(Thread {
                     spent_in: 0,
+                    busy: false,
                     frames: vec![frame],
                     wake_at: self.time,
                     menu_clock: false,
@@ -648,6 +659,7 @@ impl Vm {
             let frame = self.make_frame(f, Some((obj, class)), &args, None);
             self.threads.push(Thread {
                 spent_in: 0,
+                busy: false,
                 frames: vec![frame],
                 wake_at: self.time,
                 menu_clock: false,
@@ -837,6 +849,7 @@ impl Vm {
             };
             self.threads.push(Thread {
                 spent_in: 0,
+                busy: false,
                 frames,
                 wake_at: now + t.wake_in,
                 menu_clock: t.menu_clock,
@@ -854,6 +867,7 @@ impl Vm {
     /// Run all threads that are due, each for up to `budget` instructions.
     pub fn run(&mut self, host: &mut dyn Host, now: f64, budget: usize) {
         self.pass += 1;
+        self.busy_turn = self.busy_turn.wrapping_add(1);
         self.run_more(host, now, budget);
     }
 
@@ -864,6 +878,7 @@ impl Vm {
         self.time = now;
         let pending = std::mem::take(&mut self.threads);
         let mut keep = Vec::with_capacity(pending.len());
+        let mut busy = Vec::new();
         for mut t in pending {
             // Not due, or already given its budget in this pass (a frame
             // runs the VM again for events its scripts raised).
@@ -876,12 +891,77 @@ impl Vm {
             // Woken by its signal or timed out.
             t.waiting_for = None;
             t.menu_clock = false;
+            if t.busy && self.busy_slice.is_some() {
+                busy.push(t);
+                continue;
+            }
             if !self.step_thread(host, &mut t, budget) {
+                t.busy = t.spent_in == self.pass;
                 keep.push(t);
             }
         }
+        if !busy.is_empty() {
+            keep.extend(self.run_busy(host, busy, budget));
+        }
         keep.append(&mut self.threads);
         self.threads = keep;
+    }
+
+    /// Busy threads take turns within [`Vm::busy_slice`], a few hundred
+    /// instructions each, until it's spent or each has had `budget`. Those
+    /// left waiting don't run again until the next pass. The threads still
+    /// running are returned.
+    fn run_busy(
+        &mut self,
+        host: &mut dyn Host,
+        mut busy: Vec<Thread>,
+        budget: usize,
+    ) -> Vec<Thread> {
+        const TURN: usize = 500;
+        let slice = self.busy_slice.unwrap_or_default();
+        let start = std::time::Instant::now();
+        let first = self.busy_turn % busy.len();
+        busy.rotate_left(first);
+        let mut used = vec![0usize; busy.len()];
+        let mut done = vec![false; busy.len()];
+        let mut finished = vec![false; busy.len()];
+        // At least one turn a pass, so a short slice still makes progress.
+        let mut turns = 0;
+        let open = |turns: usize| turns == 0 || start.elapsed() < slice;
+        while open(turns) && done.iter().any(|d| !d) {
+            for i in 0..busy.len() {
+                if done[i] || !open(turns) {
+                    continue;
+                }
+                turns += 1;
+                let turn = TURN.min(budget - used[i]);
+                let pass = self.pass;
+                let t = &mut busy[i];
+                t.spent_in = 0;
+                if self.step_thread(host, t, turn) {
+                    (finished[i], done[i]) = (true, true);
+                } else if t.spent_in == pass {
+                    used[i] += turn;
+                    done[i] = used[i] >= budget;
+                } else {
+                    // It waits now: no longer busy.
+                    t.busy = false;
+                    done[i] = true;
+                }
+            }
+        }
+        let pass = self.pass;
+        busy.into_iter()
+            .zip(finished)
+            .filter(|(_, f)| !f)
+            .map(|(mut t, _)| {
+                // Its turn this pass is over, whether it had it or not.
+                if t.busy {
+                    t.spent_in = pass;
+                }
+                t
+            })
+            .collect()
     }
 
     fn get(&self, frame: &Frame, a: &Arg) -> Value {
@@ -1487,6 +1567,45 @@ mod tests {
         // A new pass (the next frame, or a frozen clock in a menu) runs it.
         vm.run(&mut host, 0.0, 100);
         assert_eq!(count(&vm), after_one * 2);
+    }
+
+    #[test]
+    fn busy_threads_share_the_busy_slice_taking_turns() {
+        let mut host = busy_script();
+        let (a, b) = (ObjectId::Form(0x100), ObjectId::Form(0x101));
+        let mut vm = Vm::new();
+        for o in [a, b] {
+            assert!(vm.attach(&mut host, o, "Busy", &[]));
+            vm.send_event(&mut host, o, "OnInit", vec![]);
+        }
+        let count = |vm: &Vm, o| vm.get_var(o, "count").unwrap().as_int();
+        // Woken by their event: the whole budget each, then they're busy.
+        vm.busy_slice = Some(std::time::Duration::ZERO);
+        vm.run(&mut host, 0.0, 2000);
+        let (a0, b0) = (count(&vm, a), count(&vm, b));
+        assert!(a0 > 0 && a0 == b0, "{a0} {b0}");
+        // No time to share: one turn a pass, alternating.
+        let mut gains = Vec::new();
+        for _ in 0..4 {
+            let before = (count(&vm, a), count(&vm, b));
+            vm.run(&mut host, 0.0, 2000);
+            vm.run_more(&mut host, 0.0, 2000);
+            gains.push((count(&vm, a) - before.0, count(&vm, b) - before.1));
+        }
+        for &(x, y) in &gains {
+            assert!((x == 0) != (y == 0), "one turn a pass: {gains:?}");
+        }
+        assert_ne!(
+            gains[0].0 == 0,
+            gains[1].0 == 0,
+            "turns alternate: {gains:?}"
+        );
+        // Plenty of time: still no more than the budget each.
+        vm.busy_slice = Some(std::time::Duration::from_secs(10));
+        let before = (count(&vm, a), count(&vm, b));
+        vm.run(&mut host, 0.0, 2000);
+        assert!(count(&vm, a) - before.0 <= a0 && count(&vm, b) - before.1 <= b0);
+        assert!(count(&vm, a) > before.0 && count(&vm, b) > before.1);
     }
 
     #[test]

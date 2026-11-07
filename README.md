@@ -70,6 +70,10 @@ wait for everything before they lift, and offscreen runs load synchronously.
 `VRM_BACKGROUND_TEXTURES=1` turns it on in offscreen runs (to film the fades).
 See `plans/async-textures.md`.
 
+Papyrus threads that loop without waiting share 1.2 ms a frame in the windowed
+game instead of each running 20,000 instructions (`deviations/papyrus-budget.md`;
+`VRM_PAPYRUS_BUSY_MS=<ms>` changes it, `0` turns it off).
+
 Traversal diagnostics are opt-in with `VRM_FRAME_TIMINGS_MS=<milliseconds>`:
 
 ```sh

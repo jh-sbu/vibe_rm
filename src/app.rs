@@ -188,6 +188,8 @@ pub fn run(opts: Options) -> Result<()> {
             let vfs = engine.vfs.clone();
             engine.renderer.load_textures_in_background(vfs);
         }
+        // Offscreen runs give busy scripts the whole budget unless asked.
+        engine.vm.busy_slice = papyrus_busy_slice(None);
         // What is drawn behind the main menu, with no game running.
         let blank = blank_scene();
         if let Some(n) = opts.use_door {
@@ -571,6 +573,24 @@ fn open_swf_ui(
 /// Survival Mode prompt comes up at the start): press the last button of one
 /// left up for two seconds unless `--hold-boxes` (`@<frame> msgbox <button>`
 /// presses one).
+/// The time a frame gives Papyrus threads that keep using up their budget
+/// (`deviations/papyrus-budget.md`): vanilla `fUpdateBudgetMS`'s default.
+const DEFAULT_BUSY_SLICE_MS: f64 = 1.2;
+
+/// `VRM_PAPYRUS_BUSY_MS=<ms>` overrides `default` (0: no shared slice, each
+/// busy thread gets the whole instruction budget).
+fn papyrus_busy_slice(default: Option<f64>) -> Option<std::time::Duration> {
+    let ms = match std::env::var("VRM_PAPYRUS_BUSY_MS") {
+        Ok(v) => v
+            .trim()
+            .parse::<f64>()
+            .ok()
+            .filter(|v| v.is_finite() && *v >= 0.0),
+        Err(_) => default,
+    }?;
+    (ms > 0.0).then(|| std::time::Duration::from_secs_f64(ms / 1000.0))
+}
+
 fn answer_boxes(engine: &mut Engine, opts: &Options, box_up: &mut u32) {
     *box_up = if engine.messages.boxes.is_empty() {
         0
@@ -723,6 +743,7 @@ impl App {
             let vfs = engine.vfs.clone();
             engine.renderer.load_textures_in_background(vfs);
         }
+        engine.vm.busy_slice = papyrus_busy_slice(Some(DEFAULT_BUSY_SLICE_MS));
         let mut ui = crate::ui::Ui::new(&engine.renderer.device, format);
         let swf = open_swf_ui(
             &self.opts,
