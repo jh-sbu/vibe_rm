@@ -172,8 +172,12 @@ without other builds or heavy work competing for CPU time.
 
 - Remaining slow alias fills: CR04 Brute and CR01 BeastVictim (anchored only by
   `GetIsVoiceType` and location functions), and `Near` fills.
-- `Near` fills: narrow loaded candidates by `IsLinkedTo` (a reverse linked-ref
-  index) or `HasRefType`, as matching fills are narrowed.
+- `Near` fills now run the alias conditions before the eligibility checks
+  (both pure): 7–13 ms became 4.5–11 ms per fill. What's left is evaluating
+  `IsLinkedTo`/`HasRefType` over ~18,000 loaded references. A reverse `XLKR`
+  index over all 878,000 placed references takes ~178 ms to build, so it would
+  have to be built per cell during streaming to help. That would save roughly
+  10–15 ms per world encounter start; not done.
 - Synchronous texture/model loading for actors spawned by quests and for
   first-time cells: move read/parse off the main thread, or prepare the
   assets of quest-created actors ahead of their spawn.

@@ -763,9 +763,11 @@ impl Engine {
                 .find(|&l| accepts(l)),
             Fill::Matching => {
                 let mut found: Vec<FormId> = if a.has(flags::IN_LOADED_AREA) {
+                    // Both tests are pure; the conditions go first because, over
+                    // the whole loaded area, they leave far fewer references.
                     self.loaded_refs()
                         .into_iter()
-                        .filter(|&r| self.eligible(q, a, r, reserved) && accepts(r))
+                        .filter(|&r| accepts(r) && self.eligible(q, a, r, reserved))
                         .collect()
                 } else {
                     let mut v = Vec::new();
@@ -804,7 +806,8 @@ impl Engine {
                 let mut found: Vec<(f32, FormId)> = self
                     .refs_near(centre)
                     .into_iter()
-                    .filter(|&r| r != centre && self.eligible(q, a, r, reserved) && accepts(r))
+                    // Conditions first, as for the loaded area above.
+                    .filter(|&r| r != centre && accepts(r) && self.eligible(q, a, r, reserved))
                     .map(|r| {
                         (
                             self.ref_position(r)
