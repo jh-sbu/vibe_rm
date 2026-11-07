@@ -4562,7 +4562,7 @@ impl Engine {
         });
         let mut vm = std::mem::take(&mut self.vm);
         vm.menu_time = self.scripts.wall_time;
-        for _ in 0..4 {
+        for pass in 0..4 {
             {
                 let mut host = crate::script::EngineHost { engine: self };
                 for (obj, script, ev) in fired.drain(..) {
@@ -4579,7 +4579,13 @@ impl Engine {
                     crate::script::attach_form_event_scripts(&mut vm, &mut host, obj);
                     vm.send_event(&mut host, obj, &ev, args);
                 }
-                vm.run(&mut host, now, 20_000);
+                // Later passes take what scripts raised in the earlier ones;
+                // a thread that used its whole budget waits for the next frame.
+                if pass == 0 {
+                    vm.run(&mut host, now, 20_000);
+                } else {
+                    vm.run_more(&mut host, now, 20_000);
+                }
             }
             let stages = std::mem::take(&mut self.scripts.pending_stages);
             if stages.is_empty()

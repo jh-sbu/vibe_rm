@@ -274,6 +274,9 @@ struct Thread {
     waiting_for: Option<u64>,
     /// Where the waiting call's result goes (`Vm::signal_with`).
     wait_dest: Option<Arg>,
+    /// The [`Vm::run`] pass in which it last used up its instruction budget:
+    /// [`Vm::run_more`] doesn't run it again in that pass.
+    spent_in: u64,
 }
 
 #[derive(Default)]
@@ -287,6 +290,8 @@ pub struct Vm {
     instances: HashMap<(ObjectId, Arc<str>), Instance>,
     attached: HashMap<ObjectId, Vec<Arc<str>>>,
     threads: Vec<Thread>,
+    /// Counts [`Vm::run`] calls (from 1); see [`Vm::run_more`].
+    pass: u64,
     pub time: f64,
     /// Real seconds menus included, which `WaitMenuMode` counts on; the host
     /// keeps it, stopping `time` in menu mode.
@@ -610,6 +615,7 @@ impl Vm {
                 log::trace!("event {event} -> {class} ({state:?}) on {obj:?}");
                 let frame = self.make_frame(f, Some((obj, class)), &args, None);
                 self.threads.push(Thread {
+                    spent_in: 0,
                     frames: vec![frame],
                     wake_at: self.time,
                     menu_clock: false,
@@ -641,6 +647,7 @@ impl Vm {
         {
             let frame = self.make_frame(f, Some((obj, class)), &args, None);
             self.threads.push(Thread {
+                spent_in: 0,
                 frames: vec![frame],
                 wake_at: self.time,
                 menu_clock: false,
@@ -829,6 +836,7 @@ impl Vm {
                 self.time
             };
             self.threads.push(Thread {
+                spent_in: 0,
                 frames,
                 wake_at: now + t.wake_in,
                 menu_clock: t.menu_clock,
@@ -843,13 +851,25 @@ impl Vm {
         self.threads.len()
     }
 
-    /// Run all threads that are due. `budget` bounds instructions per thread.
+    /// Run all threads that are due, each for up to `budget` instructions.
     pub fn run(&mut self, host: &mut dyn Host, now: f64, budget: usize) {
+        self.pass += 1;
+        self.run_more(host, now, budget);
+    }
+
+    /// Run the threads that are due again in the same pass as the last
+    /// [`Vm::run`] (for what its scripts raised), except those that used up
+    /// their budget in it: a busy loop isn't given it again.
+    pub fn run_more(&mut self, host: &mut dyn Host, now: f64, budget: usize) {
         self.time = now;
         let pending = std::mem::take(&mut self.threads);
         let mut keep = Vec::with_capacity(pending.len());
         for mut t in pending {
-            if t.wake_at > if t.menu_clock { self.menu_time } else { now } {
+            // Not due, or already given its budget in this pass (a frame
+            // runs the VM again for events its scripts raised).
+            if t.wake_at > if t.menu_clock { self.menu_time } else { now }
+                || t.spent_in == self.pass
+            {
                 keep.push(t);
                 continue;
             }
@@ -978,6 +998,7 @@ impl Vm {
             steps += 1;
             self.executed += 1;
             if steps > budget {
+                t.spent_in = self.pass;
                 return false;
             }
             let op = frame.func.code[frame.pc].clone();
@@ -1429,6 +1450,43 @@ mod tests {
             ),
             ("utility".to_string(), utility),
         ]))
+    }
+
+    /// A script whose `OnInit` counts up forever without waiting.
+    fn busy_script() -> Scripts {
+        use crate::build::{Arg, FunctionBuilder, ScriptBuilder};
+        let mut s = ScriptBuilder::new("Busy", "Quest");
+        let count = s.variable("count", "Int", Arg::None);
+        let mut f = FunctionBuilder::new("None");
+        let top = f.label();
+        f.bind(top);
+        f.op(1, [count.clone(), count, Arg::Int(1)]); // iadd
+        f.jmp(top);
+        s.function("OnInit", f);
+        Scripts(HashMap::from([(
+            "busy".to_string(),
+            pex::write(&s.build().unwrap()).unwrap(),
+        )]))
+    }
+
+    #[test]
+    fn a_busy_thread_gets_its_budget_once_a_pass() {
+        let mut host = busy_script();
+        let obj = ObjectId::Form(0x100);
+        let mut vm = Vm::new();
+        assert!(vm.attach(&mut host, obj, "Busy", &[]));
+        vm.send_event(&mut host, obj, "OnInit", vec![]);
+        let count = |vm: &Vm| vm.get_var(obj, "count").unwrap().as_int();
+        vm.run(&mut host, 0.0, 100);
+        let after_one = count(&vm);
+        assert!(after_one > 0);
+        // Run again in the same pass: it already used its budget.
+        vm.run_more(&mut host, 0.0, 100);
+        vm.run_more(&mut host, 0.0, 100);
+        assert_eq!(count(&vm), after_one);
+        // A new pass (the next frame, or a frozen clock in a menu) runs it.
+        vm.run(&mut host, 0.0, 100);
+        assert_eq!(count(&vm), after_one * 2);
     }
 
     #[test]
