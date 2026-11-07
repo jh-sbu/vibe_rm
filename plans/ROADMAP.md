@@ -1883,11 +1883,8 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
     follow-up list ("Faults and open items").
   - Built and waiting for the user's run: `loadscreens`
     (`plans/loading-screen.md`), `crafting1` (`plans/crafting.md`) and
-    `spell-visuals` (`plans/spell-visuals.md`, Pending SE validation).
-    `spell-visuals` can't run as written: its protocol uses `cqf VrmFx ...`,
-    an SKSE console command that vanilla SE reports as not found. Rework it
-    to vanilla triggers (the `controltags` probe polls a global the user sets
-    with `set <global> to <n>`) before the user runs it.
+    `spell-visuals` (`plans/spell-visuals.md`, Pending SE validation; its
+    steps are now `set VrmFxRun to <n>`, as vanilla SE has no `cqf`).
   - `controltags` (`research/ui/control-tags.md`): rounds 1 and 2 observed
     (2026-11-03). Still to see: a hint shown after binding Activate to a key
     without art (NumPad Enter, NumLock or Apps).

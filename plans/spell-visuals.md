@@ -156,24 +156,27 @@ Do not install the plugin or run Skyrim here. The user adds it to a disposable
 SE save. On its first update the quest moves the player to vibe_rm's default
 start (Tamriel 18432, -47104, facing a rock 350 units out at 140 degrees),
 gives Flames, Frostbite and Fireball with 1000 magicka, plays Oakflesh's
-shader, shows the steps and asks for a save. `cqf VrmFx Help` shows the steps
-again; the functions are listed in the module doc
+shader, shows the steps and asks for a save. Vanilla's console has no
+command to call a script function (`cqf` is SKSE's), so each step is a
+number: `set VrmFxRun to <n>` in the console, then close it (the quest checks
+the global once a second). `set VrmFxRun to 13` shows the steps again; the
+numbers and the functions they call are listed in the module doc
 (`crates/tools/src/test_mods/spell_visuals.rs`). The steps:
 
 0. `fw 81a` for clear weather, as vibe_rm's captures use.
 1. Note the Oakflesh sheen, reload the numbered save the quest asked for
    (the persisted `Ran` guard prevents replay), note whether the sheen is
-   still there, then `cqf VrmFx StopVisual`.
-2. `cqf VrmFx Rock`: hold Flames on the rock for 5 s, screenshots at about
-   1 s and 5 s. `cqf VrmFx Air`: hold it into open air, screenshot.
-3. `cqf VrmFx NpcFlames`, then `cqf VrmFx Side`: the test caster holds
-   Flames on the same rock point, seen side-on; screenshot, and walk around
-   it as useful. `cqf VrmFx NpcFlamesAir`, then `cqf VrmFx AirSide`: the
-   same into open air.
-4. The same for Frostbite (`NpcFrost`, `NpcFrostAir`, and the player's own),
-   and `NpcFireball`: try to catch the trail in flight.
-5. `cqf VrmFx Night`, then repeat steps 2 and 3 for Flames.
-   `cqf VrmFx NpcStop` ends the caster's casting.
+   still there, then `set VrmFxRun to 12` (stops it).
+2. `set VrmFxRun to 1` (at the rock): hold Flames on the rock for 5 s,
+   screenshots at about 1 s and 5 s. `2` (open air): hold it into open air,
+   screenshot.
+3. `5` (the test caster holds Flames on the same rock point), then `3`
+   (seen side-on); screenshot, and walk around it as useful. `6` (Flames
+   into open air), then `4` (its side view).
+4. The same for Frostbite (`7` at the rock, `8` into open air, and the
+   player's own), and `9` (Fireball): try to catch the trail in flight.
+5. `11` (game hour 23), then repeat steps 2 and 3 for Flames. `10` ends the
+   caster's casting.
 
 Screenshots go in `tests/results/spell-visuals/`, named by step (for example
 `2-rock-1s.png`, `3-npc-flames-side.png`), with a note of anything the
