@@ -30,11 +30,12 @@ what they capture is unchanged.
    `TextureCache::get` waits for a pending path and uploads it at once, so the
    synchronous loaders (terrain, LOD, decals, weather, spell effects) never
    keep a placeholder for a texture a model requested first.
-3. **Materials wait.** `create_material` notes which named textures are still
-   pending. Such a material starts unready, with fallbacks bound. When its last
-   pending texture resolves, its bind group and uniform are rebuilt from its
-   `MaterialDesc` (the bind group becomes swappable). Texture presence affects
-   only the bind group and uniform flags, never the pipeline key.
+3. **Materials wait.** A model material (`shared_material`) made while textures
+   it names are pending binds fallbacks and keeps its `MaterialDesc`. When they
+   have all resolved, a complete material is built once and kept inside it;
+   drawing, controllers and membrane updates go through `GpuMaterial::current`.
+   Texture presence affects only the bind group and uniform flags, never the
+   pipeline key.
 4. **Hide, then fade.** A waiting material's uniform has `decal.w` 1 (unused
    before), and `fs_main` dithers that share of its fragments away with the same
    screen-door test as distance fading, so every draw path hides it. Once ready
@@ -59,6 +60,6 @@ first-time cells hitch (frame 709) fell from 243 ms to 105 ms of frame work
 ## Open questions
 
 - Fade duration: 0.25 s, not yet judged by eye in the windowed game.
-- Whether model (NIF) parsing should move off the main thread too
-  (`objects.models` ~110 ms in the same cell load).
-- A per-frame cap on finished uploads, if many arriving at once still hitch.
+- Whether model (NIF) parsing and actor setup should move off the main thread
+  too (`objects.models` ~16 ms and `cell.actors` ~30 ms in that frame now).
+- Whether the 4 ms upload budget needs tuning on other hardware.
