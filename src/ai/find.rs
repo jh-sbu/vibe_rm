@@ -136,10 +136,10 @@ impl Engine {
             _ => self.package_target_of(actor, &q.package, Some(q.target)),
         };
         for r in self.package_references(actor, &q.package) {
-            let Some(base) = self.base_of(r) else {
+            let Some(base) = self.placed_base(r) else {
                 continue;
             };
-            if direct == Some(r) || self.matches_package_reference(r, q.target) {
+            if direct == Some(r) || self.placed_matches(r, q.target) {
                 found.push(Found::Reference(r));
             }
             if item_search

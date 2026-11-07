@@ -1,5 +1,6 @@
 //! Package Object ID / Object Type matching and spatial reference selection.
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
+use std::sync::Arc;
 
 use esp::{FormId, LoadOrder};
 use glam::Vec3;
@@ -10,6 +11,27 @@ use super::{
     schedule::{Place, same_space},
 };
 use crate::engine::Engine;
+
+/// A world's persistent references by the grid square they were placed in,
+/// those without a finite placed position under `None` (looked at wherever
+/// the search is). A reference elsewhere now is a candidate anyway: loaded
+/// and away actors, moved and knocked-about references are added by name.
+pub(crate) type PersistentGrid = HashMap<Option<(i32, i32)>, Vec<FormId>>;
+
+/// A placed reference as its record has it: nothing here changes while
+/// playing (the load order is fixed); where it is now, whether it is disabled
+/// and its base are still asked of the engine for references made, moved or
+/// loaded since.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Placed {
+    pub base: FormId,
+    pub position: Vec3,
+    pub place: Option<Place>,
+    pub deleted: bool,
+    pub initially_disabled: bool,
+    /// Enable parent (`XESP`) and whether the reference is its opposite.
+    pub parent: Option<(FormId, bool)>,
+}
 
 /// Object-type numbers are the public xEdit enum, not condition FormType IDs.
 /// This predicate is also used when searching inventory rather than the world.
@@ -143,6 +165,103 @@ impl Engine {
         self.search_package_references(actor, p, Some(target))
     }
 
+    /// Placed reference `r`'s record, read once.
+    pub(crate) fn placed(&self, r: FormId) -> Option<Placed> {
+        if let Some(&p) = self.placed_refs.borrow().get(&r) {
+            return p;
+        }
+        let placed = self.lo.get(r).map(|rec| {
+            let rf = crate::world::records::reference(&rec);
+            // As `Engine::is_disabled` reads it.
+            let parent = rec.get(b"XESP").filter(|d| d.len() >= 5).map(|d| {
+                (
+                    rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))),
+                    d[4] & 1 != 0,
+                )
+            });
+            Placed {
+                base: rf.base,
+                position: rf.position,
+                place: self.editor_place_of(r, rf.position),
+                deleted: rf.deleted(),
+                initially_disabled: rec.flags() & esp::record_flags::INITIALLY_DISABLED != 0,
+                parent,
+            }
+        });
+        self.placed_refs.borrow_mut().insert(r, placed);
+        placed
+    }
+
+    /// Whether a reference made while playing, the player or a reference
+    /// moved or loaded since stands elsewhere than its record says.
+    fn placed_elsewhere(&self, r: FormId) -> bool {
+        r == crate::engine::PLAYER_REF
+            || self.created(r).is_some()
+            || self.moved_refs.contains_key(&r)
+            || self.world_state.moved.contains_key(&r)
+            || self.actor_cells.contains_key(&r)
+            || self.actor_ref(r).is_some()
+    }
+
+    /// `Engine::base_of`, from the record read once.
+    pub(crate) fn placed_base(&self, r: FormId) -> Option<FormId> {
+        if r == crate::engine::PLAYER_REF || self.created(r).is_some() {
+            return self.base_of(r);
+        }
+        self.placed(r).map(|p| p.base)
+    }
+
+    /// `Engine::is_disabled`, from the records read once.
+    fn placed_disabled(&self, r: FormId) -> bool {
+        let mut r = r;
+        let mut opposite = false;
+        for _ in 0..16 {
+            if let Some(d) = self.scripts.disabled.get(&r) {
+                return *d != opposite;
+            }
+            let Some(p) = self.placed(r) else {
+                return opposite;
+            };
+            match p.parent {
+                Some((parent, opp)) if !parent.is_null() => {
+                    opposite ^= opp;
+                    r = parent;
+                }
+                _ => return p.initially_disabled != opposite,
+            }
+        }
+        false
+    }
+
+    /// `matches_package_reference`, from the record read once.
+    pub(crate) fn placed_matches(&self, r: FormId, target: Target) -> bool {
+        self.placed_base(r)
+            .is_some_and(|base| self.matches_package_form(Some(r), base, target))
+    }
+
+    /// Persistent cell `cell`'s references by where they were placed.
+    fn persistent_grid(&self, cell: FormId) -> Arc<PersistentGrid> {
+        if let Some(grid) = self.persistent_grids.borrow().get(&cell) {
+            return grid.clone();
+        }
+        let mut grid = PersistentGrid::new();
+        for &r in self.lo.cell(cell).iter().flat_map(|c| &c.persistent) {
+            let square = self
+                .lo
+                .get(r)
+                .map(|rec| crate::world::records::reference(&rec))
+                .map(|rf| rf.position)
+                .filter(|p| p.is_finite())
+                .map(|p| crate::engine::grid_of(p.truncate()));
+            grid.entry(square).or_default().push(r);
+        }
+        let grid = Arc::new(grid);
+        self.persistent_grids
+            .borrow_mut()
+            .insert(cell, grid.clone());
+        grid
+    }
+
     pub(crate) fn package_references(&self, actor: FormId, p: &Package) -> Vec<FormId> {
         self.search_package_references(actor, p, None)
     }
@@ -165,13 +284,27 @@ impl Engine {
             .filter(|r| r.is_finite() && *r > 0.)
             .unwrap_or(super::FURNITURE_SEARCH);
         let mut cells = vec![];
+        let mut refs = BTreeSet::new();
         match place {
             Place::Interior(c) => cells.push(c),
             Place::Exterior(w, _) => {
                 if let Some(world) = self.lo.world(w) {
-                    cells.extend(world.persistent_cell);
                     let low = crate::engine::grid_of((centre - Vec3::splat(radius)).truncate());
                     let high = crate::engine::grid_of((centre + Vec3::splat(radius)).truncate());
+                    if let Some(persistent) = world.persistent_cell {
+                        if centre.is_finite() {
+                            let grid = self.persistent_grid(persistent);
+                            for (_, list) in grid.iter().filter(|(g, _)| {
+                                g.is_none_or(|g| {
+                                    g.0 >= low.0 && g.0 <= high.0 && g.1 >= low.1 && g.1 <= high.1
+                                })
+                            }) {
+                                refs.extend(list.iter().copied());
+                            }
+                        } else {
+                            cells.push(persistent);
+                        }
+                    }
                     cells.extend(
                         world
                             .cells
@@ -184,7 +317,6 @@ impl Engine {
                 }
             }
         }
-        let mut refs = BTreeSet::new();
         for cell in cells {
             if let Some(c) = self.lo.cell(cell) {
                 refs.extend(c.persistent.iter().chain(&c.temporary).copied());
@@ -198,17 +330,50 @@ impl Engine {
                 .map(|(&r, _)| r),
         );
         refs.extend(self.world_state.moved.keys().copied());
-        refs.extend(self.actor_cells.keys().chain(self.away.keys()).copied());
+        // Loose objects knocked about: perhaps out of the square they were
+        // placed in.
+        refs.extend(self.moved_refs.keys().copied());
+        refs.extend(self.actor_cells.keys().copied());
+        // Away actors where the loop below would look for them.
+        refs.extend(self.away.iter().filter_map(|(&r, x)| {
+            let Some(there) = x.place else {
+                return Some(r);
+            };
+            (same_space(place, there)
+                && x.pos.is_finite()
+                && !(centre.is_finite() && x.pos.distance(centre) > radius))
+                .then_some(r)
+        }));
         refs.insert(crate::engine::PLAYER_REF);
         let npc = self
             .actor_ref(actor)
             .map_or_else(|| self.base_of(actor).unwrap_or(actor), |a| a.npc);
         let mut found = Vec::new();
         for r in refs {
-            if r == actor || self.is_disabled(r) {
+            if r == actor {
                 continue;
             }
-            if self.reference_of(r).is_none_or(|rf| rf.deleted()) {
+            // Where it is first: most candidates are out of range, and an away
+            // actor's place is kept rather than read from its record.
+            let away = self.away.get(&r).and_then(|x| Some((x.place?, x.pos)));
+            let placed = self.placed(r);
+            let current = match (away, placed) {
+                (Some(at), _) => Some(at),
+                (None, Some(p)) if !self.placed_elsewhere(r) => p.place.map(|c| (c, p.position)),
+                _ => self.current_place_of(r),
+            };
+            let Some((there, at)) = current else { continue };
+            if !same_space(place, there)
+                || !at.is_finite()
+                || (centre.is_finite() && at.distance(centre) > radius)
+            {
+                continue;
+            }
+            let deleted = match placed {
+                Some(p) => p.deleted,
+                None => self.reference_of(r).is_none_or(|rf| rf.deleted()),
+            };
+            if deleted || self.placed_disabled(r) {
                 continue;
             }
             let matches = target.is_none_or(|target| {
@@ -224,22 +389,10 @@ impl Engine {
                     };
                     f.markers.iter().any(|m| m.kind == kind)
                 } else {
-                    self.matches_package_reference(r, target)
+                    self.placed_matches(r, target)
                 }
             });
             if !matches {
-                continue;
-            }
-            let current = self
-                .away
-                .get(&r)
-                .and_then(|x| Some((x.place?, x.pos)))
-                .or_else(|| self.current_place_of(r));
-            let Some((there, at)) = current else { continue };
-            if !same_space(place, there)
-                || !at.is_finite()
-                || (centre.is_finite() && at.distance(centre) > radius)
-            {
                 continue;
             }
             if self.cells.values().flat_map(|rt| &rt.actors).any(|a| {

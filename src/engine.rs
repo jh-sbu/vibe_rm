@@ -368,6 +368,14 @@ pub struct Engine {
     /// Quests' aliases as parsed.
     pub(crate) alias_spec_cache:
         std::cell::RefCell<HashMap<FormId, std::sync::Arc<Vec<crate::aliases::AliasSpec>>>>,
+    /// Worlds' persistent cells' references by the square they were placed in
+    /// (`ai::targets::PersistentGrid`), by persistent cell; built when first
+    /// searched.
+    pub(crate) persistent_grids:
+        std::cell::RefCell<HashMap<FormId, std::sync::Arc<crate::ai::targets::PersistentGrid>>>,
+    /// Placed references' authored data as read for package searches
+    /// (`ai::targets::Placed`; none: not in the load order), when first read.
+    pub(crate) placed_refs: std::cell::RefCell<HashMap<FormId, Option<crate::ai::targets::Placed>>>,
     /// Actors' factions while one alias is filled (`Some` only then: nothing
     /// they depend on can change while its conditions are evaluated).
     pub(crate) faction_memo: std::cell::RefCell<Option<HashMap<FormId, Vec<(FormId, i8)>>>>,
@@ -701,6 +709,8 @@ impl Engine {
             persistent_refs: Default::default(),
             persistent_index: Default::default(),
             alias_spec_cache: Default::default(),
+            persistent_grids: Default::default(),
+            placed_refs: Default::default(),
             faction_memo: Default::default(),
             authored_reactions: Default::default(),
             created_refs: Default::default(),
