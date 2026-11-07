@@ -41,22 +41,25 @@ secret links.
 ## Unresolved
 
 - `HasParentRelationship` (261): the public descriptions say only that it
-  checks a parent relationship. Unconfirmed: here it is true when the
-  subject is the parent end of an authored `ParentChild` association (the
-  Father / Mother / Son / Daughter ASTP; in-law, grand and other ASTPs do not
-  count) with the actor given, or with anyone when none is. Why: the data
-  authors parents as the RELA parent NPC (`GerdurFrodnar`), and the
-  conditions on the ghost quests' topics (`WIKill0GhostTopic`: "I'm worried
-  about my daughter", "my mother would be worried about me";
-  `WIKill02HauntedTopic`) read as the subject being the parent. Whether the
-  game also counts other association types, or runtime changes, is open.
+  checks a parent relationship. Skyrim SE (autotest21,
+  `research/autotest21.md`, Relationships, vanilla bases placed):
+  Gerdur → Frodnar True, Frodnar → Gerdur False; Hod → Frodnar True /
+  False; Alvor → Dorthe True / False; and Gerdur → Hod (spouses) True, Hod
+  → Gerdur unread. `GerdurHod`'s `RELA` names Gerdur as its parent and Hod
+  as its child, with the Spouse association. So it is true when the
+  subject is the `RELA` parent end of a link with the actor given,
+  whatever the association; ours does this (2026-11-07). With no actor
+  given (the ghost quests' topics, `WIKill0GhostTopic`), ours applies the
+  same rule to anyone; unobserved. Frodnar killed, Gerdur's family and
+  parent relationship to him stayed True: dead relatives count.
 - Secret relationships: the flag layouts are known, but the consulted
   sources do not settle which social behaviors suppress knowledge of the
   relationship, or whether direct family/association/rank/extreme queries
   filter it. No filtering or social knowledge propagation is introduced.
   The relationship between the header and DATA secret flags is also
   unresolved; the metadata API reports true when either is set.
-- Whether any-family queries count dead relatives, and whether these
-  queries follow NPC templates, is not established. Current queries use
+- Dead relatives count for the queries with an actor given (autotest21,
+  above). Whether any-family queries count them, and whether these queries
+  follow NPC templates, is not established. Current queries use
   the referenced actor's actual base NPC and authored links, without
   filtering deaths or traversing templates.

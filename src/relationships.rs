@@ -121,11 +121,11 @@ impl AssociationIndex {
 
     /// Whether `npc` is the parent end of a `kind` (the Parent / Child
     /// association) link with `other`, or with anyone.
-    fn has_child(&self, npc: FormId, other: Option<FormId>, kind: FormId) -> bool {
-        !kind.is_null()
-            && self
-                .matching(npc, other)
-                .any(|a| a.kind == kind && a.parent == npc && other.is_none_or(|o| a.child == o))
+    /// `npc` is the parent end of a link with `other` (or anyone), whatever
+    /// the association.
+    fn has_child(&self, npc: FormId, other: Option<FormId>) -> bool {
+        self.matching(npc, other)
+            .any(|a| a.parent == npc && other.is_none_or(|o| a.child == o))
     }
 
     fn has_association(&self, npc: FormId, other: Option<FormId>, kind: FormId) -> bool {
@@ -160,14 +160,12 @@ impl Engine {
         self.association_index().has_family(npc, other)
     }
 
-    /// `HasParentRelationship`: `actor` is the parent of `other` (or of anyone)
-    /// by an authored link of the Parent / Child association
-    /// (`known_ambiguities/relationships.md`).
+    /// `HasParentRelationship`: `actor` is the parent end of an authored link
+    /// with `other` (or anyone), of any association: Skyrim SE (autotest21)
+    /// read True for Gerdur and her husband Hod, whose `RELA` (`GerdurHod`,
+    /// Spouse) names her as its parent (`known_ambiguities/relationships.md`).
     pub fn has_parent_relationship(&self, actor: FormId, other: Option<FormId>) -> bool {
-        let (Some(npc), Some(kind)) = (
-            self.relationship_npc(actor),
-            self.lo.find_editor_id("ParentChild"),
-        ) else {
+        let Some(npc) = self.relationship_npc(actor) else {
             return false;
         };
         let other = match other {
@@ -177,7 +175,7 @@ impl Engine {
             },
             None => None,
         };
-        self.association_index().has_child(npc, other, kind)
+        self.association_index().has_child(npc, other)
     }
 
     /// A direct authored association of the requested type, in either direction.
@@ -445,19 +443,22 @@ mod tests {
         assert_eq!(index.records[0].child, id(2));
     }
 
+    /// Skyrim SE (autotest21): Gerdur, the parent end of `GerdurHod`
+    /// (Spouse), has a parent relationship with Hod.
     #[test]
-    fn parents_are_the_parent_end_of_the_parent_child_association() {
+    fn parents_are_the_parent_end_of_any_association() {
         let fixture = Fixture::new();
         let lo = fixture.load(vec![
             relation(20, 1, 2, 10, 1),
             relation(21, 3, 1, 11, 1), // another association
         ]);
         let index = AssociationIndex::load(&lo);
-        assert!(index.has_child(id(1), Some(id(2)), id(10)));
-        assert!(index.has_child(id(1), None, id(10)));
-        assert!(!index.has_child(id(2), Some(id(1)), id(10))); // the child
-        assert!(!index.has_child(id(3), Some(id(1)), id(10)));
-        assert!(!index.has_child(id(1), Some(id(2)), FormId(0)));
+        assert!(index.has_child(id(1), Some(id(2))));
+        assert!(index.has_child(id(1), None));
+        assert!(!index.has_child(id(2), Some(id(1)))); // the child
+        assert!(index.has_child(id(3), Some(id(1))));
+        assert!(!index.has_child(id(1), Some(id(3))));
+        assert!(!index.has_child(id(2), None));
     }
 
     #[test]

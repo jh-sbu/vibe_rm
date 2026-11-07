@@ -270,6 +270,16 @@ locations name it.
   and won't be pickpocketed by the player again (for the session). Being
   caught doesn't start a fight.
 - `IsGuard`: a member of `IsGuardFaction` or of a class flagged Guard.
+  Skyrim SE (autotest21, `research/autotest21.md`, FactionRanks) read False
+  for a plugin NPC of class `GuardImperial` (flagged Guard; the class isn't
+  templated: UESP's NPC_ page puts it under "Use Stats") and for one in
+  `IsGuardFaction` at rank 0, neither with a crime faction. Yet the hold
+  guards are guards only by `IsGuardFaction` (their class, `CWSoldierClass`,
+  isn't flagged), and `DialogueCrimeGuards`' quest needs `IsGuard`. So
+  something else the hold guards have counts too, perhaps their crime
+  faction; ours keeps the rule above (compared 2026-11-07). To settle: a
+  copy of a hold guard, the same without its crime faction, and the two
+  test NPCs with a hold's crime faction.
 - The guards of the faction told, within 2048 units of the player, awake
   and not fighting, come to arrest them (UESP: witnesses report to the
   guards); they run to the player calling a `PURS` line every 6 to 10
