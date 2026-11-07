@@ -62,7 +62,9 @@ the `tcam x y z yaw pitch` console command holds the `--wait` camera elsewhere, 
 out in it.
 
 While playing, new models' textures load in the background: a mesh is hidden
-until its textures are in, then fades in over a quarter second. Loading screens
+until its textures are in, then fades in over a quarter second. Spawning actors'
+models are parsed in the background too: an actor is drawn with nothing until
+all its parts are in. Loading screens
 wait for everything before they lift, and offscreen runs load synchronously.
 `VRM_SYNC_TEXTURES=1` turns background loading off in the windowed game, and
 `VRM_BACKGROUND_TEXTURES=1` turns it on in offscreen runs (to film the fades).

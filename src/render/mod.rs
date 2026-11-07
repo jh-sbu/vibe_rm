@@ -172,15 +172,16 @@ pub struct GpuMaterial {
 /// How long a material whose textures arrived takes to fade in.
 pub const TEXTURE_FADE_SECONDS: f32 = 0.25;
 
-/// Background texture jobs' own threads, a quarter of the cores (at least
-/// two), so the global pool stays free for model parsing and physics.
-fn texture_pool() -> &'static rayon::ThreadPool {
+/// Background asset jobs' own threads (textures, actors' models), a quarter
+/// of the cores (at least two), so the global pool stays free for the
+/// parsing that frames wait for, and physics.
+pub(crate) fn asset_pool() -> &'static rayon::ThreadPool {
     static POOL: std::sync::OnceLock<rayon::ThreadPool> = std::sync::OnceLock::new();
     POOL.get_or_init(|| {
         let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
         rayon::ThreadPoolBuilder::new()
             .num_threads((cores / 4).max(2))
-            .thread_name(|i| format!("textures-{i}"))
+            .thread_name(|i| format!("assets-{i}"))
             .build()
             .expect("texture loading threads")
     })
@@ -2172,7 +2173,7 @@ impl Renderer {
             let (done, vfs) = (self.textures.sender(), vfs.clone());
             // Reading and parsing only: uploads stay on the main thread
             // (workers uploading at once held the device from it).
-            texture_pool().spawn(move || {
+            asset_pool().spawn(move || {
                 // A panicking job still reports (nothing), so no one waits forever.
                 let t = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     vfs.read(&p).and_then(|data| match dds::parse(&data) {

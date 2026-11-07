@@ -50,6 +50,28 @@ what they capture is unchanged.
 Other texture users (terrain, LOD, decals, weather, spell effects) keep loading
 synchronously for now; only model materials are deferred.
 
+## Actors' models (2026-11-07)
+
+With textures in the background, a spawn's main cost was parsing and uploading
+its models (5–16 ms a spawning frame). In the windowed game `spawn_actors` now
+requests missing models from the same asset pool instead of loading them.
+An actor whose models aren't all in spawns at once (AI, physics, behavior
+graph) but is drawn with nothing, so it's never half dressed. Each frame,
+`dress_waiting_actors` installs parsed models and then dresses ready actors
+with `redress`, each for up to 3 ms (at least one of each). Their materials
+then fade in as above. A loading screen finishes every model and dresses
+every actor before it lifts. Decided with the user (2026-11-07): an actor may
+be invisible for the few frames its models take.
+
+An ignored test enters an interior with background loading on, checks that the
+waiting actors draw nothing, then that, once dressed, every actor has the same
+meshes as in a synchronous load.
+
+Same traversal route: the first-time cells frame fell from ~103 to 75 ms
+(`cell.actors` ~28 → 6 ms), with dressing at most ~5 ms a frame over the next
+few. World encounter starts' script stage fell from 35 to 23 ms and from 55 to
+38 ms in comparable runs (which encounter fires is random).
+
 ## Results
 
 Same traversal route as [traversal performance](traversal-performance.md): the
@@ -60,6 +82,6 @@ first-time cells hitch (frame 709) fell from 243 ms to 105 ms of frame work
 ## Open questions
 
 - Fade duration: 0.25 s, not yet judged by eye in the windowed game.
-- Whether model (NIF) parsing and actor setup should move off the main thread
-  too (`objects.models` ~16 ms and `cell.actors` ~30 ms in that frame now).
+- Whether placed objects' model parsing should move off the main thread too
+  (`objects.models` ~17 ms in that frame).
 - Whether the 4 ms upload budget needs tuning on other hardware.

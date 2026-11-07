@@ -17,6 +17,15 @@ pub struct ModelCache {
     anims: HashMap<String, Arc<ModelAnim>>,
     /// Addon nodes' models (`meshes/...`) by their index (ADDN `DATA`).
     addons: Arc<HashMap<i32, String>>,
+    /// Models being parsed in the background ([`ModelCache::request`]).
+    pending: HashSet<String>,
+    /// Parsed in the background, waiting to be installed.
+    arrived: std::collections::VecDeque<ParsedModel>,
+    /// Where background jobs report, once one was started.
+    parsed: Option<(
+        std::sync::mpsc::Sender<ParsedModel>,
+        std::sync::mpsc::Receiver<ParsedModel>,
+    )>,
 }
 
 /// The addon nodes' models by index (ADDN `DATA`, `MODL`).
@@ -130,6 +139,84 @@ impl ModelCache {
     }
 
     /// Ensure all `paths` are loaded (in parallel where possible).
+    /// Whether the model at `path` is loaded (or known to be missing).
+    pub fn loaded(&self, path: &str) -> bool {
+        self.map.contains_key(path)
+    }
+
+    /// Start parsing `paths` not yet loaded or pending in the background;
+    /// [`ModelCache::poll`] installs them as they come in.
+    pub fn request(&mut self, vfs: &Arc<vfs::Vfs>, paths: &[String]) {
+        let tx = self
+            .parsed
+            .get_or_insert_with(std::sync::mpsc::channel)
+            .0
+            .clone();
+        for p in paths {
+            if self.map.contains_key(p) || !self.pending.insert(p.clone()) {
+                continue;
+            }
+            let (tx, vfs, addons, p) = (tx.clone(), vfs.clone(), self.addons.clone(), p.clone());
+            crate::render::asset_pool().spawn(move || {
+                // A panicking job still reports (nothing), so the model
+                // isn't waited for forever.
+                let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    parse_model(&vfs, &addons, &p)
+                }))
+                .unwrap_or_else(|_| {
+                    log::error!("parsing model {p} panicked");
+                    (p.clone(), None, None, None, None, Vec::new(), 0.0)
+                });
+                let _ = tx.send(parsed);
+            });
+        }
+    }
+
+    /// Install models parsed in the background, one at a time until
+    /// `budget` has passed (at least one; a model loaded meanwhile by
+    /// [`ModelCache::load_all`] is kept as it is). True if any came in.
+    pub fn poll(
+        &mut self,
+        renderer: &mut Renderer,
+        vfs: &vfs::Vfs,
+        budget: std::time::Duration,
+    ) -> bool {
+        if let Some((_, rx)) = &self.parsed {
+            self.arrived.extend(rx.try_iter());
+        }
+        let start = std::time::Instant::now();
+        let mut any = false;
+        while let Some(m) = self.arrived.pop_front() {
+            if !self.pending.remove(&m.0) || self.map.contains_key(&m.0) {
+                continue;
+            }
+            let now = std::time::Instant::now();
+            self.install(renderer, vfs, vec![m], now, now);
+            any = true;
+            if start.elapsed() >= budget {
+                break;
+            }
+        }
+        any
+    }
+
+    /// Wait for every model parsing in the background, and install them.
+    pub fn finish(&mut self, renderer: &mut Renderer, vfs: &vfs::Vfs) {
+        while !self.pending.is_empty() {
+            let Some(m) = self
+                .arrived
+                .pop_front()
+                .or_else(|| self.parsed.as_ref().and_then(|(_, rx)| rx.recv().ok()))
+            else {
+                break;
+            };
+            if self.pending.remove(&m.0) && !self.map.contains_key(&m.0) {
+                let now = std::time::Instant::now();
+                self.install(renderer, vfs, vec![m], now, now);
+            }
+        }
+    }
+
     pub fn load_all(&mut self, renderer: &mut Renderer, vfs: &vfs::Vfs, paths: &[String]) {
         let missing: Vec<&String> = {
             let mut seen = HashSet::new();
@@ -145,159 +232,28 @@ impl ModelCache {
         let mut timing = crate::diagnostics::Span::new("assets.models_parse");
         let t0 = std::time::Instant::now();
         let addons = self.addons.clone();
-        #[allow(clippy::type_complexity)]
-        let cpu: Vec<(
-            String,
-            Option<CpuModel>,
-            Option<crate::physics::shapes::CollisionModel>,
-            Option<Arc<[nif::FurnitureMarker]>>,
-            Option<(String, Arc<crate::world::skeleton::Skeleton>, bool)>,
-            Vec<model::NodeChannel>,
-            f32,
-        )> = missing
+        let cpu: Vec<ParsedModel> = missing
             .par_iter()
-            .map(|p| {
-                let mut col = None;
-                let mut furn = None;
-                let mut graph = None;
-                let mut controllers = Vec::new();
-                let mut start = 0.0;
-                // `path#blade` / `path#scb`: a weapon without / only its scabbard;
-                // `path#rigid`: skinned shapes posed at rest (sky models);
-                // `path#without=a|b`: without the shapes so named (menu models
-                // whose art isn't installed);
-                // `path#quiver`: ammunition worn, its `ArrowQuiver` node's
-                // shapes (not the loose arrow);
-                // `path#grass`: drawn as grass ([`crate::world::grass`]);
-                // `path#effect`: an effect's, its nodes' controllers kept
-                // ([`model::convert_effect`]); `path#world`: placed objects'
-                // standalone node controllers; `path#harvested`: a plant
-                // harvested ([`crate::harvest`]).
-                let (file, variant) = p
-                    .split_once('#')
-                    .map_or((p.as_str(), None), |(f, v)| (f, Some(v)));
-                let m = vfs
-                    .read(file)
-                    .and_then(|data| match nif::Nif::parse(&data) {
-                        Ok(n) => {
-                            col = crate::physics::shapes::from_nif(&n);
-                            furn = furniture_markers(&n);
-                            graph = n.behavior_graph().map(|f| {
-                                (
-                                    format!("meshes/{}", f.replace('\\', "/").to_ascii_lowercase()),
-                                    Arc::new(crate::world::skeleton::Skeleton::from_nif(&n)),
-                                    n.controls_base_skeleton(),
-                                )
-                            });
-                            let m = match variant {
-                                Some("rigid") => model::convert_rigid(&n),
-                                Some("effect") => {
-                                    let (m, c) = model::convert_effect(&n);
-                                    controllers = c;
-                                    start = model::animation_start(&n);
-                                    m
-                                }
-                                // Grass: its vertex alpha is how far it sways.
-                                Some("grass") => {
-                                    let mut m = model::convert(&n);
-                                    for mesh in &mut m.meshes {
-                                        mesh.material.grass = true;
-                                        mesh.material.flags1 &= !nif::sf1::VERTEX_ALPHA;
-                                    }
-                                    m
-                                }
-                                // A harvested plant: its switch nodes on their
-                                // second child.
-                                Some("harvested") => {
-                                    let mut n = n;
-                                    for b in &mut n.blocks {
-                                        if let nif::Block::Node(node) = b
-                                            && let nif::NodeKind::Switch { index } = &mut node.kind
-                                            && node.children.len() > 1
-                                        {
-                                            *index = 1;
-                                        }
-                                    }
-                                    model::convert(&n)
-                                }
-                                Some(v) if v.starts_with("without=") => {
-                                    let hidden: Vec<&str> =
-                                        v["without=".len()..].split('|').collect();
-                                    model::convert_filtered(&n, &|name| {
-                                        !hidden.iter().any(|h| h.eq_ignore_ascii_case(name))
-                                    })
-                                }
-                                Some("quiver") => {
-                                    let keep = model::shapes_under(&n, "ArrowQuiver");
-                                    model::convert_filtered(&n, &|name| keep.contains(name))
-                                }
-                                Some("scb") => model::convert_filtered(&n, &|name| {
-                                    name.to_ascii_lowercase().starts_with("scb")
-                                }),
-                                Some("world") | None => {
-                                    // Nodes of bodies of their own, and those a
-                                    // behaviour graph moves, are drawn apart.
-                                    let mut split =
-                                        col.as_ref().map(|c| c.body_nodes()).unwrap_or_default();
-                                    if graph.is_some() {
-                                        split.extend(n.animated_nodes());
-                                    }
-                                    if variant == Some("world") {
-                                        controllers = model::node_controllers(&n);
-                                        model::convert_controlled(&n, &split, &controllers)
-                                    } else {
-                                        model::convert_split(&n, &|_| true, &split)
-                                    }
-                                }
-                                Some(_) => model::convert_filtered(&n, &|name| {
-                                    !name.to_ascii_lowercase().starts_with("scb")
-                                }),
-                            };
-                            let mut m = m;
-                            // Bodies and what's worn on them: the thin model beside
-                            // the heavy one, which actors blend by their weight.
-                            if variant.is_none()
-                                && !m.skinned.is_empty()
-                                && let Some(stem) = file
-                                    .len()
-                                    .checked_sub(6)
-                                    .filter(|&i| file[i..].eq_ignore_ascii_case("_1.nif"))
-                                    .map(|i| &file[..i])
-                                && let Some(thin) = vfs
-                                    .read(&format!("{stem}_0.nif"))
-                                    .and_then(|d| nif::Nif::parse(&d).ok())
-                            {
-                                let paired = model::morph_thin(&mut m, &model::convert(&thin));
-                                log::trace!(
-                                    "{p}: {paired} of {} shapes blend with its _0 model",
-                                    m.skinned.len()
-                                );
-                            }
-                            // Animated parts carry their own (a flame spray's
-                            // fire rides its moving nodes).
-                            if !m.addons.is_empty()
-                                || m.animated.iter().any(|a| !a.model.addons.is_empty())
-                            {
-                                attach_addons(&mut m, &addons, vfs, &mut HashMap::new());
-                            }
-                            for mesh in &m.meshes {
-                                log::trace!("mesh in {p}: {:?}", mesh.material);
-                            }
-                            Some(m)
-                        }
-                        Err(e) => {
-                            log::warn!("{p}: {e}");
-                            None
-                        }
-                    });
-                if m.is_none() {
-                    log::debug!("model not found or unreadable: {p}");
-                }
-                ((*p).clone(), m, col, furn, graph, controllers, start)
-            })
+            .map(|p| parse_model(vfs, &addons, p))
             .collect();
         let t1 = std::time::Instant::now();
         timing.next("assets.model_textures");
+        drop(timing);
+        self.install(renderer, vfs, cpu, t0, t1);
+    }
+
+    /// Upload parsed models and keep them (the main thread): their textures
+    /// requested, their GPU models, animations, collision and furniture.
+    fn install(
+        &mut self,
+        renderer: &mut Renderer,
+        vfs: &vfs::Vfs,
+        cpu: Vec<ParsedModel>,
+        t0: std::time::Instant,
+        t1: std::time::Instant,
+    ) {
+        let mut timing = crate::diagnostics::Span::new("assets.model_textures");
+        let count = cpu.len();
 
         // Textures referenced by the new models.
         let mut tex: HashSet<String> = HashSet::new();
@@ -410,7 +366,7 @@ impl ModelCache {
         }
         log::info!(
             "loaded {} models: parse {:?}, textures {:?}, upload {:?}",
-            missing.len(),
+            count,
             t1 - t0,
             t2 - t1,
             t2.elapsed()
@@ -451,4 +407,152 @@ pub fn load_textures(renderer: &mut Renderer, vfs: &vfs::Vfs, paths: Vec<String>
     for (p, d) in parsed {
         renderer.add_texture(&p, d.as_ref());
     }
+}
+
+/// A model as parsed off the GPU: what [`ModelCache::install`] uploads and keeps.
+pub(crate) type ParsedModel = (
+    String,
+    Option<CpuModel>,
+    Option<crate::physics::shapes::CollisionModel>,
+    Option<Arc<[nif::FurnitureMarker]>>,
+    Option<(String, Arc<crate::world::skeleton::Skeleton>, bool)>,
+    Vec<model::NodeChannel>,
+    f32,
+);
+
+/// Read and parse the model at `p` (any thread).
+fn parse_model(vfs: &vfs::Vfs, addons: &HashMap<i32, String>, p: &String) -> ParsedModel {
+    let mut col = None;
+    let mut furn = None;
+    let mut graph = None;
+    let mut controllers = Vec::new();
+    let mut start = 0.0;
+    // `path#blade` / `path#scb`: a weapon without / only its scabbard;
+    // `path#rigid`: skinned shapes posed at rest (sky models);
+    // `path#without=a|b`: without the shapes so named (menu models
+    // whose art isn't installed);
+    // `path#quiver`: ammunition worn, its `ArrowQuiver` node's
+    // shapes (not the loose arrow);
+    // `path#grass`: drawn as grass ([`crate::world::grass`]);
+    // `path#effect`: an effect's, its nodes' controllers kept
+    // ([`model::convert_effect`]); `path#world`: placed objects'
+    // standalone node controllers; `path#harvested`: a plant
+    // harvested ([`crate::harvest`]).
+    let (file, variant) = p
+        .split_once('#')
+        .map_or((p.as_str(), None), |(f, v)| (f, Some(v)));
+    let m = vfs
+        .read(file)
+        .and_then(|data| match nif::Nif::parse(&data) {
+            Ok(n) => {
+                col = crate::physics::shapes::from_nif(&n);
+                furn = furniture_markers(&n);
+                graph = n.behavior_graph().map(|f| {
+                    (
+                        format!("meshes/{}", f.replace('\\', "/").to_ascii_lowercase()),
+                        Arc::new(crate::world::skeleton::Skeleton::from_nif(&n)),
+                        n.controls_base_skeleton(),
+                    )
+                });
+                let m = match variant {
+                    Some("rigid") => model::convert_rigid(&n),
+                    Some("effect") => {
+                        let (m, c) = model::convert_effect(&n);
+                        controllers = c;
+                        start = model::animation_start(&n);
+                        m
+                    }
+                    // Grass: its vertex alpha is how far it sways.
+                    Some("grass") => {
+                        let mut m = model::convert(&n);
+                        for mesh in &mut m.meshes {
+                            mesh.material.grass = true;
+                            mesh.material.flags1 &= !nif::sf1::VERTEX_ALPHA;
+                        }
+                        m
+                    }
+                    // A harvested plant: its switch nodes on their
+                    // second child.
+                    Some("harvested") => {
+                        let mut n = n;
+                        for b in &mut n.blocks {
+                            if let nif::Block::Node(node) = b
+                                && let nif::NodeKind::Switch { index } = &mut node.kind
+                                && node.children.len() > 1
+                            {
+                                *index = 1;
+                            }
+                        }
+                        model::convert(&n)
+                    }
+                    Some(v) if v.starts_with("without=") => {
+                        let hidden: Vec<&str> = v["without=".len()..].split('|').collect();
+                        model::convert_filtered(&n, &|name| {
+                            !hidden.iter().any(|h| h.eq_ignore_ascii_case(name))
+                        })
+                    }
+                    Some("quiver") => {
+                        let keep = model::shapes_under(&n, "ArrowQuiver");
+                        model::convert_filtered(&n, &|name| keep.contains(name))
+                    }
+                    Some("scb") => model::convert_filtered(&n, &|name| {
+                        name.to_ascii_lowercase().starts_with("scb")
+                    }),
+                    Some("world") | None => {
+                        // Nodes of bodies of their own, and those a
+                        // behaviour graph moves, are drawn apart.
+                        let mut split = col.as_ref().map(|c| c.body_nodes()).unwrap_or_default();
+                        if graph.is_some() {
+                            split.extend(n.animated_nodes());
+                        }
+                        if variant == Some("world") {
+                            controllers = model::node_controllers(&n);
+                            model::convert_controlled(&n, &split, &controllers)
+                        } else {
+                            model::convert_split(&n, &|_| true, &split)
+                        }
+                    }
+                    Some(_) => model::convert_filtered(&n, &|name| {
+                        !name.to_ascii_lowercase().starts_with("scb")
+                    }),
+                };
+                let mut m = m;
+                // Bodies and what's worn on them: the thin model beside
+                // the heavy one, which actors blend by their weight.
+                if variant.is_none()
+                    && !m.skinned.is_empty()
+                    && let Some(stem) = file
+                        .len()
+                        .checked_sub(6)
+                        .filter(|&i| file[i..].eq_ignore_ascii_case("_1.nif"))
+                        .map(|i| &file[..i])
+                    && let Some(thin) = vfs
+                        .read(&format!("{stem}_0.nif"))
+                        .and_then(|d| nif::Nif::parse(&d).ok())
+                {
+                    let paired = model::morph_thin(&mut m, &model::convert(&thin));
+                    log::trace!(
+                        "{p}: {paired} of {} shapes blend with its _0 model",
+                        m.skinned.len()
+                    );
+                }
+                // Animated parts carry their own (a flame spray's
+                // fire rides its moving nodes).
+                if !m.addons.is_empty() || m.animated.iter().any(|a| !a.model.addons.is_empty()) {
+                    attach_addons(&mut m, &addons, vfs, &mut HashMap::new());
+                }
+                for mesh in &m.meshes {
+                    log::trace!("mesh in {p}: {:?}", mesh.material);
+                }
+                Some(m)
+            }
+            Err(e) => {
+                log::warn!("{p}: {e}");
+                None
+            }
+        });
+    if m.is_none() {
+        log::debug!("model not found or unreadable: {p}");
+    }
+    ((*p).clone(), m, col, furn, graph, controllers, start)
 }

@@ -214,7 +214,10 @@ impl Engine {
             Phase::ScreenIn if l.t >= SCREEN_IN_SECONDS => Some(Phase::Load),
             Phase::Load => {
                 self.run_load(l.request.clone());
-                // The world is shown whole when the screen lifts.
+                // The world is shown whole when the screen lifts: its actors
+                // dressed, every texture in.
+                self.models.finish(&mut self.renderer, &self.vfs);
+                self.dress_waiting_actors();
                 self.renderer.finish_textures();
                 // A failed load from the main menu has its menu back; one
                 // that failed half way ends the session for it.

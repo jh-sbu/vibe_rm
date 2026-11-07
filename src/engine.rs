@@ -7,6 +7,9 @@ use std::time::Instant;
 #[path = "engine_carry_tests.rs"]
 mod carry_tests;
 #[cfg(test)]
+#[path = "engine_dress_tests.rs"]
+mod dress_tests;
+#[cfg(test)]
 #[path = "engine_follower_tests.rs"]
 mod follower_tests;
 
@@ -60,6 +63,10 @@ pub enum Location {
     Exterior { world: FormId, center: (i32, i32) },
 }
 
+/// The most time a frame spends installing models parsed in the background,
+/// and again dressing actors whose models came in (one of each always).
+const DRESS_BUDGET: std::time::Duration = std::time::Duration::from_millis(3);
+
 pub struct Engine {
     pub lo: LoadOrder,
     pub(crate) recipes: crate::world::crafting::Recipes,
@@ -110,6 +117,9 @@ pub struct Engine {
     parent_bones: HashMap<String, Option<String>>,
     /// Rigid models of actors' items (weapons, shields), by actor: (item, model).
     pub(crate) rigid_models: HashMap<FormId, Vec<(FormId, String)>>,
+    /// Actors spawned while their models were parsed in the background, and
+    /// those models: drawn with nothing until all are in, then dressed.
+    pub(crate) undressed: HashMap<FormId, Vec<String>>,
     /// How many of `scene.lights` belong to the cells (carried lights follow).
     pub(crate) static_lights: usize,
     /// Sound descriptors (SNDR / SOUN) as resolved.
@@ -536,6 +546,7 @@ impl Engine {
             parent_bones: Default::default(),
             inventories: Default::default(),
             rigid_models: Default::default(),
+            undressed: Default::default(),
             static_lights: 0,
             light_attach: Default::default(),
             sound_descs: Default::default(),
@@ -1755,6 +1766,39 @@ impl Engine {
         (meshes, equipment, rigid)
     }
 
+    /// Install models parsed in the background, and dress the actors whose
+    /// models are now all in (their materials then fade in as their textures
+    /// arrive). Actors that left meanwhile are forgotten.
+    pub(crate) fn dress_waiting_actors(&mut self) {
+        let _timing = crate::diagnostics::Span::new("sim.dress");
+        if !self
+            .models
+            .poll(&mut self.renderer, &self.vfs, DRESS_BUDGET)
+            && self.undressed.is_empty()
+        {
+            return;
+        }
+        let ready: Vec<FormId> = self
+            .undressed
+            .iter()
+            .filter(|(_, paths)| paths.iter().all(|p| self.models.loaded(p)))
+            .map(|(&a, _)| a)
+            .collect();
+        // A few each frame: at least one, then until the budget is spent.
+        let start = std::time::Instant::now();
+        for actor in ready {
+            if start.elapsed() >= DRESS_BUDGET {
+                break;
+            }
+            self.undressed.remove(&actor);
+            if self.actor_cells.contains_key(&actor) {
+                self.redress(actor);
+            }
+        }
+        self.undressed
+            .retain(|a, _| self.actor_cells.contains_key(a));
+    }
+
     /// Spawn actors (ACHR references) into a loaded cell, optionally away from their
     /// editor location (NaN: anywhere on the cell's navmesh).
     pub(crate) fn spawn_actors(&mut self, key: CellKey, refs: &[(FormId, Option<Vec3>)]) {
@@ -1884,7 +1928,18 @@ impl Engine {
             .iter()
             .flat_map(|(d, ..)| d.models.iter().map(|(m, _)| m.clone()))
             .collect();
-        self.models.load_all(&mut self.renderer, &self.vfs, &paths);
+        // In the windowed game their models are parsed in the background:
+        // an actor whose models aren't all in yet is drawn with nothing until
+        // they are (`dress_waiting_actors`).
+        let background = self.renderer.loads_in_background();
+        if background {
+            let vfs = self.vfs.clone();
+            self.models.request(&vfs, &paths);
+            self.models
+                .poll(&mut self.renderer, &self.vfs, DRESS_BUDGET);
+        } else {
+            self.models.load_all(&mut self.renderer, &self.vfs, &paths);
+        }
         let mut actors = Vec::new();
         let mut runtimes = Vec::new();
         for (ai, (d, editor_pos, placement_heading, resume)) in descs.iter().enumerate() {
@@ -2094,7 +2149,19 @@ impl Engine {
             let (scale, _, feet) = d.transform.to_scale_rotation_translation();
             rt.capsule = Some(self.physics.add_actor_capsule(feet, scale.x, d.ref_id));
             let pose = first_pose.unwrap_or_else(|| skel.model_space(&skel.bind_locals()));
-            let (meshes, equipment, rigid) = self.actor_meshes(d, &skel);
+            let waiting: Vec<String> = d
+                .models
+                .iter()
+                .map(|(m, _)| m.clone())
+                .filter(|m| !self.models.loaded(m))
+                .collect();
+            let (meshes, equipment, rigid) = if waiting.is_empty() {
+                self.actor_meshes(d, &skel)
+            } else {
+                // Not half dressed: nothing until every part is in.
+                self.undressed.insert(d.ref_id, waiting);
+                Default::default()
+            };
             log::debug!(
                 "actor {} {:?} ({} {}) {} meshes, {} rigid ({:?}) at {:?}, {} packages",
                 d.ref_id,
@@ -3145,6 +3212,7 @@ impl Engine {
             self.update_loading(dt);
             return;
         }
+        self.dress_waiting_actors();
         self.check_pause_autosave();
         self.flush_save_requests();
         // The gift menu went: its script carries on.
