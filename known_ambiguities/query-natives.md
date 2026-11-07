@@ -4,7 +4,7 @@ References: research/pex-natives/. These choices have not been verified in Skyri
 
 ## class
 
-GetClass follows Use Stats templates per the public NPC format. A leveled template is resolved with the existing base-query seed of zero; the original return for an unresolved leveled template is unverified.
+GetClass follows Use Stats templates per the public NPC format. A leveled template is resolved with the existing base-query seed of zero. Skyrim SE (autotest21, `research/autotest21.md`, QueryNatives and ActorNatives): `ActorBase.GetClass` on a base whose stats template is `LCharBanditMelee1H` gave `EncClassDremoraMelee` (0x17008), neither the base's own `Citizen` nor a bandit class (the placed actor's leveled base had `EncClassBanditMelee`); `GetRace` on a base whose traits template is a leveled list gave `FoxRace` (0x109C7C), though its own `RNAM` is Nord and the placed actor was Nord. Nothing in the records links either answer to the base, so they can't be reproduced from the data; ours keeps the seeded pick, a class or race the list can give (compared 2026-11-07). Uncertain: where the game's answers come from (perhaps another actor's resolved base).
 
 ## editor
 

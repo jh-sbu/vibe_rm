@@ -1220,9 +1220,11 @@ pub fn call(
             } else {
                 1
             };
+            // PlaceAtMe(base, count, force persist, initially disabled).
+            let disabled = func == "placeatme" && args.get(3).is_some_and(|d| d.as_bool());
             let made = match (me, form_arg(args, 0)) {
                 (Some(at), Some(base)) => (0..count)
-                    .filter_map(|_| e.create_ref(base, at, false))
+                    .filter_map(|_| e.create_ref_as(base, at, false, disabled))
                     .last(),
                 _ => None,
             };

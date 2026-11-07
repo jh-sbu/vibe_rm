@@ -296,3 +296,18 @@ fn line_of_sight_needs_both_references_in_the_world() {
     assert!(!holds(&e, C, GET_LINE_OF_SIGHT, FormId(0x813).0, 0, 1.0));
     assert!(!holds(&e, C, GET_LINE_OF_SIGHT, 0, 0, 1.0));
 }
+
+/// `PlaceAtMe(..., abInitiallyDisabled = true)`: disabled and not loaded at
+/// once (Skyrim SE, autotest21); enabled, it is no longer disabled.
+#[test]
+fn placed_initially_disabled_starts_disabled() {
+    let (_dir, mut e) = fixture();
+    move_to(&mut e, A, [12.0, 34.0, 56.0], [0.0; 3]);
+    let placed = e.create_ref_as(CREATED_BASE, A, false, true).unwrap();
+    assert!(e.is_disabled(placed));
+    assert!(!e.ref_3d_loaded(placed));
+    e.set_disabled(placed, false);
+    assert!(!e.is_disabled(placed));
+    let plain = e.create_ref(CREATED_BASE, A, false).unwrap();
+    assert!(!e.is_disabled(plain));
+}

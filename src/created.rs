@@ -183,6 +183,18 @@ impl Engine {
 
     /// Make a reference to `base` at reference `at`, or in its inventory.
     pub fn create_ref(&mut self, base: FormId, at: FormId, inside: bool) -> Option<FormId> {
+        self.create_ref_as(base, at, inside, false)
+    }
+
+    /// [`Self::create_ref`], placed disabled if `disabled` (`PlaceAtMe`'s
+    /// `abInitiallyDisabled`): never drawn or spawned until enabled.
+    pub fn create_ref_as(
+        &mut self,
+        base: FormId,
+        at: FormId,
+        inside: bool,
+        disabled: bool,
+    ) -> Option<FormId> {
         let tag = self.lo.tag_of(base)?.0;
         let actor = matches!(&tag, b"NPC_" | b"LVLN");
         // Locations: at their marker.
@@ -240,6 +252,9 @@ impl Engine {
             },
         );
         log::debug!("created {id} ({base}) at {at} {place:?} {position:?}");
+        if disabled {
+            self.scripts.disabled.insert(id, true);
+        }
         if actor {
             self.add_created_actor(id, place, position);
         } else {

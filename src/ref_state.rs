@@ -160,6 +160,11 @@ impl Engine {
         if r == crate::engine::PLAYER_REF {
             return self.player_body.is_some() || self.scene.player.is_some();
         }
+        // Skyrim SE (autotest21): False at once on Disable, and for a
+        // reference placed initially disabled.
+        if self.is_disabled(r) {
+            return false;
+        }
         let actor_loaded = self.actor_cells.get(&r).is_some_and(|key| {
             self.cells
                 .get(key)

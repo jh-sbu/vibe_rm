@@ -82,9 +82,12 @@ NPCs do not yet sprint, so IsSprinting is false for them. IsAlarmed currently
 covers guard arrest pursuit; Skyrim's non-guard witness/alarm transitions are
 unresolved. IsArrestingTarget uses the current arrest conversation; whether a
 pursuing guard also counts before reaching the target is unspecified.
-Is3DLoaded uses instantiated render data (including hidden or occluded instances),
-not cell attachment. Exact asynchronous creation/destruction timing, persistent
-3D kept after detachment and first-person-only body behavior remain unverified.
+Is3DLoaded uses instantiated render data (including occluded instances), not cell
+attachment, and is False for a disabled reference. Skyrim SE (autotest21,
+`research/autotest21.md`, 3DLoaded): a `PlaceAtMe`'d barrel is loaded at once,
+`Disable` makes it False at once, and one placed initially disabled is not loaded;
+ours agrees (`PlaceAtMe`'s `abInitiallyDisabled` is honoured). Persistent 3D kept
+after detachment and first-person-only body behavior remain unverified.
 
 ## Sound instances (Sound.Play and friends)
 

@@ -4271,10 +4271,11 @@ impl Engine {
                 .values()
                 .any(|c| c.lights.iter().any(|l| l.ref_id == r));
             self.furniture.set_disabled(r, off);
-            // Enabled actors whose place is loaded appear.
+            // Enabled actors whose place is loaded appear, created ones too.
             if !off
                 && !self.actor_cells.contains_key(&r)
-                && self.lo.tag_of(r).is_some_and(|t| t.0 == *b"ACHR")
+                && (self.lo.tag_of(r).is_some_and(|t| t.0 == *b"ACHR")
+                    || self.created(r).is_some_and(|c| c.actor))
             {
                 let at = self
                     .whereabouts

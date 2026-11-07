@@ -1434,6 +1434,13 @@ fn batch08_movement_arrest_and_loaded_3d() {
         call(&mut e, "objectreference", "is3dloaded", FormId(0x800), &[]),
         Value::Bool(true)
     );
+    // Disabled: not loaded at once (Skyrim SE, autotest21).
+    e.scripts.disabled.insert(FormId(0x800), true);
+    assert_eq!(
+        call(&mut e, "objectreference", "is3dloaded", FormId(0x800), &[]),
+        Value::Bool(false)
+    );
+    e.scripts.disabled.remove(&FormId(0x800));
     e.scene.cells.clear();
     assert_eq!(
         call(&mut e, "objectreference", "is3dloaded", FormId(0x800), &[]),
