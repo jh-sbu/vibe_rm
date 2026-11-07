@@ -69,6 +69,46 @@ in the schedule. Their stages have no finer timings yet:
 Throughout the run, frames took ~50 ms (`engine.update` ~18 ms, `surface.acquire`
 ~25 ms), which is separate from the stutter.
 
+## Kept inflated records (2026-11-06)
+
+Every vanilla NPC_ record is zlib-compressed (5,118 in Skyrim.esm, 623 in
+Dawnguard.esm), and `LoadOrder::get` inflated them again on every read. Temporary
+counters showed 52 record reads per health query, 47 of them inflates, and about
+120,000 inflates per full schedule refresh. Temporary timings split the large
+hitches by call: the ~3 s one was `update_scripts` in the frame where a
+`SendStoryEvent` (`SCPT`) starts the Companions quests CR01 and CR06. The 1.1 s
+and 0.37 s ones were `update_story`, where a hold `CLOC` starts Favor017,
+Favor110, CRHoldExpansion, DLC1ScrollHandlingChangeLoc and a Heimskr scene
+quest. Both were starting quests and filling aliases.
+
+`get` now keeps a compressed plugin record's inflated payload after its first
+read. Each slot is made while indexing and keyed by record version, so overrides
+and other load orders are unaffected. LAND and NAVM are excluded: vanilla
+inflates them to ~350 MB and ~110 MB and reads them once per cell load. So is
+anything over 64 KiB inflated. In vanilla, that leaves NPC_ (~5 MB) and CELL
+(~33 MB if every cell is read).
+
+| Release-profile benchmark | Before | After |
+| --- | --- | --- |
+| Health query, ms/call | 0.265 | 0.005 |
+| First full schedule refresh, ms | ~1084 | ~466 |
+| Subsequent full refreshes, ms | ~243 | ~40 |
+
+Same traversal route as above:
+
+| | Health change only | + kept records |
+| --- | --- | --- |
+| Worst schedule batch (11000..11250) | 55–57 ms | ~4 ms |
+| Companions SCPT quest start (`update_scripts`) | 2.97 s | 0.73 s |
+| Whiterun hold CLOC quest starts (`update_story`) | 1.14 s | 0.28 s |
+| Hold CLOC quest starts | 0.37 s | 0.10 s |
+| `engine.update` median | 19.1 ms | 13.5 ms |
+| Frames with work >= 100 ms | 10 | 8 |
+
+First-time cell streaming (~240 ms) and 75–200 ms `sim.scripts_weather` spikes
+remain. In this run the `sim.scripts_weather` median rose from 6.3 to 8.8 ms;
+whether that is noise is unchecked.
+
 ## Reproduce
 
 ```sh
@@ -84,11 +124,10 @@ without other builds or heavy work competing for CPU time.
 
 ## Remaining work
 
-- Cut the remaining ~55 ms Soul Cairn batch: cache the rest of the record stats
-  the health query reads, or budget schedule evaluation by elapsed time.
-- Add sub-stage timings to `sim.scripts_weather` and `sim.gameplay` to find the
-  multi-second hitches.
-- Profile remaining package-selection cost before introducing broader caches.
-  The scheduler still budgets 250 entries, not elapsed time, per frame.
-- Investigate the separately observed scripts/weather, audio/UI, and streaming
-  spikes; they are not addressed by this health-query change.
+- Find which alias fills make quest starts cost 0.1–0.7 s. `Fill::Matching` with
+  Closest tests every persistent ref against the full alias conditions; a cheap
+  prefilter is the likely fix.
+- Budget schedule evaluation by elapsed time instead of 250 entries per frame.
+- Add permanent sub-stage timings to `sim.scripts_weather` and `sim.gameplay`.
+- Investigate first-time cell streaming (~240 ms: textures and actor setup)
+  and the remaining 75–200 ms `sim.scripts_weather` spikes.

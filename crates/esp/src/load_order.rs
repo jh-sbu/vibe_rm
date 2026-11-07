@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock, RwLock};
 
 use crate::plugin::{GroupHeader, Item, Plugin, group_type};
-use crate::record::{Record, RecordHeader};
+use crate::record::{RECORD_HEADER_SIZE, Record, RecordHeader};
 use crate::strings::{StringTable, StringsKind};
 use crate::{Error, FormId, Result, Tag};
 
@@ -106,6 +106,23 @@ pub struct LoadOrder {
     strings: HashMap<(usize, u32), String>,
     /// Small hot fields from immutable winning plugin records, never live state.
     cached_fields: RwLock<HashMap<(FormId, Tag), Option<Arc<[u8]>>>>,
+    /// Inflated payloads of compressed plugin records, keyed by record version
+    /// (plugin, offset), filled the first time `get` reads one. The slots are
+    /// made while indexing, so a filled one is borrowed for the load order's
+    /// lifetime. See [`keeps_inflated`].
+    inflated: HashMap<(u16, u32), OnceLock<Option<Box<[u8]>>>>,
+}
+
+/// Inflated sizes above this are inflated on every read instead of kept.
+const MAX_KEPT_INFLATED: usize = 64 * 1024;
+
+/// Whether `get` keeps a compressed record's inflated payload. Terrain and
+/// navmeshes are bulky (vanilla: ~350 MB and ~110 MB inflated) and read once
+/// per cell load, so they would only grow memory over a long traversal; the
+/// rest (vanilla compresses only NPC_ and CELL besides them) is small and
+/// read over and over by templates, conditions and the AI schedule.
+fn keeps_inflated(tag: Tag, inflated_size: usize) -> bool {
+    !matches!(&tag.0, b"LAND" | b"NAVM") && inflated_size <= MAX_KEPT_INFLATED
 }
 
 /// The base game masters, in their mandatory order.
@@ -219,6 +236,7 @@ impl LoadOrder {
             editor_ids: OnceLock::new(),
             strings: HashMap::new(),
             cached_fields: RwLock::new(HashMap::new()),
+            inflated: HashMap::new(),
         };
         for i in 0..lo.plugins.len() {
             lo.index_plugin(i)?;
@@ -326,6 +344,14 @@ impl LoadOrder {
         if prev.is_none() {
             self.by_type.entry(rh.tag).or_default().push(id);
         }
+        if rh.is_compressed() {
+            let bytes = self.plugins[pi].plugin.bytes();
+            let payload = bytes.get(roff + RECORD_HEADER_SIZE..).unwrap_or_default();
+            if crate::record::inflated_size(payload).is_some_and(|n| keeps_inflated(rh.tag, n)) {
+                self.inflated
+                    .insert((pi as u16, roff as u32), OnceLock::new());
+            }
+        }
         match &rh.tag.0 {
             b"CELL" => {
                 let rec = self.plugins[pi].plugin.record_at(roff)?;
@@ -386,7 +412,6 @@ impl LoadOrder {
     /// Insert an owned runtime ALCH/ENCH. The caller allocates the ID from
     /// the same sequence as created references. Replacements are forbidden.
     pub fn insert_runtime_record(&mut self, bytes: &[u8]) -> Result<FormId> {
-        use crate::record::RECORD_HEADER_SIZE;
         if bytes.len() < RECORD_HEADER_SIZE {
             return Err(Error::Corrupt("short runtime record".into()));
         }
@@ -487,6 +512,28 @@ impl LoadOrder {
     pub fn get(&self, id: FormId) -> Option<LoadedRecord<'_>> {
         let r = self.records.get(&id)?;
         let info = &self.plugins[r.plugin as usize];
+        if let Some(slot) = self.inflated.get(&(r.plugin, r.offset)) {
+            let bytes = info.plugin.bytes();
+            let header = RecordHeader::parse(&bytes[r.offset as usize..]);
+            let data = slot.get_or_init(|| {
+                let start = r.offset as usize + RECORD_HEADER_SIZE;
+                bytes
+                    .get(start..start + header.data_size as usize)
+                    .ok_or_else(|| Error::Corrupt(format!("record at {start:#x} overruns file")))
+                    .and_then(crate::record::inflate)
+                    .map_err(|e| log::error!("failed to read record {id}: {e}"))
+                    .ok()
+                    .map(Vec::into_boxed_slice)
+            });
+            return data.as_deref().map(|data| LoadedRecord {
+                record: Record {
+                    header,
+                    data: std::borrow::Cow::Borrowed(data),
+                },
+                plugin: info,
+                form_id: id,
+            });
+        }
         match info.plugin.record_at(r.offset as usize) {
             Ok(record) => Some(LoadedRecord {
                 record,
@@ -682,6 +729,64 @@ mod runtime_tests {
         lo.clear_runtime_records();
         assert!(lo.get(id).is_none());
         assert!(lo.ids_of_type(b"ALCH").is_empty());
+    }
+
+    #[test]
+    fn compressed_records_inflate_once_and_follow_overrides() {
+        use crate::writer::{Node, write_plugin};
+        let dir = std::env::temp_dir().join(format!("vrm-inflated-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (npc, land, plain) = (FormId(0x800), FormId(0x801), FormId(0x802));
+        for (name, masters, full) in [
+            ("Base.esm", vec![], "base"),
+            ("Override.esp", vec!["Base.esm"], "override"),
+        ] {
+            let mut top = vec![Node::top(
+                b"NPC_",
+                vec![
+                    RecordBuilder::new(b"NPC_", npc)
+                        .zstring(b"FULL", full)
+                        .compressed(),
+                    RecordBuilder::new(b"NPC_", plain).zstring(b"FULL", full),
+                ],
+            )];
+            if masters.is_empty() {
+                top.push(Node::top(
+                    b"LAND",
+                    vec![
+                        RecordBuilder::new(b"LAND", land)
+                            .field(b"VHGT", &[7; 64])
+                            .compressed(),
+                    ],
+                ));
+            }
+            std::fs::write(
+                dir.join(name),
+                write_plugin(0, &masters, "", "", 0x803, &top),
+            )
+            .unwrap();
+        }
+        let full =
+            |lo: &LoadOrder, id| crate::decode_zstring(lo.get(id).unwrap().get(b"FULL").unwrap());
+        {
+            let lo = LoadOrder::load(&dir, &["Base.esm".into(), "Override.esp".into()]).unwrap();
+            assert_eq!(full(&lo, npc), "override");
+            assert_eq!(full(&lo, plain), "override");
+            // Kept: the second read borrows the bytes the first inflated.
+            let first = lo.get(npc).unwrap();
+            let again = lo.get(npc).unwrap();
+            assert!(matches!(first.data, std::borrow::Cow::Borrowed(_)));
+            assert!(std::ptr::eq(first.data.as_ptr(), again.data.as_ptr()));
+            assert!(first.header.is_compressed());
+            // Terrain is inflated on each read, never kept.
+            let terrain = lo.get(land).unwrap();
+            assert!(matches!(terrain.data, std::borrow::Cow::Owned(_)));
+            assert_eq!(terrain.get(b"VHGT").unwrap(), &[7; 64]);
+            assert_eq!(lo.inflated.len(), 2, "both NPC_ versions, not LAND");
+            let base = LoadOrder::load(&dir, &["Base.esm".into()]).unwrap();
+            assert_eq!(full(&base, npc), "base");
+        }
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

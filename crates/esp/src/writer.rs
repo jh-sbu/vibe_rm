@@ -1,7 +1,7 @@
 //! Writing small TES4-format plugins (test mods): records built field by
 //! field, nested in groups, behind a `TES4` header. Records are written
-//! uncompressed, with the Special Edition form version unless a record
-//! asks for another. [`vmad`] attaches scripts.
+//! uncompressed unless [`RecordBuilder::compressed`] is called last, with the
+//! Special Edition form version unless a record asks for another. [`vmad`] attaches scripts.
 
 use crate::plugin::GROUP_HEADER_SIZE;
 use crate::record::RECORD_HEADER_SIZE;
@@ -43,6 +43,20 @@ impl RecordBuilder {
 
     pub fn flags(mut self, flags: u32) -> Self {
         self.flags = flags;
+        self
+    }
+
+    /// Store the fields added so far compressed, as plugins do: the
+    /// compressed flag, then the inflated size and the zlib stream. Call it
+    /// after the last field.
+    pub fn compressed(mut self) -> Self {
+        use std::io::Write;
+        let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        z.write_all(&self.data).unwrap();
+        let mut data = (self.data.len() as u32).to_le_bytes().to_vec();
+        data.extend(z.finish().unwrap());
+        self.data = data;
+        self.flags |= crate::record::record_flags::COMPRESSED;
         self
     }
 

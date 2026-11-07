@@ -56,21 +56,30 @@ pub struct Record<'a> {
     pub data: Cow<'a, [u8]>,
 }
 
+/// The size a compressed record's payload inflates to (its first four bytes).
+pub(crate) fn inflated_size(payload: &[u8]) -> Option<usize> {
+    payload.get(..4).map(|_| le_u32(payload, 0) as usize)
+}
+
+/// Inflate a compressed record's payload (decompressed size, then zlib data).
+pub(crate) fn inflate(payload: &[u8]) -> Result<Vec<u8>> {
+    let Some(size) = inflated_size(payload) else {
+        return Err(Error::Corrupt("compressed record too small".into()));
+    };
+    let mut out = Vec::with_capacity(size);
+    flate2::read::ZlibDecoder::new(&payload[4..])
+        .read_to_end(&mut out)
+        .map_err(|e| Error::Corrupt(format!("zlib: {e}")))?;
+    Ok(out)
+}
+
 impl<'a> Record<'a> {
     /// Build from the raw record bytes (header + payload) inside a plugin.
     pub fn from_raw(raw: &'a [u8]) -> Result<Self> {
         let header = RecordHeader::parse(raw);
         let payload = &raw[RECORD_HEADER_SIZE..RECORD_HEADER_SIZE + header.data_size as usize];
         let data = if header.is_compressed() {
-            if payload.len() < 4 {
-                return Err(Error::Corrupt("compressed record too small".into()));
-            }
-            let size = le_u32(payload, 0) as usize;
-            let mut out = Vec::with_capacity(size);
-            flate2::read::ZlibDecoder::new(&payload[4..])
-                .read_to_end(&mut out)
-                .map_err(|e| Error::Corrupt(format!("zlib: {e}")))?;
-            Cow::Owned(out)
+            Cow::Owned(inflate(payload)?)
         } else {
             Cow::Borrowed(payload)
         };
