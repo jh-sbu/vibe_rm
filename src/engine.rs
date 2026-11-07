@@ -349,6 +349,8 @@ pub struct Engine {
     pub(crate) location_index: std::cell::OnceCell<crate::locations::LocationIndex>,
     /// Persistent references, candidates for "find matching reference" aliases.
     pub(crate) persistent_refs: std::cell::OnceCell<Vec<FormId>>,
+    /// `persistent_refs` positions by what static alias conditions test.
+    pub(crate) persistent_index: std::cell::OnceCell<crate::aliases::PersistentIndex>,
     /// Reference state kept across cell loads (dead actors...).
     pub(crate) world_state: crate::world_state::WorldState,
     /// References made while playing (`PlaceAtMe`, created alias references).
@@ -680,6 +682,7 @@ impl Engine {
             enable_children: Default::default(),
             location_index: Default::default(),
             persistent_refs: Default::default(),
+            persistent_index: Default::default(),
             alias_spec_cache: Default::default(),
             created_refs: Default::default(),
             world_state: Default::default(),

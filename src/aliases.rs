@@ -238,6 +238,27 @@ pub fn parse(quest: &esp::LoadedRecord<'_>) -> Vec<AliasSpec> {
     out
 }
 
+/// What a condition leaves of the persistent references.
+enum Candidates {
+    /// Any of them may pass.
+    All,
+    /// None of them does.
+    None,
+    /// Only these positions may.
+    Some(Vec<u32>),
+}
+
+/// See [`Engine::persistent_index`]. Positions ascend in each list.
+#[derive(Default)]
+pub(crate) struct PersistentIndex {
+    by_base: HashMap<FormId, Vec<u32>>,
+    by_cell: HashMap<FormId, Vec<u32>>,
+    by_editor_location: HashMap<FormId, Vec<u32>>,
+    /// Placed actors (`ACHR`).
+    actors: Vec<u32>,
+    position: HashMap<FormId, u32>,
+}
+
 impl Engine {
     /// Apply an alias's authored inventory when a new reference is assigned.
     /// Items stay with the reference when it leaves or is cleared from the alias.
@@ -410,6 +431,152 @@ impl Engine {
                 }
             }
             out
+        })
+    }
+
+    /// Positions in `persistent_refs` by base, cell, editor location and
+    /// whether they're placed actors, all read from the load order and so
+    /// fixed for plugin references. The player (position 0) is left out: its
+    /// location changes.
+    fn persistent_index(&self) -> &PersistentIndex {
+        self.persistent_index.get_or_init(|| {
+            let mut index = PersistentIndex::default();
+            for (i, &r) in self.persistent_refs().iter().enumerate().skip(1) {
+                let i = i as u32;
+                if let Some(base) = self.base_of(r) {
+                    index.by_base.entry(base).or_default().push(i);
+                }
+                if let Some(cell) = self.lo.cell_of_ref(r) {
+                    index.by_cell.entry(cell).or_default().push(i);
+                }
+                if let Some(l) = self.editor_location(r) {
+                    index.by_editor_location.entry(l).or_default().push(i);
+                }
+                if self.lo.tag_of(r).is_some_and(|t| t.0 == *b"ACHR") {
+                    index.actors.push(i);
+                }
+                index.position.entry(r).or_insert(i);
+            }
+            index
+        })
+    }
+
+    /// The `persistent_refs` positions that can pass alias `a`'s conditions,
+    /// in list order, the player's always among them; `None` when no
+    /// condition group narrows them. See [`Engine::persistent_anchor`].
+    fn persistent_candidates(&self, q: FormId, a: &AliasSpec) -> Option<Vec<u32>> {
+        self.persistent_anchor(q, a).map(|(_, mut v)| {
+            v.insert(0, 0);
+            v
+        })
+    }
+
+    /// The narrowest condition group (an OR group, or one condition ANDed
+    /// alone) whose every member the index answers, as its range in the
+    /// alias's conditions, and the positions (the player's left out) that can
+    /// pass it. The groups are ANDed, so every other reference fails the
+    /// conditions as a whole.
+    fn persistent_anchor(
+        &self,
+        q: FormId,
+        a: &AliasSpec,
+    ) -> Option<(std::ops::Range<usize>, Vec<u32>)> {
+        let conds = &a.conditions;
+        let mut best: Option<(std::ops::Range<usize>, Vec<u32>)> = None;
+        let mut start = 0;
+        while start < conds.len() {
+            let end = conds[start..]
+                .iter()
+                .position(|c| !c.or)
+                .map_or(conds.len(), |i| start + i + 1);
+            let mut union = Some(Vec::new());
+            for c in &conds[start..end] {
+                match (self.condition_candidates(q, c), &mut union) {
+                    (Candidates::Some(set), Some(u)) => u.extend(set),
+                    (Candidates::None, _) => {}
+                    (Candidates::All, _) => union = None,
+                    (_, None) => {}
+                }
+            }
+            if let Some(mut set) = union {
+                set.sort_unstable();
+                set.dedup();
+                if best.as_ref().is_none_or(|b| set.len() < b.1.len()) {
+                    best = Some((start..end, set));
+                }
+            }
+            start = end;
+        }
+        best
+    }
+
+    /// Which persistent references (by position, the player's left out) can
+    /// pass condition `c` of quest `q`'s alias, run on the reference.
+    fn condition_candidates(&self, q: FormId, c: &Condition) -> Candidates {
+        if c.p1_ref.is_some() {
+            return Candidates::All;
+        }
+        // Functions of quests and globals, never of the subject: true for
+        // every reference or for none.
+        if matches!(c.func, 18 | 56 | 58 | 59 | 74 | 170 | 543) {
+            let ctx = Context {
+                quest: Some(q),
+                ..Default::default()
+            };
+            return if condition::evaluate_one(self, c, ctx) {
+                Candidates::All
+            } else {
+                Candidates::None
+            };
+        }
+        if c.run_on != 0 || c.swap || c.use_global || c.op != 0 || c.value != 1.0 {
+            return Candidates::All;
+        }
+        let index = self.persistent_index();
+        // The first parameter as `function_value` reads it.
+        let p1 = if c.p1_alias {
+            self.alias_ref(q, c.p1).unwrap_or_default()
+        } else {
+            FormId(c.p1)
+        };
+        let within = |l: Option<FormId>| -> Vec<u32> {
+            let Some(l) = l else { return Vec::new() };
+            index
+                .by_editor_location
+                .iter()
+                .filter(|(at, _)| self.location_within(**at, l))
+                .flat_map(|(_, refs)| refs.iter().copied())
+                .collect()
+        };
+        // Only actors have record or alias factions, or record flags; script
+        // faction changes are kept by reference.
+        let actors = || {
+            let mut v = index.actors.clone();
+            if c.func == 71 {
+                v.extend(
+                    self.scripts
+                        .faction_changes
+                        .keys()
+                        .filter_map(|r| index.position.get(r).copied()),
+                );
+            }
+            v
+        };
+        let position = index.position.get(&p1).copied();
+        Candidates::Some(match c.func {
+            // GetIsID: the subject's base, or the subject itself.
+            72 => {
+                let mut v = index.by_base.get(&p1).cloned().unwrap_or_default();
+                v.extend(position);
+                v
+            }
+            136 => position.into_iter().collect(), // GetIsReference
+            67 => index.by_cell.get(&p1).cloned().unwrap_or_default(), // GetInCell
+            71 | 641 => actors(),                  // GetInFaction, IsUnique
+            565 => within(Some(p1)),               // GetIsEditorLocation
+            // GetIsEditorLocAlias: the alias's location, not `p1`.
+            567 => within(self.alias_ref(q, c.p1)),
+            _ => return Candidates::All,
         })
     }
 
@@ -602,7 +769,13 @@ impl Engine {
                         .collect()
                 } else {
                     let mut v = Vec::new();
-                    for &r in self.persistent_refs() {
+                    let refs = self.persistent_refs();
+                    let candidates: Box<dyn Iterator<Item = FormId>> =
+                        match self.persistent_candidates(q, a) {
+                            Some(at) => Box::new(at.into_iter().map(|i| refs[i as usize])),
+                            None => Box::new(refs.iter().copied()),
+                        };
+                    for r in candidates {
                         if self.eligible(q, a, r, reserved) && accepts(r) {
                             v.push(r);
                             if !a.has(flags::CLOSEST) {
@@ -758,6 +931,94 @@ mod depth_tests;
 mod tests {
     use super::*;
     use glam::Vec3;
+
+    /// Every persistent reference `persistent_anchor` leaves out fails the
+    /// condition group it narrows by, evaluated as usual. Location aliases are
+    /// filled with a spread of locations so `GetIsEditorLocAlias` is exercised.
+    /// Reads installed assets in place, never copies them.
+    #[test]
+    #[ignore = "needs Skyrim SE Data and a headless GPU adapter"]
+    fn persistent_candidates_leave_out_only_references_that_fail() {
+        let data = vfs::locate_data_dir().expect("Skyrim SE Data");
+        let names = esp::LoadOrder::default_plugin_list(&data, None);
+        let mut e = crate::stats::action_tests::headless_engine_plugins(&data, &names);
+        let refs = e.persistent_refs().to_vec();
+        let mut locations: Vec<FormId> = e
+            .persistent_index()
+            .by_editor_location
+            .keys()
+            .copied()
+            .collect();
+        locations.sort();
+        let locations: Vec<Option<FormId>> = std::iter::once(None)
+            .chain(locations.iter().step_by(40).copied().map(Some))
+            .collect();
+        let (mut checked, mut seen) = (HashMap::<u16, usize>::new(), HashSet::new());
+        for q in e.lo.ids_of_type(b"QUST").to_vec() {
+            let specs = e.alias_specs(q);
+            let location_aliases: Vec<u32> =
+                specs.iter().filter(|a| a.location).map(|a| a.id).collect();
+            for &l in &locations {
+                let fills = &mut e.scripts.quests.entry(q).or_default().aliases;
+                for &id in &location_aliases {
+                    match l {
+                        Some(l) => fills.insert(id, l),
+                        None => fills.remove(&id),
+                    };
+                }
+                for a in specs.iter().filter(|a| {
+                    a.fill == Fill::Matching && !a.location && !a.has(flags::IN_LOADED_AREA)
+                }) {
+                    let Some((range, set)) = e.persistent_anchor(q, a) else {
+                        continue;
+                    };
+                    let group = &a.conditions[range.clone()];
+                    let key: Vec<_> = group
+                        .iter()
+                        .map(|c| {
+                            let target = if c.func == 567 || c.p1_alias {
+                                e.alias_ref(q, c.p1)
+                            } else {
+                                Some(FormId(c.p1))
+                            };
+                            (c.func, target, c.op, c.value.to_bits())
+                        })
+                        .collect();
+                    if !seen.insert(key) {
+                        continue;
+                    }
+                    let members: HashSet<u32> = set.iter().copied().collect();
+                    for (at, &r) in refs.iter().enumerate().skip(1) {
+                        if members.contains(&(at as u32)) {
+                            continue;
+                        }
+                        let ctx = Context {
+                            subject: Some(r),
+                            quest: Some(q),
+                            ..Default::default()
+                        };
+                        assert!(
+                            !condition::evaluate(&e, group, ctx),
+                            "{} alias {} conditions {range:?} pass {r}, left out",
+                            q,
+                            a.name,
+                        );
+                    }
+                    for c in group {
+                        *checked.entry(c.func).or_default() += 1;
+                    }
+                }
+            }
+            e.scripts.quests.remove(&q);
+        }
+        eprintln!("anchors checked by function: {checked:?}");
+        for (func, least) in [(71, 10), (72, 10), (567, 10), (136, 3)] {
+            assert!(
+                checked.get(&func).is_some_and(|&n| n >= least),
+                "{checked:?}"
+            );
+        }
+    }
 
     fn made(container: Option<FormId>, actor: bool) -> Created {
         Created {

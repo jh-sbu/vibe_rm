@@ -109,6 +109,34 @@ First-time cell streaming (~240 ms) and 75–200 ms `sim.scripts_weather` spikes
 remain. In this run the `sim.scripts_weather` median rose from 6.3 to 8.8 ms;
 whether that is noise is unchecked.
 
+## Narrowed alias candidates (2026-11-06)
+
+Temporary per-alias timings showed "find matching reference" fills scanning
+all ~49,000 persistent references with the full alias conditions, at about 60
+ms per alias. Most found nothing: CR01 alone has ten homeowner aliases, and
+Favor quest-giver, BQ01/BQ02 and DA16 aliases behaved the same way.
+
+`fill_alias` now narrows its candidates when a condition group (an OR group,
+or one condition ANDed alone) can be answered from a static index of the
+persistent references. The index covers `GetIsID`, `GetIsReference`,
+`GetInCell`, `GetIsEditorLocation`, `GetIsEditorLocAlias`, `GetInFaction`
+(actors, plus references with script faction changes) and `IsUnique` (actors).
+Quest and global functions with no subject are evaluated once. Candidates stay
+in list order and the player is always one, so the first match and the
+Closest sort are unchanged. An ignored test checks against the installed load
+order that no reference left out passes its group.
+
+| Same route | Kept records only | + narrowed candidates |
+| --- | --- | --- |
+| Companions SCPT quest start | 727 ms | 78 ms |
+| Whiterun hold CLOC quest starts | 284 ms | 24 ms |
+| Hold CLOC quest starts | 99 ms | < 20 ms |
+
+`GetIsVoiceType` isn't narrowed: talking activators have voice types, and
+leveled template picks depend on globals. CR04's Brute alias (~50 ms) and
+CR01's BeastVictim alias (~14 ms) are the largest remaining fills. `Near` fills
+(WE09, ~10 ms each) scan `refs_near` unindexed.
+
 ## Reproduce
 
 ```sh
@@ -124,10 +152,10 @@ without other builds or heavy work competing for CPU time.
 
 ## Remaining work
 
-- Find which alias fills make quest starts cost 0.1–0.7 s. `Fill::Matching` with
-  Closest tests every persistent ref against the full alias conditions; a cheap
-  prefilter is the likely fix.
+- Remaining slow alias fills: CR04 Brute and CR01 BeastVictim (anchored only by
+  `GetIsVoiceType` and location functions), and `Near` fills.
+- Find the cause of the remaining 60–125 ms `sim.scripts_weather` spikes
+  (traversal frames ~442, ~1650 and ~1920), which aren't quest starts.
 - Budget schedule evaluation by elapsed time instead of 250 entries per frame.
 - Add permanent sub-stage timings to `sim.scripts_weather` and `sim.gameplay`.
-- Investigate first-time cell streaming (~240 ms: textures and actor setup)
-  and the remaining 75–200 ms `sim.scripts_weather` spikes.
+- Investigate first-time cell streaming (~240 ms: textures and actor setup).
