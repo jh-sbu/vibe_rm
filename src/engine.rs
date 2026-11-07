@@ -2074,7 +2074,11 @@ impl Engine {
                     }
                 }
                 // Desynchronise actors standing about.
-                rt.graph_walk_speed = g.walk_speed(&self.vfs, &mut self.anims, &skel);
+                // Only a fallback for a movement type without a walking speed
+                // (`ActorRuntime::walk_speed`): working it out decodes clips.
+                if rt.moves.is_none_or(|(m, _)| m.walk <= 1.0) {
+                    rt.graph_walk_speed = g.walk_speed(&self.vfs, &mut self.anims, &skel);
+                }
                 first_pose = Some(g.update(start, &self.vfs, &mut self.anims, &skel).pose);
                 rt.graph = Some(g);
             }
