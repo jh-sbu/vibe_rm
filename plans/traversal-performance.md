@@ -137,6 +137,24 @@ leveled template picks depend on globals. CR04's Brute alias (~50 ms) and
 CR01's BeastVictim alias (~14 ms) are the largest remaining fills. `Near` fills
 (WE09, ~10 ms each) scan `refs_near` unindexed.
 
+## Script/weather spikes are world encounter starts (2026-11-06)
+
+Temporary timings in `update_scripts`, at each native call, in story manager
+quest starts, in `fill_quest_aliases` and in `create_ref` traced the remaining
+60–125 ms `sim.scripts_weather` spikes. Each was one `Keyword.SendStoryEvent`
+call from Papyrus that started a world encounter quest (WE09, WE07, WE22,
+WEDL01b, WEDLVigilOfStendarr03; the WEQuests node picks at random, so runs
+differ). Weather wasn't involved.
+
+- **Created actors:** `create_ref` → `add_created_actor` → `spawn_actors` into
+  the loaded cells, 5–27 ms per actor (30–52 ms per quest). In frame 442, 42.5
+  ms of the 74 ms was loading 29 textures (26.7 ms read/parse, 15.8 ms upload)
+  and about 5 ms models. First-time cell streaming has the same synchronous
+  asset cost (`cell.actors` ~137 ms).
+- **`Near` fills:** 7–13 ms each, 2–4 per WE quest. When the center is loaded,
+  `refs_near` returns every loaded reference (~15,000), each tested against
+  `IsLinkedTo(<center alias>)` and `HasRefType`.
+
 ## Reproduce
 
 ```sh
@@ -154,8 +172,10 @@ without other builds or heavy work competing for CPU time.
 
 - Remaining slow alias fills: CR04 Brute and CR01 BeastVictim (anchored only by
   `GetIsVoiceType` and location functions), and `Near` fills.
-- Find the cause of the remaining 60–125 ms `sim.scripts_weather` spikes
-  (traversal frames ~442, ~1650 and ~1920), which aren't quest starts.
+- `Near` fills: narrow loaded candidates by `IsLinkedTo` (a reverse linked-ref
+  index) or `HasRefType`, as matching fills are narrowed.
+- Synchronous texture/model loading for actors spawned by quests and for
+  first-time cells: move read/parse off the main thread, or prepare the
+  assets of quest-created actors ahead of their spawn.
 - Budget schedule evaluation by elapsed time instead of 250 entries per frame.
 - Add permanent sub-stage timings to `sim.scripts_weather` and `sim.gameplay`.
-- Investigate first-time cell streaming (~240 ms: textures and actor setup).
