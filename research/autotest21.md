@@ -334,8 +334,9 @@ effect and `OnHit`, then combat state 2 (searching), and no crime gold.
 - A PC-level-mult copy of `EncDremoraMelee06` (calc min 46): level 46,
   OneHanded 100, TwoHanded 100, HeavyArmor 84, Block 84, Destruction 15,
   health 545. *Settled*: held at 100, and the others are the stored
-  `DNAM`'s (Block and HeavyArmor 84), not ours (80, 81). **Differs**; the
-  rule is open.
+  `DNAM`'s (Block and HeavyArmor 84), not ours (80, 81). **Differs**;
+  applied (2026-11-07): a rule fitted to the stored `DNAM`s gives these
+  values (`known_ambiguities/actor-values.md`, "Skills past 100").
 - Class with the stats template: see QueryNatives (the placed actor's
   leveled base has the bandit class). *Settled*.
 

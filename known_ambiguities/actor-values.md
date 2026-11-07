@@ -31,8 +31,8 @@ use them (`vrm-tool av-conditions <data>`).
   the race's bonuses and 8 points a level by the class's skill weights.
   `esp::auto_calc` gives exactly what the Creation Kit stored in `DNAM` for
   all 1583 vanilla auto-calc NPCs at a fixed level (health / magicka /
-  stamina, read signed) and for the skills of 1502 (`vrm-tool npc-stats`):
-  the rest have a skill past 100.
+  stamina, read signed) and for the skills of 1582 (`vrm-tool npc-stats`;
+  skills past 100 below).
 - Checked in Skyrim SE (`test-mod autotest`, 2026-10-12): `SetActorValue`
   sets the base and keeps the permanent modifier; `ModActorValue` changes
   the permanent modifier, which `GetBaseActorValue` doesn't see;
@@ -81,17 +81,38 @@ use them (`vrm-tool av-conditions <data>`).
   (a Firebolt from an actor with its AI off) never landed, so whether a
   blow or spell starts that wait is unseen. Ours never waits.
 
-- **Skills past 100**: UESP says the shares are worked out otherwise once a
-  skill reaches 100 (not how). The stored `DNAM`s give more to the other
-  skills than an even share of the excess (Dremora at level 46: the two
-  capped skills lost 26 points, the others gained 10). NPCs at their own
-  level take `DNAM`'s skills, which have it right; "PC level mult" NPCs
-  are worked out at their level, the skills held at 100 and the excess
-  lost. Skyrim SE (autotest21): a "PC level mult" copy of
+- **Skills past 100**: UESP's CLAS page (revision 2512770,
+  https://en.uesp.net/w/index.php?oldid=2512770, "Weight Calculations")
+  says that once a skill reaches 100 "the full details of the equations
+  used at this point have not yet been worked out", that the total is no
+  longer 8 points a level, and that the points are "a fixed function of
+  Sets". Skyrim SE (autotest21): a "PC level mult" copy of
   `EncDremoraMelee06` at level 46 read OneHanded 100, TwoHanded 100,
-  HeavyArmor 84, Block 84, Destruction 15. Block and HeavyArmor are the
-  stored `DNAM`'s values, so the game shares the excess as the Creation Kit
-  does. Ours gives 80, 81 and Sneak 48. Simple rules (per-level shares over
-  the uncapped skills, the excess re-shared by weight) don't reproduce the
-  stored values; open in `plans/ROADMAP.md`.
+  HeavyArmor 84, Block 84, Destruction 15: the stored `DNAM`'s values, so
+  the game shares the excess as the Creation Kit does.
+  - Choice: the rule fitted to the 81 vanilla auto-calc NPCs whose whole
+    sets take a skill to 100 (`esp::auto_calc::skills`), which gives 1582
+    of the 1583 auto-calc NPCs' `DNAM`s (2026-11-07). With `sets` whole
+    sets (8 points a level over the sum of the weights), the excess `x` is
+    each capped skill's base + weight × sets − 100 (negative for skills
+    capped only later). The points left after the sets plus `x` give the
+    skills still under 100 at most one more set by weight, in the usual
+    rounds (higher weight, then higher index). Then each gets
+    `floor((x − z) / n)`, `z` the number of skills with no weight, `n` the
+    number still under 100. A skill this takes past 100 (exactly 100
+    doesn't count) is capped too, and the shares are worked out again from
+    the sets.
+  - Evidence for its parts: results depend only on the whole sets
+    (`EncDraugr05TemplateBossEbony` at level 45 and `EncDremoraMelee06` at
+    46 have the same weights, 32 sets and the same skills); every uncapped
+    skill gains exactly weight × (sets + 1) plus the same amount; the
+    constant taken off is 13 for the five-skill classes, 14 for the
+    four-skill ones (`EncDragon04Fire`, `DLC2EncNetchBetty`) and at most 6
+    for `DLC2dunKarstaag`, whose 18 skills all have weight.
+  - Uncertain: the rule is a fit, not a documented algorithm, and how the
+    game arrives at it is unknown. `DLC2EbonyWarrior` (level 80, five
+    skills capped, one only after the excess) differs: Alteration 89 and
+    Conjuration 95 stored, 92 and 98 ours; its other skills agree. Only
+    "PC level mult" NPCs (and the player at level 1) use the rule; NPCs at
+    their own level take `DNAM`.
 

@@ -35,8 +35,10 @@ game each piece unlocks.
   `GetLineOfSight` (its view cone), `IsKiller` / `IsKillerObject` (run on
   the victim), `IsUnique` (the traits template), invisibility (ended by
   eating, not by activating something locked) and created references (kept
-  when their quest stops). What they left open is under Next, "Test results
-  to act on".
+  when their quest stops); auto-calculated skills past 100 for "PC level
+  mult" NPCs (a rule fitted to the stored `DNAM`s, 1582 of 1583 agreeing,
+  `known_ambiguities/actor-values.md`). What they left open is under Next,
+  "Test results to act on".
 - **School cost reduction for staffs and enchanted weapons**
   (`plans/school-cost-enchantments.md`): `Fortify <School>`
   (`AlterationMod` .. `RestorationMod`) lowers the charge staff casts and
@@ -1820,11 +1822,6 @@ game each piece unlocks.
 **Test results to act on.** autotest21 and autotest22's differing
 readings are applied (see Done). autotest22 reran autotest21's faults.
 
-- From autotest21 (`research/autotest21.md`): the rule sharing
-  auto-calculated skills past 100. The game matches the stored `DNAM`s, e.g.
-  `EncDremoraMelee06` at 46 has Block and HeavyArmor 84 where ours gives 80
-  and 81. Fit the rule against the 81 vanilla NPCs with a skill past 100
-  (`vrm-tool npc-stats`).
 - From autotest22 (`research/autotest22.md`):
   - `GetXPForNextLevel`'s value: under 25 at level 1, so not the cost of
     100 we give.
