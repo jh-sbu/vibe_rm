@@ -1974,9 +1974,10 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
    - Quiet Casting, Shadow Warrior (with casting); spells
      and shouts as action sounds (the formula's slots for them are in
      `crate::detection`)
-   - Weapon and impact sounds (action sounds, detection events): need the
-     `iSoundLevel*` values, which no public source gives; weapons are silent
-     until then
+   - Weapon and impact sounds (action sounds, detection events,
+     `CreateDetectionEvent`): unblocked, autotest21 read the `iSoundLevel*`
+     values in Skyrim SE (Silent 10, Normal 50, Loud 100, VeryLoud 200);
+     weapons are silent until implemented (`known_ambiguities/detection.md`)
    - Finding bodies by detection
    - Combat searches following a target through load doors; automatic alert-flag
      changes still need evidence (explicit SetAlert drawing is done)
@@ -2275,20 +2276,26 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      Repeating (flags parsed, not enforced; scope open in
      `known_ambiguities/dialogue-selection.md`); automatic Invisible Continue
    - Natives scripts call that still do nothing, most called first
-     (`vrm-tool pex-natives` call counts, checked 2026-11-02 against
+     (`vrm-tool pex-natives` call counts, checked 2026-11-07 against
      `src/script/natives.rs`; the tool counts calls by bare name, so names
      shared between classes such as `Apply`, `Remove`, `Add` and `Fire` get
-     no count here; see Done for the last ones): `SetAlpha` (143),
-     `ShaderParticleGeometry.Apply` / `Remove`, `SetSubGraphFloatVariable`
-     (100), `Game.AddAchievement` (97), `ShakeController` (91), `TranslateTo`
-     and the other translations, `PlaySubGraphAnimation` (77),
-     `MoveToPackageLocation` (55), `HasLOS` (49), `CreateDetectionEvent` (48),
-     `SetRace` (45), `Game.FastTravel` (43), `ObjectReference.Say`,
-     `Topic.Add`, `Weapon.Fire`, `KnockAreaEffect` (27),
-     `AttachAshPile` (25), `MoveToNode` (22), `SetNoBleedoutRecovery` (21),
-     `SetLookAt` / `ClearLookAt` (19), `WaitForAnimationEvent` (18), the
-     alarms (`SendAssaultAlarm`, `SendStealAlarm`), `IsTrespassing`, the LOS
-     registrations, `PushActorAway`, `SetHeadTracking`, `PathToReference`;
+     no count here; done 2026-11-07: `SetAlpha`, the translations,
+     `MoveToPackageLocation`, `HasLOS`, `Game.FastTravel`, `AttachAshPile`,
+     `MoveToNode`, `SetNoBleedoutRecovery`, `WaitForAnimationEvent`, the
+     alarms and `IsTrespassing`, `known_ambiguities/remaining-natives.md`):
+     `ShaderParticleGeometry.Apply` (118) / `Remove` (84), a script's
+     precipitation layer with its fades (the renderer's two layers follow
+     the weathers); `SetSubGraphFloatVariable` (100) and
+     `PlaySubGraphAnimation` (77), whose subgraphs no source describes;
+     `Game.AddAchievement` (97) and `ShakeController` (91), with nothing to
+     show without an achievement service or gamepad rumble;
+     `CreateDetectionEvent` (48), which needs sound events in detection
+     (`iSoundLevel*` are known now: autotest21 read Silent 10, Normal 50, Loud
+     100, VeryLoud 200); `SetRace` (45), its model swapped live;
+     `KnockAreaEffect` (27) and `PushActorAway` (9), with living actors'
+     ragdolls; `SetHeadTracking` (8); `PathToReference` (only a test rig calls
+     it); `ObjectReference.Say`, `Topic.Add`, `Weapon.Fire`, the LOS
+     registrations;
      riding (`SetVehicle`), flying (`SetAllowFlying`, `SetForcedLandingMarker`),
      character creation, killmoves and beast forms (`SetBeastForm`);
      `SetOutfit`'s sleep outfits

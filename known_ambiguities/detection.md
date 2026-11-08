@@ -165,9 +165,10 @@ stealth points.
 - **Weapons are silent, by decision.** Swinging a weapon (all but daggers)
   should make action sound through the weapon's detection sound level
   (`WEAP` `DNAM`) and `iSoundLevelLoud` / `Normal` / `Silent` / `VeryLoud`.
-  Only `iSoundLevelSilent` (10) is in Skyrim.esm; the other values live in
-  the executable and no public source gives them. Rather than invent them,
-  attacks make no sound until a source turns up.
+  Only `iSoundLevelSilent` (10) is in Skyrim.esm; Skyrim SE read the rest
+  (autotest21, `research/autotest21.md`, SoundLevels: Normal 50, Loud 100,
+  VeryLoud 200). Attacks still make no sound: the action term isn't
+  implemented yet (open in `plans/ROADMAP.md`).
 - The "Combat Search" behaviour itself (where searchers look, for how long)
   is unsourced; see above.
 - **Alert flag versus detection Alert**: the Skyrim `SetAlert` / `IsAlerted`

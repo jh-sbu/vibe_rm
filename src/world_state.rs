@@ -392,6 +392,44 @@ impl Engine {
         self.move_ref_to(r, place, pos, rot)
     }
 
+    /// `MoveToNode(akTarget, asNodeName)`: to where the node of the target's
+    /// model is, turned as it is (the weapon racks hang a weapon on its
+    /// pivot). The node's rest transform in the model counts, not an
+    /// animated one; an actor's nodes and a missing node move nothing.
+    pub fn move_to_node(&mut self, r: FormId, target: FormId, node: &str) -> bool {
+        if self.actor_ref(target).is_some() || target == crate::engine::PLAYER_REF {
+            return false;
+        }
+        let Some(at) = self.ref_transform(target) else {
+            return false;
+        };
+        let Some(model) = self
+            .base_of(target)
+            .and_then(|b| self.lo.get(b))
+            .and_then(|rec| rec.get(b"MODL").map(esp::decode_zstring))
+            .filter(|m| !m.is_empty())
+            .map(|m| crate::world::records::mesh_path(&m))
+        else {
+            return false;
+        };
+        let Some(local) = self
+            .vfs
+            .read(&model)
+            .and_then(|b| nif::Nif::parse(&b).ok())
+            .and_then(|nif| {
+                crate::render::model::node_transforms(&nif)
+                    .into_iter()
+                    .find(|(name, _)| name.eq_ignore_ascii_case(node))
+                    .map(|(_, m)| m)
+            })
+        else {
+            log::debug!("MoveToNode: {target} has no node {node}");
+            return false;
+        };
+        let (_, rot, pos) = (at * local).to_scale_rotation_translation();
+        self.move_ref(r, target, pos, crate::loose::euler_of(rot))
+    }
+
     /// Back where it was placed in the editor (`MoveToMyEditorLocation`).
     pub fn move_to_editor_location(&mut self, r: FormId) -> bool {
         let Some(rf) = self

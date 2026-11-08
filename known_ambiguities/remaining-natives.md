@@ -227,3 +227,7 @@ script calls it. To settle: on a save past its first days,
   shadow. A fade takes a second for the whole way (no source gives its
   length). The player and objects aren't faded; an actor loaded again is
   opaque.
+- `MoveToNode(akTarget, asNodeName)` moves to the named node of the
+  target's model (case ignored), turned as the node is, by the node's rest
+  transform in the model (the weapon racks' pivots); an actor's nodes, or a
+  missing node, move nothing.

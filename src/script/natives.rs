@@ -2171,6 +2171,12 @@ pub fn call(
             }
             none()
         }
+        ("objectreference", "movetonode") => {
+            if let (Some(r), Some(t)) = (me, form_arg(args, 0)) {
+                e.move_to_node(r, t, &str_arg(args, 1));
+            }
+            none()
+        }
         ("actor", "movetopackagelocation") => {
             if let Some(r) = me.filter(|&r| r != crate::engine::PLAYER_REF) {
                 e.move_to_package_location(r);
