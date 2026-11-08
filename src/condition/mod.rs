@@ -1129,6 +1129,11 @@ fn idle_function_value(e: &Engine, c: &Condition, ctx: Context) -> Option<f32> {
 
 impl Engine {
     pub fn npc_race(&self, npc: FormId) -> Option<FormId> {
+        if npc == crate::player_body::PLAYER_NPC
+            && let Some(a) = &self.player_appearance
+        {
+            return Some(a.face.race);
+        }
         let rec = self.lo.get(npc)?;
         let d = rec.get(b"RNAM")?;
         Some(rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().ok()?))))

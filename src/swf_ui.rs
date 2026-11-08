@@ -25,6 +25,7 @@ mod loading_menu;
 mod magic_menu;
 mod main_menu;
 mod map_menu;
+mod race_menu;
 mod sleep_wait_menu;
 mod stats_menu;
 mod training_menu;
@@ -73,6 +74,8 @@ pub struct SwfUi {
     sleep_wait: Option<sleep_wait_menu::SleepWaitMenu>,
     /// The training menu, while open.
     training: Option<training_menu::TrainingMenu>,
+    /// Character creation's race menu, while open.
+    race: Option<race_menu::RaceMenu>,
     crafting: Option<crafting_menu::CraftingMenu>,
     /// The skills menu, while open.
     stats: Option<stats_menu::StatsMenu>,
@@ -152,6 +155,7 @@ impl SwfUi {
             tween: None,
             sleep_wait: None,
             training: None,
+            race: None,
             crafting: None,
             stats: None,
             stats_act: None,
@@ -186,6 +190,7 @@ impl SwfUi {
         self.tween = None;
         self.sleep_wait = None;
         self.training = None;
+        self.race = None;
         self.crafting = None;
         if self.stats.take().is_some() {
             engine.close_stats_view();
@@ -256,6 +261,9 @@ impl SwfUi {
         if let Some(training) = &mut self.training {
             training.menu.resize(width, height);
         }
+        if let Some(race) = &mut self.race {
+            race.menu.resize(width, height);
+        }
         if let Some(stats) = &mut self.stats {
             stats.menu.resize(width, height);
             stats.size = (width, height);
@@ -288,6 +296,7 @@ impl SwfUi {
         self.tween_menu(engine, dt);
         self.sleep_wait_menu(engine, dt);
         self.training_menu(engine, dt);
+        self.race_menu(engine, dt);
         self.crafting_menu(engine, dt);
         self.stats_menu(engine, dt);
         self.map_menu(engine, dt);
@@ -729,6 +738,39 @@ impl SwfUi {
         training.update(engine);
     }
 
+    /// Opens the race menu when the engine's menu is it, closes it when it
+    /// goes.
+    fn race_menu(&mut self, engine: &mut Engine, dt: Duration) {
+        let Some(crate::items::Menu::RaceSex { limited }) = engine.menu else {
+            self.race = None;
+            return;
+        };
+        if self.race.as_ref().is_some_and(|m| m.limited != limited) {
+            self.race = None;
+        }
+        if self.race.is_none() {
+            let buttons = self.buttons.clone();
+            match race_menu::RaceMenu::open(&self.ui, self.size, engine, limited, buttons) {
+                Ok(m) => self.race = Some(m),
+                Err(e) => {
+                    log::error!("race menu: {e:#}");
+                    engine.close_race_menu();
+                    return;
+                }
+            }
+        }
+        let Some(race) = &mut self.race else {
+            return;
+        };
+        race.menu.advance(dt);
+        for call in race.menu.take_calls() {
+            if !race.answer(engine, &call) {
+                answer(&race.menu, engine, &call);
+            }
+        }
+        race.update(engine, dt);
+    }
+
     /// Opens the skills menu when the engine's menu is it, closes it when it
     /// goes, and keeps it up to date.
     fn stats_menu(&mut self, engine: &mut Engine, dt: Duration) {
@@ -865,6 +907,7 @@ impl SwfUi {
                     | crate::items::Menu::Tween
                     | crate::items::Menu::SleepWait { .. }
                     | crate::items::Menu::Training(_)
+                    | crate::items::Menu::RaceSex { .. }
                     | crate::items::Menu::Crafting { .. }
                     | crate::items::Menu::Skills
                     | crate::items::Menu::Map
@@ -884,6 +927,7 @@ impl SwfUi {
             || self.tween.is_some()
             || self.sleep_wait.is_some()
             || self.training.is_some()
+            || self.race.is_some()
             || self.crafting.is_some()
             || self.stats.is_some()
             || self.map.is_some()
@@ -964,6 +1008,7 @@ impl SwfUi {
                 && (self.tween.is_some()
                     || self.sleep_wait.is_some()
                     || self.training.is_some()
+                    || self.race.is_some()
                     || self.crafting.is_some()
                     || self.stats.is_some()
                     || self.dialogue.is_some()));
@@ -1157,6 +1202,8 @@ impl SwfUi {
             &crafting.menu
         } else if let Some(training) = &self.training {
             &training.menu
+        } else if let Some(race) = &self.race {
+            &race.menu
         } else if let Some(stats) = &self.stats {
             stats.top()
         } else if let Some(map) = &self.map {
@@ -1228,6 +1275,12 @@ impl SwfUi {
             && let Some(training) = &self.training
         {
             return training.key(code);
+        }
+        // The race menu: Done's key; the rest are the movie's.
+        if self.message_box.shown.is_none()
+            && let Some(race) = &self.race
+        {
+            return race.key(code);
         }
         // The sleep / wait menu: Esc cancels.
         if self.message_box.shown.is_none()
@@ -1341,9 +1394,24 @@ impl SwfUi {
             return;
         }
         let menu = self.top();
+        let typing = menu.typing();
         for key in ui_swf::input::keys(code) {
             menu.handle_event(PlayerEvent::KeyDown { key });
             menu.handle_event(PlayerEvent::KeyUp { key });
+        }
+        // An input field focused: letters and digits typed (lower case).
+        if typing {
+            let name = format!("{code:?}");
+            let ch = name
+                .strip_prefix("Key")
+                .or_else(|| name.strip_prefix("Digit"))
+                .filter(|c| c.len() == 1)
+                .and_then(|c| c.chars().next());
+            if let Some(c) = ch {
+                menu.handle_event(PlayerEvent::TextInput {
+                    codepoint: c.to_ascii_lowercase(),
+                });
+            }
         }
     }
 
@@ -1487,6 +1555,10 @@ impl SwfUi {
         if let Some(training) = &mut self.training {
             training.menu.render();
             menus.push(&training.menu);
+        }
+        if let Some(race) = &mut self.race {
+            race.menu.render();
+            menus.push(&race.menu);
         }
         if let Some(stats) = &mut self.stats {
             stats.menu.render();

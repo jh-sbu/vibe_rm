@@ -50,6 +50,11 @@ pub enum Menu {
     },
     /// A trainer's training menu.
     Training(FormId),
+    /// Character creation's race menu (`racesex_menu.swf`); limited (Body
+    /// and Head only, `ShowLimitedRaceMenu`) or not.
+    RaceSex {
+        limited: bool,
+    },
     /// The world map.
     Map,
     /// The main menu (`startmenu.swf`), with no game running behind it.

@@ -308,6 +308,11 @@ impl Engine {
 
     /// An actor's (or the player's) race.
     pub(crate) fn race_of(&self, actor: FormId) -> Option<FormId> {
+        if actor == crate::engine::PLAYER_REF
+            && let Some(a) = &self.player_appearance
+        {
+            return Some(a.face.race);
+        }
         self.templates_of(actor)?
             .form(&self.lo, crate::world::template::TRAITS, b"RNAM")
     }

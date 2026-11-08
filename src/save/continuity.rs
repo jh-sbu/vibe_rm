@@ -90,6 +90,8 @@ pub(crate) struct Continuity {
     pub chargen: Option<(bool, bool, bool)>,
     /// The player's appearance, once something changed it (`PAPP`).
     pub player_appearance: Option<crate::chargen::Appearance>,
+    /// The name given in the race menu (`PNME`).
+    pub player_name: Option<String>,
     /// Cells flagged to reset when they next load.
     pub reset_cells: std::collections::HashSet<FormId>,
     /// Text globals running quests keep copies of: (quest, global).
@@ -626,6 +628,7 @@ impl Continuity {
                 .chargen
                 .map(|c| (c.no_saving, c.no_waiting, c.controls_message)),
             player_appearance: e.player_appearance.clone(),
+            player_name: e.player_name.clone(),
             reset_cells: e.resets.cells.clone(),
             quest_globals: e.resets.quest_globals.clone(),
             base_outfits: e.scripts.globals.base_outfits.clone(),
@@ -1069,6 +1072,11 @@ impl Continuity {
             let mut w = Writer::default();
             a.write(&mut w);
             file.add(b"PAPP", w.0);
+        }
+        if let Some(name) = &self.player_name {
+            let mut w = Writer::default();
+            w.str(name);
+            file.add(b"PNME", w.0);
         }
         let mut w = Writer::default();
         w.len(self.quest_globals.len());
@@ -1658,6 +1666,10 @@ impl Continuity {
         }
         if let Some(mut r) = optional(file, b"PAPP")? {
             s.player_appearance = Some(crate::chargen::Appearance::read(&mut r)?);
+            r.finish()?;
+        }
+        if let Some(mut r) = optional(file, b"PNME")? {
+            s.player_name = Some(r.str()?);
             r.finish()?;
         }
         if let Some(mut r) = optional(file, b"QGLB")? {
@@ -2415,6 +2427,7 @@ impl Continuity {
         );
         // The body is rebuilt with it at its next update.
         e.player_appearance = self.player_appearance;
+        e.player_name = self.player_name;
         e.restore_ref_state(self.ref_scales, self.no_favor, self.ignore_friendly_hits);
         e.restore_outfits(self.outfits);
         e.restore_music_queue(self.music_queue);

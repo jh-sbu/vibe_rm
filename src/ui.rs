@@ -969,7 +969,7 @@ impl Ui {
             };
         let container = match menu {
             // The main menu and credits are the game's movies only.
-            Menu::Main | Menu::Credits => return,
+            Menu::Main | Menu::Credits | Menu::RaceSex { .. } => return,
             // Only the game's menus have the gift, skills, magic, favorites, tween and
             // sleep / wait menus: they close at once.
             Menu::Gift(_)

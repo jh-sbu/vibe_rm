@@ -1505,6 +1505,20 @@ impl Engine {
     /// world, not actors).
     pub fn view_camera(&self) -> crate::render::Camera {
         let mut cam = self.camera_copy();
+        // The race menu's: in front of the player, level, the player right
+        // of centre (the panels are on the left), on the face or the body.
+        if self.race_menu_camera.is_some() {
+            let heading = self.player_body.as_ref().map_or(cam.yaw, |b| b.heading);
+            let dist = self.third_person_distance;
+            let face = dist < 100.0;
+            let target = cam.position - Vec3::Z * if face { 2.0 } else { 45.0 };
+            let ahead = Vec3::new(heading.sin(), heading.cos(), 0.0);
+            let right = ahead.cross(Vec3::Z);
+            cam.yaw = heading + std::f32::consts::PI;
+            cam.pitch = 0.0;
+            cam.position = target + ahead * dist + right * (dist * 0.3);
+            return cam;
+        }
         if self.third_person {
             cam.yaw += self.test_orbit;
             // Over the shoulder first, then back, each short of a wall.

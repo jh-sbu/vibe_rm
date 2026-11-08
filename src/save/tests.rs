@@ -6225,6 +6225,17 @@ fn player_appearance_payload() {
     assert_eq!(restored.continuity.player_appearance, Some(a.clone()));
     assert_eq!(restored.write().to_bytes(), file.to_bytes());
     check_continuity_payload(&file, b"PAPP");
+    s.continuity.player_name = Some("Ysgramor".into());
+    let file = s.write();
+    assert_eq!(
+        Snapshot::read(&file)
+            .unwrap()
+            .continuity
+            .player_name
+            .as_deref(),
+        Some("Ysgramor")
+    );
+    check_continuity_payload(&file, b"PNME");
     // A weight outside 0..1 can't come from a game.
     let mut bad = a;
     bad.face.weight = 2.0;

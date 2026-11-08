@@ -359,6 +359,24 @@ pub fn call(
         ("armor", "getwarmthrating")
         | ("light", "getwarmthrating")
         | ("actor", "getwarmthrating") => v(Value::Float(me.map_or(0.0, |f| e.warmth_rating(f)))),
+        // The player's race (their appearance keeps its face); NPCs' aren't
+        // changed yet.
+        ("actor", "setrace") => {
+            if me == Some(crate::engine::PLAYER_REF) {
+                e.set_player_race(arg(0).as_form().map(FormId));
+            }
+            none()
+        }
+        ("game", "showracemenu") => {
+            e.show_race_menu(false);
+            none()
+        }
+        ("game", "showlimitedracemenu") => {
+            e.show_race_menu(true);
+            none()
+        }
+        // Loading ahead, which nothing here needs.
+        ("game", "precachechargen") | ("game", "precachechargenclear") => none(),
         ("game", "setinchargen") => {
             e.set_in_chargen(arg(0).as_bool(), arg(1).as_bool(), arg(2).as_bool());
             none()

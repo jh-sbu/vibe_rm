@@ -286,6 +286,12 @@ pub struct Engine {
     /// The player's appearance once something changed it (the race menu,
     /// `SetRace`); their NPC record's until then (`crate::chargen`).
     pub player_appearance: Option<crate::chargen::Appearance>,
+    /// The name the player gave in the race menu (`PNME`); their record's
+    /// (`FULL`) until then.
+    pub player_name: Option<String>,
+    /// The camera before the race menu turned it to the player's face: third
+    /// person, orbit, distance.
+    pub race_menu_camera: Option<(bool, f32, f32)>,
     /// A jump asked for from the console, taken once the player is on the ground.
     pub test_jump: bool,
     /// Frames left of the player walking (console `pwalk`).
@@ -705,6 +711,8 @@ impl Engine {
             test_camera: None,
             test_orbit: 0.0,
             player_appearance: None,
+            player_name: None,
+            race_menu_camera: None,
             test_jump: false,
             test_walk: 0,
             test_walk_input: Default::default(),
@@ -3865,6 +3873,11 @@ impl Engine {
         if !is_actor {
             return None;
         }
+        if r == PLAYER_REF
+            && let Some(name) = &self.player_name
+        {
+            return Some(name.clone());
+        }
         let rec =
             self.templates_of(r)?
                 .record(&self.lo, crate::world::template::BASE_DATA, b"FULL")?;
@@ -3998,6 +4011,12 @@ impl Engine {
     }
 
     pub fn npc_is_female(&self, npc: FormId) -> bool {
+        // The player's base takes the appearance chosen in play.
+        if npc == crate::player_body::PLAYER_NPC
+            && let Some(a) = &self.player_appearance
+        {
+            return a.face.female;
+        }
         self.lo
             .get(npc)
             .and_then(|r| r.get(b"ACBS").map(|d| d[0] & 1 != 0))
