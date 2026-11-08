@@ -75,6 +75,14 @@ not a health threshold. It is compared with a *threat ratio*:
   draw. Busy dialogue defers an attempt until its channel becomes available.
 - `GetThreatRatio` (subject strength / parameter's strength) and `IsFleeing`.
 
+## Observed in Skyrim SE (autotest22)
+
+`research/autotest22.md`, Flee: an Average NPC unharmed, and another at 40%,
+set on a level 20 fighter, didn't flee in 12 s, their health falling to 72%
+and 18%, staying within 60 to 240 units in combat. Ours would likely have the
+second flee (its strength at 18% against a level 20 fighter's is well under
+`fConfidenceAverage`, 0.15): differs, unexplained.
+
 ## Unconfirmed
 
 1. **DPS estimate.** How Skyrim estimates DPS is undocumented: which weapon, skill

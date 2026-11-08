@@ -29,7 +29,9 @@ or prints one event's tree.
 - More events (CK wiki, CommonLibSSE `BGSAddToPlayerInventoryEvent`):
   player add item (`AIPL`: R1 owner, R2 container, L1 location, F1 item,
   V1 acquire type: 0 none, 1 steal, 2 buy, 3 pickpocket, 4 pick up,
-  5 container, 6 dead body); actor hello (`AHEL`: R1 the one greeting, R2
+  5 container, 6 dead body; Skyrim SE, autotest22: an unowned pickup
+  type 4, one owned by an NPC base or by a faction type 1, the owner None
+  for both, so ours leaves R1 empty for pickups and takings); actor hello (`AHEL`: R1 the one greeting, R2
   the one greeted, L1); dead body (`DEAD`: R1 who found it, R2 the body,
   L1); assault (`ASSU`: R1 victim, R2 attacker, L1, V1 crime); change
   relationship rank (`CHRR`: R1, R2, V1 old rank, V2 new).

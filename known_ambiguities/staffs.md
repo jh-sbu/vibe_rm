@@ -102,6 +102,13 @@ spells isn't public. Here:
   has the charge for a cast, as casters do with spells: before its spells
   when the style's staff multiplier is at least its magic one, else when
   it has no spell it can pay for. Spells then go in the left hand.
+- **Skyrim SE (autotest22, `research/autotest22.md`, NpcStaff)**: a warlock
+  copy without spells given a staff of sparks by `EquipItem` held it in
+  its left hand (a dagger in the right, `IsEquipped` False) and fought with
+  it, its charge 500 to 457.5 over 10.5 s (about 8.7 each 1.5 s while
+  casting, two Cast events). Ours fights with a staff only from the right
+  hand, and would spend `StaffEnchSparks`' 19 a second at its Destruction's
+  factor (14.8 at 39); open.
 - **Charge**: NPCs' staffs spend charge as the player's do (their cost by
   their own skill), and run dry.
 

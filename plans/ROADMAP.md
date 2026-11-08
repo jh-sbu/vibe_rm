@@ -1838,17 +1838,27 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
   back (`fDamagedHealthRegenDelay` 0.5; its `Hit` cast never landed, and fire's
   taper would have hidden the answer: use untapered damage); and
   whether NPCs' `HealRateMult` and `StaminaRateMult` count, which ours ignores.
-- Readings still to compare against ours before deciding (the notes' items
-  marked "compare"):
-  - autotest21's: destruction stages and overkill, faction expulsion's rank
-    -2, outfits removing non-outfit copies, enchanted blows' charge, the
-    weather speed law, fast travel's 14,800 units an hour, map marker reveal
-    at 2000–4000, Slow Time at 0.5×, and kill and use statistics, among
-    others.
-  - autotest22's: the warlock's range and cadence, NPC cost with
-    DestructionMod, staff charge (about 5.8 a second for sparks), Average
-    NPCs not fleeing at 18% health, stolen `AIPL` (type 1, owner None), and
-    `KILL` for an essential `Kill(None)`.
+- Compared (2026-11-07; `research/autotest21.md` and `autotest22.md`,
+  "Compared with ours"). Left open, each for a probe in autotest23:
+  - Slow Time's share (the fall read 0.5, the clock 0.35) and when time
+    comes back after the effect.
+  - NPCs' enchanted blows' charge (1.92 an enchanted blow in SE, about 3.6
+    ours) and staffs' (sparks about 5.8 a second, ours 14.8), with known
+    skills and the charge read after each hit or second.
+  - NPCs fighting with a staff in the left hand, as SE's did (ours only the
+    right; the cast's hand needs carrying to the graph and effects).
+  - The Vigilant not healing at 45% and 20% with the magicka for it, and
+    not warding; an Average NPC not fleeing at 18% (ours would).
+  - `KILL` for an essential actor's `Kill(None)` (bleedout), which SE seems
+    to send and ours doesn't.
+  - `IsGuard`: what besides the faction or class the hold guards have
+    (their crime faction?).
+  - `GetEditorLocation` of a created reference and the player in a cell
+    with a location.
+  - `GameTimeToString` on a save past its first days: today's date or the
+    start date, and whether the whole days move it.
+  - `HasParentRelationship` with no actor given; relationship ranks 1, 2
+    and 4 bringing help, and a helper helping only allies.
 - Test plugins:
   - Procedure trees (`plans/ai-depth.md`, step 1): probe Simultaneous first/all
     completion, Random repeats and cadence-based Stacked switches, including

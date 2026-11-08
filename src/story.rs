@@ -612,7 +612,8 @@ impl Engine {
 
     /// The player taking an item: from the world (`source` the reference picked
     /// up) or from a container or body (`container`). A player add item event
-    /// (`AIPL`): R1 the owner's reference, R2 the container, L1 where, F1 the
+    /// (`AIPL`): R1 none (the owner's reference for buying and pickpocketing),
+    /// R2 the container, L1 where, F1 the
     /// item, V1 how it was acquired (1 stolen, 4 picked up, 5 from a
     /// container, 6 from a body). Taking `count` of something stolen is a
     /// crime, at the item's value.
@@ -647,9 +648,12 @@ impl Engine {
                 self.add_stolen_value(f, value, seen);
             }
         }
+        // R1 stays None for what is picked up or taken: Skyrim SE (autotest22)
+        // sent stolen pickups as type 1 with no owner, whether an NPC or a
+        // faction owned them.
         self.send_player_add_item_as(
             item,
-            owner_ref,
+            None,
             if container { source } else { FormId::NULL },
             how,
         );

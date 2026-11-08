@@ -303,3 +303,31 @@ setting `GameHour`).
 7. Disarm, Holds (probe `IsFleeing`, log effect starts), Healer (a healer
    with magicka enough), Wards.
 8. CreateLevel at a higher player level, several picks each.
+
+## Compared with ours (2026-11-07)
+
+- **StoryPickups**: ours named the NPC owner's reference in a stolen
+  pickup's `AIPL`; now None, as SE sent (`known_ambiguities/story-manager.md`).
+- **`KILL` for an essential `Kill(None)`**: ours sends none (bleedout
+  only). The SE evidence is indirect (the run's one `KILL` with no killer,
+  at the time of that call), so ours stays until a probe confirms it.
+- **Casters**: ours casts Firebolt from within 85% of its range (capped at
+  2000), so from 900 it doesn't close in, where SE's warlock came in to about
+  840; throws every 1.5 to 3 s, as SE's 2 s. Agrees roughly.
+- **NpcCostReduction**: ours gives NPCs `PerkSkillBoosts` only if their
+  records list it (the warlock's don't), so DestructionMod doesn't lower its
+  Firebolt either; 32.36 is Firebolt's 41 at Destruction 39's skill factor
+  (0.78), as ours. Agrees.
+- **Healer**: the Vigilant's `HealingLeftHand` costs 12 a second (10.3 at
+  Restoration 20), within its 21 to 43 magicka, so ours would have healed
+  below 60%: differs. Why SE's didn't is open.
+- **NpcStaff**: SE's NPC fought with the staff in its left hand (a dagger
+  in the right); ours fights with a staff in the right hand only. Its rate
+  (about 5.8 a second for sparks, `StaffEnchSparks` 19 a second) is rough;
+  ours would spend about 14.8 at Destruction 39. Open
+  (`known_ambiguities/staffs.md`, roadmap).
+- **Flee**: ours flees by threat ratio, so an Average NPC at 18% against a
+  level 20 fighter would likely flee; SE's didn't in 12 s. Differs; open
+  (`known_ambiguities/combat-fleeing.md`).
+- **ViewCone**: not put in a test: the light level and the actors' Sneak
+  skills behind SE's readings weren't recorded.
