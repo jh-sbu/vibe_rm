@@ -2451,16 +2451,17 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      Open: when SE runs the startup stages relative to the load; what it does
      without `MQ101`
    - The opening as it runs now (2026-11-08, offscreen `--new-game`): stage
-     10 sets the scene, the horses' aliases count their cells loading (stage
-     12), both carts drive off with their passengers seated, and Ralof's
-     "Hey, you. You're finally awake." scene plays (stage 14). Then the horses stall mid-walk on
-     `MQ101CartHorse1/2Patrol1` (about (21840, -91990) and (22160, -92960)):
-     their patrol walk never arrives, and they don't move. Horse 1 stalls
-     there whether or not its cart is upright, so the cart isn't what stops
-     it. Later on the road, `defaultSetStageTRIGSpecificActor` triggers set
-     stages 20-37 when the cart horses' base (`MQ101CartHorse`) or `MQ101Horse`
-     enters them, and `Patrol4` / `Patrol5` (stages 37-59) take the horses
-     on to Helgen. Still
+     10 sets the scene and fades in from black (14 s, then 15 s), the
+     horses' aliases count their cells loading (stage 12), both carts drive
+     off with their passengers seated, and Ralof's "Hey, you. You're
+     finally awake." scene plays (stage 14). The horses walk `Patrol1`
+     to `Patrol3`, with the road's `defaultSetStageTRIGSpecificActor`
+     triggers setting stages 20, 22 and 25. At about 113 s Cart1 is put
+     back at its placement as "fell out of the world" (`update_loose`
+     compares with the placed height, and the road descends over 4096
+     units); Horse2 and Hadvar's horse then report positions back near the
+     start. `Patrol4` / `Patrol5` (stages 37-59) should take the horses on
+     to Helgen. Still
      missing: the title sequence's natives (`ShowTitleSequenceMenu`,
      `StartTitleSequence`, `HideTitleSequenceMenu`) and
      `ShowFirstPersonGeometry`
