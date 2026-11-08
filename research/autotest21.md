@@ -571,3 +571,31 @@ AddToMap'd marker is never counted as discovered.
    with a re-read; **sun position** outdoors; **CalculateEncounterLevel**
    at a higher level; **InvisiblePotion**'s food and activation each
    alone; **StoryItems**' later AIPLs with time for the quest to stop.
+
+## Compared with ours (2026-11-07)
+
+The readings marked "compare" above, checked against the engine:
+
+- **Agree**: math's poles, `pow` and string format; gold values (17, 2, 2);
+  `PlaceAtMe`'d 3D at once; the resistance factor (1.0975 is fire's taper:
+  Firebolt's 0.975 for 10 points, `known_ambiguities/magic.md`); the cloak
+  sparing unhostile NPCs; crime groups (one way, never self unless listed);
+  the weather's transition times (within 5%) and `abAccelerate`; use
+  statistics (39 increases from Alchemy 16, as ours).
+- **Changed to agree**: `GameTimeToString` (month and day from 0, today's
+  date); `Is3DLoaded` False when disabled, `PlaceAtMe` initially disabled;
+  destruction stages as model damage stages, undamaged 0 in the event;
+  `SetOutfit` taking given copies; an expelled player's rank reading -2;
+  `HasParentRelationship` for any association; helpers by the faction's own
+  entry and by relationship rank; the game clock under Slow Time; fast
+  travel's speed (81.8 units a second); map markers discovered within 3000
+  and never when added by script; `FindWeather` deterministic; kill
+  statistics under each actor type.
+- **Left as ours, recorded**: `GetClass` / `GetRace` of leveled templates
+  (unreproducible from the data, `known_ambiguities/query-natives.md`);
+  `IsGuard` (conflicts with the hold guards, `known_ambiguities/crime.md`);
+  Slow Time's share (the readings disagree); loose objects settling on load
+  (`known_ambiguities/loose-objects.md`, on the roadmap); NPCs' enchanted
+  blows' charge (`known_ambiguities/staffs.md`).
+- **Not discriminating**: `GetEditorLocation` of a created marker and the
+  player in a cell with no location (ours gives None there too).
