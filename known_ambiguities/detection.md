@@ -149,8 +149,11 @@ stealth points.
   Actors responsible for the sound", SoundLevel "the intensity of the
   sound, 0-100, with 100 being the loudest. Values bigger than 100 are not
   used in vanilla scripts but they work." The Papyrus form is
-  `ObjectReference.CreateDetectionEvent(Actor akOwner, int aiSoundLevel =
-  0)` (vanilla calls pass 25 to 100). Neither says how loud a level is to
+  [`ObjectReference.CreateDetectionEvent(Actor akOwner, int aiSoundLevel =
+  0)`](https://ck.uesp.net/wiki/CreateDetectionEvent_-_ObjectReference)
+  (also read by the user, 2026-11-07) "creates a detection event at this
+  object's location"; akOwner is its "owner", aiSoundLevel its sound level
+  (0 to 100, default 0; more works). Vanilla calls pass 25 to 100. Neither says how loud a level is to
   a listener or how long the event lasts. CommonLibSSE (MIT)
   names one generated detection event per actor (action value, location,
   time stamp, reference). `vrm-tool sound-levels` over the vanilla data:
@@ -187,9 +190,11 @@ stealth points.
   - A calm enemy that becomes alert through someone's noise elsewhere,
     without seeing them, searches at the noise rather than where they are;
     a searcher who hears one moves its search there.
-  - `CreateDetectionEvent` with no owner does nothing (nobody to detect);
-    on its owner, the noise moves with the owner. Its level is taken as the
-    same scale as `iSoundLevel*`.
+  - `CreateDetectionEvent` with no owner does nothing (nobody to detect).
+    Its noise stays at the reference's location when called, as the
+    Papyrus page says ("at this object's location"), even when called on
+    the owner itself. Its level is taken as the same scale as
+    `iSoundLevel*`; level 0 (the default) adds nothing.
 - Topics: `NormalToCombat`, `AlertToCombat`, `LostToCombat` on starting a
   fight; `NormalToAlert`, `CombatToLost` on starting to search; `AlertIdle`
   / `LostIdle` every `fCombatDetectionDialogueIdleMin` to `MaxElapsedTime`
