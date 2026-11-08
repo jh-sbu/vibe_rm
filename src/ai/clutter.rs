@@ -22,7 +22,7 @@ fn hits(a: Vec2, b: Vec2, lo: Vec2, hi: Vec2) -> bool {
 pub(super) fn steer(
     from: Vec3,
     to: Vec3,
-    clutter: &[(Vec3, Vec3)],
+    clutter: impl IntoIterator<Item = (Vec3, Vec3)>,
     dt: f32,
     height: impl Fn(Vec3) -> Option<f32>,
 ) -> Vec3 {
@@ -34,7 +34,7 @@ pub(super) fn steer(
     let direction = delta / length;
     let ahead = from.truncate() + direction * 90.;
     let relevant: Vec<_> = clutter
-        .iter()
+        .into_iter()
         .filter(|(lo, hi)| hi.z > from.z + 12. && lo.z < from.z + 100.)
         .map(|(lo, hi)| {
             (
@@ -82,20 +82,20 @@ mod tests {
         let from = Vec3::ZERO;
         let to = Vec3::new(8., 0., 0.);
         let box_ = [(Vec3::new(65., -15., 0.), Vec3::new(85., 15., 45.))];
-        let p = steer(from, to, &box_, 0.1, |_| Some(0.));
+        let p = steer(from, to, box_, 0.1, |_| Some(0.));
         assert!(p.x > 0. && p.x < to.x && p.y.abs() > 4.);
-        assert_eq!(steer(from, to, &box_, 0.1, |_| None), from);
+        assert_eq!(steer(from, to, box_, 0.1, |_| None), from);
         assert_eq!(
             steer(
                 from,
                 to,
-                &[(box_[0].0 + Vec3::Z * 150., box_[0].1 + Vec3::Z * 150.)],
+                [(box_[0].0 + Vec3::Z * 150., box_[0].1 + Vec3::Z * 150.)],
                 0.1,
                 |_| Some(0.)
             ),
             to
         );
         let box_ = [(Vec3::new(20., -100., 0.), Vec3::new(85., 100., 45.))];
-        assert_eq!(steer(from, to, &box_, 0.1, |_| Some(0.)), from);
+        assert_eq!(steer(from, to, box_, 0.1, |_| Some(0.)), from);
     }
 }

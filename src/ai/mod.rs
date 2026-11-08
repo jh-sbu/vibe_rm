@@ -4143,9 +4143,12 @@ impl Engine {
             .cells
             .values()
             .flat_map(|rt| &rt.loose)
-            .filter_map(|o| self.physics.dynamic_bounds(o.ref_id))
-            .filter(|(lo, hi, mass)| *mass >= 0.2 && hi.z - lo.z >= 12.)
-            .map(|(lo, hi, _)| (lo, hi))
+            .filter_map(|o| {
+                let (lo, hi, mass) = self.physics.dynamic_bounds(o.ref_id)?;
+                // With the horse a cart is hitched to, if any.
+                (mass >= 0.2 && hi.z - lo.z >= 12.)
+                    .then(|| (self.tethers.get(&o.ref_id).map(|t| t.horse), lo, hi))
+            })
             .collect();
         let mut held = Vec::new();
         let mut equip = Vec::new();
@@ -4338,8 +4341,13 @@ impl Engine {
                     let before = a.exec.pos;
                     if a.step(dt, &mut world) && a.is_walking() {
                         a.keep_clear(&bodies, &nav, dt, before);
+                        // A horse doesn't steer round the cart hitched to it.
+                        let others = clutter
+                            .iter()
+                            .filter(|(horse, ..)| *horse != Some(a.ref_id))
+                            .map(|&(_, lo, hi)| (lo, hi));
                         a.exec.pos =
-                            clutter::steer(before, a.exec.pos, &clutter, dt, |p| nav.height_at(p));
+                            clutter::steer(before, a.exec.pos, others, dt, |p| nav.height_at(p));
                     }
                 }
                 if a.mount_driver.is_none()
