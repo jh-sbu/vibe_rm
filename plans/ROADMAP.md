@@ -2301,7 +2301,8 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      `PlaySubGraphAnimation` (77), whose subgraphs no source describes;
      `Game.AddAchievement` (97) and `ShakeController` (91), with nothing to
      show without an achievement service or gamepad rumble;
-     `SetRace` (45), its model swapped live;
+     `SetRace` (45) on NPCs, their model swapped live (the player's is done:
+     `plans/character-creation.md`);
      `KnockAreaEffect` (27) and `PushActorAway` (9), with living actors'
      ragdolls; `SetHeadTracking` (8); `PathToReference` (only a test rig calls
      it); `ObjectReference.Say`, `Topic.Add`, `Weapon.Fire`, the LOS
@@ -2378,9 +2379,11 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      built live from FaceGen data (head parts' `.tri` morphs from the race,
      sliders, presets and weight; composited tints; texture sets; hair
      colour), checked against every vanilla pre-built head and tint, and kept
-     as saved state (`crate::chargen`). Left: the race menu (`ShowRaceMenu`,
-     `ShowLimitedRaceMenu`, `racesex_menu.swf`), `SetRace`, and the menu's
-     slider list and labels (open in the plan). NPCs still use pre-baked heads
+     as saved state (`crate::chargen`). The race menu runs
+     (`ShowRaceMenu`, `ShowLimitedRaceMenu`, `racesex_menu.swf`; the player's
+     `SetRace`), with provisional categories, sliders, labels and keys
+     (`known_ambiguities/chargen.md`) to correct from screenshots of SE's
+     menu. NPCs still use pre-baked heads
 7. **Audio**: lip sync is gated after 9a asset research: LIP packing/track mapping
    is unproven, TRI-to-FaceGen vertex mapping and nine TRI variants remain open
    (`research/audio/lip-format.md`; diagnostic `lip-dump`/`tri-dump` tools). Audio

@@ -1,6 +1,6 @@
 # Plan: character creation
 
-**Status: steps 1–5 done** (drafted 2026-11-08; steps 1–5 2026-11-08). ROADMAP item 6 (UI),
+**Status: steps 1–6 done, the menu provisional** (drafted 2026-11-08; steps 1–6 2026-11-08). ROADMAP item 6 (UI),
 "Character creation: the race menu (`ShowRaceMenu`, `SetInChargen`) and the
 player's face built live from FaceGen data (sliders, head parts, tints);
 NPCs only use pre-baked heads", and item 5's "the head's morphs (`.tri`),
@@ -74,7 +74,10 @@ run `cargo fmt` before each.
    sliders, presets, tints, hair colour and texture set, held on the
    engine apart from the player's NPC record, used by steps 3 and 4,
    saved (a new save chunk), and changed by `Actor.SetRace` on the player.
-6. **The race menu.** `Game.ShowRaceMenu` / `ShowLimitedRaceMenu` open
+6. **Done, provisionally** (`src/swf_ui/race_menu.rs`, `crate::chargen`;
+   provisional content in `known_ambiguities/chargen.md`). Still to do: correct
+   the categories, sliders, labels, ranges and keys from screenshots of SE's
+   menu; `SetRace` on NPCs; a light on the face. **The race menu.** `Game.ShowRaceMenu` / `ShowLimitedRaceMenu` open
    `racesex_menu.swf` (`src/swf_ui/race_menu.rs`) over the game, filled
    from the playable races (`DATA` flag 0x1), the race presets and the
    sliders; its callbacks change the appearance (step 5) live, `ZoomPC`
