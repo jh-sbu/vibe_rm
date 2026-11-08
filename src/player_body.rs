@@ -194,6 +194,34 @@ impl Engine {
             })
     }
 
+    /// Composite a face tint and hand it to the renderer under its path,
+    /// unless it has it already: 512 × 512, as the pre-built ones, with its
+    /// mips.
+    pub(crate) fn install_face_tint(&mut self, tint: &crate::world::actor::FaceTint) {
+        if self.renderer.textures.contains(&tint.path) {
+            return;
+        }
+        let mut masks = std::collections::HashMap::new();
+        let vfs = &self.vfs;
+        let img =
+            facegen::tint::composite(FACE_TINT_SIZE, tint.skin, &tint.layers, &tint.masks, |f| {
+                masks
+                    .entry(f.to_owned())
+                    .or_insert_with(|| {
+                        vfs.read(f)
+                            .and_then(|d| facegen::tint::decode_dds(&d))
+                            .map(std::sync::Arc::new)
+                    })
+                    .clone()
+            });
+        let dds = crate::render::dds::rgba8_with_mips(
+            img.width as u32,
+            img.height as u32,
+            img.to_rgba8(),
+        );
+        self.renderer.add_texture(&tint.path, Some(&dds));
+    }
+
     /// Assemble the player's body from their record and what they wear,
     /// keeping its facing and, for an unchanged rig/project, its animation.
     pub(crate) fn build_player_body(&mut self) {
@@ -216,6 +244,9 @@ impl Engine {
             log::warn!("the player's body can't be assembled");
             return;
         };
+        if let Some(tint) = &d.face_tint {
+            self.install_face_tint(tint);
+        }
         let paths: Vec<String> = d.models.iter().map(|(m, _)| m.clone()).collect();
         self.models.load_all(&mut self.renderer, &self.vfs, &paths);
         let Some(skel) = self.skeleton(&d.skeleton) else {
@@ -1433,6 +1464,9 @@ impl Engine {
         }
     }
 }
+
+/// The size of a face tint composited at run time, as the pre-built ones.
+const FACE_TINT_SIZE: usize = 512;
 
 /// The third-person camera's distance behind the eye: nearest and farthest
 /// (the game's `[Camera]` defaults `fVanityModeMinDist` / `MaxDist`), and at

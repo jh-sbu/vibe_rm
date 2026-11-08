@@ -495,8 +495,34 @@ fn parse_model(vfs: &vfs::Vfs, addons: &HashMap<i32, String>, p: &String) -> Par
                     // A head part built live: its shapes moved by the
                     // `.tri` morphs listed (`facegen::encode_morphs`).
                     Some(v) if v.starts_with("facegen=") => {
-                        let uses = facegen::decode_morphs(&v["facegen=".len()..]);
+                        let v = &v["facegen=".len()..];
+                        let (morphs, tint) = v
+                            .split_once("!tint=")
+                            .map_or((v, None), |(m, t)| (m, Some(t)));
+                        let uses = facegen::decode_morphs(morphs);
                         let mut n = n;
+                        // The face tint composited for it, in the FaceGen
+                        // shaders' tint slot (6).
+                        if let Some(tint) = tint {
+                            let sets: Vec<nif::Ref> = n
+                                .blocks
+                                .iter()
+                                .filter_map(|b| match b {
+                                    nif::Block::LightingShader(s) if s.shader_type == 4 => {
+                                        Some(s.texture_set)
+                                    }
+                                    _ => None,
+                                })
+                                .collect();
+                            for r in sets {
+                                if let Some(nif::Block::TextureSet(t)) = n.get_mut(r) {
+                                    if t.len() < 9 {
+                                        t.resize(9, String::new());
+                                    }
+                                    t[6] = tint.to_owned();
+                                }
+                            }
+                        }
                         let mut tris = HashMap::new();
                         for b in &mut n.blocks {
                             if let nif::Block::TriShape(t) = b {

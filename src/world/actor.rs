@@ -90,6 +90,48 @@ pub struct ActorDesc {
     /// Its weight (`NAM7`, 0..100) over 100: how far from its thin models
     /// (`_0`) toward its heavy ones (`_1`) it's drawn.
     pub weight: f32,
+    /// The face tint to composite for a head built live (the player's);
+    /// NPCs' pre-built heads name their own.
+    pub face_tint: Option<FaceTint>,
+}
+
+/// A face tint composited at run time (`facegen::tint`): the texture path
+/// the head's tint slot names (unique to what it's made of), and its
+/// inputs.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FaceTint {
+    pub path: String,
+    pub skin: [f32; 3],
+    pub layers: Vec<facegen::TintLayer>,
+    pub masks: Vec<facegen::TintMask>,
+}
+
+impl FaceTint {
+    /// The tint a face's record gives: its skin tone and tint layers over
+    /// its race's masks. None for a race without masks.
+    pub fn of(lo: &LoadOrder, face_npc: FormId, face: &facegen::Face) -> Option<FaceTint> {
+        use std::hash::{Hash, Hasher};
+        let masks = facegen::race_tint_masks(lo, face.race, face.female);
+        if masks.is_empty() {
+            return None;
+        }
+        let skin = facegen::npc_skin_tone(lo, face_npc).unwrap_or([1.0; 3]);
+        let layers = facegen::npc_tint_layers(lo, face_npc);
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        (face.race.0, face.female).hash(&mut h);
+        for v in skin {
+            v.to_bits().hash(&mut h);
+        }
+        for l in &layers {
+            (l.index, l.color, l.value.to_bits()).hash(&mut h);
+        }
+        Some(FaceTint {
+            path: format!("textures/vrm/facetint/{:016x}.dds", h.finish()),
+            skin,
+            layers,
+            masks,
+        })
+    }
 }
 
 fn fid_at(rec: &LoadedRecord<'_>, d: &[u8]) -> FormId {
@@ -749,9 +791,9 @@ fn dress(
 /// The head part models of a face built at run time rather than from a
 /// pre-built FaceGen head (the player): `facegen::head_parts`, each with
 /// the morphs its race, sliders, presets and weight give it
-/// (`#facegen=`, `research/facegen.md`). The face's tints and texture
-/// sets aren't applied.
-pub fn head_part_models(lo: &LoadOrder, face: &facegen::Face) -> Vec<String> {
+/// (`#facegen=`, `research/facegen.md`), the face part naming `tint` for
+/// its tint texture (`!tint=`). The parts' texture sets aren't applied.
+pub fn head_part_models(lo: &LoadOrder, face: &facegen::Face, tint: Option<&str>) -> Vec<String> {
     facegen::head_parts(lo, face)
         .into_iter()
         .filter_map(|id| {
@@ -762,10 +804,16 @@ pub fn head_part_models(lo: &LoadOrder, face: &facegen::Face) -> Vec<String> {
             }
             let m = mesh_path(&m);
             let uses = facegen::part_morphs(lo, id, face);
-            Some(if uses.is_empty() {
+            let tint = tint.filter(|_| facegen::part_type(lo, id) == Some(facegen::PART_FACE));
+            Some(if uses.is_empty() && tint.is_none() {
                 m
             } else {
-                format!("{m}#facegen={}", facegen::encode_morphs(&uses))
+                let mut v = format!("{m}#facegen={}", facegen::encode_morphs(&uses));
+                if let Some(t) = tint {
+                    v.push_str("!tint=");
+                    v.push_str(t);
+                }
+                v
             })
         })
         .collect()
@@ -808,7 +856,9 @@ pub fn describe_player(
     } else {
         traits.skin
     };
-    let head = head_part_models(lo, &face_of(lo, &traits));
+    let face = face_of(lo, &traits);
+    let face_tint = FaceTint::of(lo, traits.npc_for_face, &face);
+    let head = head_part_models(lo, &face, face_tint.as_ref().map(|t| t.path.as_str()));
     let models = dress(
         lo,
         inventory,
@@ -833,6 +883,7 @@ pub fn describe_player(
         templates,
         skin_tone: traits.skin_tone,
         weight: traits.weight,
+        face_tint,
     })
 }
 
@@ -987,6 +1038,7 @@ pub fn describe_reference(
         templates,
         skin_tone: traits.skin_tone,
         weight: traits.weight,
+        face_tint: None,
     })
 }
 

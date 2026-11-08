@@ -266,3 +266,53 @@ fn r8_to_rgba(s: &[u8], n: usize) -> Vec<u8> {
     }
     o
 }
+
+/// An RGBA8 texture made at run time (a composited face tint), with its
+/// mips box-filtered down to 1 × 1.
+pub fn rgba8_with_mips(width: u32, height: u32, rgba: Vec<u8>) -> Dds {
+    let mut data = rgba.clone();
+    let (mut w, mut h) = (width as usize, height as usize);
+    let mut level = rgba;
+    let mut mips = 1;
+    while w > 1 || h > 1 {
+        let (nw, nh) = ((w / 2).max(1), (h / 2).max(1));
+        let mut next = vec![0u8; nw * nh * 4];
+        for y in 0..nh {
+            for x in 0..nw {
+                for c in 0..4 {
+                    let mut sum = 0u32;
+                    for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                        let (sx, sy) = ((x * 2 + dx).min(w - 1), (y * 2 + dy).min(h - 1));
+                        sum += level[(sy * w + sx) * 4 + c] as u32;
+                    }
+                    next[(y * nw + x) * 4 + c] = ((sum + 2) / 4) as u8;
+                }
+            }
+        }
+        data.extend_from_slice(&next);
+        level = next;
+        (w, h) = (nw, nh);
+        mips += 1;
+    }
+    Dds {
+        width,
+        height,
+        mips,
+        layers: 1,
+        cube: false,
+        format: Format::Rgba8,
+        data,
+    }
+}
+
+#[cfg(test)]
+mod rgba_tests {
+    #[test]
+    fn mips_average_down_to_one_texel() {
+        let px = [0u8, 0, 0, 255, 255, 255, 255, 255].repeat(2); // 2 × 2
+        let d = super::rgba8_with_mips(2, 2, px);
+        assert_eq!(d.mips, 2);
+        assert_eq!(d.data.len(), 16 + 4);
+        assert_eq!(&d.data[16..], &[128, 128, 128, 255]);
+    }
+}

@@ -288,6 +288,10 @@ impl Nif {
         r.index().and_then(|i| self.blocks.get(i))
     }
 
+    pub fn get_mut(&mut self, r: Ref) -> Option<&mut Block> {
+        r.index().and_then(|i| self.blocks.get_mut(i))
+    }
+
     pub fn string(&self, s: StringRef) -> Option<&str> {
         s.0.and_then(|i| self.header.strings.get(i as usize))
             .map(String::as_str)
