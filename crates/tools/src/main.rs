@@ -987,6 +987,22 @@ fn main() -> Result<()> {
                 }
             }
         }
+        Some("facegen-tints") => {
+            // facegen-tints <data dir> <npc>: its tint layers and masks.
+            facegen_check::tints(
+                args.get(1).context("usage: facegen-tints <Data> <npc>")?,
+                args.get(2).context("usage: facegen-tints <Data> <npc>")?,
+            )?;
+        }
+        Some("facegen-tint-check") => {
+            // facegen-tint-check <data dir> [npc]: composite NPCs' face tints
+            // and compare them with the pre-built ones.
+            facegen_check::tint_check(
+                args.get(1)
+                    .context("usage: facegen-tint-check <Data> [npc]")?,
+                args.get(2).map(String::as_str),
+            )?;
+        }
         Some("facegen-check") => {
             // facegen-check <data dir> [npc]: rebuild NPCs' heads from their
             // records and compare them with the pre-built FaceGen heads.

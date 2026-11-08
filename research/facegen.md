@@ -136,3 +136,30 @@ which no single morph of their files explains. Heads off by more than
 pre-built heads. 2579 parts had no shape of their name: all of them are
 the "none" parts (`MarksMaleHumanoid00NoScar`, `HumanBeard00NoBeard`,
 `BrowsMaleHumanoid12NoBrow`, ...), which have no shape to draw.
+
+## Tints
+
+The pre-built face tint (`textures/actors/character/facegendata/facetint/
+<plugin>/<id>.dds`, DXT5, 512 × 512) is what the head's shader reads in its
+texture slot 6. It was rebuilt from each NPC's record as follows:
+
+    tint = QNAM (the skin tone, RGB floats) everywhere
+    for each tint layer (TINI / TINC / TINV), in the record's order:
+        mask = the race's tint mask of that index for the NPC's sex
+               (RACE TINI / TINT), its red channel
+        skip it if the mask's type (TINP) is 6, the skin tone
+        tint = tint + (TINC − tint) × mask × TINV / 100
+
+Alpha blending fit where multiply, overlay and soft light didn't, and
+weighting by TINV² didn't either (Alvor, Ulfric, Lydia, Brynjolf, Delphine,
+Farkas, Mjoll, J'zargo and others; Python fits outside the repository). The
+skin-tone layer is not blended: `QNAM` already is the skin. NPCs with
+no skin-tone layer (Hulda, Gerdur, Sven, Borkul) or with one below 1
+(Shahvee, 0.42) matched only that way. The masks are uncompressed 24-bit
+RGB, mostly grey (channels within 0.08 of each other).
+
+`vrm-tool facegen-tint-check <Data> [npc]` (`facegen::tint`) composites every
+NPC with a pre-built tint (3214) at its size and compares them. The mean
+channel error is 1.71 / 255 and the mean 99th percentile 4.99, which is
+DXT5's own error. One NPC averages over 4
+(`ccBGSSSE001_MiscMarkarthFishingStudent`, 4.04, p99 24).

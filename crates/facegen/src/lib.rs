@@ -7,6 +7,8 @@
 use esp::{FormId, LoadOrder, LoadedRecord};
 use glam::Vec3;
 
+pub mod tint;
+
 /// The face sliders in `NAM9`'s order: the morph a negative value moves
 /// toward, then the positive one (`research/facegen.md`).
 pub const SLIDERS: [(Option<&str>, &str); 19] = [
@@ -182,6 +184,146 @@ pub fn head_parts(lo: &LoadOrder, face: &Face) -> Vec<FormId> {
         i += 1;
     }
     ids
+}
+
+/// A race's tint mask for a sex (RACE `TINI` ... `TIRS`, after the head
+/// data's sex marker).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct TintMask {
+    /// The index an NPC's tint layer names (`TINI`).
+    pub index: u16,
+    /// The mask texture (`TINT`) as a VFS path under `textures/`.
+    pub file: String,
+    /// What it is (`TINP`: 6 skin tone, 7 paint, 14 dirt, ...; xEdit's
+    /// `wbTintMaskTypeEnum`), 0 when absent.
+    pub kind: u16,
+    /// The colour form it starts with (`TIND`, a CLFM).
+    pub default_color: FormId,
+    /// The colours offered (`TINC`), their default values (`TINV`) and
+    /// indexes (`TIRS`).
+    pub presets: Vec<(FormId, f32, u16)>,
+}
+
+/// A VFS path under `textures/` for a record's texture path.
+pub fn texture_path(s: &str) -> String {
+    let n = vfs::normalize_path(s);
+    if n.starts_with("textures/") {
+        n
+    } else {
+        format!("textures/{}", n.strip_prefix("data/").unwrap_or(&n))
+    }
+}
+
+/// The race's tint masks for a sex, in record order.
+pub fn race_tint_masks(lo: &LoadOrder, race: FormId, female: bool) -> Vec<TintMask> {
+    let Some(rec) = lo.get(race) else {
+        return Vec::new();
+    };
+    let mut head_data = false;
+    let mut sex: Option<bool> = None;
+    let mut out: Vec<TintMask> = Vec::new();
+    for sr in rec.subrecords() {
+        match &sr.tag.0 {
+            b"NAM0" => head_data = true,
+            b"MNAM" if head_data => sex = Some(false),
+            b"FNAM" if head_data => sex = Some(true),
+            _ if sex != Some(female) => {}
+            b"TINI" => out.push(TintMask {
+                index: sr.u16(0),
+                ..Default::default()
+            }),
+            b"TINT" => {
+                if let Some(m) = out.last_mut() {
+                    m.file = texture_path(&sr.zstring());
+                }
+            }
+            b"TINP" => {
+                if let Some(m) = out.last_mut() {
+                    m.kind = sr.u16(0);
+                }
+            }
+            b"TIND" => {
+                if let Some(m) = out.last_mut() {
+                    m.default_color = fid_at(&rec, sr.data);
+                }
+            }
+            b"TINC" => {
+                if let Some(m) = out.last_mut() {
+                    m.presets.push((fid_at(&rec, sr.data), 0.0, 0));
+                }
+            }
+            b"TINV" => {
+                if let Some(p) = out.last_mut().and_then(|m| m.presets.last_mut()) {
+                    p.1 = sr.f32(0);
+                }
+            }
+            b"TIRS" => {
+                if let Some(p) = out.last_mut().and_then(|m| m.presets.last_mut()) {
+                    p.2 = sr.u16(0);
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// An NPC's tint layer (NPC_ `TINI` / `TINC` / `TINV` / `TIAS`).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct TintLayer {
+    pub index: u16,
+    /// RGBA, 0..255.
+    pub color: [u8; 4],
+    /// `TINV` / 100.
+    pub value: f32,
+    pub preset: i16,
+}
+
+/// An NPC_ record's tint layers, in record order.
+pub fn npc_tint_layers(lo: &LoadOrder, npc: FormId) -> Vec<TintLayer> {
+    let Some(rec) = lo.get(npc) else {
+        return Vec::new();
+    };
+    let mut out: Vec<TintLayer> = Vec::new();
+    for sr in rec.subrecords() {
+        match &sr.tag.0 {
+            b"TINI" => out.push(TintLayer {
+                index: sr.u16(0),
+                ..Default::default()
+            }),
+            b"TINC" => {
+                if let Some(l) = out.last_mut() {
+                    l.color = [sr.u8(0), sr.u8(1), sr.u8(2), sr.u8(3)];
+                }
+            }
+            b"TINV" => {
+                if let Some(l) = out.last_mut() {
+                    l.value = sr.u32(0) as f32 / 100.0;
+                }
+            }
+            b"TIAS" => {
+                if let Some(l) = out.last_mut() {
+                    l.preset = sr.u16(0) as i16;
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// An NPC_ record's skin tone (`QNAM`, RGB 0..1).
+pub fn npc_skin_tone(lo: &LoadOrder, npc: FormId) -> Option<[f32; 3]> {
+    let rec = lo.get(npc)?;
+    let d = rec.get(b"QNAM")?;
+    Some([f32_at(d, 0)?, f32_at(d, 4)?, f32_at(d, 8)?])
+}
+
+/// A colour form's colour (CLFM `CNAM`, RGB 0..255).
+pub fn clfm_color(lo: &LoadOrder, clfm: FormId) -> Option<[u8; 3]> {
+    let rec = lo.get(clfm).filter(|r| r.tag().0 == *b"CLFM")?;
+    let d = rec.get(b"CNAM")?;
+    Some([*d.first()?, *d.get(1)?, *d.get(2)?])
 }
 
 /// A VFS path under `meshes/` for a record's model path.
