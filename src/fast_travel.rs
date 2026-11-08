@@ -175,6 +175,39 @@ impl Engine {
             return Err(reason);
         }
         let destination = self.map_travel_destination(marker)?;
+        self.fast_travel_to(destination)
+    }
+
+    /// `Game.FastTravel(akDestination)`: to any reference (a map marker's
+    /// travel anchor for a map marker), time passing as for map travel,
+    /// without the player's restrictions or discovery: the carriages
+    /// (`CarriageSystemScript`) take the player to cities not yet found.
+    pub fn script_fast_travel(&mut self, to: FormId) -> Result<(), Refusal> {
+        let anchor = if self.lo.get(to).is_some_and(|r| r.get(b"XMRK").is_some()) {
+            self.linked_ref(to, Some(FormId::NULL)).unwrap_or(to)
+        } else {
+            to
+        };
+        if self.is_disabled(anchor) {
+            return Err(Refusal::InvalidDestination);
+        }
+        let (place, pos) = self
+            .current_place_of(anchor)
+            .ok_or(Refusal::InvalidDestination)?;
+        let rot = self.ref_rotation(anchor);
+        if !pos.is_finite() || !rot.is_finite() {
+            return Err(Refusal::InvalidDestination);
+        }
+        self.fast_travel_to(Destination {
+            anchor,
+            place,
+            pos,
+            yaw: rot.z,
+        })
+    }
+
+    /// Pass the travel time and load the destination.
+    fn fast_travel_to(&mut self, destination: Destination) -> Result<(), Refusal> {
         let (hours, seconds) = self.map_travel_time(destination)?;
         if self.autosave.travel {
             self.request_autosave(crate::save::autosave::Trigger::Travel);

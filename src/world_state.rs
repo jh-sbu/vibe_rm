@@ -23,6 +23,12 @@ pub struct WorldState {
     /// Papyrus `SetUnconscious` flags (`GetUnconscious`). Only the flag: the
     /// state's effect on the actor isn't modelled, and it isn't saved yet.
     pub unconscious: std::collections::HashSet<FormId>,
+    /// Papyrus `SetNoBleedoutRecovery(true)`: actors kept bleeding out
+    /// until it is cleared. Not saved yet, as `unconscious`.
+    pub no_bleedout_recovery: std::collections::HashSet<FormId>,
+    /// References on their way by `TranslateTo` and its kin (not saved:
+    /// a load leaves them where they were).
+    pub translations: std::collections::HashMap<FormId, crate::translation::Translation>,
     /// Dead actors and where their bodies lie.
     pub dead: HashMap<FormId, (Place, Vec3)>,
     /// Actors killed in play (`kill_actor_by`): who dealt the killing blow and
@@ -363,6 +369,24 @@ impl Engine {
             return false;
         };
         self.move_ref_to(r, Self::place_at(like, pos), pos, rot)
+    }
+
+    /// `MoveToPackageLocation`: to where its running package puts it (the
+    /// procedure's destination, or the package's location or target). A
+    /// location that is a whole cell, with no point in it, moves nothing.
+    pub fn move_to_package_location(&mut self, r: FormId) -> bool {
+        let Some(p) = self
+            .running_package(r)
+            .and_then(|id| crate::ai::package::parse(&self.lo, id))
+        else {
+            return false;
+        };
+        let Some((place, pos)) = self.package_place(r, &p).filter(|(_, pos)| pos.is_finite())
+        else {
+            return false;
+        };
+        let rot = self.ref_rotation(r);
+        self.move_ref_to(r, place, pos, rot)
     }
 
     /// Back where it was placed in the editor (`MoveToMyEditorLocation`).

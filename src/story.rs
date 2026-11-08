@@ -659,6 +659,32 @@ impl Engine {
         );
     }
 
+    /// `ObjectReference.SendStealAlarm(player)`: the theft of this object, as
+    /// taking it would be (`send_player_add_item`), without taking it or a
+    /// story event. Nothing if nobody owns it, or the player may take it.
+    pub(crate) fn steal_alarm(&mut self, r: FormId) {
+        let Some(item) = self.base_of(r) else {
+            return;
+        };
+        let Some(owner) = self.ref_owner(r) else {
+            return;
+        };
+        if !self.is_stealing_ranked(item, owner, self.ref_owner_rank(r)) {
+            return;
+        }
+        let count = self.created(r).map_or(1, |c| c.count.max(1));
+        let value =
+            crate::world::inventory::item_info(&self.lo, item).map_or(0, |i| i.value) * count;
+        let owner_ref = Some(owner)
+            .filter(|&o| o != FormId(0x7))
+            .and_then(|o| self.npc_refs_index().get(&o).copied());
+        let faction = Some(owner).filter(|&o| self.lo.tag_of(o).is_some_and(|t| t.0 == *b"FACT"));
+        let seen = self.commit_crime(crate::crime::CrimeType::Steal, owner_ref, faction, value);
+        if let Some(f) = owner_ref.and_then(|o| self.crime_faction(o)).or(faction) {
+            self.add_stolen_value(f, value, seen);
+        }
+    }
+
     /// A player add item event (`AIPL`, see `send_player_add_item`) with the
     /// way it was acquired given (2: bought, 3: pickpocketed).
     pub(crate) fn send_player_add_item_as(

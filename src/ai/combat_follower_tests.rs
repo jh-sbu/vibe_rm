@@ -208,7 +208,7 @@ fn relationship_ranks_bring_help() {
     };
     assert_eq!(join(&mut e), None);
     // The synthetic actors have no records for `set_relationship_rank`.
-    let mut rank = |e: &mut Engine, r: i32| {
+    let rank = |e: &mut Engine, r: i32| {
         e.relationships
             .changed
             .insert((HELPER.min(BANDIT), HELPER.max(BANDIT)), r);

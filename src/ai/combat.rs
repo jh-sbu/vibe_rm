@@ -3056,11 +3056,16 @@ impl Engine {
     /// Essential actors bleeding out get back up after a while, with a quarter of
     /// their health.
     pub(crate) fn update_bleedouts(&mut self, dt: f32) {
+        let held = &self.world_state.no_bleedout_recovery;
         for rt in self.cells.values_mut() {
             for a in rt.actors.iter_mut() {
                 let Some(t) = a.exec.bleeding.as_mut() else {
                     continue;
                 };
+                // `SetNoBleedoutRecovery`: it stays down until let up.
+                if held.contains(&a.ref_id) {
+                    *t = t.max(dt);
+                }
                 *t -= dt;
                 if *t > 0.0 {
                     a.halt(1.0);

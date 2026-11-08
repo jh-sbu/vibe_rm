@@ -311,3 +311,50 @@ fn placed_initially_disabled_starts_disabled() {
     let plain = e.create_ref(CREATED_BASE, A, false).unwrap();
     assert!(!e.is_disabled(plain));
 }
+
+/// `TranslateTo`: the reference moves at its speed, `GetPos` follows, and
+/// scripts hear it almost there at 90% and there at the end.
+#[test]
+fn a_translated_reference_moves_at_its_speed_and_says_when_it_arrives() {
+    let (_dir, mut e) = fixture();
+    move_to(&mut e, A, [100.0, 200.0, 300.0], [0.0; 3]);
+    let key = crate::render::CellKey::Interior(CELL);
+    e.cells.entry(key).or_default().refs.push(A);
+    let events = |e: &Engine| -> Vec<String> {
+        e.scripts
+            .pending_events
+            .iter()
+            .filter(|(o, ..)| *o == papyrus::ObjectId::Form(A.0))
+            .map(|(_, ev, _)| ev.clone())
+            .collect()
+    };
+    e.start_translation(
+        A,
+        Vec3::new(200.0, 200.0, 300.0),
+        Vec3::ZERO,
+        50.0,
+        0.0,
+        None,
+    );
+    assert!(e.translating(A));
+    e.update_translations(1.0);
+    assert!(holds(&e, A, GET_POS, X, 0, 150.0));
+    assert!(events(&e).is_empty());
+    e.update_translations(0.85);
+    assert_eq!(events(&e), ["OnTranslationAlmostComplete"]);
+    e.update_translations(0.5);
+    assert!(holds(&e, A, GET_POS, X, 0, 200.0));
+    assert_eq!(
+        events(&e),
+        ["OnTranslationAlmostComplete", "OnTranslationComplete"]
+    );
+    assert!(!e.translating(A));
+    // Not in a loaded cell: it fails at once.
+    e.cells.clear();
+    e.start_translation(A, Vec3::ZERO, Vec3::ZERO, 50.0, 0.0, None);
+    assert_eq!(
+        events(&e).last().map(String::as_str),
+        Some("OnTranslationFailed")
+    );
+    assert!(!e.translating(A));
+}

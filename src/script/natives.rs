@@ -2099,6 +2099,116 @@ pub fn call(
             none()
         }
         ("actor", "setrestrained") | ("actor", "setdontmove") => none(),
+        // An essential actor bleeding out with this set doesn't get up until
+        // it is cleared (CK wiki, `SetNoBleedoutRecovery`).
+        ("actor", "setnobleedoutrecovery") => {
+            if let Some(r) = me {
+                if args.first().is_none_or(|a| a.as_bool()) {
+                    e.world_state.no_bleedout_recovery.insert(r);
+                } else {
+                    e.world_state.no_bleedout_recovery.remove(&r);
+                }
+            }
+            none()
+        }
+        ("actor", "getnobleedoutrecovery") => {
+            v(Value::Bool(me.is_some_and(|r| {
+                e.world_state.no_bleedout_recovery.contains(&r)
+            })))
+        }
+        // The view-cone line `GetLineOfSight` reads: Skyrim SE gave HasLOS
+        // True 200 ahead and False 200 behind (autotest22).
+        // TranslateTo(x, y, z, angles, speed, max rotation speed) and
+        // SplineTranslateTo(x, y, z, angles, tangent magnitude, speed, max
+        // rotation); the `Ref` forms take a reference's place and angles.
+        ("objectreference", "translateto") | ("objectreference", "splinetranslateto") => {
+            if let Some(r) = me {
+                let at = glam::Vec3::new(arg(0).as_float(), arg(1).as_float(), arg(2).as_float());
+                let rot = crate::translation::angles(args, 3);
+                let (tangent, rest) = if func == "splinetranslateto" {
+                    (Some(arg(6).as_float()), 7)
+                } else {
+                    (None, 6)
+                };
+                let speed = arg(rest).as_float();
+                let max = args.get(rest + 1).map_or(0.0, Value::as_float);
+                e.start_translation(r, at, rot, speed, max, tangent);
+            }
+            none()
+        }
+        ("objectreference", "translatetoref") | ("objectreference", "splinetranslatetoref") => {
+            if let (Some(r), Some(to)) = (me, form_arg(args, 0)) {
+                let (tangent, rest) = if func == "splinetranslatetoref" {
+                    (Some(arg(1).as_float()), 2)
+                } else {
+                    (None, 1)
+                };
+                let speed = arg(rest).as_float();
+                let max = args.get(rest + 1).map_or(0.0, Value::as_float);
+                match e.ref_position(to) {
+                    Some(at) => {
+                        let rot = e.ref_rotation(to);
+                        e.start_translation(r, at, rot, speed, max, tangent);
+                    }
+                    None => e.send_script_event(r, "OnTranslationFailed", Vec::new()),
+                }
+            }
+            none()
+        }
+        ("objectreference", "stoptranslation") => {
+            if let Some(r) = me {
+                e.stop_translation(r);
+            }
+            none()
+        }
+        ("actor", "movetopackagelocation") => {
+            if let Some(r) = me.filter(|&r| r != crate::engine::PLAYER_REF) {
+                e.move_to_package_location(r);
+            }
+            none()
+        }
+        ("game", "fasttravel") => {
+            if let Some(to) = form_arg(args, 0)
+                && let Err(why) = e.script_fast_travel(to)
+            {
+                log::debug!("Game.FastTravel({to}): {why:?}");
+            }
+            none()
+        }
+        ("actor", "haslos") => v(Value::Bool(match (me, form_arg(args, 0)) {
+            (Some(a), Some(t)) => e.line_of_sight(a, t).unwrap_or(false),
+            _ => false,
+        })),
+        // Only the player trespasses here (`crate::crime`).
+        ("actor", "istrespassing") => v(Value::Bool(
+            me == Some(crate::engine::PLAYER_REF) && e.trespassing(),
+        )),
+        // As if the player had struck the actor: Skyrim SE (autotest2) added
+        // the assault's 40 to its crime faction, reported by the witnesses.
+        ("actor", "sendassaultalarm") => {
+            if let Some(r) = me {
+                e.player_assault(r);
+            }
+            none()
+        }
+        // As if the player had assaulted the faction: its members who see
+        // the player report it.
+        ("faction", "sendassaultalarm") => {
+            if let Some(f) = me {
+                e.commit_crime(crate::crime::CrimeType::Attack, None, Some(f), 0);
+            }
+            none()
+        }
+        // `SendStealAlarm(akThief)`: as if the thief (the player; only the
+        // player's crimes are tracked) had taken this object from its owner.
+        ("objectreference", "sendstealalarm") => {
+            if let Some(r) = me
+                && form_arg(args, 0) == Some(crate::engine::PLAYER_REF)
+            {
+                e.steal_alarm(r);
+            }
+            none()
+        }
         ("actor", "getsitstate") | ("actor", "getsleepstate") => {
             let kind = if func == "getsitstate" {
                 crate::ai::furniture::Use::Sit

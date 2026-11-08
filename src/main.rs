@@ -90,6 +90,7 @@ mod story;
 mod swf_ui;
 mod system_help;
 mod training;
+mod translation;
 mod traps;
 mod triggers;
 mod ui;

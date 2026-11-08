@@ -195,3 +195,22 @@ argument's fraction. Uncertain: whether the date is today's or the start date's 
 same on that save), and whether a later save's whole days move it. No vanilla
 script calls it. To settle: on a save past its first days,
 `GameTimeToString(Utility.GetCurrentGameTime())` and `(2.25)`.
+
+## Natives added 2026-11-07
+
+- `SetNoBleedoutRecovery(true)` keeps an actor bleeding out until cleared
+  (`GetNoBleedoutRecovery` reads it). Not saved, as `SetUnconscious`'s flag.
+- `HasLOS` is `GetLineOfSight`'s view-cone line (autotest22 read the two
+  alike). `IsTrespassing` is the player's trespass; NPCs never trespass.
+- `Actor.SendAssaultAlarm()` is the player assaulting the actor (autotest2:
+  its crime faction got the assault's gold, reported by witnesses; the
+  `ASSU` story event isn't sent, unobserved). `Faction.SendAssaultAlarm()`
+  is an assault on the faction, reported by its members who see the player.
+  `SendStealAlarm(player)` is the theft of the object as taking it would be,
+  without taking it or an `AIPL`; other thieves do nothing.
+- `Game.FastTravel(akDestination)` travels to any reference (a map
+  marker's travel anchor for one) with the map's travel time, ignoring the
+  player's restrictions and discovery (the carriages go to cities not yet
+  found). Whether the game refuses it in combat isn't known.
+- `MoveToPackageLocation` puts the actor where its running package puts it
+  (as a scheduled placement); a whole-cell location moves nothing.

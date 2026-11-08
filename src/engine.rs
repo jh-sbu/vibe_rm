@@ -3333,6 +3333,7 @@ impl Engine {
         self.update_breath(world_dt);
         self.draw_impact_effects();
         self.update_animated(world_dt);
+        self.update_translations(world_dt);
         self.update_skin_decals();
         timing.next("sim.player");
         let cam = self.camera_copy();
