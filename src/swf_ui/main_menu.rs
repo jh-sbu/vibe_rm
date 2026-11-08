@@ -6,8 +6,8 @@
 //! Bethesda.net login, Creations, mods, add-ons and help. Load shares the
 //! journal's save list (`journal_system`). Continue and New are two-step:
 //! the menu's `CONTINUE` / `NEW` are answered with a confirmation, and its
-//! fade then calls `ContinueLastSavedGame` / `StartNewGame`. A new game
-//! isn't there yet: confirming New says so. The choices without a source are in
+//! fade then calls `ContinueLastSavedGame` / `StartNewGame`, which loads a
+//! new game (`crate::new_game`). The choices without a source are in
 //! `known_ambiguities/main-menu.md`.
 
 use std::sync::{Arc, Mutex};
@@ -98,10 +98,10 @@ impl MainMenu {
                     .unwrap_or_else(|| "Start a new game?".into());
                 self.menu.callback("ConfirmNewGame", &[text(&text_)]);
             }
-            // Confirmed and faded out: there is no new game to start yet.
+            // Confirmed and faded out: the new game loads.
             "StartNewGame" => {
-                engine.debug_message_box("Starting a new game isn't available yet.".into());
-                self.menu.callback("FadeInMenu", &[]);
+                engine.menu = None;
+                engine.request_new_game();
             }
             "OpenCreditsMenu" => engine.menu = Some(crate::items::Menu::Credits),
             "QuitToDesktop" => engine.quit_requested = true,

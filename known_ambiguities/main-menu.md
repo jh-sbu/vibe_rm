@@ -15,9 +15,9 @@ needs loading across load orders, `plans/main-menu.md`.)
 
 ## New
 
-There is no new-game path yet (ROADMAP item 11). After SE's "Start a new
-game?" confirmation and the menu's fade, `StartNewGame` shows "Starting a new
-game isn't available yet." and the menu fades back in.
+After SE's "Start a new game?" confirmation and the menu's fade,
+`StartNewGame` loads a new game (`src/new_game.rs`). Its choices are in
+`known_ambiguities/new-game.md`.
 
 ## Title music and backdrop
 

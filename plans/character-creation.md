@@ -84,7 +84,10 @@ run `cargo fmt` before each.
    moves the camera to the face, the name popup (`ChangeName`) and
    `ConfirmDone` finish it. Close it as SE does, and send what MQ101 waits for.
 7. **Starting a new game** with it: the main menu's New (`plans/main-menu.md`)
-   and MQ101's flow, with ROADMAP item 11.
+   and MQ101's flow, with ROADMAP item 11. The new game itself is done
+   (`src/new_game.rs`, 2026-11-08): it starts MQ101, which reaches the race
+   menu later in the opening (its `ShowRaceMenu` fragments), once the cart
+   ride and Helgen's scenes run.
 
 ## Open questions
 

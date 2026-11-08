@@ -66,6 +66,9 @@ pub enum LoadTarget {
     Exterior { world: FormId, feet: Vec3, yaw: f32 },
     /// A save game, by name.
     Save(String),
+    /// A new game: its quests start and the player enters where they send
+    /// them (`crate::new_game`).
+    NewGame,
 }
 
 /// What asked for a load.
@@ -76,6 +79,7 @@ pub enum LoadCause {
     Script,
     Arrest,
     SaveLoad,
+    NewGame,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -265,6 +269,12 @@ impl Engine {
                 self.finish_save_load(name.clone());
                 return;
             }
+            LoadTarget::NewGame => {
+                if let Err(error) = self.begin_new_game() {
+                    self.new_game_failed(&error);
+                }
+                return;
+            }
             target => self.enter(target),
         };
         if let Err(error) = result {
@@ -282,6 +292,7 @@ impl Engine {
             LoadTarget::Interior { cell, spawn } => self.enter_interior(cell, spawn),
             LoadTarget::Exterior { world, feet, yaw } => self.enter_exterior(world, feet, yaw),
             LoadTarget::Save(_) => unreachable!("saves load through finish_save_load"),
+            LoadTarget::NewGame => unreachable!("new games load through begin_new_game"),
         }
     }
 

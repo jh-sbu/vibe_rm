@@ -2439,16 +2439,22 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      differently by version (destruction data?) is open.
 11. **New game and the opening** (an eventual goal; it needs most of the items above)
    - Main menu (`plans/main-menu.md`: Continue, Load, Credits with their
-     logos, Quit and Quit to Main Menu done with `--main-menu`; New, the
+     logos, Quit, Quit to Main Menu and New done with `--main-menu`; the
      menu's backdrop and the prompts for saves made with other plugins
      remain; whether SE's Load selects a character row on PC is a direct
      observation, `plans/main-menu-leftovers.md`). Loading screens are done (see Done); their SE observation
      batch is pending (`plans/loading-screen.md`)
-   - A new game separate from the developer launch, which drops the player at
-     Tamriel (4, -12) outside Riverwood with only start-game-enabled quests running
-   - How the game starts `MQ101` (not start-game-enabled) and where it places
-     the player (`PlayerRef` has no placement in the data): needs a public
-     source; record it in `known_ambiguities/`
+   - A new game (done 2026-11-08, `src/new_game.rs`, `--new-game`; choices in
+     `known_ambiguities/new-game.md`): one load from the main menu starts the
+     start-game-enabled quests and `MQ101`, runs their startup stages, and
+     enters where `MQ101` moves the player (its `PlayerStartMarker`) at 07:00.
+     Open: when SE runs the startup stages relative to the load; what it does
+     without `MQ101`
+   - The opening as it runs now: the cast stand at their markers on the road
+     with no cart, and the Stormcloak prisoners fight the Imperial soldiers
+     on sight. The title sequence's natives (`ShowTitleSequenceMenu`,
+     `StartTitleSequence`, `HideTitleSequenceMenu`) and
+     `ShowFirstPersonGeometry` aren't there
    - Alternate start mods as the nearer target: their own start-game-enabled
      quest, a `MoveTo` and message boxes, all of which run already
    - The real opening in steps: new game and placement; the cart ride with a

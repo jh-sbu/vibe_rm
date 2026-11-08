@@ -123,6 +123,9 @@ fn setup_engine(
         engine.load_game(name)?;
     } else if opts.main_menu {
         engine.enter_main_menu();
+    } else if opts.new_game {
+        engine.no_game = true;
+        engine.request_new_game();
     } else {
         if !opts.no_scripts {
             let t = Instant::now();
@@ -232,8 +235,11 @@ pub fn run(opts: Options) -> Result<()> {
         // Frames the message box in front has been up.
         let mut box_up = 0;
         if let Some(frames) = opts.wait {
-            // Advance the world without moving the camera.
-            let (pos, yaw, pitch) = (
+            // Advance the world without moving the camera, unless a load
+            // takes the player elsewhere (a door, a new game): then from
+            // where the load put it.
+            let mut place = engine.location;
+            let (mut pos, mut yaw, mut pitch) = (
                 engine.camera.position,
                 engine.camera.yaw,
                 engine.camera.pitch,
@@ -250,6 +256,14 @@ pub fn run(opts: Options) -> Result<()> {
                 }
                 answer_boxes(&mut engine, &opts, &mut box_up);
                 engine.update(MoveInput::default(), 1.0 / 60.0, 20.0);
+                if engine.location != place {
+                    place = engine.location;
+                    (pos, yaw, pitch) = (
+                        engine.camera.position,
+                        engine.camera.yaw,
+                        engine.camera.pitch,
+                    );
+                }
                 engine.camera.position = pos;
                 engine.camera.yaw = yaw;
                 engine.camera.pitch = pitch;

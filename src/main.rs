@@ -56,6 +56,7 @@ mod map_markers;
 mod map_view;
 mod messages;
 mod music;
+mod new_game;
 mod obstacles;
 mod outfits;
 mod perks;
@@ -158,6 +159,8 @@ pub struct Options {
     pub egui_hud: bool,
     /// Start at the main menu instead of in the world (the developer launch).
     pub main_menu: bool,
+    /// Start a new game, as the main menu's New does.
+    pub new_game: bool,
 }
 
 fn parse_args() -> Result<Options> {
@@ -221,6 +224,7 @@ fn parse_args() -> Result<Options> {
             "--hold-boxes" => o.hold_boxes = true,
             "--egui-hud" => o.egui_hud = true,
             "--main-menu" => o.main_menu = true,
+            "--new-game" => o.new_game = true,
             "--pick" => {
                 let v = val()?;
                 let (x, y) = v
@@ -231,7 +235,7 @@ fn parse_args() -> Result<Options> {
             "-h" | "--help" => {
                 println!(
                     "VibeRM - a Creation Engine (Skyrim SE) compatible engine\n\n\
-                     Options:\n  --main-menu         Start at the main menu\n  --load <name>       Resume a native save\n  --data <dir>        Skyrim Data directory (default: $SKYRIM_DATA or Steam)\n  \
+                     Options:\n  --main-menu         Start at the main menu\n  --new-game          Start a new game, as the main menu's New does\n  --load <name>       Resume a native save\n  --data <dir>        Skyrim Data directory (default: $SKYRIM_DATA or Steam)\n  \
                      --plugins <txt>     Load the enabled (*) plugins of a plugins.txt\n  \
                      --plugin <file>     Load a plugin: a name in Data, or a path (repeatable)\n  \
                      --loose <dir>       Read loose files (Scripts/...) from dir over Data's (repeatable)\n  \

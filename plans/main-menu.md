@@ -1,7 +1,6 @@
 # Follow-on: the main menu
 
-**Status: implemented** (2026-10-30) except New, which waits on ROADMAP item
-11's new-game research; see "Where it stands" at the end. Drafted 2026-10-28,
+**Status: implemented** (2026-10-30; New 2026-11-08, `src/new_game.rs`); see "Where it stands" at the end. Drafted 2026-10-28,
 expanded 2026-10-30. Step 0's research is in `research/ui/main-menu.md`, with
 its questions for SE. Separate from the
 journal System page; ROADMAP Next item 11 (New game and the opening).
@@ -258,7 +257,7 @@ Remaining:
   which is ROADMAP item 9's "load orders that changed since the save". Activating
   a plugin also needs the engine rebuilt with another plugin list. Until then,
   such saves are refused as obsolete.
-- New: a new game, with ROADMAP item 11.
+- New: done (2026-11-08, `src/new_game.rs`; `known_ambiguities/new-game.md`).
 - What is behind the menu: the main menu cell, the logo model and the smoke,
   once their placement is known (`research/ui/main-menu.md`).
 - Keyboard: the save panel's character list starts with nothing selected, so
