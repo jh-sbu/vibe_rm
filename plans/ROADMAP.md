@@ -2450,11 +2450,16 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      enters where `MQ101` moves the player (its `PlayerStartMarker`) at 07:00.
      Open: when SE runs the startup stages relative to the load; what it does
      without `MQ101`
-   - The opening as it runs now: the cast stand at their markers on the road
-     with no cart, and the Stormcloak prisoners fight the Imperial soldiers
-     on sight. The title sequence's natives (`ShowTitleSequenceMenu`,
+   - The opening as it runs now (2026-11-08, offscreen `--new-game`): stage
+     10 sets the scene, the horses' aliases count their cells loading (stage
+     12), both carts drive off with their passengers seated, and Ralof's
+     "Hey, you. You're finally awake." scene plays (stage 14). Then both
+     horses stop where `MQ101CartHorse1/2Patrol4` ends (about y -92000 and
+     -92960): `Patrol5` waits for stage 37, which nothing sets yet. Next, find
+     what sets it (a trigger the cart passes? the scene's end?). Still
+     missing: the title sequence's natives (`ShowTitleSequenceMenu`,
      `StartTitleSequence`, `HideTitleSequenceMenu`) and
-     `ShowFirstPersonGeometry` aren't there
+     `ShowFirstPersonGeometry`
    - Alternate start mods as the nearer target: their own start-game-enabled
      quest, a `MoveTo` and message boxes, all of which run already
    - The real opening in steps: new game and placement; the cart ride with a
