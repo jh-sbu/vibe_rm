@@ -2157,6 +2157,11 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      Rested spell selection (UESP sources in `known_ambiguities/skills.md`).
      Active effects' "Perk to Apply" is supported (see Done); temporary perk
      ability / quest sections remain unresolved (`known_ambiguities/effect-perks.md`)
+   - Physics: loose objects settling when their cell loads unless flagged
+     "Don't Havok Settle", as autotest21's bowl did
+     (`known_ambiguities/loose-objects.md`); ours lies still until disturbed.
+     Check stability and cost in vanilla cells (hundreds of bodies, positions
+     settled for Havok resting in rapier) before switching.
    - Physics: making fixed objects dynamic (`SetMotionType` on a static
      model), simulating constraint motors (none in the vanilla meshes), the
      player throwing what they hold, traps (pushback, disarming, trip wires; see

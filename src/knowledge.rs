@@ -247,15 +247,18 @@ mod tests {
                 &[Value::Float(days)],
             )
         };
-        assert_eq!(time(&mut e, 0.0), Value::str("08/17/0201 00:00"));
-        assert_eq!(time(&mut e, 1.5), Value::str("08/18/0201 12:00"));
-        assert_eq!(time(&mut e, 14.75), Value::str("08/31/0201 18:00"));
-        assert_eq!(time(&mut e, 15.0), Value::str("09/01/0201 00:00"));
-        // A year of 365 days later is the same day a year on.
-        assert_eq!(time(&mut e, 365.0), Value::str("08/17/0202 00:00"));
-        // Nonsense is the beginning; a huge time is held to a thousand years.
-        assert_eq!(time(&mut e, f32::NAN), Value::str("08/17/0201 00:00"));
-        assert_eq!(time(&mut e, -3.0), Value::str("08/17/0201 00:00"));
+        // Today's date, month and day from 0, and the time from the fraction
+        // (Skyrim SE, autotest21: `07/16/0201 00:00` and `07/16/0201 12:00`).
+        assert_eq!(time(&mut e, 0.0), Value::str("07/16/0201 00:00"));
+        assert_eq!(time(&mut e, 1.5), Value::str("07/16/0201 12:00"));
+        assert_eq!(time(&mut e, 14.75), Value::str("07/16/0201 18:00"));
+        e.day = 15;
+        assert_eq!(time(&mut e, 15.0), Value::str("08/00/0201 00:00"));
+        e.day = 365;
+        assert_eq!(time(&mut e, 365.0), Value::str("07/16/0202 00:00"));
+        // Nonsense is midnight.
+        assert_eq!(time(&mut e, f32::NAN), Value::str("07/16/0202 00:00"));
+        assert_eq!(time(&mut e, -3.0), Value::str("07/16/0202 00:00"));
         let Value::String(far) = time(&mut e, 1.0e12) else {
             panic!("not a string")
         };

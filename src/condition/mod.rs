@@ -1429,11 +1429,13 @@ impl Engine {
         let Some(a) = self.actor_ref(helper) else {
             return false;
         };
-        match self.faction_relation(helper, other) {
-            2 => a.stats.assistance >= 1,
-            3 => a.stats.assistance >= 2,
-            _ => false,
-        }
+        // As combat's helpers: the factions' regard or the relationship rank
+        // (3 and up allies, 1 and 2 friends).
+        let ally =
+            self.faction_relation(helper, other) == 2 || self.relationship_rank(helper, other) >= 3;
+        let friend =
+            self.faction_relation(helper, other) == 3 || self.relationship_rank(helper, other) >= 1;
+        (ally && a.stats.assistance >= 1) || (friend && a.stats.assistance >= 2)
     }
 
     /// The player is inside the actor's attack aggro radius.
@@ -1470,15 +1472,12 @@ impl Engine {
         members(a)
             .into_iter()
             .flat_map(|f| theirs.iter().map(move |&g| (f, g)))
-            // A shared faction is an ally, as combat treats it, though
-            // `GetFactionCombatReaction` of a faction towards itself is 0.
-            .map(|(f, g)| {
-                if f == g {
-                    2
-                } else {
-                    self.faction_combat_reaction(f, g)
-                }
-            })
+            // A shared faction counts only by the faction's entry for itself
+            // (`XNAM`; 160 vanilla factions list themselves as allies, 8 as
+            // enemies, `C00JorrvaskrFightingFaction` among them): Skyrim SE
+            // (autotest21) members of a faction with none didn't help each
+            // other (`known_ambiguities/combat-assistance.md`).
+            .map(|(f, g)| self.faction_combat_reaction(f, g))
             .max()
             .unwrap_or(0)
     }

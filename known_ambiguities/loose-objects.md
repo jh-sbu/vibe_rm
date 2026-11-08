@@ -19,6 +19,15 @@ otherwise undocumented; rapier stands in for it.
   steps and it is put to sleep when they are unlocked (`SETTLE_STEPS`). The
   "Don't Havok Settle" reference flag isn't read; with nothing settling it has
   no effect to give.
+  Skyrim SE contradicts this (autotest21, `research/autotest21.md`,
+  LooseObjects): a plugin bowl placed 150 units above the floor, without
+  the "Don't Havok Settle" flag (`REFR` 0x20000000), already lay on the
+  floor (z 8.6) when the test began, so it fell when the cell loaded. In
+  Skyrim.esm 2% of loose items' references have the flag (724 of 33,570
+  `MISC`, 321 of 2,597 `WEAP`). The likely rule is that references settle
+  on load unless flagged; the Creation Kit stores settled positions, which
+  is why vanilla clutter doesn't visibly drop. Ours still lies still
+  (compared 2026-11-07); switching is open in `plans/ROADMAP.md`.
 - **Created objects fall** at once (dropped items, `PlaceAtMe`).
 - **Shapes.** Triangle meshes on a moving body become their convex hull (bowls
   are solid).

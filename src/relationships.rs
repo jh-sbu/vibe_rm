@@ -25,7 +25,7 @@ pub struct Relationships {
     associations: std::cell::OnceCell<AssociationIndex>,
     /// Ranks changed since, by reference pair (the player as its
     /// reference; an NPC record when a change named one).
-    changed: HashMap<(FormId, FormId), i32>,
+    pub(crate) changed: HashMap<(FormId, FormId), i32>,
     /// NPC records in each faction (rank 0 or more), for faction ownership.
     members: std::cell::OnceCell<HashMap<FormId, Vec<FormId>>>,
 }

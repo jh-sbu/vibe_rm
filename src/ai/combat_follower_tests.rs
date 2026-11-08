@@ -153,3 +153,69 @@ fn a_teammates_blow_on_a_bystander_is_the_players_assault() {
     e.send_assault(BANDIT, HELPER, true);
     assert!(e.assaulted_by_player(BANDIT));
 }
+
+/// A shared faction alone doesn't make allies: Skyrim SE (autotest21)
+/// members of a faction that doesn't list itself didn't help each other.
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn a_faction_that_doesnt_list_itself_doesnt_help_its_members() {
+    let (_f, mut e) = fixture();
+    e.player.position = Vec3::ZERO;
+    e.set_faction_rank(HELPER, BANDITS, 0);
+    let stats = e.actor_ref(HELPER).unwrap().stats.clone();
+    let player_factions = e.player_factions();
+    let fights = [(BANDIT, Vec3::X * 300.0, PLAYER_REF)];
+    let others = [(BANDIT, Vec3::X * 300.0, vec![BANDITS])];
+    let join = |e: &mut Engine| {
+        e.fight_to_join(
+            HELPER,
+            Vec3::X * 100.0,
+            &stats,
+            &fights,
+            &others,
+            &player_factions,
+        )
+        .map(|(_, target)| target)
+    };
+    assert_eq!(join(&mut e), None);
+    // Listing itself as an ally, it does.
+    e.set_combat_reaction(BANDITS, BANDITS, 2);
+    assert_eq!(join(&mut e), Some(PLAYER_REF));
+}
+
+/// Skyrim SE (autotest21): a helper of no faction at relationship rank 3
+/// with the victim joined its fight at once. Rank 3 is taken as an ally,
+/// 1 and 2 as friends.
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn relationship_ranks_bring_help() {
+    let (_f, mut e) = fixture();
+    e.player.position = Vec3::ZERO;
+    let fights = [(BANDIT, Vec3::X * 300.0, PLAYER_REF)];
+    let others = [(BANDIT, Vec3::X * 300.0, vec![BANDITS])];
+    let player_factions = e.player_factions();
+    let join = |e: &mut Engine| {
+        let stats = e.actor_ref(HELPER).unwrap().stats.clone();
+        e.fight_to_join(
+            HELPER,
+            Vec3::X * 100.0,
+            &stats,
+            &fights,
+            &others,
+            &player_factions,
+        )
+        .map(|(_, target)| target)
+    };
+    assert_eq!(join(&mut e), None);
+    // The synthetic actors have no records for `set_relationship_rank`.
+    let mut rank = |e: &mut Engine, r: i32| {
+        e.relationships
+            .changed
+            .insert((HELPER.min(BANDIT), HELPER.max(BANDIT)), r);
+    };
+    rank(&mut e, 1);
+    assert_eq!(e.relationship_rank(HELPER, BANDIT), 1);
+    assert_eq!(join(&mut e), None, "a friend, and it helps only allies");
+    rank(&mut e, 3);
+    assert_eq!(join(&mut e), Some(PLAYER_REF));
+}

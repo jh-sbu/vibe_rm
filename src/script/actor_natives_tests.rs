@@ -413,7 +413,9 @@ fn faction_reaction_and_hostility_natives_follow_the_factions() {
     e.set_combat_reaction(HUNTERS, WOLVES, 1);
     assert_eq!(reaction(&mut e, WOLF_REF, &hunter), Value::Int(1));
     assert_eq!(reaction(&mut e, HUNTER_REF, &wolf), Value::Int(1));
-    // Same faction: allies.
+    // Same faction: only as the faction lists itself (Skyrim SE, autotest21).
+    assert_eq!(reaction(&mut e, WOLF_REF, &wolf), Value::Int(0));
+    e.set_combat_reaction(WOLVES, WOLVES, 2);
     assert_eq!(reaction(&mut e, WOLF_REF, &wolf), Value::Int(2));
     // Enemies are hostile; one actor isn't hostile to a stranger of no faction.
     assert_eq!(

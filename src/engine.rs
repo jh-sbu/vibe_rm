@@ -3270,7 +3270,10 @@ impl Engine {
             self.player.sneaking = false;
         }
         self.renderer.time += dt;
-        let h = self.hour + dt * time_scale / 3600.0;
+        // The game clock runs at the world's speed: under Slow Time Skyrim SE
+        // passed 54.1 game seconds in 7.7 real ones at timescale 20
+        // (autotest21; `known_ambiguities/magic.md`).
+        let h = self.hour + dt * self.world_speed() * time_scale / 3600.0;
         if h >= 24.0 {
             self.day += 1;
         }

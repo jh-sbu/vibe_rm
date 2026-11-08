@@ -1743,6 +1743,20 @@ impl Engine {
         if ours.iter().any(|f| theirs.contains(f)) {
             return Some(2);
         }
+        self.listed_faction_reaction(ours, theirs)
+    }
+
+    /// [`Self::faction_reaction`] without taking a shared faction as an ally:
+    /// a faction counts towards itself only as its `XNAM` lists it. Who helps
+    /// whom goes by this: Skyrim SE (autotest21) members of a faction that
+    /// doesn't list itself didn't help each other
+    /// (`known_ambiguities/combat-assistance.md`). Hostility keeps the shared
+    /// faction's exemption, which no test has looked at.
+    pub(crate) fn listed_faction_reaction(
+        &mut self,
+        ours: &[FormId],
+        theirs: &[FormId],
+    ) -> Option<u32> {
         let mut best: Option<u32> = None;
         for &f in ours {
             if !self.faction_relations.contains_key(&f) {
@@ -2013,11 +2027,25 @@ impl Engine {
             // assistance say (`known_ambiguities/followers.md`).
             let teammate = fighter == PLAYER_REF && self.is_player_teammate(helper);
             if !teammate {
-                let need = match self.faction_reaction(&stats.factions, ff) {
+                // The factions' regard, or the pair's relationship rank: Skyrim
+                // SE (autotest21) a helper of no faction at rank 3 (Ally) with
+                // the fighter came at once. Rank 3 and up taken as allies, 1
+                // and 2 (Friend, Confidant) as friends
+                // (`known_ambiguities/combat-assistance.md`).
+                let by_rank = match self.relationship_rank(helper, fighter) {
+                    3.. => 1,
+                    1 | 2 => 2,
+                    _ => u8::MAX,
+                };
+                let by_faction = match self.listed_faction_reaction(&stats.factions, ff) {
                     Some(2) => 1,
                     Some(3) => 2,
-                    _ => continue,
+                    _ => u8::MAX,
                 };
+                let need = by_rank.min(by_faction);
+                if need == u8::MAX {
+                    continue;
+                }
                 if stats.assistance < need {
                     continue;
                 }

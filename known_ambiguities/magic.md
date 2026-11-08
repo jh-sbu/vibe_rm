@@ -217,14 +217,25 @@ space modifiers).
 - Unconfirmed: the magnitude is taken as the world's share of real speed,
   the slowest of any active effect winning. Actors' and projectiles'
   updates, physics, particles, triggers, hazards and animated objects run at
-  that share; the player (movement, attacks, casting, shouting), the
-  effects' own timers and durations, scripts' waits and the game clock stay
-  in real time. The game may instead scale the effects' durations, the
+  that share, and so does the game clock; the player (movement, attacks,
+  casting, shouting), the effects' own timers and durations and scripts'
+  waits stay in real time. The game may instead scale the effects' durations, the
   waits, or the player's speed through a separate player multiplier (the
   camera shot record has separate player, target and global time
-  multipliers). The change is immediate, not eased in or out. A test: time
-  Slow Time's duration, a falling object, an NPC's walk and the player's
-  walk against the real clock.
+  multipliers). The change is immediate, not eased in or out.
+- Skyrim SE (autotest21, `research/autotest21.md`, SlowTime; word 1,
+  magnitude 0.3, cast by script on the player): a bowl falling from rest
+  covered 233.9 units a real second over 0.4 s before and 58.5 under Slow
+  Time, so the world ran at about 0.5 (a fall goes with t²).
+  `Utility.Wait(1.0)` took 1.04 real s and the effect lasted 7.7 real s
+  (its 8 s): waits and durations count real time, as ours. 54.1 game
+  seconds passed in those 7.7 s at timescale 20, about 0.35 of real time:
+  the game clock slows (ours since 2026-11-07, at the world's share). After
+  the effect ended the bowl still fell at 57.4, so the slowdown outlasted
+  `HasMagicEffect`. The readings don't agree on the share (0.5 from the
+  fall, 0.35 from the clock, 0.3 the magnitude); ours keeps the magnitude
+  and ends with the effect. To settle: the fall rate and the game clock
+  sampled each second through and after the effect, for each word.
 
 ## Drinking and eating sounds
 
