@@ -8,6 +8,16 @@ const FOLLOWERS: FormId = FormId(0x810);
 const BANDITS: FormId = FormId(0x811);
 const HELPER: FormId = FormId(0x901);
 const BANDIT: FormId = FormId(0x902);
+const ALIAS_QUEST: FormId = FormId(0x830);
+const HELPER_NPC: FormId = FormId(0x840);
+const BANDIT_NPC: FormId = FormId(0x841);
+
+/// An NPC's membership (`SNAM`) of a faction at rank 0.
+fn snam(faction: FormId) -> [u8; 8] {
+    let mut x = [0u8; 8];
+    x[0..4].copy_from_slice(&faction.0.to_le_bytes());
+    x
+}
 /// The player's faction (`PlayerFaction`), which `Engine::player_factions` names.
 const PLAYER_FACTION: FormId = FormId(0xDB1);
 
@@ -51,15 +61,42 @@ fn fixture() -> (Fixture, Engine) {
         x[8..12].copy_from_slice(&reaction.to_le_bytes());
         x
     };
-    let records = [Node::top(
-        b"FACT",
-        vec![
-            RecordBuilder::new(b"FACT", FOLLOWERS)
-                .field(b"XNAM", &relation(PLAYER_FACTION, 2))
-                .field(b"XNAM", &relation(BANDITS, 1)),
-            RecordBuilder::new(b"FACT", BANDITS).field(b"XNAM", &relation(FOLLOWERS, 1)),
-        ],
-    )];
+    let records = [
+        Node::top(
+            b"FACT",
+            vec![
+                RecordBuilder::new(b"FACT", FOLLOWERS)
+                    .field(b"XNAM", &relation(PLAYER_FACTION, 2))
+                    .field(b"XNAM", &relation(BANDITS, 1)),
+                RecordBuilder::new(b"FACT", BANDITS).field(b"XNAM", &relation(FOLLOWERS, 1)),
+            ],
+        ),
+        // The actors' records: the bandit's NPC is one of the bandits.
+        Node::top(
+            b"NPC_",
+            vec![
+                RecordBuilder::new(b"NPC_", HELPER_NPC),
+                RecordBuilder::new(b"NPC_", BANDIT_NPC).field(b"SNAM", &snam(BANDITS)),
+            ],
+        ),
+        Node::top(
+            b"ACHR",
+            vec![
+                RecordBuilder::new(b"ACHR", HELPER).form(b"NAME", HELPER_NPC),
+                RecordBuilder::new(b"ACHR", BANDIT).form(b"NAME", BANDIT_NPC),
+            ],
+        ),
+        // An alias that puts whoever it holds among the followers.
+        Node::top(
+            b"QUST",
+            vec![
+                RecordBuilder::new(b"QUST", ALIAS_QUEST)
+                    .u32(b"ALST", 0)
+                    .form(b"ALFC", FOLLOWERS)
+                    .field(b"ALED", &[]),
+            ],
+        ),
+    ];
     std::fs::write(
         f.0.join("Followers.esp"),
         write_plugin(0, &[], "test", "synthetic followers", 0x900, &records),
@@ -218,4 +255,22 @@ fn relationship_ranks_bring_help() {
     assert_eq!(join(&mut e), None, "a friend, and it helps only allies");
     rank(&mut e, 3);
     assert_eq!(join(&mut e), Some(PLAYER_REF));
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn a_loaded_actor_fights_by_its_aliases_factions_while_they_hold_it() {
+    let (_f, mut e) = fixture();
+    e.player.position = Vec3::ZERO;
+    e.scripts.quests.entry(ALIAS_QUEST).or_default().running = true;
+    // `ForceRefTo`: the alias's faction (`ALFC`) counts in its fights.
+    e.force_alias_ref(ALIAS_QUEST, 0, HELPER);
+    e.refresh_alias_packages();
+    assert_eq!(e.actor_ref(HELPER).unwrap().stats.factions, [FOLLOWERS]);
+    assert_eq!(joins(&mut e), Some(BANDIT));
+    // The quest stops: the membership goes with the alias.
+    e.stop_quest(ALIAS_QUEST);
+    e.refresh_alias_packages();
+    assert!(e.actor_ref(HELPER).unwrap().stats.factions.is_empty());
+    assert_eq!(joins(&mut e), None);
 }

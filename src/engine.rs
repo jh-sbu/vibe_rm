@@ -2034,10 +2034,9 @@ impl Engine {
             let mut stats =
                 crate::ai::combat::CombatStats::of(self, d.ref_id, &d.templates, d.race);
             self.apply_actor_values(d.ref_id, &mut stats);
-            // Scripts' faction changes outlast the actor's loading.
-            if self.scripts.faction_changes.contains_key(&d.ref_id) {
-                stats.factions = self.member_factions(d.ref_id);
-            }
+            // Scripts' faction changes outlast the actor's loading, and its
+            // aliases' factions (`ALFC`) count while they hold it.
+            stats.factions = self.member_factions(d.ref_id);
             rt.exec.npc = d.npc;
             if let Some(x) = self.away.get(&d.ref_id) {
                 rt.exec.take_back(x, resume.is_some());

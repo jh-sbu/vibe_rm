@@ -128,7 +128,8 @@ impl Engine {
     }
 
     /// Loaded actors whose aliases changed take up their new package stacks,
-    /// keeping their current package if it is still on it.
+    /// keeping their current package if it is still on it, and fight by
+    /// their aliases' factions.
     pub(crate) fn refresh_alias_packages(&mut self) {
         self.refresh_ref_location_aliases();
         let generation = self.scripts.alias_gen;
@@ -140,6 +141,8 @@ impl Engine {
             .map(|a| (a.ref_id, a.npc))
             .collect();
         for (r, npc) in stale {
+            // Its aliases' factions (`ALFC`) came or went.
+            self.refresh_combat_factions(r);
             let packages = self.actor_packages(r, npc);
             let Some(a) = self.actor_mut(r) else { continue };
             a.exec.alias_gen = generation;

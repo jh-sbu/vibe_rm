@@ -1337,8 +1337,9 @@ impl Engine {
 
     /// A loaded actor's fights go by the factions it belongs to now: a hired
     /// follower (`CurrentFollowerFaction`, an ally of the player's faction) helps
-    /// the player's side as soon as a script puts it there.
-    fn refresh_combat_factions(&mut self, actor: FormId) {
+    /// the player's side as soon as a script puts it there, and an alias's
+    /// factions (`ALFC`) count while it holds the actor.
+    pub(crate) fn refresh_combat_factions(&mut self, actor: FormId) {
         let now = self.member_factions(actor);
         if let Some(a) = self.actor_mut(actor)
             && a.stats.factions != now
