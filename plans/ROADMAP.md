@@ -2454,14 +2454,19 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      10 sets the scene and fades in from black (14 s, then 15 s), the
      horses' aliases count their cells loading (stage 12), both carts drive
      off with their passengers seated, and Ralof's "Hey, you. You're
-     finally awake." scene plays (stage 14). The horses walk `Patrol1`
-     to `Patrol3`, with the road's `defaultSetStageTRIGSpecificActor`
-     triggers setting stages 20, 22 and 25. At about 113 s Cart1 is put
-     back at its placement as "fell out of the world" (`update_loose`
-     compares with the placed height, and the road descends over 4096
-     units); Horse2 and Hadvar's horse then report positions back near the
-     start. `Patrol4` / `Patrol5` (stages 37-59) should take the horses on
-     to Helgen. Still
+     finally awake." scene plays (stage 14). The horses walk all of
+     `Patrol1`, the carts, their passengers and Hadvar going with them from
+     cell (5, -24) past (5, -20), to its end at about (21520, -79370), about
+     145 s in. There `MQ101SetStage20` (00084058), a box across the road,
+     waits for Hadvar's horse (base `MQ101Horse`), and his patrol ends on
+     the same last points as the carts'. The carts arrive first and stop on
+     them; Cart2 then blocks the road and Hadvar stops about 90 units short
+     of the box (`clutter::steer` finds no way round the cart), so stage 20
+     never comes. Open: how SE gets him there (past or round the stopped
+     carts, which are dynamic 12700 kg loose objects, or a trigger touched
+     by more of his horse's body than our column of points at its
+     position). `Patrol2` to `Patrol5` and the stage 20-59 triggers should
+     then take the horses on to Helgen. Still
      missing: the title sequence's natives (`ShowTitleSequenceMenu`,
      `StartTitleSequence`, `HideTitleSequenceMenu`) and
      `ShowFirstPersonGeometry`
