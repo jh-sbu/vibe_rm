@@ -132,7 +132,7 @@ impl Engine {
     /// Rebuild constraints lazily after a cell load. The cart's NIF wheel and
     /// steering constraints continue to be simulated by the ordinary loose path.
     pub(crate) fn update_tethers(&mut self) {
-        use rapier3d::prelude::{RigidBodyBuilder, SphericalJointBuilder};
+        use rapier3d::prelude::{GenericJointBuilder, JointAxesMask, RigidBodyBuilder};
         for cart in self.hitches.keys().copied().collect::<Vec<_>>() {
             let h = &self.hitches[&cart];
             if !self.tethers.contains_key(&cart)
@@ -186,10 +186,14 @@ impl Engine {
                 .physics
                 .world
                 .insert_body(RigidBodyBuilder::kinematic_position_based().translation(point));
+            // The horse pulls the hitch along the ground; its height is left
+            // to the cart's wheels. The bar only steers, so a hitch held at
+            // the horse's height levers the cart over where the road's slope
+            // changes between the horse and the wheels.
             let joint = self.physics.world.insert_impulse_joint(
                 anchor,
                 cart_body,
-                SphericalJointBuilder::new()
+                GenericJointBuilder::new(JointAxesMask::LIN_X | JointAxesMask::LIN_Y)
                     .local_anchor2(local)
                     .contacts_enabled(false),
             );
@@ -438,7 +442,17 @@ mod tests {
         for _ in 0..60 {
             e.physics.step(1. / 60.);
         }
-        assert!(e.physics.body_pose(body).unwrap().0.w_axis.x > 3050.);
+        let pose = e.physics.body_pose(body).unwrap().0.w_axis;
+        assert!(pose.x > 3050., "pulled along: {pose}");
+        // Only along the ground: nothing under it, it falls as the horse
+        // goes on above.
+        let anchor = e
+            .physics
+            .body_pose(e.hitches[&MARKER].anchor)
+            .unwrap()
+            .0
+            .w_axis;
+        assert!(pose.z < anchor.z - 100., "held up: {pose} under {anchor}");
         e.clear_vehicle_bodies();
         assert!(e.physics.world.bodies.get(old).is_none());
         e.update_tethers();

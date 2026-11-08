@@ -11,7 +11,12 @@ RidingInCarriage keyword (000DD631), and movement input does not walk them out
 of the cart. SetVehicle(None) releases the attachment and collider.
 
 For dynamic carts, tether a kinematic anchor following the horse to the cart's
-front body with a spherical joint. Pick the body nearest the hitch, using a
+front body with a joint that holds the hitch only along the ground (world X
+and Y), leaving its height and every rotation to the cart's wheels. A
+spherical joint, which also held the height, flipped MQ101's carts where the
+road steepens: `PrisonerCarriage01.nif`'s FrontBar hinge only steers (a
+vertical axis, ±0.698 rad), so a hitch held at the horse's height levers the
+cart round its front axle by about atan(drop / 180) (2026-11-08). Pick the body nearest the hitch, using a
 cart-local hitch (0,180,53), based on the FrontBar's position and front geometry;
 preserve its initial relation to the horse. The native joint's exact pivot,
 limits and compliance remain unmeasured. Existing NIF wheel/steering hinges
