@@ -4411,6 +4411,7 @@ dependencies = [
  "rayon",
  "vrm-bsa",
  "vrm-esp",
+ "vrm-facegen",
  "vrm-havok",
  "vrm-nif",
  "vrm-papyrus",

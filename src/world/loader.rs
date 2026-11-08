@@ -431,6 +431,7 @@ fn parse_model(vfs: &vfs::Vfs, addons: &HashMap<i32, String>, p: &String) -> Par
     // `path#rigid`: skinned shapes posed at rest (sky models);
     // `path#without=a|b`: without the shapes so named (menu models
     // whose art isn't installed);
+    // `path#facegen=...`: a head part with FaceGen morphs applied;
     // `path#quiver`: ammunition worn, its `ArrowQuiver` node's
     // shapes (not the loose arrow);
     // `path#grass`: drawn as grass ([`crate::world::grass`]);
@@ -490,6 +491,33 @@ fn parse_model(vfs: &vfs::Vfs, addons: &HashMap<i32, String>, p: &String) -> Par
                         model::convert_filtered(&n, &|name| {
                             !hidden.iter().any(|h| h.eq_ignore_ascii_case(name))
                         })
+                    }
+                    // A head part built live: its shapes moved by the
+                    // `.tri` morphs listed (`facegen::encode_morphs`).
+                    Some(v) if v.starts_with("facegen=") => {
+                        let uses = facegen::decode_morphs(&v["facegen=".len()..]);
+                        let mut n = n;
+                        let mut tris = HashMap::new();
+                        for b in &mut n.blocks {
+                            if let nif::Block::TriShape(t) = b {
+                                let applied =
+                                    facegen::apply(&mut t.geometry.positions, &uses, |f| {
+                                        tris.entry(f.to_owned())
+                                            .or_insert_with(|| {
+                                                vfs.read(f)
+                                                    .and_then(|d| nif::tri::Tri::parse(&d).ok())
+                                                    .map(Arc::new)
+                                            })
+                                            .clone()
+                                    });
+                                log::debug!(
+                                    "{file}: {applied} of {} FaceGen morphs on {}",
+                                    uses.len(),
+                                    t.av.net.name
+                                );
+                            }
+                        }
+                        model::convert(&n)
                     }
                     Some("quiver") => {
                         let keep = model::shapes_under(&n, "ArrowQuiver");

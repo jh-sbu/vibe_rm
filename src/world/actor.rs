@@ -746,77 +746,48 @@ fn dress(
     models
 }
 
-/// Head part types (HDPT `PNAM`).
-const HEAD_PART_EYES: u32 = 2;
-const HEAD_PART_HAIR: u32 = 3;
-
-/// The head part models of an NPC built at run time rather than from a
-/// pre-built FaceGen head (the player): the race's default parts for the sex
-/// (`HEAD` after `NAM0`'s `MNAM` / `FNAM`), each replaced by the NPC's own part
-/// (`PNAM`) of the same type, then every part's extra parts (`HNAM`: hairlines).
-/// Morphs (`.tri`), the face's tints and texture sets aren't applied.
-pub fn head_part_models(lo: &LoadOrder, npc: FormId, race: FormId, female: bool) -> Vec<String> {
-    let part_type = |id: FormId| {
-        lo.get(id).filter(|r| r.tag().0 == *b"HDPT").and_then(|r| {
-            r.get(b"PNAM")
-                .filter(|d| d.len() >= 4)
-                .map(|d| u32::from_le_bytes(d[0..4].try_into().unwrap()))
+/// The head part models of a face built at run time rather than from a
+/// pre-built FaceGen head (the player): `facegen::head_parts`, each with
+/// the morphs its race, sliders, presets and weight give it
+/// (`#facegen=`, `research/facegen.md`). The face's tints and texture
+/// sets aren't applied.
+pub fn head_part_models(lo: &LoadOrder, face: &facegen::Face) -> Vec<String> {
+    facegen::head_parts(lo, face)
+        .into_iter()
+        .filter_map(|id| {
+            let rec = lo.get(id)?;
+            let m = esp::decode_zstring(rec.get(b"MODL")?);
+            if m.is_empty() {
+                return None;
+            }
+            let m = mesh_path(&m);
+            let uses = facegen::part_morphs(lo, id, face);
+            Some(if uses.is_empty() {
+                m
+            } else {
+                format!("{m}#facegen={}", facegen::encode_morphs(&uses))
+            })
         })
-    };
-    let mut parts: Vec<(u32, FormId)> = Vec::new();
-    if let Some(rec) = lo.get(race) {
-        let mut head_data = false;
-        let mut sex: Option<bool> = None;
-        for sr in rec.subrecords() {
-            match &sr.tag.0 {
-                b"NAM0" => head_data = true,
-                b"MNAM" if head_data => sex = Some(false),
-                b"FNAM" if head_data => sex = Some(true),
-                b"HEAD" if sex == Some(female) && sr.data.len() >= 4 => {
-                    let id = rec.fid(sr.form_id(0));
-                    if let Some(t) = part_type(id) {
-                        parts.push((t, id));
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-    if let Some(rec) = lo.get(npc) {
-        for sr in rec
-            .subrecords()
-            .filter(|s| s.tag.0 == *b"PNAM" && s.data.len() >= 4)
-        {
-            let id = rec.fid(sr.form_id(0));
-            let Some(t) = part_type(id) else { continue };
-            parts.retain(|&(pt, _)| pt != t);
-            parts.push((t, id));
-        }
-    }
-    // Hair, then eyes, last: drawn over the head and its other parts.
-    parts.sort_by_key(|&(t, _)| matches!(t, HEAD_PART_EYES | HEAD_PART_HAIR));
-    let mut ids: Vec<FormId> = parts.into_iter().map(|(_, id)| id).collect();
-    let mut i = 0;
-    while i < ids.len() && ids.len() < 32 {
-        if let Some(rec) = lo.get(ids[i]) {
-            for sr in rec
-                .subrecords()
-                .filter(|s| s.tag.0 == *b"HNAM" && s.data.len() >= 4)
-            {
-                let extra = rec.fid(sr.form_id(0));
-                if !ids.contains(&extra) {
-                    ids.push(extra);
-                }
-            }
-        }
-        i += 1;
-    }
-    ids.iter()
-        .filter_map(|&id| lo.get(id))
-        .filter_map(|r| r.get(b"MODL").map(esp::decode_zstring))
-        .filter(|m| !m.is_empty())
-        .map(|m| mesh_path(&m))
         .collect()
+}
+
+/// The face an actor's traits give it: its face NPC's head data, with the
+/// race, sex and weight its templates settle.
+fn face_of(lo: &LoadOrder, traits: &NpcTraits) -> facegen::Face {
+    let mut face = facegen::Face::of_npc(lo, traits.npc_for_face).unwrap_or(facegen::Face {
+        race: traits.race,
+        female: traits.female,
+        parts: Vec::new(),
+        sliders: [0.0; 19],
+        nose: -1,
+        eyes: -1,
+        mouth: -1,
+        weight: traits.weight,
+    });
+    face.race = traits.race;
+    face.female = traits.female;
+    face.weight = traits.weight;
+    face
 }
 
 /// Describe the player's body: their NPC record's race and sex, its skin, what
@@ -837,7 +808,7 @@ pub fn describe_player(
     } else {
         traits.skin
     };
-    let head = head_part_models(lo, traits.npc_for_face, traits.race, traits.female);
+    let head = head_part_models(lo, &face_of(lo, &traits));
     let models = dress(
         lo,
         inventory,

@@ -678,12 +678,17 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             vec![format!("{} person", if on { "third" } else { "first" })]
         }
         "tpcam" => {
-            // tpcam <degrees>: turn the third-person view about the player
-            // (180 to see them from the front); their body keeps its facing.
+            // tpcam <degrees> [distance]: turn the third-person view about the
+            // player (180 to see them from the front); their body keeps its
+            // facing. A distance (even under the nearest the player can
+            // zoom to) frames them closer.
             let Some(deg) = args.first().and_then(|a| a.parse::<f32>().ok()) else {
-                return vec!["usage: tpcam <degrees>".into()];
+                return vec!["usage: tpcam <degrees> [distance]".into()];
             };
             engine.test_orbit = deg.to_radians();
+            if let Some(d) = args.get(1).and_then(|a| a.parse::<f32>().ok()) {
+                engine.third_person_distance = d.max(0.0);
+            }
             vec!["ok".into()]
         }
         "impact" => {

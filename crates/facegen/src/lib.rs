@@ -320,6 +320,30 @@ pub fn part_morphs(lo: &LoadOrder, part: FormId, face: &Face) -> Vec<MorphUse> {
     out
 }
 
+/// Morphs written into a model path's variant (`<model>#facegen=<this>`):
+/// `file|morph|weight` entries joined by `;` (no path has those, or `#`).
+pub fn encode_morphs(uses: &[MorphUse]) -> String {
+    uses.iter()
+        .map(|u| format!("{}|{}|{}", u.file, u.morph, u.weight))
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// The morphs [`encode_morphs`] wrote; malformed entries are left out.
+pub fn decode_morphs(s: &str) -> Vec<MorphUse> {
+    s.split(';')
+        .filter_map(|e| {
+            let mut it = e.split('|');
+            let (file, morph, weight) = (it.next()?, it.next()?, it.next()?);
+            Some(MorphUse {
+                file: file.into(),
+                morph: morph.into(),
+                weight: weight.parse().ok()?,
+            })
+        })
+        .collect()
+}
+
 /// Apply morphs to a part's vertices. A morph whose file can't be read, or
 /// whose vertex count differs from the model's, or that the file lacks, is
 /// skipped; returns how many applied.
@@ -370,6 +394,24 @@ mod tests {
             .filter_map(|(&(n, p), &v)| Some((if v > 0.0 { p } else { n? }, v.abs())))
             .collect();
         assert_eq!(picked, vec![("NoseShort", 0.5), ("EyesForward", 0.25)]);
+    }
+
+    #[test]
+    fn morph_lists_round_trip_through_a_model_variant() {
+        let uses = vec![
+            MorphUse {
+                file: "meshes/actors/character/character assets/maleheadraces.tri".into(),
+                morph: "NordRace".into(),
+                weight: 1.0,
+            },
+            MorphUse {
+                file: "meshes/a.tri".into(),
+                morph: "NoseShort".into(),
+                weight: 0.25,
+            },
+        ];
+        assert_eq!(decode_morphs(&encode_morphs(&uses)), uses);
+        assert!(decode_morphs("").is_empty());
     }
 
     #[test]
