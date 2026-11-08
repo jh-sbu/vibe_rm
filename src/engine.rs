@@ -4377,6 +4377,51 @@ impl Engine {
         self.pending_moveto = Some(target);
     }
 
+    /// The load a script move of the player to `target` needs: none in the
+    /// space the player is in, else that interior or worldspace.
+    pub(crate) fn player_move_load(&self, target: FormId) -> Option<crate::loading::LoadTarget> {
+        let (place, feet) = self.current_place_of(target)?;
+        match (place, self.location) {
+            (crate::ai::schedule::Place::Interior(c), Location::Interior(here)) if c == here => {
+                None
+            }
+            (crate::ai::schedule::Place::Interior(cell), _) => {
+                Some(crate::loading::LoadTarget::Interior {
+                    cell,
+                    spawn: Some((feet, 0.0)),
+                })
+            }
+            (crate::ai::schedule::Place::Exterior(w, _), Location::Exterior { world, .. })
+                if w == world =>
+            {
+                None
+            }
+            (crate::ai::schedule::Place::Exterior(world, _), _) => {
+                Some(crate::loading::LoadTarget::Exterior {
+                    world,
+                    feet,
+                    yaw: self.ref_rotation(target).z,
+                })
+            }
+        }
+    }
+
+    /// A script's move of the player to `target`: placed there in the same
+    /// space, else loaded into the target's interior or worldspace.
+    fn move_player_to(&mut self, target: FormId) {
+        match self.player_move_load(target) {
+            Some(load) => self.request_load(crate::loading::LoadRequest::new(
+                load,
+                crate::loading::LoadCause::Script,
+            )),
+            None => {
+                if let Some(p) = self.ref_position(target) {
+                    self.place_player(p, self.camera.yaw);
+                }
+            }
+        }
+    }
+
     /// Start a quest: fill its aliases and mark it running; its scripts are
     /// attached, sent OnInit and its startup stage run once the VM is free
     /// (`init_quest`), so scripts can start quests. False when it is running
@@ -4656,25 +4701,8 @@ impl Engine {
             self.vm
                 .signal_with(crate::world::animated::open_state_key(r), state);
         }
-        if let Some(t) = self.pending_moveto.take()
-            && let Some(p) = self.ref_position(t)
-        {
-            let cell = self.lo.cell_of_ref(t);
-            let interior = cell
-                .and_then(|c| self.lo.cell(c))
-                .is_some_and(|c| c.world.is_none());
-            match (interior, cell) {
-                (true, Some(c)) if self.location != Location::Interior(c) => {
-                    self.request_load(crate::loading::LoadRequest::new(
-                        crate::loading::LoadTarget::Interior {
-                            cell: c,
-                            spawn: Some((p, 0.0)),
-                        },
-                        crate::loading::LoadCause::Script,
-                    ));
-                }
-                _ => self.place_player(p, self.camera.yaw),
-            }
+        if let Some(t) = self.pending_moveto.take() {
+            self.move_player_to(t);
         }
         // MESG notifications keep their authored display time.
         self.scripts.notifications.retain(|n| n.is_active(now));

@@ -768,6 +768,48 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 
+    #[test]
+    #[ignore = "requires a headless GPU; synthetic records only"]
+    fn a_script_move_of_the_player_loads_the_target_s_space() {
+        use crate::engine::Location;
+        use crate::loading::LoadTarget;
+        use esp::FormId;
+        let dir = destination_fixture("script-move");
+        let mut e = crate::stats::action_tests::headless_engine(&dir, "Travel.esp");
+        let world = FormId(0x900);
+        let interior = FormId(0x940);
+        // Nowhere yet (a new game): a worldspace reference is a load there,
+        // at the reference, facing its way.
+        e.location = Location::Nowhere;
+        assert_eq!(
+            e.player_move_load(FormId(0x931)),
+            Some(LoadTarget::Exterior {
+                world,
+                feet: glam::Vec3::new(6000.0, 7000.0, 80.0),
+                yaw: 1.25,
+            })
+        );
+        // From an interior, too; inside the worldspace, a placement.
+        e.location = Location::Interior(interior);
+        assert!(matches!(
+            e.player_move_load(FormId(0x931)),
+            Some(LoadTarget::Exterior { world: w, .. }) if w == world
+        ));
+        e.location = Location::Exterior {
+            world,
+            center: (0, 0),
+        };
+        assert_eq!(e.player_move_load(FormId(0x931)), None);
+        // An interior reference: that interior, unless the player is in it.
+        assert!(matches!(
+            e.player_move_load(FormId(0x937)),
+            Some(LoadTarget::Interior { cell, .. }) if cell == interior
+        ));
+        e.location = Location::Interior(interior);
+        assert_eq!(e.player_move_load(FormId(0x937)), None);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     fn destination_fixture(label: &str) -> std::path::PathBuf {
         use esp::writer::{Node, RecordBuilder as R, write_plugin};
         use esp::{FormId, group_type as g};
