@@ -3371,6 +3371,66 @@ fn main() -> Result<()> {
                 println!("{r} {} -> {base} {tag} {edid}{placement}", rec.tag());
             }
         }
+        Some("sound-levels") => {
+            // sound-levels <data dir>: detection sound levels (0 Loud, 1 Normal,
+            // 2 Silent, 3 Very Loud) counted: weapons' `VNAM` by animation type
+            // (DNAM byte 0), impacts' (IPCT `DATA` 0x10), projectiles' (`VNAM`)
+            // and explosions' (`DATA` 0x30); weapons whose level differs from
+            // most of their type are listed (twelve at most).
+            let data = std::path::Path::new(&args[1]);
+            let names = esp::LoadOrder::default_plugin_list(data, None);
+            let lo = esp::LoadOrder::load(data, &names)?;
+            use std::collections::BTreeMap;
+            let level = |d: Option<&[u8]>, at: usize| {
+                d.and_then(|d| d.get(at..at + 4))
+                    .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+            };
+            let mut weapons: BTreeMap<u8, BTreeMap<Option<u32>, Vec<String>>> = BTreeMap::new();
+            for &id in lo.ids_of_type(b"WEAP") {
+                let Some(rec) = lo.get(id) else { continue };
+                let anim = rec.get(b"DNAM").and_then(|d| d.first().copied());
+                let name = format!("{id} {}", rec.editor_id().unwrap_or_default());
+                weapons
+                    .entry(anim.unwrap_or(255))
+                    .or_default()
+                    .entry(level(rec.get(b"VNAM"), 0))
+                    .or_default()
+                    .push(name);
+            }
+            for (anim, levels) in &weapons {
+                let most = levels.iter().max_by_key(|(_, v)| v.len()).map(|(k, _)| *k);
+                let counts: Vec<String> = levels
+                    .iter()
+                    .map(|(k, v)| format!("{k:?}: {}", v.len()))
+                    .collect();
+                println!("WEAP anim {anim}: {}", counts.join(", "));
+                for (k, v) in levels {
+                    if Some(*k) != most {
+                        for n in v.iter().take(12) {
+                            println!("    {k:?} {n}");
+                        }
+                        if v.len() > 12 {
+                            println!("    {k:?} ... {} more", v.len() - 12);
+                        }
+                    }
+                }
+            }
+            for (tag, sub, at) in [
+                (b"IPCT", b"DATA", 0x10),
+                (b"PROJ", b"VNAM", 0),
+                (b"EXPL", b"DATA", 0x30),
+            ] {
+                let mut counts: BTreeMap<Option<u32>, usize> = BTreeMap::new();
+                for &id in lo.ids_of_type(tag) {
+                    let Some(rec) = lo.get(id) else { continue };
+                    *counts.entry(level(rec.get(sub), at)).or_default() += 1;
+                }
+                println!(
+                    "{}: {counts:?}",
+                    std::str::from_utf8(tag).unwrap_or_default()
+                );
+            }
+        }
         Some("unplayable-weapons") => {
             // unplayable-weapons <data dir>: non-playable weapons (DNAM flag 0x80) with
             // their animation type and model.
