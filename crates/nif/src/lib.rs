@@ -13,6 +13,7 @@ pub mod collision;
 pub mod psys;
 mod reader;
 pub mod skin;
+pub mod tri;
 
 use std::collections::HashMap;
 

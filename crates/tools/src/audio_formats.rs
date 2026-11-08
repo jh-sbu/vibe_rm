@@ -37,68 +37,21 @@ fn diagnostics(d: &[u8]) {
         }
     }
 }
+/// Each morph's name and largest offset component (`nif::tri`).
 fn tri_summary(d: &[u8]) -> Result<Vec<(String, f32)>> {
-    ensure!(
-        d.get(..8) == Some(b"FRTRI003") && d.len() >= 64,
-        "unsupported TRI header"
-    );
-    let n = word(d, 8).unwrap() as usize;
-    let tris = word(d, 12).unwrap() as usize;
-    let quads = word(d, 16).unwrap() as usize;
-    let uvs = word(d, 28).unwrap() as usize;
-    let flags = word(d, 32).unwrap();
-    let morphs = word(d, 36).unwrap() as usize;
-    ensure!(
-        [20, 24, 40, 44, 48, 52, 56, 60]
-            .into_iter()
-            .all(|o| word(d, o) == Some(0)),
-        "unsupported nonzero TRI header fields"
-    );
-    ensure!(flags <= 1, "unsupported TRI flags");
-    let topology = tris
-        .checked_mul(12)
-        .and_then(|v| quads.checked_mul(16).and_then(|q| v.checked_add(q)))
-        .context("TRI topology overflow")?;
-    let mut at = 64usize
-        .checked_add(n.checked_mul(12).context("TRI vertices overflow")?)
-        .and_then(|v| v.checked_add(topology))
-        .and_then(|v| uvs.checked_mul(8).and_then(|u| v.checked_add(u)))
-        .and_then(|v| v.checked_add(if flags & 1 != 0 { topology } else { 0 }))
-        .context("TRI layout overflow")?;
-    ensure!(at <= d.len(), "TRI arrays exceed file");
-    let mut result = Vec::new();
-    for _ in 0..morphs {
-        let len = word(d, at).context("truncated TRI morph name length")? as usize;
-        at += 4;
-        ensure!(
-            (1..=1024).contains(&len),
-            "unsupported TRI morph name length {len}, offset {at}"
-        );
-        let name = d.get(at..at + len).context("truncated TRI morph name")?;
-        at += len;
-        let name = std::str::from_utf8(name.strip_suffix(&[0]).unwrap_or(name))
-            .context("TRI morph name is not UTF-8")?
-            .to_owned();
-        let scale = f32::from_bits(word(d, at).context("truncated TRI morph scale")?);
-        at += 4;
-        ensure!(scale.is_finite(), "nonfinite TRI morph scale");
-        let end = at
-            .checked_add(n.checked_mul(6).context("TRI morph overflow")?)
-            .context("TRI morph overflow")?;
-        let deltas = d.get(at..end).context("truncated TRI morph deltas")?;
-        at = end;
-        let peak = deltas
-            .chunks_exact(2)
-            .map(|v| (i16::from_le_bytes(v.try_into().unwrap()) as f32 * scale).abs())
-            .fold(0.0, f32::max);
-        result.push((name, peak));
-    }
-    ensure!(
-        at == d.len(),
-        "{} trailing TRI bytes remain unparsed",
-        d.len() - at
-    );
-    Ok(result)
+    let tri = nif::tri::Tri::parse(d)?;
+    Ok(tri
+        .morphs
+        .into_iter()
+        .map(|m| {
+            let peak = m
+                .deltas
+                .iter()
+                .map(|v| v.abs().max_element())
+                .fold(0.0, f32::max);
+            (m.name, peak)
+        })
+        .collect())
 }
 
 pub fn run(kind: &str, data: &str, path: Option<&str>) -> Result<()> {
