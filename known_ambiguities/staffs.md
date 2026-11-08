@@ -143,8 +143,16 @@ weapons, the Ebony Blade, Keening, Bloodskal, trap darts. Here:
   for each arrow that strikes, not each shot loosed. With too little
   left, the blow lands without the enchantment, and nothing is shown.
 - **No `EAMT`**: the enchantment always lands.
-- **NPCs' weapons** run dry as the player's do. Whether the game spares
-  NPCs isn't published.
+- **NPCs' weapons** run dry as the player's do. Skyrim SE (autotest21,
+  `research/autotest21.md`, EnchantedBlows): an NPC with an iron sword of
+  burning (`EnchWeaponFireDamage01`: `ENIT` cost 4, auto-calculated; one
+  5-point `EnchFireDamageFFContact`, base cost 0.9) went from 500 to 496.16
+  charge in 10 s of fighting, the target seeing two enchantment effects
+  among four hits: NPCs do pay, about 1.92 an enchanted blow (or 0.96 a
+  hit). Ours pays the `ENIT` 4 by the attacker's Destruction (about 3.6 at
+  skill 15): it differs, and no formula from the records gives 1.92. Open
+  (compared 2026-11-07): a probe with known skills (Destruction and
+  Enchanting at 15 and 100) reading the charge after each hit.
 
 ## Recharging
 

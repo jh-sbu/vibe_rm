@@ -24,10 +24,15 @@ mine's, 40 Whiterun's); the CK wiki (`AddToMap`, `EnableFastTravel`,
 
 ## Unconfirmed: choices made
 
-- **Coming near.** A marker comes onto the map when the player, in its
-  worldspace, is within `iMapMarkerVisibleDistance`, and is discovered within
-  `iMapMarkerRevealDistance` (straight-line distances to the marker,
-  checked twice a second). Disabled markers are neither.
+- **Coming near.** Skyrim SE (autotest21, `research/autotest21.md`,
+  MapMarkers): a hidden marker stayed off the map at 8000 and 4000 units
+  (the player 200 up) and was on the map, travellable and discovered
+  (Locations Discovered +1) at 2000, though `iMapMarkerRevealDistance` is
+  1000 and `iMapMarkerVisibleDistance` 12500. A marker the player comes
+  within 3000 of (straight-line, in its worldspace, checked twice a second)
+  is discovered here, which puts it on the map; 3000 is the middle of the
+  observed range (2026-11-07; before, markers went on the map from 12500
+  and were discovered at 1000). Disabled markers are neither.
 - **Discovering** shows the quest banner with the name and `sDiscoveredText`
   ("DISCOVERED: RIVERWOOD"), counts Locations Discovered and plays the
   discovery music once over the location's: `MUSDiscoveryCity` for cities
@@ -49,8 +54,10 @@ mine's, 40 Whiterun's); the CK wiki (`AddToMap`, `EnableFastTravel`,
   are none.
 - **`FNAM` 4** (the DLC's) is kept for the map.
 - **`AddToMap`**: "Map updated." shows when a marker wasn't on the map yet.
-  One added with travel isn't discovered: coming near it later discovers
-  it (the banner, the statistic) as any other.
+  One added is never discovered: autotest21's `AddToMap(true)` marker was
+  visible and travellable, with no discovery, and none when the player then
+  came within 200. Markers on the map from the start (`FNAM` 1) are still
+  discovered when reached (unobserved; the holds' capitals' banners).
 
 ## Custom destination
 

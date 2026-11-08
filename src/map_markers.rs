@@ -1,8 +1,8 @@
 //! Map markers: the references the data marks as places on the map (`XMRK`,
 //! with their name `FULL`, type `TNAM` and flags `FNAM`). A marker is on the
 //! map (visible) when the data says so from the start, when a script adds it
-//! (`AddToMap`) or when the player comes near; it is discovered when the
-//! player reaches it, which the HUD announces ("Riverwood DISCOVERED"), the
+//! (`AddToMap`) or when the player comes near enough to discover it, which
+//! the HUD announces ("Riverwood DISCOVERED"), the
 //! discovery music plays for and the Locations Discovered statistic counts.
 //! The compass shows the discovered markers near the player and, hollow, the
 //! undiscovered nearer still (`compass_markers`).
@@ -22,6 +22,12 @@ const TRAVEL: u8 = 0x02;
 
 /// Seconds between checks of the player's distance to the markers.
 const CHECK_INTERVAL: f32 = 0.5;
+/// How near the player comes for a marker to be discovered, and so go on the
+/// map: Skyrim SE (autotest21) a hidden marker stayed off the map at 8000
+/// and 4000 units and was on it, travellable and discovered at 2000, though
+/// `iMapMarkerRevealDistance` is 1000. Taken as the middle of that range
+/// (`known_ambiguities/map-markers.md`).
+const DISCOVER_DISTANCE: f32 = 3000.0;
 
 /// The compass marker clip's frames (`hudmenu.swf`, "Compass Marker"): the
 /// quest targets', the custom destination's, the enemies', then the location markers' (a frame per map
@@ -221,9 +227,9 @@ impl Engine {
         }
     }
 
-    /// Twice a second: the enabled markers in the player's worldspace come
-    /// onto the map within `iMapMarkerVisibleDistance` and are discovered
-    /// within `iMapMarkerRevealDistance`.
+    /// Twice a second: the enabled markers in the player's worldspace within
+    /// [`DISCOVER_DISTANCE`] are discovered, which puts them on the map,
+    /// unless a script already put them there (`AddToMap`).
     pub(crate) fn update_map_markers(&mut self, dt: f32) {
         self.map_markers.next_check -= dt;
         if self.map_markers.next_check > 0.0 {
@@ -233,31 +239,30 @@ impl Engine {
         let Location::Exterior { world, .. } = self.location else {
             return;
         };
-        let (visible, reveal) = self.marker_distances();
         let player = self.player.position;
         let near: Vec<MapMarker> = self
             .map_marker_list()
             .iter()
-            .filter(|m| m.world == world && m.pos.distance(player) < visible)
+            .filter(|m| m.world == world && m.pos.distance(player) < DISCOVER_DISTANCE)
             .cloned()
             .collect();
         for m in near {
-            if self.is_disabled(m.r) {
+            // One a script put on the map is never discovered (autotest21:
+            // not even from 200 units).
+            if self.is_disabled(m.r)
+                || self.map_markers.discovered.contains(&m.r)
+                || self.map_markers.shown.contains(&m.r)
+            {
                 continue;
             }
-            self.map_markers.shown.insert(m.r);
-            if m.pos.distance(player) < reveal && !self.map_markers.discovered.contains(&m.r) {
-                self.discover(&m);
-            }
+            self.discover(&m);
         }
     }
 
-    fn marker_distances(&self) -> (f32, f32) {
-        let lo = &self.lo;
-        (
-            crate::ai::combat::gmst_i32(lo, "iMapMarkerVisibleDistance", 12500) as f32,
-            crate::ai::combat::gmst_i32(lo, "iMapMarkerRevealDistance", 1000) as f32,
-        )
+    /// `iMapMarkerVisibleDistance`: how near undiscovered markers show,
+    /// hollow, on the compass.
+    fn compass_reveal_distance(&self) -> f32 {
+        crate::ai::combat::gmst_i32(&self.lo, "iMapMarkerVisibleDistance", 12500) as f32
     }
 
     fn discover(&mut self, m: &MapMarker) {
@@ -394,7 +399,7 @@ impl Engine {
         let lo = &self.lo;
         let max = crate::ai::combat::gmst_f32(lo, "fHUDCompassLocationMaxDist", 20000.0);
         let fade = crate::ai::combat::gmst_i32(lo, "iMapMarkerFadeStartDistance", 10000) as f32;
-        let (visible, _) = self.marker_distances();
+        let visible = self.compass_reveal_distance();
         let player = self.player.position;
         let near: Vec<MapMarker> = self
             .map_marker_list()
@@ -468,6 +473,53 @@ mod tests {
         e.enable_fast_travel(r, false);
         e.enable_fast_travel(r, true);
         assert!(e.can_fast_travel_to(r));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// Skyrim SE (autotest21): a hidden marker stays off the map at 4000
+    /// units and is discovered (on the map, travellable) at 2000; one a
+    /// script added is never discovered, not even from 200.
+    #[test]
+    #[ignore = "requires a headless GPU; synthetic records only"]
+    fn markers_are_discovered_near_and_added_ones_never() {
+        let dir = std::env::temp_dir().join(format!("vrm-marker-near-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("Near.esp"),
+            esp::writer::write_plugin(0, &[], "test", "synthetic markers", 0x900, &[]),
+        )
+        .unwrap();
+        let mut e = crate::stats::action_tests::headless_engine(&dir, "Near.esp");
+        let world = FormId(0x901);
+        let (hidden, added) = (FormId(0x900), FormId(0x902));
+        let marker = |r, x| MapMarker {
+            r,
+            world,
+            pos: Vec3::new(x, 0.0, 0.0),
+            name: "Test".into(),
+            kind: 1,
+            flags: 0,
+        };
+        e.map_markers
+            .all
+            .set(vec![marker(hidden, 0.0), marker(added, 100_000.0)])
+            .unwrap();
+        e.location = Location::Exterior {
+            world,
+            center: (0, 0),
+        };
+        e.player.position = Vec3::new(4000.0, 0.0, 200.0);
+        e.update_map_markers(1.0);
+        assert!(!e.map_marker_visible(hidden));
+        e.player.position = Vec3::new(2000.0, 0.0, 200.0);
+        e.update_map_markers(1.0);
+        assert!(e.map_marker_visible(hidden) && e.can_fast_travel_to(hidden));
+        assert!(e.map_markers.discovered.contains(&hidden));
+        e.add_to_map(added, true);
+        e.player.position = Vec3::new(100_200.0, 0.0, 0.0);
+        e.update_map_markers(1.0);
+        assert!(!e.map_markers.discovered.contains(&added));
+        assert!(e.can_fast_travel_to(added));
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

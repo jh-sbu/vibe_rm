@@ -81,8 +81,13 @@ pub struct Destination {
     pub yaw: f32,
 }
 
-/// Native approximation: walking distance, the configured speed multiplier and
-/// TimeScale. Exact Skyrim route/speed accounting is not publicly established.
+/// Units a real second fast travel covers, fitted to Skyrim SE (autotest21):
+/// 40,261 units took 2.713 game hours and 140,452 took 9.546 at timescale 20,
+/// about 14,720 units a game hour (`known_ambiguities/fast-travel.md`).
+const FAST_TRAVEL_SPEED: f32 = 81.8;
+
+/// Straight-line distance at [`FAST_TRAVEL_SPEED`], the configured speed
+/// multiplier and TimeScale.
 fn travel_time(distance: f32, speed_mult: f32, time_scale: f32) -> Option<(f32, f32)> {
     if !distance.is_finite()
         || distance < 0.0
@@ -93,7 +98,7 @@ fn travel_time(distance: f32, speed_mult: f32, time_scale: f32) -> Option<(f32, 
     {
         return None;
     }
-    let seconds = distance / (crate::ai::WALK_SPEED * speed_mult);
+    let seconds = distance / (FAST_TRAVEL_SPEED * speed_mult);
     let hours = seconds * time_scale / 3600.0;
     // Bound catch-up work and reject corrupt settings/positions before mutation.
     (seconds.is_finite() && hours.is_finite() && seconds <= 129600.0 && hours <= 720.0)
@@ -539,8 +544,14 @@ mod tests {
 
     #[test]
     fn fast_travel_time_is_distance_dependent_and_bounded() {
-        assert_eq!(super::travel_time(28800.0, 1.0, 20.0), Some((2.0, 360.0)));
-        assert_eq!(super::travel_time(28800.0, 2.0, 20.0), Some((1.0, 180.0)));
+        // Skyrim SE's two readings (autotest21), within a hundredth of an hour.
+        for (units, hours) in [(40261.0, 2.713), (140452.0, 9.546)] {
+            let (h, _) = super::travel_time(units, 1.0, 20.0).unwrap();
+            assert!((h - hours).abs() < 0.03, "{units}: {h}");
+        }
+        let (one, s1) = super::travel_time(28800.0, 1.0, 20.0).unwrap();
+        let (two, s2) = super::travel_time(28800.0, 2.0, 20.0).unwrap();
+        assert!((one - 2.0 * two).abs() < 1e-4 && (s1 - 2.0 * s2).abs() < 1e-3);
         assert_eq!(super::travel_time(0.0, 1.0, 20.0), Some((0.0, 0.0)));
         assert!(super::travel_time(f32::NAN, 1.0, 20.0).is_none());
         assert!(super::travel_time(f32::MAX, 1.0, 20.0).is_none());

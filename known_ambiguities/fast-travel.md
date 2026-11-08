@@ -78,10 +78,15 @@ there shows the invalid-destination message.
 UESP Transport establishes increasing time with distance, but not a formula.
 Public estimates disagree on units and admit error, e.g. the author's
 [2020 calculation report](https://forums.nexusmods.com/topic/8429953-fast-travel-time-calc/).
-No exact SE formula has been verified. This runtime uses horizontal straight-line
-distance to the resolved arrival point, divided by its existing 80-unit walking
-speed and fFastTravelSpeedMult (default 1); TimeScale (default 20) converts this
-to game hours. Armor, roads and horses do not change it. Unrelated-worldspace and
+Skyrim SE (autotest21, `research/autotest21.md`, FastTravel): `Game.FastTravel`
+over 40,261 units (`GetDistance` to the marker) took 2.713 game hours, over
+140,452 units 9.546, at timescale 20: linear, about 14,720 units a game hour
+(81.8 units a real second). This runtime uses horizontal straight-line distance
+to the resolved arrival point, divided by that fitted 81.8 (it was the 80-unit
+walking speed until 2026-11-07) and fFastTravelSpeedMult (default 1); TimeScale
+(default 20) converts this to game hours. Whether the game measures from the
+marker or the arrival point, horizontally or not, and how it scales with another
+timescale is unobserved. Armor, roads and horses do not change it. Unrelated-worldspace and
 interior-linked arrivals currently pass zero time: no meaningful coordinate
 conversion is established.
 
