@@ -331,6 +331,7 @@ fn drawn_enchant_targets_only_its_blade_and_respects_flag_context() {
         shadow_only: false,
         skin_tone: None,
         weight: 0.5,
+        alpha: 1.0,
     };
     let target = shaders::WeaponTarget {
         form: FormId(0x900),

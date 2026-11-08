@@ -970,6 +970,16 @@ pub fn call(
                 value: Value::Bool(true),
             }
         }
+        // Waits for the reference's graph to raise the event, as
+        // `PlayAnimationAndWait` does after its own (and with its limit).
+        ("objectreference", "waitforanimationevent") => match me {
+            Some(r) => NativeResult::WaitFor {
+                key: e.anim_events.wait_for(r, &str_arg(args, 0)),
+                timeout: crate::anim_events::WAIT_LIMIT,
+                value: Value::Bool(true),
+            },
+            None => v(Value::Bool(false)),
+        },
         ("form", "registerforanimationevent")
         | ("alias", "registerforanimationevent")
         | ("activemagiceffect", "registerforanimationevent")
@@ -2216,6 +2226,26 @@ pub fn call(
                 crate::ai::furniture::Use::Sleep
             };
             v(Value::Int(me.map_or(0, |a| e.furniture_state(a, kind))))
+        }
+        // SetAlpha(afTargetAlpha, abFade = false): how opaque a loaded actor
+        // is drawn; fading takes a second for the whole way (no source).
+        ("actor", "setalpha") => {
+            if let Some(a) = me.and_then(|r| e.actor_mut(r)) {
+                let target = arg(0).as_float();
+                a.alpha_target = if target.is_finite() {
+                    target.clamp(0.0, 1.0)
+                } else {
+                    1.0
+                };
+                a.alpha_fading = args.get(1).is_some_and(|f| f.as_bool());
+            }
+            none()
+        }
+        ("actor", "attachashpile") => {
+            if let Some(a) = me {
+                e.attach_ash_pile(a, form_arg(args, 0));
+            }
+            none()
         }
         ("actor", "setcriticalstage") => {
             if let Some(a) = me {

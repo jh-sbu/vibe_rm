@@ -864,6 +864,9 @@ pub struct ActorInstance {
     /// Its weight (`NAM7` / 100): 0 draws its models' thin (`_0`) shapes, 1
     /// their heavy (`_1`) ones, those without a thin one always as they are.
     pub weight: f32,
+    /// How opaque it is drawn (`SetAlpha`), with the distance fade: at 0 it is
+    /// neither drawn nor casts a shadow.
+    pub alpha: f32,
 }
 
 impl ActorInstance {
@@ -2712,7 +2715,8 @@ impl Renderer {
             let (center, radius) = actor.bounds();
             let fade = self
                 .distances
-                .actor(center.distance(camera.position), radius);
+                .actor(center.distance(camera.position), radius)
+                * actor.alpha.clamp(0.0, 1.0);
             if fade <= 0. || actor.shadow_only || !frustum.sphere_visible(center, radius) {
                 continue;
             }
@@ -2767,7 +2771,11 @@ impl Renderer {
             } else {
                 self.distances
                     .actor(center.distance(camera.position), radius)
-            };
+            } * actor.alpha.clamp(0.0, 1.0);
+            if actor.alpha <= 0.0 {
+                stats.culled += 1;
+                continue;
+            }
             let visible = first
                 || (fade > 0. && !actor.shadow_only && frustum.sphere_visible(center, radius));
             if !visible {

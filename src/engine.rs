@@ -2215,6 +2215,7 @@ impl Engine {
                 shadow_only: false,
                 skin_tone: d.skin_tone,
                 weight: d.weight,
+                alpha: 1.0,
             });
             self.rigid_models.insert(d.ref_id, rigid);
             runtimes.push(rt);
@@ -3663,6 +3664,11 @@ impl Engine {
             return Ok(());
         }
         self.activate_children(owner);
+        // An ash pile: the body it was left by (`AttachAshPile`).
+        if let Some(&body) = self.world_state.ash_piles.get(&owner) {
+            self.menu = Some(crate::items::Menu::Container(body));
+            return Ok(());
+        }
         if is_actor && self.is_dead(owner) {
             // Searching the body.
             self.menu = Some(crate::items::Menu::Container(owner));

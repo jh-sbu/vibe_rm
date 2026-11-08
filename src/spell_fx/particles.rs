@@ -321,6 +321,7 @@ mod tests {
             shadow_only: false,
             skin_tone: None,
             weight: 0.25,
+            alpha: 1.0,
         };
         let vertex = SkinVertex {
             position: [0.0, 1.0, 0.0],

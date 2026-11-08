@@ -29,6 +29,9 @@ pub struct WorldState {
     /// References on their way by `TranslateTo` and its kin (not saved:
     /// a load leaves them where they were).
     pub translations: std::collections::HashMap<FormId, crate::translation::Translation>,
+    /// Ash piles made by `AttachAshPile`, and whose body each holds:
+    /// activating one searches the body (not saved yet).
+    pub ash_piles: std::collections::HashMap<FormId, FormId>,
     /// Dead actors and where their bodies lie.
     pub dead: HashMap<FormId, (Place, Vec3)>,
     /// Actors killed in play (`kill_actor_by`): who dealt the killing blow and

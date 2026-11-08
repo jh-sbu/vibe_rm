@@ -431,6 +431,11 @@ pub struct ActorRuntime {
     face: Option<(FormId, bool)>,
     /// Travel marker heading to face after scheduled placement.
     pub(crate) turn_after_arrival: Option<f32>,
+    /// `SetAlpha`: how opaque it is drawn (0 to 1), what it fades to, and how
+    /// fast (a second a whole fade; `known_ambiguities/remaining-natives.md`).
+    pub(crate) alpha: f32,
+    pub(crate) alpha_target: f32,
+    pub(crate) alpha_fading: bool,
     /// The weapon is in hand (between the graph's `weaponDraw` and `weaponSheathe`),
     /// and whether that changed this frame.
     pub(crate) weapon_out: bool,
@@ -627,6 +632,9 @@ impl ActorRuntime {
             hurry: false,
             face: None,
             turn_after_arrival: None,
+            alpha: 1.0,
+            alpha_target: 1.0,
+            alpha_fading: false,
             out_of_furniture: false,
             carrying: false,
             untaken_offset: None,
@@ -4386,6 +4394,15 @@ impl Engine {
                 }
                 actor_timing.next("ai.actor.events");
                 inst.transform = a.transform();
+                if a.alpha != a.alpha_target {
+                    a.alpha = if a.alpha_fading {
+                        let step = (a.alpha_target - a.alpha).clamp(-dt, dt);
+                        a.alpha + step
+                    } else {
+                        a.alpha_target
+                    };
+                }
+                inst.alpha = a.alpha;
                 if std::mem::take(&mut a.objects_changed) {
                     log::debug!("{} holds {:?}", a.ref_id, a.objects);
                     held.push((*key, index, a.objects.clone()));

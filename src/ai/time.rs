@@ -844,6 +844,7 @@ mod tests {
                 shadow_only: false,
                 skin_tone: None,
                 weight: 0.,
+                alpha: 1.0,
             });
         e.pass_time(4.0);
         assert!(!e.actor_cells.contains_key(&ACTOR));

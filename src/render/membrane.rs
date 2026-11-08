@@ -328,6 +328,7 @@ pub fn shader_target(
         shadow_only: actor.shadow_only,
         skin_tone: None,
         weight: actor.weight,
+        alpha: actor.alpha,
     }
 }
 

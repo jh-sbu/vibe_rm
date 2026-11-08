@@ -214,3 +214,16 @@ script calls it. To settle: on a save past its first days,
   found). Whether the game refuses it in combat isn't known.
 - `MoveToPackageLocation` puts the actor where its running package puts it
   (as a scheduled placement); a whole-cell location moves nothing.
+- `WaitForAnimationEvent(asEventName)` waits for the reference's graph to
+  raise the event, with `PlayAnimationAndWait`'s 10 s limit (the game's has
+  none), and returns True.
+- `AttachAshPile(akAshPileBase)` places an ash pile of that activator, or
+  `DefaultAshPile1` (0x1B) with none given, where the actor is; activating
+  the pile searches the actor's body (the vanilla piles have no script, so
+  the link is the engine's). Not saved yet. The default form is a choice:
+  `magicAttachAshPileOnDeath` passes its own property.
+- `SetAlpha(afTargetAlpha, abFade)` draws a loaded actor that opaque, by the
+  same dithering as the distance fade; 0 neither draws it nor casts a
+  shadow. A fade takes a second for the whole way (no source gives its
+  length). The player and objects aren't faded; an actor loaded again is
+  opaque.

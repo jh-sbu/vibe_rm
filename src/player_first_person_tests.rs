@@ -20,6 +20,7 @@ fn first_rig(graph: GraphAnim) -> FirstPerson {
             shadow_only: false,
             skin_tone: None,
             weight: 0.5,
+            alpha: 1.0,
         },
     }
 }

@@ -1429,6 +1429,7 @@ fn batch08_movement_arrest_and_loaded_3d() {
             shadow_only: true,
             skin_tone: None,
             weight: 0.0,
+            alpha: 1.0,
         });
     assert_eq!(
         call(&mut e, "objectreference", "is3dloaded", FormId(0x800), &[]),

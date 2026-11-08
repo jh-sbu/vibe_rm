@@ -295,6 +295,7 @@ impl Engine {
             shadow_only: !self.third_person,
             skin_tone: d.skin_tone,
             weight: d.weight,
+            alpha: 1.0,
         });
         self.build_first_person(&mut body, &d);
         body.set_view(self.third_person);
@@ -432,6 +433,7 @@ impl Engine {
                 shadow_only: false,
                 skin_tone: d.skin_tone,
                 weight: d.weight,
+                alpha: 1.0,
             },
         });
     }

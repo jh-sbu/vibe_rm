@@ -41,6 +41,20 @@ impl Engine {
         }
     }
 
+    /// `AttachAshPile(akAshPileBase)`: an ash pile of that activator (or
+    /// `DefaultAshPile1`, 0x1B) where the actor is; activating it searches
+    /// the actor's body. Neither vanilla ash pile activator has a script, so
+    /// the engine links them (`known_ambiguities/remaining-natives.md`).
+    pub fn attach_ash_pile(&mut self, actor: FormId, base: Option<FormId>) -> Option<FormId> {
+        let base = base.filter(|b| !b.is_null()).unwrap_or(FormId(0x1B));
+        if self.lo.tag_of(base).map(|t| t.0) != Some(*b"ACTI") {
+            return None;
+        }
+        let pile = self.create_ref(base, actor, false)?;
+        self.world_state.ash_piles.insert(pile, actor);
+        Some(pile)
+    }
+
     pub fn critical_stage(&self, actor: FormId) -> i32 {
         self.actor_flags.critical.get(&actor).copied().unwrap_or(0)
     }
