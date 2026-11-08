@@ -4605,7 +4605,10 @@ impl Engine {
     /// of those whose conditions pass (all the stage's when it has no entries).
     /// A quest never started is started first (its properties bound), as the
     /// CK wiki has `Quest.SetStage` do; one stopped stays stopped (stages set
-    /// before a `Stop` in the same fragment run after it here).
+    /// before a `Stop` in the same fragment run after it here). A stage below
+    /// the current one leaves the current stage as it is, but runs (log
+    /// entries, fragments) if it isn't done yet: the CK wiki's
+    /// `SetCurrentStageID` notes (only `Reset` lets the stage go lower).
     fn run_stage(&mut self, q: FormId, stage: u16) {
         let fresh = self
             .scripts
@@ -4617,8 +4620,15 @@ impl Engine {
         }
         {
             let st = self.scripts.quests.entry(q).or_default();
-            st.stage = stage;
-            st.done.insert(stage);
+            if stage < st.stage {
+                if !st.done.insert(stage) {
+                    log::debug!("quest {q} stage {stage}: below {} and done", st.stage);
+                    return;
+                }
+            } else {
+                st.stage = stage;
+                st.done.insert(stage);
+            }
         }
         let entries = self.add_log_entries(q, stage);
         let Some(rec) = self.lo.get(q) else { return };
@@ -4840,6 +4850,32 @@ pub fn interior_environment(l: &Lighting) -> Environment {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn a_lower_stage_runs_once_without_lowering_the_current_stage_until_a_reset() {
+        let (_f, mut e) = crate::ai::exec::tests::fixture();
+        let q = FormId(0x870);
+        e.scripts.quests.entry(q).or_default().running = true;
+        let state = |e: &Engine| {
+            let st = &e.scripts.quests[&q];
+            let mut done: Vec<_> = st.done.iter().copied().collect();
+            done.sort();
+            (st.stage, done)
+        };
+        e.run_stage(q, 15);
+        e.run_stage(q, 14);
+        // MQ101's opening sets 15, then 14: its horses' packages want 15 to 19.
+        assert_eq!(state(&e), (15, vec![14, 15]));
+        e.run_stage(q, 14);
+        assert_eq!(state(&e), (15, vec![14, 15]));
+        e.run_stage(q, 20);
+        assert_eq!(state(&e), (20, vec![14, 15, 20]));
+        e.scripts.quests.insert(q, Default::default());
+        e.scripts.quests.get_mut(&q).unwrap().running = true;
+        e.run_stage(q, 10);
+        assert_eq!(state(&e), (10, vec![10]));
+    }
 
     #[test]
     fn actors_placed_on_top_of_others_step_out_of_their_way() {
