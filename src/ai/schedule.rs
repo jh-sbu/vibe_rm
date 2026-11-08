@@ -998,6 +998,50 @@ impl Engine {
         log::debug!("schedules jumped to in {:?}", start.elapsed());
     }
 
+    /// A loaded actor out in the world at `pos`: if that is in another loaded
+    /// exterior cell than the one it is kept in, it belongs to that cell now,
+    /// as it is (no respawn), and goes when that cell unloads.
+    pub(crate) fn rehome_actor(&mut self, r: FormId, pos: Vec3) {
+        let Some(&from @ CellKey::Exterior(..)) = self.actor_cells.get(&r) else {
+            return;
+        };
+        let to = crate::engine::grid_of(pos.truncate());
+        let to = CellKey::Exterior(to.0, to.1);
+        if to == from || !self.cells.contains_key(&to) || !self.scene.cells.contains_key(&to) {
+            return;
+        }
+        let (Some(rt), Some(rc)) = (self.cells.get_mut(&from), self.scene.cells.get_mut(&from))
+        else {
+            return;
+        };
+        let Some(i) = rt.actors.iter().position(|a| a.ref_id == r) else {
+            return;
+        };
+        if i >= rc.actors.len() {
+            return;
+        }
+        let a = rt.actors.remove(i);
+        let inst = rc.actors.remove(i);
+        let capsule = a.capsule.filter(|c| rt.colliders.contains(c));
+        if let Some(c) = capsule {
+            rt.colliders.retain(|h| *h != c);
+        }
+        let rt = self.cells.get_mut(&to).expect("loaded");
+        rt.actors.push(a);
+        rt.colliders.extend(capsule);
+        self.scene
+            .cells
+            .get_mut(&to)
+            .expect("loaded")
+            .actors
+            .push(inst);
+        self.actor_cells.insert(r, to);
+        if let Some(place) = self.place_of_key(to) {
+            self.whereabouts.put(r, place, pos);
+        }
+        log::debug!("{r} walks from {from:?} into {to:?}");
+    }
+
     /// Remove a spawned actor from the scene.
     pub fn despawn_actor(&mut self, r: FormId) {
         let Some(key) = self.actor_cells.remove(&r) else {
@@ -1049,6 +1093,57 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn an_actor_out_in_another_loaded_cell_belongs_to_it_as_it_is() {
+        use crate::ai::exec::tests::{ACTOR, fixture, loaded_actor};
+        let (_f, mut e) = fixture();
+        loaded_actor(&mut e);
+        let a = e
+            .cells
+            .remove(&CellKey::Interior(crate::ai::exec::tests::CELL))
+            .unwrap();
+        let (home, next) = (CellKey::Exterior(0, 0), CellKey::Exterior(1, 0));
+        let instance = || crate::render::ActorInstance {
+            meshes: vec![],
+            attachments: vec![],
+            equipment: vec![],
+            held_light: None,
+            transform: glam::Mat4::IDENTITY,
+            pose: vec![],
+            lights: [0; 8],
+            radius: 1.0,
+            shadow_only: true,
+            skin_tone: None,
+            weight: 0.0,
+            alpha: 1.0,
+        };
+        e.cells.insert(home, a);
+        e.cells.insert(next, Default::default());
+        e.scene
+            .cells
+            .entry(home)
+            .or_default()
+            .actors
+            .push(instance());
+        e.scene.cells.entry(next).or_default();
+        e.actor_cells.insert(ACTOR, home);
+        // Still in its cell: stays.
+        e.rehome_actor(ACTOR, Vec3::new(100., 100., 0.));
+        assert_eq!(e.actor_cells[&ACTOR], home);
+        // Walked over the line, it goes with its walk as it was.
+        e.rehome_actor(ACTOR, Vec3::new(5000., 100., 0.));
+        assert_eq!(e.actor_cells[&ACTOR], next);
+        assert!(e.cells[&home].actors.is_empty() && e.scene.cells[&home].actors.is_empty());
+        assert_eq!(e.cells[&next].actors[0].exec.health, 30.0);
+        assert_eq!(e.scene.cells[&next].actors.len(), 1);
+        // Into a cell that isn't loaded: it stays with the one it is in.
+        e.rehome_actor(ACTOR, Vec3::new(9000., 100., 0.));
+        assert_eq!(e.actor_cells[&ACTOR], next);
+        e.unload_cell(home);
+        assert!(e.actor_cells.contains_key(&ACTOR) && !e.away.contains_key(&ACTOR));
+    }
 
     #[test]
     fn refresh_comes_due_each_half_hour() {

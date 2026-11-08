@@ -4561,5 +4561,24 @@ impl Engine {
         }
         self.sync_riding_bodies();
         self.sync_passengers();
+        // Those walking, riding (horses, carts) or carried into another
+        // loaded cell belong to it now.
+        let crossed: Vec<(FormId, Vec3)> = self
+            .cells
+            .iter()
+            .filter_map(|(key, rt)| match *key {
+                crate::render::CellKey::Exterior(x, y) => Some(((x, y), rt)),
+                crate::render::CellKey::Interior(_) => None,
+            })
+            .flat_map(|(cell, rt)| {
+                rt.actors
+                    .iter()
+                    .filter(move |a| crate::engine::grid_of(a.exec.pos.truncate()) != cell)
+                    .map(|a| (a.ref_id, a.exec.pos))
+            })
+            .collect();
+        for (r, pos) in crossed {
+            self.rehome_actor(r, pos);
+        }
     }
 }

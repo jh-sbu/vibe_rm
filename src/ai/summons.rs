@@ -202,8 +202,8 @@ impl Engine {
                 continue;
             }
             // Following its commander about, it belongs to the cell it is in
-            // now (actors otherwise stay with the cell they loaded in, going
-            // when it unloads).
+            // now, even one not loaded (`rehome_actor` moves only into
+            // loaded cells).
             if let Some((place, key)) = self
                 .actor_cells
                 .get(&r)
