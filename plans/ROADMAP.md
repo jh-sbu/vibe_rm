@@ -2453,10 +2453,14 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
    - The opening as it runs now (2026-11-08, offscreen `--new-game`): stage
      10 sets the scene, the horses' aliases count their cells loading (stage
      12), both carts drive off with their passengers seated, and Ralof's
-     "Hey, you. You're finally awake." scene plays (stage 14). Then both
-     horses stop where `MQ101CartHorse1/2Patrol4` ends (about y -92000 and
-     -92960): `Patrol5` waits for stage 37, which nothing sets yet. Next, find
-     what sets it (a trigger the cart passes? the scene's end?). Still
+     "Hey, you. You're finally awake." scene plays (stage 14). Then the horses stall mid-walk on
+     `MQ101CartHorse1/2Patrol1` (about (21840, -91990) and (22160, -92960)):
+     their patrol walk never arrives, and they don't move. Horse 1 stalls
+     there whether or not its cart is upright, so the cart isn't what stops
+     it. Later on the road, `defaultSetStageTRIGSpecificActor` triggers set
+     stages 20-37 when the cart horses' base (`MQ101CartHorse`) or `MQ101Horse`
+     enters them, and `Patrol4` / `Patrol5` (stages 37-59) take the horses
+     on to Helgen. Still
      missing: the title sequence's natives (`ShowTitleSequenceMenu`,
      `StartTitleSequence`, `HideTitleSequenceMenu`) and
      `ShowFirstPersonGeometry`
