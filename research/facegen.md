@@ -49,6 +49,7 @@ prints two decimals, so this is the print precision:
 
     head = base
          + race morph named after the NPC's race (weight 1)
+         + SkinnyMorph × (1 − NAM7 / 100) from the expression file
          + for each NAM9 slider v: the positive morph × v if v > 0,
            the negative one × −v if v < 0
          + NoseType<NAMA.nose> + EyesType<NAMA.eyes> + LipType<NAMA.mouth>
@@ -86,5 +87,52 @@ UESP's NPC_ page gives each direction (for example "−1 Short to 1 Long").
 The asset agrees with it everywhere except row 17: UESP has "−1 Forward to
 1 Back", but Alvor's −0.6 is matched by `EyesBack` × 0.6. Human heads have
 no `JawBack` morph (Argonian heads do), so a negative jaw value moves only
-those heads. This table is checked against every NPC by
-`vrm-tool facegen-check` (`plans/character-creation.md`, step 2).
+those heads. 
+## Checked on every vanilla NPC
+
+`vrm-tool facegen-check <Data> [npc]` (`crates/facegen`) rebuilds each NPC
+that has a pre-built head (3214, the base game, the DLCs and the Creation
+Club plugins on this install) part by part, from the NPC's own record, and
+compares each part with the pre-built shape of its name. With an NPC, it
+prints each part's morphs, and for parts still off, the one extra morph
+that would explain what's left. Rules the survey added to Alvor's:
+
+- **Weight.** Every part with an expression `.tri` (`NAM0` 1) takes its
+  `SkinnyMorph` × (1 − `NAM7` / 100): heads, mouths, eyes, brows and hair
+  alike. Erandur (weight 0) was off by exactly `MaleHead.tri`'s
+  `SkinnyMorph` peak, 1.294, without it.
+- **The race morph** is named after the race's morph race (RACE `NAM8`)
+  when it has one: the vampire races name their living race, and
+  `DremoraRace` names `DarkElfRace`. Without it, vampires and Dremora
+  were off by the living race's morph peak (`WoodElfRace` 3.999,
+  `OrcRace` 3.319, `DarkElfRace` 3.128).
+- **Vampires** (races with the `Vampire` keyword, 000A82BB) take the whole
+  `VampireMorph`: from the chargen file, or the expression file of parts
+  without one (Babette's `ChildMouth`). The last `NAM9` float is not it.
+  It is 0 or `FLT_MAX` (UESP: "only ever 00 00 00 00 or FF FF 7F 7F")
+  regardless of race, and taken as unset.
+- **The base** is the part's model's vertices, not the `.tri` file's:
+  starting from the `.tri` vertices put 1900 race-morph-file parts over
+  0.05 units.
+
+Results (worst and mean per-vertex error, largest axis, game units):
+
+| Part type | Shapes | Worst | Mean | Over 0.05 |
+|---|---|---|---|---|
+| 0 misc (mouths, `_1bit` beards) | 6594 | 0.677 | 0.00045 | 18 |
+| 1 face | 3214 | 0.124 | 0.00073 | 48 |
+| 2 eyes | 3206 | 0.007 | 0.00000 | 0 |
+| 3 hair | 3091 | 0.010 | 0.00003 | 0 |
+| 4 facial hair | 1453 | 0.739 | 0.00499 | 701 |
+| 5 scar | 747 | 0.065 | 0.00164 | 1 |
+| 6 eyebrows | 2659 | 0.012 | 0.00052 | 0 |
+
+Every part off by more than 0.124 is a Khajiit beard: their expression
+files (`khajiitbeard*.tri`) are among the nine with header fields the
+reader refuses (`research/audio/lip-format.md`), so they get no
+`SkinnyMorph`. Human beards are off by about 0.1 at worst (mean 0.004),
+which no single morph of their files explains. Heads off by more than
+0.05 are off by at most 0.124 (Khajiit women), likely rounding in the
+pre-built heads. 2579 parts had no shape of their name: all of them are
+the "none" parts (`MarksMaleHumanoid00NoScar`, `HumanBeard00NoBeard`,
+`BrowsMaleHumanoid12NoBrow`, ...), which have no shape to draw.

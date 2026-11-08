@@ -19,3 +19,4 @@ havok.workspace = true
 glam.workspace = true
 papyrus.workspace = true
 ess.workspace = true
+facegen.workspace = true

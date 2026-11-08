@@ -4450,6 +4450,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "vrm-facegen"
+version = "0.1.0"
+dependencies = [
+ "glam 0.33.12",
+ "vrm-esp",
+ "vrm-nif",
+ "vrm-vfs",
+]
+
+[[package]]
 name = "vrm-havok"
 version = "0.1.0"
 dependencies = [
@@ -4485,6 +4495,7 @@ dependencies = [
  "vrm-bsa",
  "vrm-esp",
  "vrm-ess",
+ "vrm-facegen",
  "vrm-havok",
  "vrm-nif",
  "vrm-papyrus",

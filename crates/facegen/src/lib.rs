@@ -1,0 +1,402 @@
+//! FaceGen heads built from records rather than read pre-built: which head
+//! parts a face has and which `.tri` morphs each part gets from the race,
+//! the face sliders (NPC_ `NAM9`) and the presets (`NAMA`).
+//! `research/facegen.md` has the evidence: a vanilla NPC's pre-built head
+//! is its parts' models with these morphs applied.
+
+use esp::{FormId, LoadOrder, LoadedRecord};
+use glam::Vec3;
+
+/// The face sliders in `NAM9`'s order: the morph a negative value moves
+/// toward, then the positive one (`research/facegen.md`).
+pub const SLIDERS: [(Option<&str>, &str); 19] = [
+    (Some("NoseShort"), "NoseLong"),
+    (Some("NoseDown"), "NoseUp"),
+    (Some("JawUp"), "JawDown"),
+    (Some("JawNarrow"), "JawWide"),
+    (Some("JawBack"), "JawForward"),
+    (Some("CheeksDown"), "CheeksUp"),
+    (Some("CheeksIn"), "CheeksOut"),
+    (Some("EyesMoveDown"), "EyesMoveUp"),
+    (Some("EyesMoveIn"), "EyesMoveOut"),
+    (Some("BrowDown"), "BrowUp"),
+    (Some("BrowIn"), "BrowOut"),
+    (Some("BrowBack"), "BrowForward"),
+    (Some("LipMoveDown"), "LipMoveUp"),
+    (Some("LipMoveIn"), "LipMoveOut"),
+    (Some("ChinThin"), "ChinWide"),
+    (Some("ChinMoveUp"), "ChinMoveDown"),
+    (Some("Overbite"), "Underbite"),
+    (Some("EyesBack"), "EyesForward"),
+    (None, "VampireMorph"),
+];
+
+/// Head part types (HDPT `PNAM`).
+pub const PART_MISC: u32 = 0;
+pub const PART_FACE: u32 = 1;
+pub const PART_EYES: u32 = 2;
+pub const PART_HAIR: u32 = 3;
+pub const PART_FACIAL_HAIR: u32 = 4;
+pub const PART_SCAR: u32 = 5;
+pub const PART_EYEBROWS: u32 = 6;
+
+/// The `.tri` kinds a head part names (HDPT `NAM0`).
+pub const TRI_RACE: u32 = 0;
+pub const TRI_EXPRESSION: u32 = 1;
+pub const TRI_CHARGEN: u32 = 2;
+
+/// What shapes a face: its race and sex, the parts chosen in place of the
+/// race's defaults, the sliders and the presets.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Face {
+    pub race: FormId,
+    pub female: bool,
+    /// The face's own head parts (NPC_ `PNAM`), each replacing the race's
+    /// default of its type.
+    pub parts: Vec<FormId>,
+    /// `NAM9`, each −1..1.
+    pub sliders: [f32; 19],
+    /// `NAMA`: nose, eyes and mouth presets (`NoseType<n>`, `EyesType<n>`,
+    /// `LipType<n>`).
+    pub nose: i32,
+    pub eyes: i32,
+    pub mouth: i32,
+    /// `NAM7` / 100: 0 thin, 1 heavy.
+    pub weight: f32,
+}
+
+fn fid_at(rec: &LoadedRecord<'_>, d: &[u8]) -> FormId {
+    d.get(0..4)
+        .map(|b| rec.fid(FormId(u32::from_le_bytes(b.try_into().unwrap()))))
+        .unwrap_or_default()
+}
+
+fn f32_at(d: &[u8], i: usize) -> Option<f32> {
+    d.get(i..i + 4)
+        .map(|b| f32::from_le_bytes(b.try_into().unwrap()))
+}
+
+fn i32_at(d: &[u8], i: usize) -> Option<i32> {
+    d.get(i..i + 4)
+        .map(|b| i32::from_le_bytes(b.try_into().unwrap()))
+}
+
+impl Face {
+    /// The face an NPC_ record describes (its own fields; templates are the
+    /// caller's to follow).
+    pub fn of_npc(lo: &LoadOrder, npc: FormId) -> Option<Face> {
+        let rec = lo.get(npc).filter(|r| r.tag().0 == *b"NPC_")?;
+        let female = rec
+            .get(b"ACBS")
+            .and_then(|d| d.first())
+            .is_some_and(|f| f & 1 != 0);
+        let mut sliders = [0.0; 19];
+        if let Some(d) = rec.get(b"NAM9") {
+            for (i, s) in sliders.iter_mut().enumerate() {
+                // The last is 0 or FLT_MAX in vanilla records (UESP: "only
+                // ever 00 00 00 00 or FF FF 7F 7F"): taken as unset.
+                *s = f32_at(d, i * 4)
+                    .filter(|v| v.is_finite() && v.abs() <= 16.0)
+                    .unwrap_or(0.0);
+            }
+        }
+        let nama = rec.get(b"NAMA").unwrap_or(&[]);
+        Some(Face {
+            race: rec
+                .get(b"RNAM")
+                .map(|d| fid_at(&rec, d))
+                .unwrap_or_default(),
+            female,
+            parts: rec
+                .subrecords()
+                .filter(|s| s.tag.0 == *b"PNAM")
+                .map(|s| fid_at(&rec, s.data))
+                .collect(),
+            sliders,
+            nose: i32_at(nama, 0).unwrap_or(-1),
+            eyes: i32_at(nama, 8).unwrap_or(-1),
+            mouth: i32_at(nama, 12).unwrap_or(-1),
+            weight: rec
+                .get(b"NAM7")
+                .and_then(|d| f32_at(d, 0))
+                .map_or(0.5, |w| (w / 100.0).clamp(0.0, 1.0)),
+        })
+    }
+}
+
+/// A head part's type (`PNAM`).
+pub fn part_type(lo: &LoadOrder, part: FormId) -> Option<u32> {
+    let rec = lo.get(part).filter(|r| r.tag().0 == *b"HDPT")?;
+    rec.get(b"PNAM")
+        .and_then(|d| d.get(0..4))
+        .map(|d| u32::from_le_bytes(d.try_into().unwrap()))
+}
+
+/// The race's default head parts for a sex (`HEAD` after `NAM0` and its
+/// `MNAM` / `FNAM` marker).
+pub fn race_default_parts(lo: &LoadOrder, race: FormId, female: bool) -> Vec<FormId> {
+    let Some(rec) = lo.get(race) else {
+        return Vec::new();
+    };
+    let mut head_data = false;
+    let mut sex: Option<bool> = None;
+    let mut out = Vec::new();
+    for sr in rec.subrecords() {
+        match &sr.tag.0 {
+            b"NAM0" => head_data = true,
+            b"MNAM" if head_data => sex = Some(false),
+            b"FNAM" if head_data => sex = Some(true),
+            b"HEAD" if sex == Some(female) => out.push(fid_at(&rec, sr.data)),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// The head parts a face shows: the race's defaults for the sex, each
+/// replaced by the face's own part of the same type, then every part's
+/// extra parts (`HNAM`: hairlines), hair and eyes last (drawn over the
+/// head and its other parts).
+pub fn head_parts(lo: &LoadOrder, face: &Face) -> Vec<FormId> {
+    let mut parts: Vec<(u32, FormId)> = race_default_parts(lo, face.race, face.female)
+        .into_iter()
+        .filter_map(|id| Some((part_type(lo, id)?, id)))
+        .collect();
+    for &id in &face.parts {
+        let Some(t) = part_type(lo, id) else { continue };
+        parts.retain(|&(pt, _)| pt != t);
+        parts.push((t, id));
+    }
+    parts.sort_by_key(|&(t, _)| matches!(t, PART_EYES | PART_HAIR));
+    let mut ids: Vec<FormId> = parts.into_iter().map(|(_, id)| id).collect();
+    let mut i = 0;
+    while i < ids.len() && ids.len() < 32 {
+        if let Some(rec) = lo.get(ids[i]) {
+            for sr in rec.subrecords().filter(|s| s.tag.0 == *b"HNAM") {
+                let extra = fid_at(&rec, sr.data);
+                if !ids.contains(&extra) {
+                    ids.push(extra);
+                }
+            }
+        }
+        i += 1;
+    }
+    ids
+}
+
+/// A VFS path under `meshes/` for a record's model path.
+pub fn mesh_path(s: &str) -> String {
+    let n = vfs::normalize_path(s);
+    if n.starts_with("meshes/") {
+        n
+    } else {
+        format!("meshes/{}", n.strip_prefix("data/").unwrap_or(&n))
+    }
+}
+
+/// A head part's model (`MODL`) as a VFS path.
+pub fn part_model(lo: &LoadOrder, part: FormId) -> Option<String> {
+    let rec = lo.get(part)?;
+    let m = esp::decode_zstring(rec.get(b"MODL")?);
+    (!m.is_empty()).then(|| mesh_path(&m))
+}
+
+/// The `.tri` file a head part names for a kind (`NAM0` / `NAM1`).
+pub fn part_tri(lo: &LoadOrder, part: FormId, kind: u32) -> Option<String> {
+    let rec = lo.get(part)?;
+    let mut current = None;
+    for sr in rec.subrecords() {
+        match &sr.tag.0 {
+            b"NAM0" => current = Some(sr.u32(0)),
+            b"NAM1" if current == Some(kind) => {
+                let s = sr.zstring();
+                return (!s.is_empty()).then(|| mesh_path(&s));
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// A morph of a `.tri` file, at a weight.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MorphUse {
+    pub file: String,
+    pub morph: String,
+    pub weight: f32,
+}
+
+/// The editor ID of the race morph a race's heads take: its morph race's
+/// (`NAM8`: vampire races name their living race, `DremoraRace` names
+/// `DarkElfRace`), else its own.
+pub fn race_morph(lo: &LoadOrder, race: FormId) -> Option<String> {
+    let rec = lo.get(race)?;
+    let morph = rec
+        .get(b"NAM8")
+        .map(|d| fid_at(&rec, d))
+        .filter(|f| !f.is_null())
+        .and_then(|f| lo.get(f));
+    match morph {
+        Some(m) => m.editor_id(),
+        None => rec.editor_id(),
+    }
+}
+
+/// Whether a race has the `Vampire` keyword (`KWDA`), as the vampire races
+/// do and their living races don't.
+pub fn race_is_vampire(lo: &LoadOrder, race: FormId) -> bool {
+    let Some(rec) = lo.get(race) else {
+        return false;
+    };
+    rec.get(b"KWDA").is_some_and(|d| {
+        d.chunks_exact(4).any(|c| {
+            lo.get(fid_at(&rec, c))
+                .and_then(|k| k.editor_id())
+                .is_some_and(|e| e.eq_ignore_ascii_case("Vampire"))
+        })
+    })
+}
+
+/// The morphs a head part gets for a face: its race's morph, the sliders
+/// and the presets, from the part's race and chargen `.tri` files, and
+/// thinness from its expression file's `SkinnyMorph` (× 1 − weight).
+pub fn part_morphs(lo: &LoadOrder, part: FormId, face: &Face) -> Vec<MorphUse> {
+    let mut out = Vec::new();
+    if let Some(file) = part_tri(lo, part, TRI_EXPRESSION)
+        && face.weight < 1.0
+    {
+        out.push(MorphUse {
+            file,
+            morph: "SkinnyMorph".into(),
+            weight: 1.0 - face.weight,
+        });
+    }
+    if let Some(file) = part_tri(lo, part, TRI_RACE)
+        && let Some(morph) = race_morph(lo, face.race)
+    {
+        out.push(MorphUse {
+            file,
+            morph,
+            weight: 1.0,
+        });
+    }
+    // Vampires' heads take the whole `VampireMorph`: from the chargen file,
+    // or the expression file of parts without one (children's mouths).
+    if race_is_vampire(lo, face.race)
+        && let Some(file) =
+            part_tri(lo, part, TRI_CHARGEN).or_else(|| part_tri(lo, part, TRI_EXPRESSION))
+    {
+        out.push(MorphUse {
+            file,
+            morph: "VampireMorph".into(),
+            weight: 1.0,
+        });
+    }
+    if let Some(file) = part_tri(lo, part, TRI_CHARGEN) {
+        for (&(neg, pos), &v) in SLIDERS.iter().zip(&face.sliders) {
+            let name = if v > 0.0 { Some(pos) } else { neg };
+            if let Some(name) = name.filter(|_| v != 0.0) {
+                out.push(MorphUse {
+                    file: file.clone(),
+                    morph: name.into(),
+                    weight: v.abs(),
+                });
+            }
+        }
+        for (prefix, n) in [
+            ("NoseType", face.nose),
+            ("EyesType", face.eyes),
+            ("LipType", face.mouth),
+        ] {
+            if n >= 0 {
+                out.push(MorphUse {
+                    file: file.clone(),
+                    morph: format!("{prefix}{n}"),
+                    weight: 1.0,
+                });
+            }
+        }
+    }
+    out
+}
+
+/// Apply morphs to a part's vertices. A morph whose file can't be read, or
+/// whose vertex count differs from the model's, or that the file lacks, is
+/// skipped; returns how many applied.
+pub fn apply(
+    positions: &mut [Vec3],
+    uses: &[MorphUse],
+    mut read: impl FnMut(&str) -> Option<std::sync::Arc<nif::tri::Tri>>,
+) -> usize {
+    let mut applied = 0;
+    for u in uses {
+        let Some(tri) = read(&u.file) else { continue };
+        if tri.positions.len() != positions.len() {
+            continue;
+        }
+        let Some(m) = tri.morph(&u.morph) else {
+            continue;
+        };
+        for (p, d) in positions.iter_mut().zip(&m.deltas) {
+            *p += *d * u.weight;
+        }
+        applied += 1;
+    }
+    applied
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sliders_pick_the_morph_their_sign_names() {
+        let mut face = Face {
+            race: FormId::NULL,
+            female: false,
+            parts: Vec::new(),
+            sliders: [0.0; 19],
+            nose: -1,
+            eyes: -1,
+            mouth: -1,
+            weight: 1.0,
+        };
+        face.sliders[0] = -0.5;
+        face.sliders[17] = 0.25;
+        let picked: Vec<(&str, f32)> = SLIDERS
+            .iter()
+            .zip(&face.sliders)
+            .filter(|(_, v)| **v != 0.0)
+            .filter_map(|(&(n, p), &v)| Some((if v > 0.0 { p } else { n? }, v.abs())))
+            .collect();
+        assert_eq!(picked, vec![("NoseShort", 0.5), ("EyesForward", 0.25)]);
+    }
+
+    #[test]
+    fn apply_skips_mismatched_files_and_missing_morphs() {
+        let tri = std::sync::Arc::new(nif::tri::Tri {
+            positions: vec![Vec3::ZERO; 2],
+            morphs: vec![nif::tri::Morph {
+                name: "NordRace".into(),
+                deltas: vec![Vec3::X, Vec3::Y],
+            }],
+        });
+        let uses = [
+            MorphUse {
+                file: "a.tri".into(),
+                morph: "nordrace".into(),
+                weight: 0.5,
+            },
+            MorphUse {
+                file: "a.tri".into(),
+                morph: "Missing".into(),
+                weight: 1.0,
+            },
+        ];
+        let mut p = vec![Vec3::ZERO; 2];
+        assert_eq!(apply(&mut p, &uses, |_| Some(tri.clone())), 1);
+        assert_eq!(p, vec![Vec3::X * 0.5, Vec3::Y * 0.5]);
+        let mut short = vec![Vec3::ZERO; 3];
+        assert_eq!(apply(&mut short, &uses, |_| Some(tri.clone())), 0);
+    }
+}

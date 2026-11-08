@@ -28,6 +28,7 @@ vfs = { path = "crates/vfs", package = "vrm-vfs" }
 havok = { path = "crates/havok", package = "vrm-havok" }
 papyrus = { path = "crates/papyrus", package = "vrm-papyrus" }
 ess = { path = "crates/ess", package = "vrm-ess" }
+facegen = { path = "crates/facegen", package = "vrm-facegen" }
 ui_swf = { path = "crates/ui-swf", package = "vrm-ui-swf" }
 wgpu = "30"
 winit = "0.30"

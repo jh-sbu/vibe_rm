@@ -1,0 +1,12 @@
+[package]
+name = "vrm-facegen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "FaceGen heads built from records: head parts, .tri morphs, sliders and presets"
+
+[dependencies]
+esp.workspace = true
+nif.workspace = true
+vfs.workspace = true
+glam.workspace = true

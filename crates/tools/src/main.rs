@@ -5,6 +5,7 @@ mod audio_formats;
 mod audio_survey;
 mod control_tags;
 mod crafting_survey;
+mod facegen_check;
 mod first_person;
 #[path = "../../../src/condition/functions.rs"]
 #[allow(dead_code)]
@@ -985,6 +986,14 @@ fn main() -> Result<()> {
                     );
                 }
             }
+        }
+        Some("facegen-check") => {
+            // facegen-check <data dir> [npc]: rebuild NPCs' heads from their
+            // records and compare them with the pre-built FaceGen heads.
+            facegen_check::run(
+                args.get(1).context("usage: facegen-check <Data> [npc]")?,
+                args.get(2).map(String::as_str),
+            )?;
         }
         Some(cmd @ ("nif-bind" | "neck-seam")) => {
             // nif-bind <data dir> <skeleton nif> <nif> [shape]: skinned shapes'
