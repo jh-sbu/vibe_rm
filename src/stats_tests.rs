@@ -515,3 +515,90 @@ fn console_commands_act_on_the_selected_reference() {
         crate::console::execute(&mut e, "templates 00000899")
     );
 }
+
+/// Kills count under each actor type keyword, Creatures only alone (Skyrim
+/// SE, autotest21: a vampire as People and Undead, a mudcrab only as
+/// Animals).
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn kills_count_under_each_actor_type_and_creatures_alone() {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let fixture = Fixture(
+        std::env::temp_dir().join(format!("vrm-kill-stats-{}-{stamp}", std::process::id())),
+    );
+    std::fs::create_dir(&fixture.0).unwrap();
+    let keywords = [
+        "ActorTypeNPC",
+        "ActorTypeUndead",
+        "ActorTypeAnimal",
+        "ActorTypeCreature",
+    ];
+    let kwda = |ids: &[u32]| {
+        ids.iter()
+            .flat_map(|i| i.to_le_bytes())
+            .collect::<Vec<u8>>()
+    };
+    let race = |id: u32, kws: &[u32]| {
+        RecordBuilder::new(b"RACE", FormId(id))
+            .u32(b"KSIZ", kws.len() as u32)
+            .field(b"KWDA", &kwda(kws))
+    };
+    let npc =
+        |id: u32, race: u32| RecordBuilder::new(b"NPC_", FormId(id)).form(b"RNAM", FormId(race));
+    let actor =
+        |id: u32, base: u32| RecordBuilder::new(b"ACHR", FormId(id)).form(b"NAME", FormId(base));
+    let records = [
+        Node::top(
+            b"KYWD",
+            keywords
+                .iter()
+                .enumerate()
+                .map(|(i, k)| {
+                    RecordBuilder::new(b"KYWD", FormId(0x800 + i as u32)).zstring(b"EDID", k)
+                })
+                .collect(),
+        ),
+        Node::top(
+            b"RACE",
+            vec![
+                race(0x810, &[0x800, 0x801]), // a vampire
+                race(0x811, &[0x802, 0x803]), // a mudcrab
+                race(0x812, &[0x803]),        // only a creature
+            ],
+        ),
+        Node::top(
+            b"NPC_",
+            vec![npc(0x820, 0x810), npc(0x821, 0x811), npc(0x822, 0x812)],
+        ),
+        Node::top(
+            b"ACHR",
+            vec![
+                actor(0x830, 0x820),
+                actor(0x831, 0x821),
+                actor(0x832, 0x822),
+            ],
+        ),
+    ];
+    std::fs::write(
+        fixture.0.join("Kills.esp"),
+        write_plugin(0, &[], "test", "synthetic kills", 0x900, &records),
+    )
+    .unwrap();
+    let mut e = headless_engine(&fixture.0, "Kills.esp");
+    let stat = |e: &Engine, name: &str| e.scripts.stats.get(name).copied().unwrap_or(0);
+    e.count_kill(FormId(0x830));
+    assert_eq!(
+        (stat(&e, "People Killed"), stat(&e, "Undead Killed")),
+        (1, 1)
+    );
+    e.count_kill(FormId(0x831));
+    assert_eq!(
+        (stat(&e, "Animals Killed"), stat(&e, "Creatures Killed")),
+        (1, 0)
+    );
+    e.count_kill(FormId(0x832));
+    assert_eq!(stat(&e, "Creatures Killed"), 1);
+}

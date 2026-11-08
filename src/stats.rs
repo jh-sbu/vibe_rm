@@ -388,26 +388,35 @@ impl Engine {
         *self.scripts.stats.entry(name.to_string()).or_default() += by;
     }
 
-    /// An actor the player killed, counted by what it is: the first of its
-    /// actor type keywords in this order (a vampire is a person, a hare an
-    /// animal and a bunny).
+    /// An actor the player killed, counted by what it is: under each of its
+    /// actor type keywords, Creatures only when it has none of the others.
+    /// Skyrim SE (autotest21): a vampire (`ActorTypeNPC`, `ActorTypeUndead`)
+    /// counted as People and Undead; a mudcrab, a skeleton and a flame
+    /// atronach, all also `ActorTypeCreature`, only as Animals, Undead and
+    /// Daedra; a hare as Animals and Bunnies.
     pub(crate) fn count_kill(&mut self, actor: FormId) {
-        const KINDS: [(&str, &str); 7] = [
+        const KINDS: [(&str, &str); 6] = [
             ("ActorTypeDragon", "Dragons Killed"),
             ("ActorTypeNPC", "People Killed"),
             ("ActorTypeDaedra", "Daedra Killed"),
             ("ActorTypeDwarven", "Automatons Killed"),
             ("ActorTypeUndead", "Undead Killed"),
             ("ActorTypeAnimal", "Animals Killed"),
-            ("ActorTypeCreature", "Creatures Killed"),
         ];
-        let kind = KINDS.iter().find(|(kw, _)| {
-            self.lo
-                .find_editor_id(kw)
-                .is_some_and(|k| self.has_keyword(actor, k))
-        });
-        if let Some((_, stat)) = kind {
+        let has = |e: &Self, kw: &str| {
+            e.lo.find_editor_id(kw)
+                .is_some_and(|k| e.has_keyword(actor, k))
+        };
+        let kinds: Vec<&str> = KINDS
+            .iter()
+            .filter(|(kw, _)| has(self, kw))
+            .map(|(_, stat)| *stat)
+            .collect();
+        for stat in &kinds {
             self.increment_stat(stat, 1);
+        }
+        if kinds.is_empty() && has(self, "ActorTypeCreature") {
+            self.increment_stat("Creatures Killed", 1);
         }
         let hare = self.lo.find_editor_id("HareRace");
         if hare.is_some() && self.race_of(actor) == hare {
