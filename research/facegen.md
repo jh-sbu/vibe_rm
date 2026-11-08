@@ -163,3 +163,24 @@ NPC with a pre-built tint (3214) at its size and compares them. The mean
 channel error is 1.71 / 255 and the mean 99th percentile 4.99, which is
 DXT5's own error. One NPC averages over 4
 (`ccBGSSSE001_MiscMarkarthFishingStudent`, 4.04, p99 24).
+
+## Hair colour and texture sets
+
+`vrm-tool facegen-check` also compares the pre-built heads' shaders:
+
+- **Hair colour.** Hair-tinted shaders (`BSLightingShaderProperty` type 6:
+  hair, beards, brows) have a hair tint of twice the NPC's `HCLF` colour
+  form's `CNAM` / 255 (Alvor: `HairColor05DarkBlond` 38 3B 2C, tint 0.439,
+  0.463, 0.345). 9167 shaders; 4 are off by more than 0.01, at most 0.078.
+  An NPC without `HCLF` (the player's record) is given the race's default
+  for its sex here (RACE `HCLF`, male then female). That is a choice: no
+  pre-built head lacks `HCLF`.
+- **Texture sets.** The face part's FaceGen shader (type 4) takes the
+  texture set's `TX00`, `TX01`, `TX03`, `TX04` and `TX07` into its slots 0,
+  1, 2, 3 and 7 (diffuse, normal, subsurface, detail, specular), with the
+  face tint in slot 6. The set is the NPC's `FTST` (1699 heads), else the
+  face part's `TNAM` (1262), else the race's default face texture
+  (`DFTM` / `DFTF`; 125). 3084 of the 3214 heads match that rule in all
+  five slots. Most of the other 130 are DA13's afflicted NPCs, whose
+  normal map is their race's (`bretonmale/malehead_msn.dds`) while the
+  rest of their set is their face part's `TNAM`.

@@ -47,6 +47,9 @@ pub fn run(data: &str, only: Option<&str>) -> Result<()> {
     let mut worst_npcs: Vec<(f32, String, String)> = Vec::new();
     let (mut checked, mut missing_shape) = (0usize, 0usize);
     let mut missing_names: BTreeMap<String, usize> = BTreeMap::new();
+    let mut hair = (0usize, 0f32, 0usize);
+    let mut texsets: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut texsets_shown = 0;
     for npc in npcs {
         let Some((plugin, local)) = lo.origin(npc) else {
             continue;
@@ -63,6 +66,109 @@ pub fn run(data: &str, only: Option<&str>) -> Result<()> {
             continue;
         };
         checked += 1;
+        // Hair-tinted shaders (type 6) against the hair colour (HCLF).
+        if let Some(hclf) = lo
+            .get(npc)
+            .and_then(|r| {
+                r.get(b"HCLF")
+                    .map(|d| r.fid(esp::FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))))
+            })
+            .and_then(|c| facegen::clfm_color(&lo, c))
+        {
+            let want = Vec3::from(hclf.map(|c| c as f32)) * 2.0 / 255.0;
+            for b in &prebuilt.blocks {
+                if let nif::Block::LightingShader(s) = b
+                    && s.shader_type == 6
+                {
+                    hair.0 += 1;
+                    let e = (s.hair_tint_color - want).abs().max_element();
+                    hair.1 = hair.1.max(e);
+                    if e > 0.01 {
+                        hair.2 += 1;
+                    }
+                }
+            }
+        }
+        // The face part's texture set against FTST, else the part's TNAM.
+        let txst = |id: esp::FormId| facegen::face_texture_slots(&lo, id).map(|a| a.to_vec());
+        let fid = |r: &esp::LoadedRecord<'_>, t: &[u8; 4]| {
+            r.get(t)
+                .map(|d| r.fid(esp::FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))))
+        };
+        let face_part = facegen::head_parts(&lo, &face)
+            .into_iter()
+            .find(|&p| facegen::part_type(&lo, p) == Some(facegen::PART_FACE));
+        let ftst = lo.get(npc).and_then(|r| fid(&r, b"FTST"));
+        let tnam = face_part
+            .and_then(|p| lo.get(p))
+            .and_then(|r| fid(&r, b"TNAM"));
+        let face_edid = face_part
+            .and_then(|p| lo.get(p))
+            .and_then(|r| r.editor_id());
+        for (bi, b) in prebuilt.blocks.iter().enumerate() {
+            let nif::Block::TriShape(t) = b else { continue };
+            if !face_edid
+                .as_ref()
+                .is_some_and(|e| t.av.net.name.eq_ignore_ascii_case(e))
+            {
+                continue;
+            }
+            let _ = bi;
+            let Some(nif::Block::LightingShader(sh)) = prebuilt.get(t.shader) else {
+                continue;
+            };
+            let Some(nif::Block::TextureSet(set)) = prebuilt.get(sh.texture_set) else {
+                continue;
+            };
+            let set: Vec<String> = set
+                .iter()
+                .map(|p| {
+                    if p.trim().is_empty() {
+                        String::new()
+                    } else {
+                        facegen::texture_path(p)
+                    }
+                })
+                .collect();
+            let same = |x: &Option<Vec<String>>| {
+                x.as_ref().is_some_and(|x| {
+                    [0usize, 1, 2, 3, 7]
+                        .iter()
+                        .all(|&i| set.get(i).map(String::as_str).unwrap_or("") == x[i])
+                })
+            };
+            let chosen = facegen::face_texture_set(&lo, ftst, face_part, face.race, face.female);
+            let race_default = facegen::race_default_face_texture(&lo, face.race, face.female);
+            if same(&chosen.and_then(txst)) {
+                *texsets.entry("face_texture_set's choice").or_default() += 1;
+            }
+            let key = match (
+                same(&ftst.and_then(txst)),
+                same(&tnam.and_then(txst)),
+                ftst.is_some(),
+            ) {
+                (true, _, _) => "FTST",
+                (false, false, false) if same(&race_default.and_then(txst)) => {
+                    "race default (no FTST, no TNAM match)"
+                }
+                (false, true, true) => "part TNAM though FTST differs",
+                (false, true, false) => "part TNAM (no FTST)",
+                (false, false, _) => {
+                    if texsets_shown < 5 {
+                        texsets_shown += 1;
+                        println!(
+                            "  texture set of {}: {:?} FTST {:?} TNAM {:?}",
+                            lo.get(npc).and_then(|r| r.editor_id()).unwrap_or_default(),
+                            set,
+                            ftst.and_then(txst),
+                            tnam.and_then(txst)
+                        );
+                    }
+                    "neither"
+                }
+            };
+            *texsets.entry(key).or_default() += 1;
+        }
         let prebuilt = shapes(&prebuilt);
         let edid = lo.get(npc).and_then(|r| r.editor_id()).unwrap_or_default();
         for part in facegen::head_parts(&lo, &face) {
@@ -190,6 +296,11 @@ pub fn run(data: &str, only: Option<&str>) -> Result<()> {
     println!(
         "{checked} NPCs with pre-built heads; {missing_shape} parts without a shape of their name"
     );
+    println!(
+        "hair tint (2 × HCLF / 255): {} shaders, worst {:.4}, {} off by more than 0.01",
+        hair.0, hair.1, hair.2
+    );
+    println!("face texture sets: {texsets:?}");
     let mut missing: Vec<_> = missing_names.into_iter().collect();
     missing.sort_by(|a, b| b.1.cmp(&a.1));
     println!("most missed: {:?}", &missing[..missing.len().min(12)]);

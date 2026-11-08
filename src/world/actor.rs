@@ -791,8 +791,8 @@ fn dress(
 /// The head part models of a face built at run time rather than from a
 /// pre-built FaceGen head (the player): `facegen::head_parts`, each with
 /// the morphs its race, sliders, presets and weight give it
-/// (`#facegen=`, `research/facegen.md`), the face part naming `tint` for
-/// its tint texture (`!tint=`). The parts' texture sets aren't applied.
+/// (`#facegen=`, `research/facegen.md`), the hair colour, and for the face
+/// part its texture set and `tint` for its tint texture.
 pub fn head_part_models(lo: &LoadOrder, face: &facegen::Face, tint: Option<&str>) -> Vec<String> {
     facegen::head_parts(lo, face)
         .into_iter()
@@ -803,17 +803,11 @@ pub fn head_part_models(lo: &LoadOrder, face: &facegen::Face, tint: Option<&str>
                 return None;
             }
             let m = mesh_path(&m);
-            let uses = facegen::part_morphs(lo, id, face);
-            let tint = tint.filter(|_| facegen::part_type(lo, id) == Some(facegen::PART_FACE));
-            Some(if uses.is_empty() && tint.is_none() {
+            let v = facegen::part_variant(lo, id, face, tint);
+            Some(if v.is_empty() {
                 m
             } else {
-                let mut v = format!("{m}#facegen={}", facegen::encode_morphs(&uses));
-                if let Some(t) = tint {
-                    v.push_str("!tint=");
-                    v.push_str(t);
-                }
-                v
+                format!("{m}#facegen={}", v.encode())
             })
         })
         .collect()
@@ -831,6 +825,8 @@ fn face_of(lo: &LoadOrder, traits: &NpcTraits) -> facegen::Face {
         eyes: -1,
         mouth: -1,
         weight: traits.weight,
+        texture_set: None,
+        hair_color: None,
     });
     face.race = traits.race;
     face.female = traits.female;

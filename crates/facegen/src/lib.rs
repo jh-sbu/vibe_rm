@@ -65,6 +65,10 @@ pub struct Face {
     pub mouth: i32,
     /// `NAM7` / 100: 0 thin, 1 heavy.
     pub weight: f32,
+    /// The face's own texture set (`FTST`).
+    pub texture_set: Option<FormId>,
+    /// Its hair colour (`HCLF`, a CLFM).
+    pub hair_color: Option<FormId>,
 }
 
 fn fid_at(rec: &LoadedRecord<'_>, d: &[u8]) -> FormId {
@@ -122,6 +126,14 @@ impl Face {
                 .get(b"NAM7")
                 .and_then(|d| f32_at(d, 0))
                 .map_or(0.5, |w| (w / 100.0).clamp(0.0, 1.0)),
+            texture_set: rec
+                .get(b"FTST")
+                .map(|d| fid_at(&rec, d))
+                .filter(|f| !f.is_null()),
+            hair_color: rec
+                .get(b"HCLF")
+                .map(|d| fid_at(&rec, d))
+                .filter(|f| !f.is_null()),
         })
     }
 }
@@ -206,12 +218,33 @@ pub struct TintMask {
 
 /// A VFS path under `textures/` for a record's texture path.
 pub fn texture_path(s: &str) -> String {
-    let n = vfs::normalize_path(s);
-    if n.starts_with("textures/") {
-        n
-    } else {
-        format!("textures/{}", n.strip_prefix("data/").unwrap_or(&n))
+    resource_path(s, "textures/")
+}
+
+/// A texture set's (TXST) textures in a FaceGen shader's slots: `TX00`
+/// diffuse, `TX01` normal, `TX03` subsurface, `TX04` detail and `TX07`
+/// specular go to slots 0, 1, 2, 3 and 7, as the pre-built heads have them
+/// (slot 6 is the face tint). Empty where the set has none.
+pub fn face_texture_slots(lo: &LoadOrder, txst: FormId) -> Option<[String; 9]> {
+    let rec = lo.get(txst).filter(|r| r.tag().0 == *b"TXST")?;
+    let tex = |t: &[u8; 4]| {
+        rec.get(t)
+            .map(esp::decode_zstring)
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| texture_path(&s))
+            .unwrap_or_default()
+    };
+    let mut out: [String; 9] = Default::default();
+    for (slot, tag) in [
+        (0, b"TX00"),
+        (1, b"TX01"),
+        (2, b"TX03"),
+        (3, b"TX04"),
+        (7, b"TX07"),
+    ] {
+        out[slot] = tex(tag);
     }
+    Some(out)
 }
 
 /// The race's tint masks for a sex, in record order.
@@ -326,14 +359,47 @@ pub fn clfm_color(lo: &LoadOrder, clfm: FormId) -> Option<[u8; 3]> {
     Some([*d.first()?, *d.get(1)?, *d.get(2)?])
 }
 
+/// The race's default face texture set for a sex (`DFTM` / `DFTF`).
+pub fn race_default_face_texture(lo: &LoadOrder, race: FormId, female: bool) -> Option<FormId> {
+    let rec = lo.get(race)?;
+    let d = rec.get(if female { b"DFTF" } else { b"DFTM" })?;
+    Some(fid_at(&rec, d)).filter(|f| !f.is_null())
+}
+
+/// The texture set a face's head shows: the face's own (NPC_ `FTST`), else
+/// its face part's (HDPT `TNAM`), else its race's default
+/// (`research/facegen.md`, "Texture sets").
+pub fn face_texture_set(
+    lo: &LoadOrder,
+    own: Option<FormId>,
+    face_part: Option<FormId>,
+    race: FormId,
+    female: bool,
+) -> Option<FormId> {
+    own.filter(|f| !f.is_null())
+        .or_else(|| {
+            let rec = lo.get(face_part?)?;
+            Some(fid_at(&rec, rec.get(b"TNAM")?)).filter(|f| !f.is_null())
+        })
+        .or_else(|| race_default_face_texture(lo, race, female))
+}
+
 /// A VFS path under `meshes/` for a record's model path.
 pub fn mesh_path(s: &str) -> String {
+    resource_path(s, "meshes/")
+}
+
+/// A resource path rooted at `root` (`meshes/`, `textures/`), also from
+/// authoring paths such as `data\textures\...`.
+fn resource_path(s: &str, root: &str) -> String {
     let n = vfs::normalize_path(s);
-    if n.starts_with("meshes/") {
-        n
-    } else {
-        format!("meshes/{}", n.strip_prefix("data/").unwrap_or(&n))
+    if n.starts_with(root) {
+        return n;
     }
+    if let Some(i) = n.find(&format!("/{root}")) {
+        return n[i + 1..].to_owned();
+    }
+    format!("{root}{}", n.strip_prefix("data/").unwrap_or(&n))
 }
 
 /// A head part's model (`MODL`) as a VFS path.
@@ -486,6 +552,151 @@ pub fn decode_morphs(s: &str) -> Vec<MorphUse> {
         .collect()
 }
 
+/// How a head part built live differs from its model, carried in its model
+/// path (`<model>#facegen=<encoded>`): its morphs, and for its FaceGen
+/// shaders (type 4) a texture set and the face tint, for its hair-tinted
+/// shaders (type 6) the hair colour.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct PartVariant {
+    pub morphs: Vec<MorphUse>,
+    /// The face tint texture (slot 6).
+    pub tint: Option<String>,
+    /// Texture slots replacing the model's where not empty
+    /// ([`face_texture_slots`]).
+    pub textures: Option<[String; 9]>,
+    /// The hair tint colour (2 × the CLFM's colour / 255).
+    pub hair: Option<[f32; 3]>,
+}
+
+impl PartVariant {
+    pub fn is_empty(&self) -> bool {
+        *self == PartVariant::default()
+    }
+
+    /// The variant string: the morphs ([`encode_morphs`]), then `!tint=`,
+    /// `!tex=` (slots joined by `|`) and `!hair=r,g,b` where set. No path
+    /// has `!`, `|`, `;` or `#`.
+    pub fn encode(&self) -> String {
+        let mut s = encode_morphs(&self.morphs);
+        if let Some(t) = &self.tint {
+            s.push_str("!tint=");
+            s.push_str(t);
+        }
+        if let Some(t) = &self.textures {
+            s.push_str("!tex=");
+            s.push_str(&t.join("|"));
+        }
+        if let Some([r, g, b]) = self.hair {
+            s.push_str(&format!("!hair={r},{g},{b}"));
+        }
+        s
+    }
+
+    pub fn decode(s: &str) -> PartVariant {
+        let mut parts = s.split('!');
+        let mut v = PartVariant {
+            morphs: decode_morphs(parts.next().unwrap_or("")),
+            ..Default::default()
+        };
+        for p in parts {
+            if let Some(t) = p.strip_prefix("tint=") {
+                v.tint = Some(t.to_owned());
+            } else if let Some(t) = p.strip_prefix("tex=") {
+                let slots: Vec<&str> = t.split('|').collect();
+                if slots.len() == 9 {
+                    v.textures = Some(std::array::from_fn(|i| slots[i].to_owned()));
+                }
+            } else if let Some(h) = p.strip_prefix("hair=") {
+                let c: Vec<f32> = h.split(',').filter_map(|x| x.parse().ok()).collect();
+                if let [r, g, b] = c[..] {
+                    v.hair = Some([r, g, b]);
+                }
+            }
+        }
+        v
+    }
+
+    /// Apply it to a parsed model: its shapes morphed (see [`apply`]), its
+    /// shaders' textures and hair colour set. Returns how many morphs
+    /// applied over all shapes.
+    pub fn apply_to(
+        &self,
+        n: &mut nif::Nif,
+        mut read: impl FnMut(&str) -> Option<std::sync::Arc<nif::tri::Tri>>,
+    ) -> usize {
+        let mut sets = Vec::new();
+        for b in &mut n.blocks {
+            if let nif::Block::LightingShader(s) = b {
+                if s.shader_type == 4 && (self.tint.is_some() || self.textures.is_some()) {
+                    sets.push(s.texture_set);
+                }
+                if s.shader_type == 6
+                    && let Some(h) = self.hair
+                {
+                    s.hair_tint_color = Vec3::from(h);
+                }
+            }
+        }
+        for r in sets {
+            if let Some(nif::Block::TextureSet(t)) = n.get_mut(r) {
+                if t.len() < 9 {
+                    t.resize(9, String::new());
+                }
+                if let Some(slots) = &self.textures {
+                    for (dst, src) in t.iter_mut().zip(slots) {
+                        if !src.is_empty() {
+                            *dst = src.clone();
+                        }
+                    }
+                }
+                if let Some(tint) = &self.tint {
+                    t[6] = tint.clone();
+                }
+            }
+        }
+        let mut applied = 0;
+        for b in &mut n.blocks {
+            if let nif::Block::TriShape(t) = b {
+                applied += apply(&mut t.geometry.positions, &self.morphs, &mut read);
+            }
+        }
+        applied
+    }
+}
+
+/// Everything a head part built live for a face takes: its morphs, the
+/// hair colour (the face's, else its race's default), and for the face
+/// part, its texture set ([`face_texture_set`]) and `tint`.
+pub fn part_variant(lo: &LoadOrder, part: FormId, face: &Face, tint: Option<&str>) -> PartVariant {
+    let is_face = part_type(lo, part) == Some(PART_FACE);
+    PartVariant {
+        morphs: part_morphs(lo, part, face),
+        tint: tint.filter(|_| is_face).map(str::to_owned),
+        textures: is_face
+            .then(|| face_texture_set(lo, face.texture_set, Some(part), face.race, face.female))
+            .flatten()
+            .and_then(|t| face_texture_slots(lo, t)),
+        hair: face
+            .hair_color
+            .or_else(|| race_default_hair_color(lo, face.race, face.female))
+            .and_then(|c| hair_tint(lo, c)),
+    }
+}
+
+/// The hair tint a hair colour (CLFM) gives hair-tinted shaders: twice its
+/// colour, as the pre-built heads have it (`research/facegen.md`).
+pub fn hair_tint(lo: &LoadOrder, clfm: FormId) -> Option<[f32; 3]> {
+    clfm_color(lo, clfm).map(|c| c.map(|v| v as f32 * 2.0 / 255.0))
+}
+
+/// The race's default hair colour for a sex (RACE `HCLF`: male, female).
+pub fn race_default_hair_color(lo: &LoadOrder, race: FormId, female: bool) -> Option<FormId> {
+    let rec = lo.get(race)?;
+    let d = rec.get(b"HCLF")?;
+    let at = if female { 4 } else { 0 };
+    Some(fid_at(&rec, d.get(at..at + 4)?)).filter(|f| !f.is_null())
+}
+
 /// Apply morphs to a part's vertices. A morph whose file can't be read, or
 /// whose vertex count differs from the model's, or that the file lacks, is
 /// skipped; returns how many applied.
@@ -526,6 +737,8 @@ mod tests {
             eyes: -1,
             mouth: -1,
             weight: 1.0,
+            texture_set: None,
+            hair_color: None,
         };
         face.sliders[0] = -0.5;
         face.sliders[17] = 0.25;
@@ -536,6 +749,16 @@ mod tests {
             .filter_map(|(&(n, p), &v)| Some((if v > 0.0 { p } else { n? }, v.abs())))
             .collect();
         assert_eq!(picked, vec![("NoseShort", 0.5), ("EyesForward", 0.25)]);
+    }
+
+    #[test]
+    fn resource_paths_root_authoring_paths() {
+        assert_eq!(
+            texture_path("data\\Textures\\Actors\\A.dds"),
+            "textures/actors/a.dds"
+        );
+        assert_eq!(texture_path("Actors\\A.dds"), "textures/actors/a.dds");
+        assert_eq!(mesh_path("meshes\\b.nif"), "meshes/b.nif");
     }
 
     #[test]
@@ -554,6 +777,28 @@ mod tests {
         ];
         assert_eq!(decode_morphs(&encode_morphs(&uses)), uses);
         assert!(decode_morphs("").is_empty());
+    }
+
+    #[test]
+    fn part_variants_round_trip() {
+        let v = PartVariant {
+            morphs: vec![MorphUse {
+                file: "meshes/a.tri".into(),
+                morph: "NordRace".into(),
+                weight: 1.0,
+            }],
+            tint: Some("textures/vrm/facetint/1.dds".into()),
+            textures: Some(std::array::from_fn(|i| {
+                if i == 1 {
+                    "textures/n.dds".into()
+                } else {
+                    String::new()
+                }
+            })),
+            hair: Some([0.25, 0.5, 1.0]),
+        };
+        assert_eq!(PartVariant::decode(&v.encode()), v);
+        assert!(PartVariant::decode("").is_empty());
     }
 
     #[test]
