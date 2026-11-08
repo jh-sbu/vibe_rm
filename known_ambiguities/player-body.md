@@ -22,7 +22,10 @@ variable names; the race's attack data (`ATKE`) for attack events.
 
 - **Head parts.** The NPC's own parts (`PNAM`) replace the race's default
   part of the same type rather than adding to it, for every type; UESP
-  doesn't say which types replace.
+  doesn't say which types replace. `vrm-tool facegen-check` supports it:
+  rebuilding all 3214 vanilla pre-built heads that way, each part found a
+  shape of its name except the "none" parts (no scar, no beard), which have
+  nothing to draw (`research/facegen.md`).
 - **`Direction` through `BSCyclicBlendTransitionGenerator`.** The locomotion
   blends' `Direction` is bound to the wrapper's `fBlendParameter` while the
   blender inside has no binding of its own; the runtime gives the blender the

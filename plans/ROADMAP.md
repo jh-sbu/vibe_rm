@@ -2166,9 +2166,8 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      the graph's `HitFrame` (bashes land at once now); third-person land
      footsteps from the graph (first person and swimming already use events),
      foot IK and head tracking; a ragdoll when they die;
-     the camera stopping short of actors, a vanity camera; the head's morphs
-     (`.tri`), tint layers (`TINI` / `TINC`), hair colour (`HCLF`) and
-     texture sets (`HDPT` `TNAM`), with character creation
+     the camera stopping short of actors, a vanity camera (the head's morphs,
+     tints, hair colour and texture sets are done: `plans/character-creation.md`)
    - `GetQuestVariable` (79): its variable is a number in the CTDA with no CIS2 name
      (vanilla uses it 29 times); waits on a number-to-variable mapping
      (`known_ambiguities/condition-variables.md`)
@@ -2375,9 +2374,13 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      aliases as quest targets (research-gated: no direct examples found in
      the inspected Bethesda plugins; `known_ambiguities/quest-targets.md`); the charge and
      survival meters, load door info, favor mode
-   - Character creation: the race menu (`ShowRaceMenu`, `SetInChargen`) and the
-     player's face built live from FaceGen data (sliders, head parts, tints);
-     NPCs only use pre-baked heads
+   - Character creation (`plans/character-creation.md`): the player's face is
+     built live from FaceGen data (head parts' `.tri` morphs from the race,
+     sliders, presets and weight; composited tints; texture sets; hair
+     colour), checked against every vanilla pre-built head and tint, and kept
+     as saved state (`crate::chargen`). Left: the race menu (`ShowRaceMenu`,
+     `ShowLimitedRaceMenu`, `racesex_menu.swf`), `SetRace`, and the menu's
+     slider list and labels (open in the plan). NPCs still use pre-baked heads
 7. **Audio**: lip sync is gated after 9a asset research: LIP packing/track mapping
    is unproven, TRI-to-FaceGen vertex mapping and nine TRI variants remain open
    (`research/audio/lip-format.md`; diagnostic `lip-dump`/`tri-dump` tools). Audio

@@ -1,6 +1,6 @@
 # Plan: character creation
 
-**Status: in progress** (drafted 2026-11-08). ROADMAP item 6 (UI),
+**Status: steps 1–5 done** (drafted 2026-11-08; steps 1–5 2026-11-08). ROADMAP item 6 (UI),
 "Character creation: the race menu (`ShowRaceMenu`, `SetInChargen`) and the
 player's face built live from FaceGen data (sliders, head parts, tints);
 NPCs only use pre-baked heads", and item 5's "the head's morphs (`.tri`),
@@ -48,27 +48,29 @@ run `cargo fmt` before each.
 
 ## Steps
 
-1. **A `.tri` reader** in the nif crate (`nif::tri`): positions, morph names,
+1. **Done.** **A `.tri` reader** in the nif crate (`nif::tri`): positions, morph names,
    scale and deltas, from the diagnostic in `crates/tools/src/audio_formats.rs`
    (which then uses it). Tests on a built file.
-2. **Heads rebuilt from a record.** `world::facegen`: from an NPC's race,
+2. **Done** (`crates/facegen`; rules and results in `research/facegen.md`).
+   **Heads rebuilt from a record.** `world::facegen`: from an NPC's race,
    sex, head parts, `NAM9` and `NAMA` (or the player's own appearance,
    step 5), the morphs each head part gets (`research/facegen.md`).
    `vrm-tool facegen-check <Data> [npc]`: rebuild every vanilla NPC's
    pre-built head shape by shape and report the worst and mean errors,
    which settles the slider table for every race (Argonian, Khajiit,
    elves, the elder and child heads).
-3. **The player's head drawn morphed.** The loader builds a model variant
+3. **Done** (`facegen::PartVariant`). **The player's head drawn morphed.** The loader builds a model variant
    (`#facegen=...`) whose shapes are the part's model with its morphs
    applied; the player's head parts use it in place of the bare models.
    Also the head's texture set (`FTST`, else the race's `DFTM` / `DFTF`)
    and its parts' (`HDPT` `TNAM`), and the hair colour (`HCLF` through
    CLFM) on hair-tinted shaders.
-4. **The face's tints.** Composite the race's tint masks (`TINT` files) by
+4. **Done** (`facegen::tint`; `vrm-tool facegen-tint-check`). **The face's tints.** Composite the race's tint masks (`TINT` files) by
    the actor's layers (`TINI` / `TINC` / `TINV`) into the face tint
    texture the head shader's slot 6 reads, and the skin tone. Check it
    against the pre-built `facetint` textures, as step 2 does for shapes.
-5. **The player's appearance as state.** Race, sex, weight, head parts,
+5. **Done** (`crate::chargen`, save chunk `PAPP`), except `Actor.SetRace`,
+   which moves to step 6 with `ChangeRace`. **The player's appearance as state.** Race, sex, weight, head parts,
    sliders, presets, tints, hair colour and texture set, held on the
    engine apart from the player's NPC record, used by steps 3 and 4,
    saved (a new save chunk), and changed by `Actor.SetRace` on the player.
@@ -82,6 +84,14 @@ run `cargo fmt` before each.
    and MQ101's flow, with ROADMAP item 11.
 
 ## Open questions
+
+- Beards are off by up to 0.1 units (Khajiit ones up to 0.74: their
+  expression `.tri` files have header fields the reader refuses, so they
+  get no `SkinnyMorph`). Reading those nine files' extra data would close
+  the Khajiit gap (`research/audio/lip-format.md`).
+- 130 heads' texture sets don't follow `FTST` → `TNAM` → race default in
+  every slot (DA13's afflicted NPCs take their race's normal map). The
+  player only meets this if a mod gives a face part such a set.
 
 - Which sliders the game lists, under which category, with which labels,
   ranges and intervals: the menu receives them all from the game, and
