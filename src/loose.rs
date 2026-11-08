@@ -15,6 +15,9 @@ use crate::render::CellKey;
 /// How far below where it started a loose object may fall before it is put
 /// back (through a gap in the world's collision).
 const LOST_DEPTH: f32 = 4096.0;
+/// How far below the ground where it is (in an exterior) it must be as well
+/// (game units; no source).
+const LOST_BELOW_GROUND: f32 = 256.0;
 
 /// Where dropped items appear: ahead of the one dropping them, at about waist
 /// height (game units; no source).
@@ -146,6 +149,22 @@ impl Engine {
         let mut lost: Vec<(RigidBodyHandle, Mat4, bool)> = Vec::new();
         let mut release: Vec<(RigidBodyHandle, bool)> = Vec::new();
         let mut moved_refs: Vec<(FormId, Vec3)> = Vec::new();
+        // Far below where they were placed, but still above the ground where
+        // they are (driven down a mountain road): not lost.
+        let on_ground: std::collections::HashSet<FormId> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.loose)
+            .filter_map(|l| {
+                let root = &l.bodies[l.root];
+                let pos = (root.world * root.frame.inverse()).w_axis.truncate();
+                let ground = self.ground_height(pos.truncate())?;
+                // (Last step's place: with room for this step's fall.)
+                (pos.z < l.start.w_axis.z - LOST_DEPTH + LOST_BELOW_GROUND
+                    && pos.z > ground - LOST_BELOW_GROUND)
+                    .then_some(l.ref_id)
+            })
+            .collect();
         for (key, rt) in self.cells.iter_mut() {
             let mut rc = self.scene.cells.get_mut(key);
             for l in rt.loose.iter_mut() {
@@ -185,7 +204,7 @@ impl Engine {
                 let root = &l.bodies[l.root];
                 let now = root.world * root.frame.inverse();
                 let (pos, start) = (now.w_axis.truncate(), l.start.w_axis.truncate());
-                if pos.z < start.z - LOST_DEPTH {
+                if pos.z < start.z - LOST_DEPTH && !on_ground.contains(&l.ref_id) {
                     l.lost += 1;
                     // Again: it is caught in the world's collision; it stays put.
                     let hold = l.lost > 1;
@@ -253,6 +272,67 @@ impl Engine {
 
     /// A cell unloading: remember where its loose objects still moving are, and
     /// take their bodies out.
+    /// Cell `key` is unloading: its loose objects now in another loaded
+    /// exterior cell (a cart driven off down the road) go on in that one,
+    /// bodies and all.
+    pub(crate) fn hand_over_loose(&mut self, key: CellKey) {
+        let Some(rt) = self.cells.get(&key) else {
+            return;
+        };
+        let moving: Vec<(usize, CellKey)> = rt
+            .loose
+            .iter()
+            .enumerate()
+            .filter_map(|(i, l)| {
+                let root = &l.bodies[l.root];
+                let pos = (root.world * root.frame.inverse()).w_axis.truncate();
+                let (x, y) = crate::engine::grid_of(pos.truncate());
+                let to = CellKey::Exterior(x, y);
+                (to != key && self.cells.contains_key(&to) && self.scene.cells.contains_key(&to))
+                    .then_some((i, to))
+            })
+            .collect();
+        if moving.is_empty() {
+            return;
+        }
+        let Some(rc) = self.scene.cells.get_mut(&key) else {
+            return;
+        };
+        // The cell's render data goes with it: take what moves out of it.
+        let mut instances: Vec<Option<crate::render::Instance>> = std::mem::take(&mut rc.instances)
+            .into_iter()
+            .map(Some)
+            .collect();
+        let rt = self.cells.get_mut(&key).expect("loaded");
+        let mut taken = Vec::new();
+        for &(i, to) in moving.iter().rev() {
+            let l = rt.loose.remove(i);
+            rt.refs.retain(|&r| r != l.ref_id);
+            taken.push((l, to));
+        }
+        for (mut l, to) in taken {
+            let rc = self.scene.cells.get_mut(&to).expect("loaded");
+            for b in l.bodies.iter_mut() {
+                b.instances = b
+                    .instances
+                    .iter()
+                    .filter_map(|&i| instances.get_mut(i)?.take())
+                    .map(|inst| {
+                        rc.instances.push(inst);
+                        rc.instances.len() - 1
+                    })
+                    .collect();
+            }
+            log::debug!("{} goes on in {to:?} as {key:?} unloads", l.ref_id);
+            let rt = self.cells.get_mut(&to).expect("loaded");
+            rt.refs.push(l.ref_id);
+            rt.loose.push(l);
+        }
+        if let Some(rc) = self.scene.cells.get_mut(&key) {
+            rc.instances = instances.into_iter().flatten().collect();
+        }
+    }
+
     pub(crate) fn unload_loose(&mut self, key: CellKey) {
         let Some(rt) = self.cells.get_mut(&key) else {
             return;

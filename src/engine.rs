@@ -2522,11 +2522,12 @@ impl Engine {
         }
     }
 
-    fn unload_cell(&mut self, key: CellKey) {
+    pub(crate) fn unload_cell(&mut self, key: CellKey) {
         let _timing = crate::diagnostics::Span::new("stream.unload");
         crate::diagnostics::count("cells.unloaded", 1);
         self.forget_impact_decals(key);
         self.remember_actors(key);
+        self.hand_over_loose(key);
         self.scene.cells.remove(&key);
         self.unload_loose(key);
         self.park_object_graphs(key);

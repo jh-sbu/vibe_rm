@@ -78,7 +78,15 @@ otherwise undocumented; rapier stands in for it.
   up (`DROP_AHEAD`, `DROP_HEIGHT`), as one reference for the stack.
 - **Falling out of the world**: 4096 units below where it started, it is put
   back (`LOST_DEPTH`); falling out again, it is held there fixed (a fragment
-  caught in Forelhost's floor does this).
+  caught in Forelhost's floor does this). In an exterior it must also be more
+  than 256 units below the ground where it is now (`LOST_BELOW_GROUND`, no
+  source): MQ101's carts are driven more than 4096 units down the mountain
+  road, on the ground all the way (2026-11-08).
+- **Cells unloading under them**: one now in another loaded exterior cell (a
+  cart driven down the road) goes on in that cell, bodies and all, rather
+  than unloading with the cell it was placed in (`hand_over_loose`). The
+  vanilla opening needs it; see `cell-ownership.md`. Ones still in their own
+  cell, or out past the loaded cells, unload with it as before.
 - **What is remembered**: where a moved object comes to rest (or is when its
   cell unloads), as a scripted move would be.
 
