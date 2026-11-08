@@ -141,10 +141,17 @@ stealth points.
   that makes it "as loud as a sword". The level enums (Loud, Normal,
   Silent, Very Loud) are xEdit's (`wbSoundLevelEnum`: WEAP `VNAM`, IPCT
   `DATA`, PROJ `VNAM`, EXPL `DATA`, MGEF casting). The CK wiki's
-  `CreateDetectionEvent(Actor akOwner, int aiSoundLevel = 0)` makes a
-  detection event at the reference, owned by `akOwner`, of level 0 to 100
-  (more works), which may lure actors to investigate (from a search
-  summary of the page; ck.uesp.net itself refuses us). CommonLibSSE (MIT)
+  [CreateDetectionEvent](https://ck.uesp.net/wiki/CreateDetectionEvent)
+  page (the console / condition function, `[LocationREF].CreateDetectionEvent
+  [OwnerRef] [SoundLevel]`; text as read by the user on 2026-11-07, as
+  ck.uesp.net refuses agents, so no revision link) "manually generates a
+  detection event that may lure Actors to investigate": OwnerRef is "the
+  Actors responsible for the sound", SoundLevel "the intensity of the
+  sound, 0-100, with 100 being the loudest. Values bigger than 100 are not
+  used in vanilla scripts but they work." The Papyrus form is
+  `ObjectReference.CreateDetectionEvent(Actor akOwner, int aiSoundLevel =
+  0)` (vanilla calls pass 25 to 100). Neither says how loud a level is to
+  a listener or how long the event lasts. CommonLibSSE (MIT)
   names one generated detection event per actor (action value, location,
   time stamp, reference). `vrm-tool sound-levels` over the vanilla data:
   daggers Silent but six (Keening, Nettlebane, the Shiv...), bows Silent but
