@@ -9,6 +9,7 @@ mod arrest;
 mod audio;
 mod barter;
 mod casting;
+mod chargen;
 mod condition;
 mod console;
 mod crafting;

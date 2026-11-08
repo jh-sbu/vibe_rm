@@ -110,13 +110,22 @@ impl FaceTint {
     /// The tint a face's record gives: its skin tone and tint layers over
     /// its race's masks. None for a race without masks.
     pub fn of(lo: &LoadOrder, face_npc: FormId, face: &facegen::Face) -> Option<FaceTint> {
+        let skin = facegen::npc_skin_tone(lo, face_npc).unwrap_or([1.0; 3]);
+        FaceTint::new(lo, face, skin, facegen::npc_tint_layers(lo, face_npc))
+    }
+
+    /// The tint of a skin tone and tint layers over a face's race's masks.
+    pub fn new(
+        lo: &LoadOrder,
+        face: &facegen::Face,
+        skin: [f32; 3],
+        layers: Vec<facegen::TintLayer>,
+    ) -> Option<FaceTint> {
         use std::hash::{Hash, Hasher};
         let masks = facegen::race_tint_masks(lo, face.race, face.female);
         if masks.is_empty() {
             return None;
         }
-        let skin = facegen::npc_skin_tone(lo, face_npc).unwrap_or([1.0; 3]);
-        let layers = facegen::npc_tint_layers(lo, face_npc);
         let mut h = std::collections::hash_map::DefaultHasher::new();
         (face.race.0, face.female).hash(&mut h);
         for v in skin {
@@ -843,17 +852,35 @@ pub fn describe_player(
     player: FormId,
     npc: FormId,
     inventory: &super::inventory::Inventory,
+    appearance: Option<&crate::chargen::Appearance>,
 ) -> Option<ActorDesc> {
     let templates = Sources::of_npc(lo, npc, 0, &Globals::default());
-    let traits = npc_traits(lo, &templates)?;
+    let mut traits = npc_traits(lo, &templates)?;
+    // An appearance chosen in play replaces the record's race, sex and
+    // weight, and the skin tone the body takes.
+    if let Some(a) = appearance {
+        traits.race = a.face.race;
+        traits.female = a.face.female;
+        traits.weight = a.face.weight;
+        traits.skin_tone = Some(Vec3::from(a.skin));
+    }
     let (skeleton, race_skin, race_height) = race_info(lo, traits.race, traits.female)?;
     let skin = if traits.skin.is_null() {
         race_skin
     } else {
         traits.skin
     };
-    let face = face_of(lo, &traits);
-    let face_tint = FaceTint::of(lo, traits.npc_for_face, &face);
+    let (face, face_tint) = match appearance {
+        Some(a) => (
+            a.face.clone(),
+            FaceTint::new(lo, &a.face, a.skin, a.tints.clone()),
+        ),
+        None => {
+            let face = face_of(lo, &traits);
+            let tint = FaceTint::of(lo, traits.npc_for_face, &face);
+            (face, tint)
+        }
+    };
     let head = head_part_models(lo, &face, face_tint.as_ref().map(|t| t.path.as_str()));
     let models = dress(
         lo,

@@ -88,6 +88,8 @@ pub(crate) struct Continuity {
     pub crime_unreported: bool,
     /// What `SetInChargen` turned off: saving, waiting, the controls message.
     pub chargen: Option<(bool, bool, bool)>,
+    /// The player's appearance, once something changed it (`PAPP`).
+    pub player_appearance: Option<crate::chargen::Appearance>,
     /// Cells flagged to reset when they next load.
     pub reset_cells: std::collections::HashSet<FormId>,
     /// Text globals running quests keep copies of: (quest, global).
@@ -623,6 +625,7 @@ impl Continuity {
                 .game_flags
                 .chargen
                 .map(|c| (c.no_saving, c.no_waiting, c.controls_message)),
+            player_appearance: e.player_appearance.clone(),
             reset_cells: e.resets.cells.clone(),
             quest_globals: e.resets.quest_globals.clone(),
             base_outfits: e.scripts.globals.base_outfits.clone(),
@@ -1062,6 +1065,11 @@ impl Continuity {
         w.bool(b);
         w.bool(c);
         file.add(b"GAMF", w.0);
+        if let Some(a) = &self.player_appearance {
+            let mut w = Writer::default();
+            a.write(&mut w);
+            file.add(b"PAPP", w.0);
+        }
         let mut w = Writer::default();
         w.len(self.quest_globals.len());
         for ((quest, global), value) in sorted(&self.quest_globals) {
@@ -1648,6 +1656,10 @@ impl Continuity {
             s.chargen = set.then_some(flags);
             r.finish()?;
         }
+        if let Some(mut r) = optional(file, b"PAPP")? {
+            s.player_appearance = Some(crate::chargen::Appearance::read(&mut r)?);
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"QGLB")? {
             let mut previous = None;
             for _ in 0..r.count(12)? {
@@ -2045,6 +2057,12 @@ impl Continuity {
         if self.chargen == Some((false, false, false)) {
             return Err(Corrupt("chargen set with nothing disabled".into()));
         }
+        if let Some(a) = &self.player_appearance {
+            nonnull(a.face.race)?;
+            if !a.face.weight.is_finite() || !(0.0..=1.0).contains(&a.face.weight) {
+                return Err(Corrupt("player weight out of range".into()));
+            }
+        }
         for &cell in &self.reset_cells {
             nonnull(cell)?;
         }
@@ -2395,6 +2413,8 @@ impl Continuity {
                     },
                 ),
         );
+        // The body is rebuilt with it at its next update.
+        e.player_appearance = self.player_appearance;
         e.restore_ref_state(self.ref_scales, self.no_favor, self.ignore_friendly_hits);
         e.restore_outfits(self.outfits);
         e.restore_music_queue(self.music_queue);

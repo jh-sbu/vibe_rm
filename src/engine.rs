@@ -283,6 +283,9 @@ pub struct Engine {
     /// How far the third-person view is turned about the player, the body
     /// still facing the view's own way (console `tpcam`; radians).
     pub test_orbit: f32,
+    /// The player's appearance once something changed it (the race menu,
+    /// `SetRace`); their NPC record's until then (`crate::chargen`).
+    pub player_appearance: Option<crate::chargen::Appearance>,
     /// A jump asked for from the console, taken once the player is on the ground.
     pub test_jump: bool,
     /// Frames left of the player walking (console `pwalk`).
@@ -701,6 +704,7 @@ impl Engine {
             projectiles: Vec::new(),
             test_camera: None,
             test_orbit: 0.0,
+            player_appearance: None,
             test_jump: false,
             test_walk: 0,
             test_walk_input: Default::default(),

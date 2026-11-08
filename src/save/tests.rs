@@ -6199,6 +6199,40 @@ fn resets_replace_the_sessions_after_loading() {
 }
 
 #[test]
+fn player_appearance_payload() {
+    let mut s = Snapshot::default();
+    let file = s.write();
+    assert!(!file.sections.iter().any(|(t, _)| t == b"PAPP"));
+    let a = crate::chargen::Appearance {
+        face: facegen::Face {
+            race: FormId(0x13746),
+            female: false,
+            parts: vec![FormId(0x5140E)],
+            sliders: [0.25; 19],
+            nose: 3,
+            eyes: 2,
+            mouth: 1,
+            weight: 0.5,
+            texture_set: None,
+            hair_color: Some(FormId(0xA042C)),
+        },
+        skin: [0.5, 0.4, 0.3],
+        tints: Vec::new(),
+    };
+    s.continuity.player_appearance = Some(a.clone());
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(restored.continuity.player_appearance, Some(a.clone()));
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"PAPP");
+    // A weight outside 0..1 can't come from a game.
+    let mut bad = a;
+    bad.face.weight = 2.0;
+    s.continuity.player_appearance = Some(bad);
+    assert!(Snapshot::read(&s.write()).is_err());
+}
+
+#[test]
 fn game_flags_payload() {
     let snapshot = |unreported: bool, chargen: Option<(bool, bool, bool)>| {
         let mut s = Snapshot::default();

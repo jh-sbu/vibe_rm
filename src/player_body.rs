@@ -13,7 +13,7 @@ use crate::world::behavior::GraphAnim;
 use crate::world::skeleton::Skeleton;
 
 /// The player's base record.
-const PLAYER_NPC: FormId = FormId(0x7);
+pub(crate) const PLAYER_NPC: FormId = FormId(0x7);
 
 /// How quickly the body turns to face where it goes in third person (radians
 /// per second).
@@ -31,6 +31,9 @@ pub struct PlayerBody {
     turn_request: Option<f32>,
     /// What they had equipped when it was built: rebuilt when that changes.
     worn: (Vec<FormId>, Option<FormId>),
+    /// The appearance it was built with (`Engine::player_appearance`, as
+    /// set): rebuilt when that changes.
+    appearance: Option<crate::chargen::Appearance>,
     /// What the hands and voice held when the graph was last told their
     /// types: spells change them without a rebuild.
     held: [Option<FormId>; 3],
@@ -238,9 +241,13 @@ impl Engine {
         self.scene.player = None;
         self.scene.first_person = None;
         let inventory = self.inventory_mut(PLAYER_REF).clone();
-        let Some(d) =
-            crate::world::actor::describe_player(&self.lo, PLAYER_REF, PLAYER_NPC, &inventory)
-        else {
+        let Some(d) = crate::world::actor::describe_player(
+            &self.lo,
+            PLAYER_REF,
+            PLAYER_NPC,
+            &inventory,
+            self.player_appearance.as_ref(),
+        ) else {
             log::warn!("the player's body can't be assembled");
             return;
         };
@@ -265,6 +272,7 @@ impl Engine {
             inventory.weapon_in(&self.lo, crate::world::inventory::LEFT),
         );
         body.held = inventory.held_all();
+        body.appearance = self.player_appearance.clone();
         let pose = skel.model_space(&skel.bind_locals());
         if let Some(project) = project {
             let character = project
@@ -548,6 +556,7 @@ impl Engine {
     pub(crate) fn update_player_body(&mut self, moved: Vec3, dt: f32) {
         if self.player_body.is_none()
             || self.player_body.as_ref().unwrap().worn != self.player_worn()
+            || self.player_body.as_ref().unwrap().appearance != self.player_appearance
         {
             self.build_player_body();
         }
@@ -871,6 +880,7 @@ impl PlayerBody {
             graph_heading: f32::NAN,
             turn_request: None,
             worn: Default::default(),
+            appearance: None,
             held: [None; 3],
             state: None,
             sneak_state: None,
