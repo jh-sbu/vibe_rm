@@ -577,20 +577,17 @@ impl Engine {
         self.weather.next_roll = ROLL_HOURS.0 + (ROLL_HOURS.1 - ROLL_HOURS.0) * t;
     }
 
-    /// `Weather.FindWeather`: one of the region's weathers of a classification
-    /// (0 pleasant, 1 cloudy, 2 rainy, 3 snow), by chance.
+    /// `Weather.FindWeather`: the first of the region's weathers of a
+    /// classification (0 pleasant, 1 cloudy, 2 rainy, 3 snow), in its list's
+    /// order. Skyrim SE returned the same pleasant weather six times running
+    /// (autotest21), and Riverwood's first pleasant one, Cloudy (autotest3)
+    /// (`known_ambiguities/weather.md`).
     pub fn find_weather(&mut self, class: i32) -> Option<FormId> {
-        let list: Vec<(FormId, u32, FormId)> = self
-            .weather
-            .list
-            .clone()
-            .into_iter()
-            .filter(|e| {
-                self.weather_record(e.0)
-                    .is_some_and(|w| w.classification() == class)
-            })
-            .collect();
-        self.pick_from(list.into_iter())
+        let list: Vec<FormId> = self.weather.list.iter().map(|e| e.0).collect();
+        list.into_iter().find(|&w| {
+            self.weather_record(w)
+                .is_some_and(|w| w.classification() == class)
+        })
     }
 
     /// `IsRaining` / `IsSnowing` (CommonLibSSE's `Sky::IsRaining`): the

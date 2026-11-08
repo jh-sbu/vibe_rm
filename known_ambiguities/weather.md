@@ -50,12 +50,21 @@ esp-dump` of regions and weathers, `vrm-tool pex-calls` of the scripts using
 ## Open
 
 - **Transition speed.** Two deltas fit delta / 16 game minutes to 4-7%; the
-  exact law isn't known. What `abAccelerate` does, if anything, isn't
-  known. A trans delta of 0 changes at once.
-- **`FindWeather`** picks a region weather of the classification by chance
-  here. In the game, in Riverwood's region (Cloudy and Clear pleasant, Fog
-  cloudy, Overcast Rain rainy...), pleasant gave Cloudy and cloudy gave None
-  (`test-mod autotest3`): why Fog wasn't found isn't known.
+  exact law isn't known. autotest21 (timescale 20) read full transitions of
+  15.2 s for delta 82, 11.9 s for 61 and 22.2 s for 125, linear in time
+  (half way at half the time), and 11.7 s for 61 with `abAccelerate`: within
+  5% of ours, accelerated or not. A fit with a constant (about 1.3 s plus
+  0.172 s a delta unit) matches every reading to 3%, but the constant may
+  be the probes' polling. A trans delta of 0 changes at once.
+- **`FindWeather`** gives the first region weather of the classification in
+  the list's order (2026-11-07; it picked by chance before). In the game, in
+  Riverwood's region (Cloudy and Clear pleasant, Fog cloudy, Overcast Rain
+  rainy...), pleasant gave Cloudy, the first, and cloudy gave None
+  (`test-mod autotest3`): why Fog wasn't found isn't known. autotest21
+  (`research/autotest21.md`, Weather) had `FindWeather(0)` give the current
+  pleasant weather (0x12F89) six times running and classes 1-3 none, where
+  it ran; which region that was wasn't recorded, so whether its list had
+  another pleasant weather is unknown.
 - **How often the weather changes.** Every 2 to 6 game hours (made up) the
   region's list is rolled by chance; the same weather may come up again. The
   climate's TNAM volatility (byte 4: 50 for `SkyrimClimate`) isn't used.
