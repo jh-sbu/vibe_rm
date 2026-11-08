@@ -1588,11 +1588,27 @@ impl Engine {
     }
 
     /// Attach scripts for references in a newly loaded cell and send load
-    /// events. Returns the objects given scripts.
+    /// events, to them and to the aliases holding them. Returns the objects
+    /// given scripts and those aliases.
     pub(crate) fn attach_cell_scripts(&mut self, refs: &[FormId]) -> Vec<papyrus::ObjectId> {
         let mut vm = std::mem::take(&mut self.vm);
         let mut attached = Vec::new();
         for &r in refs {
+            // The aliases holding it hear its load events as it does (MQ101's
+            // horses' aliases count their cells loading).
+            let aliases: Vec<papyrus::ObjectId> = self
+                .objects_of_ref(r)
+                .into_iter()
+                .filter(|o| matches!(o, papyrus::ObjectId::Alias { .. }))
+                .collect();
+            if !aliases.is_empty() {
+                let mut host = crate::script::EngineHost { engine: self };
+                for &obj in &aliases {
+                    vm.send_event(&mut host, obj, "OnLoad", vec![]);
+                    vm.send_event(&mut host, obj, "OnCellAttach", vec![]);
+                }
+                attached.extend(aliases);
+            }
             let (mut scripts, base) = match self.lo.get(r) {
                 Some(rec) => {
                     let own = crate::script::vmad::parse(&rec)

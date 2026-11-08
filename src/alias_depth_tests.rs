@@ -249,3 +249,20 @@ fn from_event_aliases_supply_their_packages_to_the_event_actor() {
     assert_eq!(packages[0].quest, Some(EVENT_Q));
     assert!(e.alias_packages(OTHER).is_empty());
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn an_alias_hears_its_reference_load_with_it() {
+    let mut e = engine();
+    e.scripts.quests.entry(Q).or_default().running = true;
+    e.force_alias_ref(Q, 1, ACTOR);
+    let alias = papyrus::ObjectId::Alias {
+        quest: Q.0,
+        alias: 1,
+    };
+    // The objects told of the cell's load (`OnCellLoad`) take in the alias.
+    assert!(e.attach_cell_scripts(&[ACTOR]).contains(&alias));
+    // Not once the quest has stopped.
+    e.stop_quest(Q);
+    assert!(!e.attach_cell_scripts(&[ACTOR]).contains(&alias));
+}
