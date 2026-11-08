@@ -4024,21 +4024,40 @@ impl Engine {
     }
 
     pub fn global_value(&self, g: FormId) -> f32 {
+        let rec = self.lo.get(g);
+        // The clock's globals read the clock (a value saved for them is old).
+        match rec.as_ref().and_then(|r| r.editor_id()).as_deref() {
+            Some("GameHour") => return self.hour,
+            Some("GameDaysPassed") => return self.game_days(),
+            _ => {}
+        }
         if let Some(v) = self.scripts.globals.get(&g) {
             return *v;
         }
-        if let Some(rec) = self.lo.get(g) {
-            // Well-known time globals.
-            match rec.editor_id().as_deref() {
-                Some("GameHour") => return self.hour,
-                Some("GameDaysPassed") => return self.game_days(),
-                _ => {}
-            }
+        if let Some(rec) = rec {
             if let Some(d) = rec.get(b"FLTV") {
                 return f32::from_le_bytes(d[0..4].try_into().unwrap());
             }
         }
         0.0
+    }
+
+    /// Set a global. The clock's globals set the clock: `GameHour` the time
+    /// of today (an hour past 24 runs into the next days, before 0 into the
+    /// last), `GameDaysPassed` the days and time.
+    pub fn set_global_value(&mut self, g: FormId, value: f32) {
+        let clock = self.lo.get(g).and_then(|r| r.editor_id());
+        let hours = match clock.as_deref() {
+            Some("GameHour") => self.day as f64 * 24.0 + value as f64,
+            Some("GameDaysPassed") => value as f64 * 24.0,
+            _ => {
+                self.scripts.globals.insert(g, value);
+                return;
+            }
+        };
+        let hours = hours.max(0.0);
+        self.day = (hours / 24.0).floor() as u32;
+        self.hour = (hours - self.day as f64 * 24.0) as f32;
     }
 
     /// The inventory of a reference; a container's starts out with its
@@ -4631,7 +4650,7 @@ impl Engine {
         })
     }
 
-    fn update_scripts(&mut self, dt: f32) {
+    pub(crate) fn update_scripts(&mut self, dt: f32) {
         self.scripts.real_time += dt as f64;
         let now = self.scripts.real_time;
         let game_now = self.game_hours_total();

@@ -2575,14 +2575,14 @@ pub fn call(
         )),
         ("globalvariable", "setvalue") | ("globalvariable", "setvalueint") => {
             if let Some(g) = me {
-                e.scripts.globals.insert(g, arg(0).as_float());
+                e.set_global_value(g, arg(0).as_float());
             }
             none()
         }
         ("globalvariable", "mod") => {
             let cur = me.map(|g| e.global_value(g)).unwrap_or(0.0);
             if let Some(g) = me {
-                e.scripts.globals.insert(g, cur + arg(0).as_float());
+                e.set_global_value(g, cur + arg(0).as_float());
             }
             v(Value::Float(cur + arg(0).as_float()))
         }
