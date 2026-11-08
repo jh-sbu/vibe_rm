@@ -285,6 +285,9 @@ pub struct Landing {
     /// The actor it struck (unguarded): blood goes on its body and on what
     /// lies behind it.
     pub actor: Option<FormId>,
+    /// Who made it land (the attacker, shooter or caster): the impact's
+    /// noise is theirs.
+    pub owner: Option<FormId>,
 }
 
 /// A form held by a record's subrecord.
@@ -378,6 +381,7 @@ impl Engine {
             dir,
             normal: -dir,
             actor: (!blocked).then_some(target),
+            owner: Some(attacker),
         };
         self.impact(ipds, material, landing);
     }
@@ -397,12 +401,19 @@ impl Engine {
         else {
             return;
         };
-        self.impact_at(ipds, target, at, dir);
+        self.impact_at(ipds, Some(shooter), target, at, dir);
     }
 
-    /// An impact data set's impact where something flying along `dir` landed
-    /// at `at`: on an actor, or on the surface there.
-    pub(crate) fn impact_at(&mut self, ipds: FormId, target: Option<FormId>, at: Vec3, dir: Vec3) {
+    /// An impact data set's impact where something `owner` sent flying along
+    /// `dir` landed at `at`: on an actor, or on the surface there.
+    pub(crate) fn impact_at(
+        &mut self,
+        ipds: FormId,
+        owner: Option<FormId>,
+        target: Option<FormId>,
+        at: Vec3,
+        dir: Vec3,
+    ) {
         let (material, normal) = match target {
             Some(t) => (self.struck_material(t, false), -dir),
             None => match self.physics.surface_ray(at - dir * 16.0, dir, 48.0) {
@@ -416,6 +427,7 @@ impl Engine {
             dir,
             normal,
             actor: target,
+            owner,
         };
         self.impact(ipds, material, landing);
     }
@@ -444,6 +456,7 @@ impl Engine {
                 dir,
                 normal,
                 actor: None,
+                owner: None,
             },
         );
         format!("{ipct} at {at:.0}")
@@ -464,6 +477,7 @@ impl Engine {
         for s in impact.sounds.into_iter().flatten() {
             self.play_sound(s, landing.at);
         }
+        self.impact_noise(landing.owner, ipct, landing.at);
         if std::env::var_os("VRM_NO_IMPACTS").is_some() {
             return;
         }

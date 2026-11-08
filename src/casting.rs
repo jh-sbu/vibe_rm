@@ -1701,7 +1701,7 @@ impl Engine {
                 .find_map(|e| self.magic_effect(e.effect).map(|m| m.impacts))
                 .filter(|i| !i.is_null())
         {
-            self.impact_at(ipds, target, at, dir);
+            self.impact_at(ipds, Some(caster), target, at, dir);
         }
         // Summons are the caster's effects, bringing their actor where the
         // spell lands.

@@ -496,10 +496,14 @@ impl Engine {
             self.models.get(&m)
         });
         let vel = dir.normalize_or_zero() * arrow.speed * speed_mult;
+        // The shot is heard (the bow's `VNAM`: most bows Silent); where the
+        // arrow lands, its impact is.
+        let bow = self.weapon_of(shooter);
+        if bow.is_some() {
+            self.weapon_noise(shooter, bow);
+        }
         // A poisoned bow's dose goes with the shot, whatever it strikes.
-        let poison = self
-            .weapon_of(shooter)
-            .and_then(|b| self.take_poison_dose(shooter, b));
+        let poison = bow.and_then(|b| self.take_poison_dose(shooter, b));
         log::info!(
             "{shooter} looses {} ({damage:.0} damage, {:.0} units/s)",
             arrow.ammo,

@@ -5,6 +5,15 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- **Noises in detection** (2026-11-07; `known_ambiguities/detection.md`,
+  "Noises"): UESP's action term (`level * fSneakActionMult`) in the sound
+  factor, levels valued by `iSoundLevel*`. Weapon swings (the hand's
+  `VNAM`: daggers and bows Silent, most two-handed Loud), bow shots,
+  impacts where blows, arrows and spells land (IPCT level) and Papyrus
+  `CreateDetectionEvent` make one noise per owner for 1.25 s; one made
+  elsewhere is heard from there, even with its owner beyond reach, and a
+  calm enemy alerted by it searches there. `vrm-tool sound-levels`
+  surveys the levels; console `detect` shows the player's noise.
 - **Control text tags** (2026-11-03; `plans/control-text-tags.md`): checked
   against two Skyrim SE probe rounds (`research/ui/control-tags.md`). Only
   help messages turn `[Event]` tags into button art, through the live input
@@ -1974,10 +1983,13 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
    - Quiet Casting, Shadow Warrior (with casting); spells
      and shouts as action sounds (the formula's slots for them are in
      `crate::detection`)
-   - Weapon and impact sounds (action sounds, detection events,
-     `CreateDetectionEvent`): unblocked, autotest21 read the `iSoundLevel*`
-     values in Skyrim SE (Silent 10, Normal 50, Loud 100, VeryLoud 200);
-     weapons are silent until implemented (`known_ambiguities/detection.md`)
+   - Noises still to make: spells' casting sound levels (MGEF) and shouts
+     (with Quiet Casting, above), explosions' (`EXPL`, with explosions);
+     whether a projectile's own `VNAM` counts, and when; how long a noise
+     counts and whether one owned by nobody does anything (choices in
+     `known_ambiguities/detection.md`, "Noises"); an SE probe could read
+     `GetDetected` / detection by an NPC before and after a swing, an arrow
+     landing near it and a `CreateDetectionEvent` at set distances
    - Finding bodies by detection
    - Combat searches following a target through load doors; automatic alert-flag
      changes still need evidence (explicit SetAlert drawing is done)
@@ -2282,16 +2294,15 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      no count here; done 2026-11-07: `SetAlpha`, the translations,
      `MoveToPackageLocation`, `HasLOS`, `Game.FastTravel`, `AttachAshPile`,
      `MoveToNode`, `SetNoBleedoutRecovery`, `WaitForAnimationEvent`, the
-     alarms and `IsTrespassing`, `known_ambiguities/remaining-natives.md`):
+     alarms and `IsTrespassing`, `known_ambiguities/remaining-natives.md`;
+     `CreateDetectionEvent`, with noises in detection):
      `ShaderParticleGeometry.Apply` (118) / `Remove` (84), a script's
      precipitation layer with its fades (the renderer's two layers follow
      the weathers); `SetSubGraphFloatVariable` (100) and
      `PlaySubGraphAnimation` (77), whose subgraphs no source describes;
      `Game.AddAchievement` (97) and `ShakeController` (91), with nothing to
      show without an achievement service or gamepad rumble;
-     `CreateDetectionEvent` (48), which needs sound events in detection
-     (`iSoundLevel*` are known now: autotest21 read Silent 10, Normal 50, Loud
-     100, VeryLoud 200); `SetRace` (45), its model swapped live;
+     `SetRace` (45), its model swapped live;
      `KnockAreaEffect` (27) and `PushActorAway` (9), with living actors'
      ragdolls; `SetHeadTracking` (8); `PathToReference` (only a test rig calls
      it); `ObjectReference.Say`, `Topic.Add`, `Weapon.Fire`, the LOS

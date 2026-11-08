@@ -9,9 +9,11 @@
 //!       + attenuation * (sound + visual + observer skill)
 //!       + (observer skill - target skill)
 //! attenuation = ((max distance - distance) / max distance) ^ exponent
-//! sound  = fSneakSoundsMult * movement * (1, or fSneakSoundLosMult unseen)
+//! sound  = fSneakSoundsMult * (movement + action)
+//!          * (1, or fSneakSoundLosMult unseen)
 //! movement = (fSneakEquippedWeightBase + fSneakEquippedWeightMult * armor
 //!            weight) * (fSneakRunningMult running), 0 standing still
+//! action = the sound level of a noise the target just made * fSneakActionMult
 //! visual = (fDetectionSneakLightMod + light level) * fSneakLightMult
 //!          * (1 + fSneakLightMoveMult moving + fSneakLightRunMult running),
 //!          * (100 - observer blindness) / 100 while the target sneaks and
@@ -26,6 +28,13 @@
 //! gone, or at once when its detection passes `iCombatStealthPointDetectionThreshold`
 //! (`iCombatStealthPointSneakDetectionThreshold` against someone sneaking).
 //! Crime witnesses and force greets need only detection above 0.
+//!
+//! Noises (UESP Skyrim:Sneak's "Action"; detection events): swinging a weapon
+//! (its `VNAM` sound level), loosing an arrow, a blow or arrow landing (the
+//! impact's), a script's `CreateDetectionEvent`. Each belongs to the actor who
+//! made it and counts for a moment ([`NOISE_TIME`]), heard from where it was
+//! made: a calm enemy that notices someone only by a noise elsewhere searches
+//! there.
 //!
 //! Open questions (the target's skill, light level, the view cone...):
 //! `known_ambiguities/detection.md`.
@@ -51,6 +60,9 @@ const LIGHT_SCALE: f32 = 100.0;
 const LIGHT_MAX: f32 = 150.0;
 /// How far up to look for something shading a point from the sun.
 const SUN_RAY: f32 = 20000.0;
+/// How long a noise counts towards its owner's detection (seconds; no source:
+/// long enough for the once-a-second detection states to hear it).
+pub(crate) const NOISE_TIME: f32 = 1.25;
 
 /// The documented blindness AV percentage scales only the sight contribution.
 /// Invalid values default to 0 blindness; valid values are constrained to the
@@ -78,6 +90,13 @@ pub struct DetectionSettings {
     pub attenuation_exponent: f32,
     pub sounds_mult: f32,
     pub sound_los_mult: f32,
+    /// `fSneakActionMult` (2): a noise's sound level's share of the sound.
+    pub action_mult: f32,
+    /// The sound levels' values, by the `VNAM` / `DATA` enum (Loud, Normal,
+    /// Silent, Very Loud): `iSoundLevelLoud` .. Only Silent (10) is in
+    /// Skyrim.esm; Skyrim SE read Normal 50, Loud 100, Very Loud 200
+    /// (`test-mod autotest21`).
+    pub sound_levels: [f32; 4],
     pub running_mult: f32,
     /// `fSneakEquippedWeightBase` / `Mult` (12, 0.5: UESP).
     pub weight_base: f32,
@@ -117,6 +136,13 @@ impl DetectionSettings {
             attenuation_exponent: f("fSneakDistanceAttenuationExponent", 2.0),
             sounds_mult: f("fSneakSoundsMult", 1.0),
             sound_los_mult: f("fSneakSoundLosMult", 0.3),
+            action_mult: f("fSneakActionMult", 2.0),
+            sound_levels: [
+                gmst_i32(lo, "iSoundLevelLoud", 100) as f32,
+                gmst_i32(lo, "iSoundLevelNormal", 50) as f32,
+                gmst_i32(lo, "iSoundLevelSilent", 10) as f32,
+                gmst_i32(lo, "iSoundLevelVeryLoud", 200) as f32,
+            ],
             running_mult: f("fSneakRunningMult", 2.0),
             weight_base: f("fSneakEquippedWeightBase", 12.0),
             weight_mult: f("fSneakEquippedWeightMult", 0.5),
@@ -153,8 +179,19 @@ pub struct Detection {
     /// Stealth points of the player and of actors enemies have been alert to
     /// (100 when missing).
     stealth: HashMap<FormId, Stealth>,
+    /// The noise each actor (or the player) made last, while it counts.
+    noises: HashMap<FormId, Noise>,
     next_in: f32,
     states_in: f32,
+}
+
+/// A noise someone made (a detection event): its sound level, where (`None`:
+/// wherever its owner is, as for a swing), and seconds it still counts.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Noise {
+    pub level: f32,
+    pub at: Option<Vec3>,
+    left: f32,
 }
 
 impl Default for Detection {
@@ -164,6 +201,7 @@ impl Default for Detection {
             of_player: HashMap::new(),
             on_meter: HashMap::new(),
             stealth: HashMap::new(),
+            noises: HashMap::new(),
             next_in: 0.0,
             states_in: 0.0,
         }
@@ -315,6 +353,94 @@ impl Engine {
             }
         } else {
             self.world_state.alerted.remove(&actor);
+        }
+    }
+
+    /// `owner` makes a noise of `level` (an `iSoundLevel*` value, or a
+    /// script's 0 to 100) at `at` (`None`: where it is, moving with it). It
+    /// counts towards detecting `owner` for [`NOISE_TIME`]; a louder noise
+    /// still counting isn't drowned out by a quieter one.
+    pub(crate) fn make_noise(&mut self, owner: FormId, level: f32, at: Option<Vec3>) {
+        if !(level > 0.0 && level.is_finite()) || !self.is_actor_ref(owner) {
+            return;
+        }
+        let noise = Noise {
+            level,
+            at,
+            left: NOISE_TIME,
+        };
+        match self.detection.noises.get(&owner) {
+            Some(n) if n.level > level => {}
+            _ => {
+                log::debug!("{owner} makes a noise of {level} at {at:?}");
+                self.detection.noises.insert(owner, noise);
+            }
+        }
+    }
+
+    /// The value of a record's sound level (0 Loud, 1 Normal, 2 Silent, 3
+    /// Very Loud); `None` for any other.
+    pub(crate) fn sound_level(&self, level: u32) -> Option<f32> {
+        self.detection_settings()
+            .sound_levels
+            .get(level as usize)
+            .copied()
+    }
+
+    /// The sound level of a record's `tag` at byte `at`, as a value.
+    fn record_sound_level(&self, rec: FormId, tag: &[u8; 4], at: usize) -> Option<f32> {
+        let r = self.lo.get(rec)?;
+        let d = r.get(tag)?.get(at..at + 4)?;
+        self.sound_level(u32::from_le_bytes(d.try_into().ok()?))
+    }
+
+    /// `actor` attacks with `weapon` (bare hands when `None`: the `Unarmed`
+    /// weapon's): the weapon's detection sound level (`VNAM`; daggers and
+    /// bows Silent, most two-handed weapons Loud), where it is.
+    pub(crate) fn weapon_noise(&mut self, actor: FormId, weapon: Option<FormId>) {
+        let weapon = weapon.unwrap_or(crate::ai::combat::UNARMED);
+        if let Some(level) = self.record_sound_level(weapon, b"VNAM", 0) {
+            self.make_noise(actor, level, None);
+        }
+    }
+
+    /// An impact (`IPCT`) of `owner`'s landing at `at`: its sound level
+    /// (`DATA` at 0x10; nearly all Normal).
+    pub(crate) fn impact_noise(&mut self, owner: Option<FormId>, ipct: FormId, at: Vec3) {
+        if let Some(owner) = owner
+            && let Some(level) = self.record_sound_level(ipct, b"DATA", 0x10)
+        {
+            self.make_noise(owner, level, Some(at));
+        }
+    }
+
+    /// The noise `r` is making now, if any.
+    pub(crate) fn noise_of(&self, r: FormId) -> Option<Noise> {
+        self.detection.noises.get(&r).copied()
+    }
+
+    /// Noises count down; those done are forgotten.
+    fn age_noises(&mut self, dt: f32) {
+        self.detection.noises.retain(|_, n| {
+            n.left -= dt;
+            n.left > 0.0
+        });
+    }
+
+    /// Where `observer` would look for `target` because of a noise: the
+    /// target's noise elsewhere, within reach, while the observer doesn't see
+    /// the target itself.
+    fn noise_lure(&self, observer: FormId, target: FormId) -> Option<Vec3> {
+        let at = self.noise_of(target)?.at?;
+        let o = self.observer(observer)?;
+        let t = self.target(target)?;
+        let s = self.detection_settings();
+        if o.eye.distance(at) >= self.detection_range(&s) {
+            return None;
+        }
+        match self.detection_between(&o, &t) {
+            Some((_, true)) => None,
+            _ => Some(at),
         }
     }
 
@@ -547,17 +673,47 @@ impl Engine {
     fn detection_between(&self, o: &Observer, t: &Target) -> Option<(f32, bool)> {
         let s = self.detection_settings();
         let range = self.detection_range(&s);
+        let attenuation_at = |d: f32| ((range - d).max(0.0) / range).powf(s.attenuation_exponent);
         let to = t.at - o.eye;
         let dist = to.length();
-        if dist >= range {
+        // A noise made elsewhere (an arrow landing) is heard from there, as
+        // far as detection reaches from it, even beyond the target's reach.
+        let noise = self.noise_of(t.id);
+        let noise_elsewhere = noise
+            .and_then(|n| n.at)
+            .filter(|at| o.eye.distance(*at) < range);
+        let in_reach = dist < range;
+        if !in_reach && noise_elsewhere.is_none() {
             return None;
         }
-        let attenuation = ((range - dist) / range).powf(s.attenuation_exponent);
-        let los = self.clear_line(o.eye, t.at, o.id, t.id);
+        let attenuation = attenuation_at(dist);
+        let los = in_reach && self.clear_line(o.eye, t.at, o.id, t.id);
         let facing = Vec3::new(o.heading.sin(), o.heading.cos(), 0.0);
         let flat = Vec3::new(to.x, to.y, 0.0).normalize_or_zero();
         let in_view = flat == Vec3::ZERO || facing.dot(flat) >= VIEW_HALF_ANGLE.to_radians().cos();
         let sees = los && in_view && !o.sleeping && !t.invisible;
+        // Its noise (UESP's "Action": sound level * fSneakActionMult). One made
+        // where the target is joins the movement's sound; one made elsewhere
+        // is attenuated, and heard through walls or not, from there. Muffle
+        // doesn't quiet it.
+        let (action_here, action_elsewhere) = match (noise, noise_elsewhere) {
+            (
+                Some(Noise {
+                    at: None, level, ..
+                }),
+                _,
+            ) => (level * s.action_mult, 0.0),
+            (Some(n), Some(p)) => {
+                let heard = if self.clear_line(o.eye, p, o.id, FormId::NULL) {
+                    1.0
+                } else {
+                    s.sound_los_mult
+                };
+                let a = s.sounds_mult * n.level * s.action_mult * heard;
+                (0.0, attenuation_at(o.eye.distance(p)) * a)
+            }
+            _ => (0.0, 0.0),
+        };
         // The observer's perks for noticing movement and what light shows.
         use crate::perks::ep;
         let about = [Some(t.id)];
@@ -569,7 +725,8 @@ impl Engine {
         } else {
             0.0
         };
-        let sound = s.sounds_mult * movement * if los { 1.0 } else { s.sound_los_mult };
+        let sound =
+            s.sounds_mult * (movement + action_here) * if los { 1.0 } else { s.sound_los_mult };
         let visual = if sees {
             let light = self.light_level_at(t.at - Vec3::Z * 40.0, t.id);
             (s.light_mod + light)
@@ -610,6 +767,7 @@ impl Engine {
         Some((
             s.base
                 + attenuation * (sound + visual + observer_skill)
+                + action_elsewhere
                 + (observer_skill - target_skill),
             sees,
         ))
@@ -683,6 +841,7 @@ impl Engine {
     /// once a second, the same for actors as targets, and actors' detection
     /// states (`update_detection_states`).
     pub(crate) fn update_detection(&mut self, dt: f32) {
+        self.age_noises(dt);
         for st in self.detection.stealth.values_mut() {
             st.regen_wait = (st.regen_wait - dt).max(0.0);
         }
@@ -870,7 +1029,7 @@ impl Engine {
                     continue;
                 }
                 if v.is_some_and(|v| v > 0.0) {
-                    sr.at = alive.unwrap_or(sr.at);
+                    sr.at = self.noise_lure(r, sr.target).or(alive).unwrap_or(sr.at);
                     sr.dwell = 0.0;
                 } else if self.stealth_points(sr.target) >= 100.0 {
                     self.calm_down(r, Some(if sr.lost { b"LOTN" } else { b"ALTN" }));
@@ -914,8 +1073,9 @@ impl Engine {
                     .filter(|&(o, t, v)| o == r && v > 0.0 && !self.enough_to_find(v, t))
                     .max_by(|a, b| a.2.total_cmp(&b.2))
                     .map(|(_, t, _)| t);
+                // Heard only by a noise elsewhere: it looks there.
                 if let Some(t) = best
-                    && let Some(at) = position(self, t)
+                    && let Some(at) = self.noise_lure(r, t).or_else(|| position(self, t))
                 {
                     self.start_search(r, t, at, false);
                 }
@@ -1043,6 +1203,14 @@ impl Engine {
             self.stealth_points(PLAYER_REF),
             self.detection_range(&s),
         )];
+        if let Some(n) = self.noise_of(PLAYER_REF) {
+            out.push(format!(
+                "player's noise: level {:.0} {}, {:.1}s left",
+                n.level,
+                n.at.map_or("where they are".to_owned(), |p| format!("at {p:.0}")),
+                n.left
+            ));
+        }
         let Some(t) = self.target(PLAYER_REF) else {
             return out;
         };
@@ -1357,5 +1525,180 @@ mod search_tests {
         assert!(!s.forgets_fled_target(false, false, 100.0, 30.0));
         let mut alert = search(false);
         assert!(!alert.forgets_fled_target(false, true, 100.0, 30.0));
+    }
+}
+
+#[cfg(test)]
+mod noise_tests {
+    use super::*;
+    use esp::writer::{Node, RecordBuilder, write_plugin};
+
+    struct Fixture(std::path::PathBuf);
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    const SWORD: FormId = FormId(0x800);
+    const GREATSWORD: FormId = FormId(0x801);
+    const IMPACT: FormId = FormId(0x802);
+    const OBSERVER: FormId = FormId(0x901);
+
+    /// An engine with a Normal one-handed sword, a Loud greatsword, the
+    /// `Unarmed` weapon (Normal) and a Normal impact.
+    fn engine() -> (Fixture, Engine) {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "vrm-detection-noise-{}-{stamp}",
+            std::process::id()
+        ));
+        std::fs::create_dir(&dir).unwrap();
+        let weapon = |id: FormId, level: u32| {
+            RecordBuilder::new(b"WEAP", id).field(b"VNAM", &level.to_le_bytes())
+        };
+        let mut data = [0u8; 24];
+        data[16..20].copy_from_slice(&1u32.to_le_bytes());
+        data[20] = 1; // No Decal Data.
+        let groups = [
+            Node::top(
+                b"WEAP",
+                vec![
+                    weapon(SWORD, 1),
+                    weapon(GREATSWORD, 0),
+                    weapon(crate::ai::combat::UNARMED, 1),
+                ],
+            ),
+            Node::top(
+                b"IPCT",
+                vec![RecordBuilder::new(b"IPCT", IMPACT).field(b"DATA", &data)],
+            ),
+        ];
+        std::fs::write(
+            dir.join("Noise.esp"),
+            write_plugin(0, &[], "test", "noise", 0x900, &groups),
+        )
+        .unwrap();
+        let engine = crate::stats::action_tests::headless_engine(&dir, "Noise.esp");
+        (Fixture(dir), engine)
+    }
+
+    fn observer() -> Observer {
+        Observer {
+            id: OBSERVER,
+            eye: Vec3::ZERO,
+            heading: 0.0,
+            sneak: 0.0,
+            sleeping: false,
+        }
+    }
+
+    /// The player standing still `y` units ahead of the observer.
+    fn player_at(y: f32) -> Target {
+        Target {
+            id: PLAYER_REF,
+            at: Vec3::new(0.0, y, 0.0),
+            sneaking: true,
+            moving: false,
+            running: false,
+            armor_weight: 0.0,
+            sneak: 0.0,
+            stealth: 0.0,
+            invisible: false,
+            muffle: 0.0,
+        }
+    }
+
+    fn attenuation(e: &Engine, d: f32) -> f32 {
+        let s = e.detection_settings();
+        let range = e.detection_range(&s);
+        ((range - d) / range).powf(s.attenuation_exponent)
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic plugin only"]
+    fn sound_levels_and_weapon_swings_add_the_action_term() {
+        let (_dir, mut e) = engine();
+        // The plugin has no iSoundLevel* settings: the values SE read.
+        assert_eq!(e.sound_level(0), Some(100.0));
+        assert_eq!(e.sound_level(1), Some(50.0));
+        assert_eq!(e.sound_level(2), Some(10.0));
+        assert_eq!(e.sound_level(3), Some(200.0));
+        assert_eq!(e.sound_level(4), None);
+
+        let (o, t) = (observer(), player_at(500.0));
+        let (quiet, _) = e.detection_between(&o, &t).unwrap();
+        e.weapon_noise(PLAYER_REF, Some(SWORD));
+        let (swing, _) = e.detection_between(&o, &t).unwrap();
+        // Normal (50) * fSneakActionMult (2), attenuated with the target.
+        let expected = attenuation(&e, 500.0) * 50.0 * 2.0;
+        assert!((swing - quiet - expected).abs() < 0.01, "{swing} - {quiet}");
+
+        // A louder swing replaces it; a quieter one doesn't drown it out.
+        e.weapon_noise(PLAYER_REF, Some(GREATSWORD));
+        assert_eq!(e.noise_of(PLAYER_REF).unwrap().level, 100.0);
+        e.weapon_noise(PLAYER_REF, None);
+        assert_eq!(e.noise_of(PLAYER_REF).unwrap().level, 100.0);
+
+        // Muffle quiets movement, not the noise.
+        let mut muffled = player_at(500.0);
+        muffled.muffle = 1.0;
+        let (loud, _) = e.detection_between(&o, &t).unwrap();
+        let (loud_muffled, _) = e.detection_between(&o, &muffled).unwrap();
+        assert_eq!(loud, loud_muffled);
+
+        // It counts for a moment, then is gone.
+        e.age_noises(NOISE_TIME - 0.1);
+        assert!(e.noise_of(PLAYER_REF).is_some());
+        e.age_noises(0.2);
+        assert!(e.noise_of(PLAYER_REF).is_none());
+        let (after, _) = e.detection_between(&o, &t).unwrap();
+        assert_eq!(after, quiet);
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic plugin only"]
+    fn a_noise_elsewhere_is_heard_from_where_it_was_made() {
+        let (_dir, mut e) = engine();
+        let o = observer();
+        let range = e.detection_range(&e.detection_settings());
+        // The player far beyond reach: nothing to detect them by.
+        let far = player_at(range * 2.0);
+        assert!(e.detection_between(&o, &far).is_none());
+
+        // Their arrow lands 300 units from the observer.
+        let at = Vec3::new(300.0, 0.0, 0.0);
+        e.impact_noise(Some(PLAYER_REF), IMPACT, at);
+        assert_eq!(
+            e.noise_of(PLAYER_REF),
+            Some(Noise {
+                level: 50.0,
+                at: Some(at),
+                left: NOISE_TIME
+            })
+        );
+        let (v, sees) = e.detection_between(&o, &far).unwrap();
+        assert!(!sees);
+        let s = e.detection_settings();
+        let observer_skill = s.perception_min * (1.0 + s.combat_mod);
+        let expected = s.base + attenuation(&e, 300.0) * 50.0 * 2.0 + observer_skill;
+        assert!((v - expected).abs() < 0.01, "{v} against {expected}");
+
+        // Beyond reach of the observer too: still nothing.
+        e.age_noises(NOISE_TIME);
+        e.impact_noise(Some(PLAYER_REF), IMPACT, Vec3::new(range + 10.0, 0.0, 0.0));
+        assert!(e.detection_between(&o, &far).is_none());
+
+        // An impact without an owner, or a noise of nobody's, makes none.
+        e.age_noises(NOISE_TIME);
+        e.impact_noise(None, IMPACT, at);
+        e.make_noise(FormId(0x7777), 50.0, Some(at));
+        e.make_noise(PLAYER_REF, 0.0, Some(at));
+        assert!(e.noise_of(PLAYER_REF).is_none());
+        assert!(e.noise_of(FormId(0x7777)).is_none());
     }
 }

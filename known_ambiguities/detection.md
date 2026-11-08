@@ -130,6 +130,59 @@ stealth points.
   `LostRemoveDistanceTime` (60) do, and how they relate to the stealth-point
   rule above. Those three aren't used. `fCombatLowFleeingTargetHitPercent`
   isn't in the local UESP dump.
+- **Noises (action sounds and detection events).** Sources:
+  [UESP Skyrim:Sneak](https://en.uesp.net/w/index.php?oldid=3575824)
+  (revision 3575824) gives the sound factor as `fSneakSoundsMult *
+  (Movement + Action) * (1, or fSneakSoundLosMult without line of sight)`,
+  Action `ActionSound * fSneakActionMult` (2), made by spells, shouts and
+  "attacking with (not drawing or sheathing) any weapon that is not a
+  dagger". [UESP Skyrim:Keening](https://en.uesp.net/w/index.php?oldid=3449693)
+  (revision 3449693) calls Keening's Normal "detection sound level" a bug
+  that makes it "as loud as a sword". The level enums (Loud, Normal,
+  Silent, Very Loud) are xEdit's (`wbSoundLevelEnum`: WEAP `VNAM`, IPCT
+  `DATA`, PROJ `VNAM`, EXPL `DATA`, MGEF casting). The CK wiki's
+  `CreateDetectionEvent(Actor akOwner, int aiSoundLevel = 0)` makes a
+  detection event at the reference, owned by `akOwner`, of level 0 to 100
+  (more works), which may lure actors to investigate (from a search
+  summary of the page; ck.uesp.net itself refuses us). CommonLibSSE (MIT)
+  names one generated detection event per actor (action value, location,
+  time stamp, reference). `vrm-tool sound-levels` over the vanilla data:
+  daggers Silent but six (Keening, Nettlebane, the Shiv...), bows Silent but
+  26 (the Nightingale bows...), crossbows Silent, one-handed swords, axes
+  and maces, staves and `Unarmed` Normal, two-handed weapons mostly Loud
+  (888 of 1,165); impacts Normal (659 of 663); arrow projectiles Normal.
+  Choices:
+  - A level's value is the `iSoundLevel*` setting of its name (Silent 10
+    from Skyrim.esm; Normal 50, Loud 100, Very Loud 200 as Skyrim SE read
+    them, autotest21). So a dagger swing makes a little noise (10), though
+    UESP says daggers make none; the data's Silent level is kept.
+  - Each actor (or the player) holds one noise: a louder one still counting
+    isn't replaced by a quieter one. It counts for 1.25 s (invented: long
+    enough for the once-a-second detection states to hear it), is not saved,
+    and only adds to the detection of its owner.
+  - Swings (NPCs' at the hit frame, each hand; the player's at each
+    strike) make the hand's weapon's `VNAM` noise where the attacker is,
+    landing or not; bare hands and creatures' natural attacks use
+    `Unarmed`'s (Normal). Bashes make none of their own. A bow's shot
+    makes the bow's noise; the arrow's projectile `VNAM` isn't used (the
+    impact gives its landing a noise; which moment the projectile's level
+    belongs to is unknown). Spells' casting levels and shouts aren't
+    implemented (open in the roadmap).
+  - An impact's noise (melee blows, arrows, spell impacts) is its
+    attacker's, shooter's or caster's, where it lands.
+  - A noise where its owner is joins the movement term (attenuated and
+    line-of-sight checked with the target). A noise elsewhere is
+    attenuated from its own place, by the observer's line to that place
+    (`fSneakSoundLosMult` through walls), and counts even when its owner is
+    beyond detection's reach: a far archer's arrow landing by a guard
+    raises the guard's detection of the archer. Muffle doesn't quiet
+    noises (UESP applies it to movement).
+  - A calm enemy that becomes alert through someone's noise elsewhere,
+    without seeing them, searches at the noise rather than where they are;
+    a searcher who hears one moves its search there.
+  - `CreateDetectionEvent` with no owner does nothing (nobody to detect);
+    on its owner, the noise moves with the owner. Its level is taken as the
+    same scale as `iSoundLevel*`.
 - Topics: `NormalToCombat`, `AlertToCombat`, `LostToCombat` on starting a
   fight; `NormalToAlert`, `CombatToLost` on starting to search; `AlertIdle`
   / `LostIdle` every `fCombatDetectionDialogueIdleMin` to `MaxElapsedTime`
@@ -162,13 +215,6 @@ stealth points.
   Normal/Alert/Combat/Lost state transitions, elapsed AI execution and observer
   values are not saved; their load-time lifecycle remains open.
 
-- **Weapons are silent, by decision.** Swinging a weapon (all but daggers)
-  should make action sound through the weapon's detection sound level
-  (`WEAP` `DNAM`) and `iSoundLevelLoud` / `Normal` / `Silent` / `VeryLoud`.
-  Only `iSoundLevelSilent` (10) is in Skyrim.esm; Skyrim SE read the rest
-  (autotest21, `research/autotest21.md`, SoundLevels: Normal 50, Loud 100,
-  VeryLoud 200). Attacks still make no sound: the action term isn't
-  implemented yet (open in `plans/ROADMAP.md`).
 - The "Combat Search" behaviour itself (where searchers look, for how long)
   is unsourced; see above.
 - **Alert flag versus detection Alert**: the Skyrim `SetAlert` / `IsAlerted`
@@ -185,7 +231,7 @@ stealth points.
   -0.4 and `iCombatStealthPointSneakDetectionThreshold` 70, also missing from
   the plugins, were read in the game, `test-mod autotest2`, and are used.)
 - `fPlayerDetectionSneakBase` / `Mult`, `fPlayerDetectActorValue`,
-  `fSneakActionMult` (unused without action sounds), `fSneakFlyingDistanceMult`,
+  `fSneakFlyingDistanceMult`,
   `fSneakAmbushNonTargetMod`: their roles are unknown.
 - The light level follows the weather's colours as the renderer uses them:
   outdoors at midnight (moonlight and night ambient) comes out at about 60% of

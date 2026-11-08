@@ -1053,6 +1053,21 @@ pub fn call(
         })),
         // Quests start and stop at once here, so neither is ever half done.
         ("quest", "isstarting") | ("quest", "isstopping") => v(Value::Bool(false)),
+        // A noise at this reference, `akOwner`'s, of `aiSoundLevel` (0 to 100
+        // in vanilla calls; more works, says the CK wiki). Made on the owner
+        // itself, it is where the owner is. Without an owner there is nobody
+        // to detect by it, so it does nothing.
+        ("objectreference", "createdetectionevent") => {
+            if let (Some(r), Some(owner)) = (me, form_arg(args, 0)) {
+                let level = args.get(1).map_or(0, |a| a.as_int()) as f32;
+                if r == owner {
+                    e.make_noise(owner, level, None);
+                } else if let Some(at) = e.ref_position(r) {
+                    e.make_noise(owner, level, Some(at));
+                }
+            }
+            none()
+        }
         ("objectreference", "setopen") => {
             if let Some(r) = me {
                 e.set_open(r, args.is_empty() || arg(0).as_bool());

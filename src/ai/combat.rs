@@ -18,7 +18,7 @@ use crate::world::template::{self, Sources};
 /// How often actors look for enemies (no source). Whom they notice is
 /// detection's (`crate::detection`).
 /// Skyrim.esm's `Unarmed` weapon: a fist's blows' source.
-const UNARMED: FormId = FormId(0x1F4);
+pub(crate) const UNARMED: FormId = FormId(0x1F4);
 const DETECT_INTERVAL: f32 = 1.0;
 /// Actors don't start fights, or join them, further off than this (no source).
 /// Fights end by detection (`crate::detection`).
@@ -2098,6 +2098,11 @@ impl Engine {
             };
             let strike_angle = attack.as_ref().map_or(35.0, |x| x.strike_angle);
             let stagger = attack.as_ref().map_or(0.0, |x| x.stagger);
+            // The swing is heard, landing or not (a bash only where it lands).
+            if !bash {
+                let weapon = self.weapon_in_hand(s.attacker, s.hand);
+                self.weapon_noise(s.attacker, weapon);
+            }
             let Some((tp, th)) = self.actor_body(s.target) else {
                 self.break_invisibility(s.attacker);
                 continue;
@@ -3694,6 +3699,8 @@ impl Engine {
         reach: f32,
         stagger: f32,
     ) {
+        let weapon = self.weapon_in_hand(PLAYER_REF, hand);
+        self.weapon_noise(PLAYER_REF, weapon);
         let (eye, dir) = self.player_aim();
         let ray = self.physics.raycast(eye, dir, reach);
         log::debug!("player attack: {ray:?} within {reach:.0}");
