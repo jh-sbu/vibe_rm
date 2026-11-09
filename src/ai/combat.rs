@@ -2887,7 +2887,7 @@ impl Engine {
         }
         let attacker = attacker.map(|a| self.actor_cause_of(a));
         if target == PLAYER_REF {
-            if self.player_dead() {
+            if self.player_dead() || (self.god_mode && amount > 0.0) {
                 return;
             }
             let witnesses = if self.player_health - amount <= 0. {

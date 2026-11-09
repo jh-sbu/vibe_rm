@@ -880,7 +880,7 @@ impl GraphAnim {
             let gains = self
                 .inst
                 .foot_ik_controls()
-                .filter(|_| self.foot_ik_enabled);
+                .filter(|_| self.foot_ik_enabled && crate::debug_natives::foot_ik_on());
             self.ankles = footik::apply(
                 &mut self.feet,
                 ik,

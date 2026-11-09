@@ -269,3 +269,31 @@ Research: `research/pex-natives/actor-batch12-states.md` and
   `OnVampirismStateChanged` / `OnLycanthropyStateChanged` to the actor's
   scripts, its aliases and its effects. Whether other actors' scripts hear it
   ("anyone who cares") is unknown.
+- Frame-rate natives read the engine's frame times: `CaptureFrameRate(n)`
+  lists the last n rates (up to 200) to one decimal, oldest first; the
+  average, least and most cover frames between `StartFrameRateCapture` and
+  `EndFrameRateCapture`. The string's exact format in SE is unknown. Budget
+  and memory queries give 0 / False / "", profiling does nothing, and user
+  logs go to the debug log.
+- `SetGodMode` (and the console's `tgm`) only stops damage to the player;
+  whether SE's also gives unlimited magicka, stamina and carry weight here is
+  left out. `ToggleMenus` (`tm`) hides the SWF HUD and menus.
+- `SetFootIK(false)` turns foot placement off for everyone until set again.
+- `CenterOnCell(AndWait)` loads the cell at once, so neither waits.
+  `PlayerMoveToAndWait` queues the move and returns 0 at once.
+- `TakeScreenshot(name)` writes `name.png` (relative to the working
+  directory) of the world without the UI, after the frame.
+- `UsingGamepad` is False (no gamepad input yet).
+- `AddAchievement`, `ShakeController`, `SetAllowFlyingMountLandingRequests`
+  and `RequestModel` do nothing: no achievements, rumble or player mounts here,
+  and models load with their references.
+- `ClearTempEffects` removes the decals blows, arrows and spells left (on the
+  world and on bodies) and the impacts' playing effects; whether SE also
+  clears placed hazards is unknown.
+- `SetSunGazeImageSpaceModifier`'s modifier plays at full strength when the
+  player begins gazing at the sun (`IsPlayerSungazing`'s test); none is set
+  until a script sets one.
+- `SetSittingRotation(deg)`: in first person, the view of a player seated in
+  a cart starts that many degrees from the seat's heading, positive to the
+  right (the sign is a guess; MQ101 passes -55), and turns with the seat.
+  Furniture seats don't use it yet (the player doesn't sit in furniture).

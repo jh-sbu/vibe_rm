@@ -61,6 +61,7 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             "getgs <name>          a game setting's value".into(),
             "coc <cell>            center on cell (editor id)".into(),
             "tcl                   toggle collision (noclip)".into(),
+            "tgm / tm              toggle god mode / hide the HUD and menus".into(),
             "fw / sw <weather>     force / set weather (overriding; rwo releases)".into(),
             "weather               the weathers, transition and region".into(),
             "thunder               roll thunder and lightning now (while there is thunder)".into(),
@@ -926,6 +927,14 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
         "tsh" | "toggleshadows" => {
             engine.renderer.shadows_enabled = !engine.renderer.shadows_enabled;
             vec![format!("shadows {}", if engine.renderer.shadows_enabled { "on" } else { "off" })]
+        }
+        "tgm" | "togglegodmode" => {
+            engine.god_mode = !engine.god_mode;
+            vec![format!("god mode {}", if engine.god_mode { "on" } else { "off" })]
+        }
+        "tm" | "togglemenus" => {
+            engine.menus_hidden = !engine.menus_hidden;
+            vec![format!("menus {}", if engine.menus_hidden { "hidden" } else { "shown" })]
         }
         "tai" | "toggleai" => {
             engine.ai_enabled = !engine.ai_enabled;

@@ -83,6 +83,42 @@ pub fn call(
             none()
         }
         ("debug", "getplatformname") => v(Value::str("PC")),
+        // No gamepad is read yet.
+        ("game", "usinggamepad") => v(Value::Bool(false)),
+        // The jail bed's sleep (`JailBedScript`).
+        ("game", "servetime") => {
+            e.serve_sentence();
+            none()
+        }
+        ("game", "quittomainmenu") => {
+            e.request_quit_to_main_menu();
+            none()
+        }
+        // Models load as their references come; asking ahead does nothing.
+        ("game", "requestmodel") => none(),
+        // Achievements, controller rumble and flying mounts have nothing
+        // here to act on (the player doesn't ride).
+        ("game", "addachievement")
+        | ("game", "shakecontroller")
+        | ("game", "setallowflyingmountlandingrequests") => {
+            log::debug!("Game.{func}{args:?}: nothing to do");
+            none()
+        }
+        ("game", "cleartempeffects") => {
+            e.clear_temp_effects();
+            none()
+        }
+        ("game", "setsungazeimagespacemodifier") => {
+            e.sungaze_imod = form_arg(args, 0);
+            none()
+        }
+        ("game", "setsittingrotation") => {
+            e.sitting_rotation = arg(0).as_float().to_radians();
+            if let Some(h) = e.player_seat_heading.filter(|_| !e.third_person) {
+                e.camera.yaw = h + e.sitting_rotation;
+            }
+            none()
+        }
         ("debug", "getversionnumber") => v(Value::str("1.6.1170.0")),
         // ---------------------------------------------------------- Utility
         // `Wait` stops in menu mode (the game clock does), `WaitMenuMode` goes on.
@@ -2999,6 +3035,9 @@ pub fn call(
         }))),
         ("math", _) => math::call(func, args).map_or_else(none, v),
         _ => {
+            if let Some(r) = crate::debug_natives::call(e, class, func, args) {
+                return r;
+            }
             let key = format!("{class}.{func}");
             if e.scripts.warned.insert(key.clone()) {
                 log::debug!("unimplemented native {key}");

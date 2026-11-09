@@ -259,6 +259,24 @@ pub struct Engine {
     pub journal_last_tab: bool,
     /// The journal's Quit to Desktop: the app exits.
     pub quit_requested: bool,
+    /// `Game.SetSunGazeImageSpaceModifier`'s modifier, and whether the
+    /// player was gazing at the sun last frame.
+    pub sungaze_imod: Option<FormId>,
+    pub sungazing: bool,
+    /// `Game.SetSittingRotation`: the first-person sitting camera's turn
+    /// from straight ahead (radians).
+    pub sitting_rotation: f32,
+    /// The heading of the seat the player rides in, last frame.
+    pub player_seat_heading: Option<f32>,
+    /// `Debug.SetGodMode` (the console's `tgm`): the player takes no damage.
+    pub god_mode: bool,
+    /// `Debug.ToggleMenus` (the console's `tm`): the HUD and menus aren't
+    /// drawn.
+    pub menus_hidden: bool,
+    /// Frame rates for `Utility.CaptureFrameRate` and its kin.
+    pub frame_rates: crate::debug_natives::FrameRates,
+    /// `Debug.TakeScreenshot`'s files, written by the app after the frame.
+    pub screenshot_requests: Vec<String>,
     /// Quit to Main Menu was confirmed: the screen fades to black, then the
     /// app tears the session down (`Engine::main_menu_ready`).
     pub quit_to_main_menu: bool,
@@ -698,6 +716,14 @@ impl Engine {
             hud_cart_mode: false,
             journal_last_tab: false,
             quit_requested: false,
+            sungaze_imod: None,
+            sungazing: false,
+            sitting_rotation: 0.0,
+            player_seat_heading: None,
+            god_mode: false,
+            menus_hidden: false,
+            frame_rates: Default::default(),
+            screenshot_requests: Vec::new(),
             quit_to_main_menu: false,
             main_menu_notice: None,
             main_menu_music: None,
@@ -4684,9 +4710,11 @@ impl Engine {
 
     pub(crate) fn update_scripts(&mut self, dt: f32) {
         self.scripts.real_time += dt as f64;
+        self.frame_rates.observe(dt);
         let now = self.scripts.real_time;
         let game_now = self.game_hours_total();
         self.update_los();
+        self.update_sungaze();
         // Timers
         let mut fired = Vec::new();
         self.scripts.timers.retain_mut(|t| {

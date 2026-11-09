@@ -65,6 +65,9 @@ impl Engine {
     }
 
     pub(crate) fn set_vehicle(&mut self, actor: FormId, vehicle: Option<FormId>) {
+        if actor == PLAYER_REF {
+            self.player_seat_heading = None;
+        }
         let Some(vehicle) = vehicle.filter(|&v| v != actor && !v.is_null()) else {
             self.passengers.remove(&actor);
             let capsule = self.actor_mut(actor).and_then(|a| {
@@ -493,6 +496,15 @@ impl Engine {
                     pos + Vec3::Z * (self.physics.player_half_height + self.physics.player_radius);
                 self.player.vertical_velocity = 0.;
                 self.camera.position = self.player.eye();
+                // The view turns with the seat; seated in first person, it
+                // starts `SetSittingRotation`'s turn from the seat's heading.
+                let h = self::heading(transform);
+                match self.player_seat_heading {
+                    Some(last) => self.camera.yaw += wrap_angle(h - last),
+                    None if !self.third_person => self.camera.yaw = h + self.sitting_rotation,
+                    None => {}
+                }
+                self.player_seat_heading = Some(h);
             } else if let Some(a) = self.actor_mut(actor) {
                 a.exec.pos = pos;
                 a.exec.heading = self::heading(transform);
@@ -523,6 +535,13 @@ impl Engine {
         }
     }
 }
+/// An angle brought within (-pi, pi].
+fn wrap_angle(a: f32) -> f32 {
+    let tau = std::f32::consts::TAU;
+    let a = a.rem_euclid(tau);
+    if a > std::f32::consts::PI { a - tau } else { a }
+}
+
 fn heading(m: Mat4) -> f32 {
     let forward = m.y_axis;
     forward.x.atan2(forward.y)

@@ -998,6 +998,23 @@ impl ApplicationHandler for App {
                     el.exit();
                     return;
                 }
+                // `Debug.TakeScreenshot`: the world as the camera sees it.
+                for name in std::mem::take(&mut s.engine.screenshot_requests) {
+                    let path = if name.to_ascii_lowercase().ends_with(".png") {
+                        name
+                    } else {
+                        format!("{name}.png")
+                    };
+                    let e = &mut s.engine;
+                    let (w, h) = (e.renderer.width, e.renderer.height);
+                    let pixels = e
+                        .renderer
+                        .render_to_image(&e.scene, &e.camera, (w, h), |_, _| {});
+                    match write_png(&path, w, h, &pixels) {
+                        Ok(()) => log::info!("Debug.TakeScreenshot: wrote {path}"),
+                        Err(why) => log::warn!("Debug.TakeScreenshot({path}): {why:#}"),
+                    }
+                }
                 // Includes menus and dialogue opened or closed by scripts/SWF.
                 s.sync_mouse_capture();
                 timing.next("surface.acquire");

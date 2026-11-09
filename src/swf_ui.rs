@@ -1469,7 +1469,10 @@ impl SwfUi {
     /// Whether the HUD shows: not while a menu is up, as in the game, nor
     /// while the screen fades out for Quit to Main Menu.
     pub fn visible(engine: &Engine) -> bool {
-        engine.menu.is_none() && !engine.quit_to_main_menu && !engine.is_loading()
+        engine.menu.is_none()
+            && !engine.quit_to_main_menu
+            && !engine.is_loading()
+            && !engine.menus_hidden
     }
 
     /// Track the pointer even while the console handles input, so closing it

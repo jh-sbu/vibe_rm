@@ -808,6 +808,20 @@ impl Engine {
         (self.rand() >> 40) as f32 / (1u64 << 24) as f32
     }
 
+    /// `Game.ClearTempEffects`: the decals blows, arrows and spells left on
+    /// the world and on bodies, and the impacts' effects still playing.
+    pub(crate) fn clear_temp_effects(&mut self) {
+        for key in std::mem::take(&mut self.impacts.decals) {
+            if let Some(rc) = self.scene.cells.get_mut(&key) {
+                rc.decals.retain(|d| d.ref_id != 0);
+            }
+        }
+        self.impacts.skin.clear();
+        self.impacts.skin_order.clear();
+        self.impacts.effects.clear();
+        self.scene.actor_decals.clear();
+    }
+
     /// Forget the runtime decals of a cell unloaded.
     pub(crate) fn forget_impact_decals(&mut self, key: CellKey) {
         self.impacts.decals.retain(|k| *k != key);

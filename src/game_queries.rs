@@ -141,6 +141,20 @@ impl Engine {
             .is_none()
     }
 
+    /// `SetSunGazeImageSpaceModifier`'s modifier starts as the player begins
+    /// gazing at the sun (called every frame).
+    pub(crate) fn update_sungaze(&mut self) {
+        let Some(imod) = self.sungaze_imod else {
+            self.sungazing = false;
+            return;
+        };
+        let gazing = self.player_sungazing();
+        if gazing && !self.sungazing {
+            self.apply_imod(imod, 1.0);
+        }
+        self.sungazing = gazing;
+    }
+
     /// `SetPlayerReportCrime`.
     pub fn set_player_report_crime(&mut self, report: bool) {
         self.game_flags.crime_unreported = !report;

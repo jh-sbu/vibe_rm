@@ -15,6 +15,7 @@ mod console;
 mod crafting;
 mod created;
 mod crime;
+mod debug_natives;
 mod detection;
 mod diagnostics;
 mod dialogue;
