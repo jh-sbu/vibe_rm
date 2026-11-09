@@ -562,3 +562,84 @@ fn an_npcs_line_of_sight_stays_within_its_view_cone() {
     // The hunter, facing north, has the wolf ahead.
     assert_eq!(e.line_of_sight(HUNTER_REF, WOLF_REF), Some(true));
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn a_deferred_kill_waits_for_its_end_and_blames_the_actor_cause() {
+    let (_f, mut e) = fixture("deferred");
+    // Away (unloaded): loaded fixture actors have no body to die with.
+    let mut x = crate::ai::exec::ActorExec::new(vec![], glam::Vec3::ZERO, 0., 0.);
+    x.place = Some(crate::ai::schedule::Place::Interior(FormId(0x820)));
+    x.health = 100.;
+    e.away.insert(ACTOR, x);
+    call(&mut e, "actor", "startdeferredkill", ACTOR, &[]);
+    // A trap (`FIRST`) set off by the other actor.
+    let cause = e.object_value(OTHER_REF);
+    call(&mut e, "objectreference", "setactorcause", FIRST, &[cause]);
+    assert!(!e.kill_actor_by(ACTOR, Some(FIRST)));
+    assert!(e.hurt_away(ACTOR, 10_000.0));
+    assert!(!e.is_dead(ACTOR));
+    assert!(e.actor_value(ACTOR, esp::actor_value::HEALTH) <= 0.0);
+    call(&mut e, "actor", "enddeferredkill", ACTOR, &[]);
+    assert!(e.is_dead(ACTOR));
+    assert_eq!(
+        e.world_state.deaths.get(&ACTOR).and_then(|d| d.killer),
+        Some(OTHER_REF)
+    );
+    // Clearing the cause blames the object itself.
+    call(
+        &mut e,
+        "objectreference",
+        "setactorcause",
+        FIRST,
+        &[Value::None],
+    );
+    assert_eq!(e.actor_cause_of(FIRST), FIRST);
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn start_sneaking_toggles_the_stance_and_flight_permission_reads_back() {
+    let (_f, mut e) = fixture("sneak");
+    place(&mut e, ACTOR, NPC);
+    assert!(!e.actor_ref(ACTOR).unwrap().wants_sneak());
+    call(&mut e, "actor", "startsneaking", ACTOR, &[]);
+    assert!(e.actor_ref(ACTOR).unwrap().wants_sneak());
+    assert_eq!(
+        call(&mut e, "actor", "isallowedtofly", ACTOR, &[]),
+        Value::Bool(true)
+    );
+    call(
+        &mut e,
+        "actor",
+        "setallowflying",
+        ACTOR,
+        &[Value::Bool(false)],
+    );
+    assert_eq!(
+        call(&mut e, "actor", "isallowedtofly", ACTOR, &[]),
+        Value::Bool(false)
+    );
+    assert_eq!(
+        call(&mut e, "actor", "isbeingridden", ACTOR, &[]),
+        Value::Bool(false)
+    );
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn vampirism_and_lycanthropy_changes_reach_the_actors_scripts() {
+    let (_f, mut e) = fixture("vampirism");
+    call(
+        &mut e,
+        "actor",
+        "sendvampirismstatechanged",
+        ACTOR,
+        &[Value::Bool(true)],
+    );
+    assert!(e.scripts.pending_events.iter().any(|(o, ev, args)| {
+        *o == papyrus::ObjectId::Form(ACTOR.0)
+            && ev == "OnVampirismStateChanged"
+            && args == &[Value::Bool(true)]
+    }));
+}

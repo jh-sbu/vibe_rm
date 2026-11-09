@@ -30,6 +30,13 @@ pub struct WorldState {
     /// `SetIntimidated`; saved in `BRIB` / `INTI`).
     pub bribed: std::collections::HashSet<FormId>,
     pub intimidated: std::collections::HashSet<FormId>,
+    /// Actors in `StartDeferredKill`'s state: they don't die until
+    /// `EndDeferredKill`; the value is who dealt a killing blow meanwhile
+    /// (saved in `DFKL`).
+    pub deferred_kills: HashMap<FormId, Option<FormId>>,
+    /// `SetActorCause`: the actor to blame for what a trap or other object
+    /// does (saved in `ACAU`).
+    pub actor_causes: HashMap<FormId, FormId>,
     /// `AllowPCDialogue` overrides of the race's flag (saved in `PCDL`).
     pub pc_dialogue: HashMap<FormId, bool>,
     /// `AllowBleedoutDialogue(true)`: talkable while bleeding out (saved in

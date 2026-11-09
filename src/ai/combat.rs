@@ -2885,6 +2885,7 @@ impl Engine {
         if amount > 0.0 && (self.is_invulnerable(target) || self.is_ghost(target)) {
             return;
         }
+        let attacker = attacker.map(|a| self.actor_cause_of(a));
         if target == PLAYER_REF {
             if self.player_dead() {
                 return;
@@ -3737,6 +3738,16 @@ impl Engine {
     /// Kill an actor, `killer` (if known) having dealt the blow: its scripts
     /// hear of it (`OnDying`, `OnDeath`) and the Story Manager gets a kill event.
     pub fn kill_actor_by(&mut self, actor: FormId, killer: Option<FormId>) -> bool {
+        let killer = killer.map(|k| self.actor_cause_of(k));
+        // `StartDeferredKill`: hurt to death, it lives on until
+        // `EndDeferredKill`.
+        if let Some(blow) = self.world_state.deferred_kills.get_mut(&actor) {
+            if killer.is_some() {
+                *blow = killer;
+            }
+            log::info!("{actor}'s death is deferred");
+            return false;
+        }
         let rank = killer.map_or(0, |k| self.relationship_rank(actor, k));
         let witnesses = self.ally_death_witnesses(actor);
         // Loaded, or away (autotest13: damage kills unloaded actors at once).
@@ -3763,6 +3774,30 @@ impl Engine {
             self.boss_died(actor);
         }
         killed
+    }
+
+    /// Who to blame for what `source` does: its `SetActorCause` actor, or
+    /// itself.
+    pub(crate) fn actor_cause_of(&self, source: FormId) -> FormId {
+        self.world_state
+            .actor_causes
+            .get(&source)
+            .copied()
+            .unwrap_or(source)
+    }
+
+    /// `EndDeferredKill`: an actor left at no health dies now, by the blow
+    /// that would have killed it.
+    pub(crate) fn end_deferred_kill(&mut self, actor: FormId) {
+        let Some(killer) = self.world_state.deferred_kills.remove(&actor) else {
+            return;
+        };
+        if !self.is_dead(actor)
+            && self.actor_value(actor, esp::actor_value::HEALTH) <= 0.0
+            && !self.is_bleeding_out(actor)
+        {
+            self.kill_actor_by(actor, killer);
+        }
     }
 
     /// Kill an actor without telling its scripts (one placed dead).

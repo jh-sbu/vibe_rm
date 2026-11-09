@@ -231,3 +231,41 @@ script calls it. To settle: on a save past its first days,
   target's model (case ignored), turned as the node is, by the node's rest
   transform in the model (the weapon racks' pivots); an actor's nodes, or a
   missing node, move nothing.
+
+## Natives added 2026-11-09
+
+Research: `research/pex-natives/actor-batch12-states.md` and
+`speech-batch11-checks.md` (choices for the speech checks are in
+`speech-checks.md`).
+
+- `IsInKillMove` is False: there are no killmoves yet.
+- The player doesn't ride, so `GetPlayersLastRiddenHorse` is None and
+  `IsPlayersLastRiddenHorse` False. `IsBeingRidden` is an NPC mounted on it.
+- `IsAllowedToFly` reads `SetAllowFlying` (allowed until set). `CanFlyHere`
+  adds being out of doors; whether SE also refuses in some exteriors (towns,
+  cells flagged in some way) is unknown.
+- `InterruptCast` stops the player's charging or held spells, drops those let
+  go but not fired, and stops an NPC's hand cast. Script casts from objects
+  land at once here, so for objects there is nothing to stop.
+- `SetActorCause`'s actor takes the blame for damage and kills the object is
+  credited with (`OnHit` aggressor, crimes, the killer). Saved. Whether it also
+  makes the actor the owner of the object's explosions and hazards for
+  experience or other effects is unknown.
+- `StartSneaking` on an NPC overrides its package's stance until called
+  again; whether SE's package later takes the stance back is unknown. On the
+  player it toggles `sneaking` (not while swimming, in the air or attacking).
+- `UnlockOwnedDoorsInCell` unlocks doors (base `DOOR`) placed in the actor's
+  current cell that it, or a faction it is in at the owner's rank, owns
+  (`XOWN`, else the cell's owner). Load doors' far sides are left alone.
+- `SendTrespassAlarm(player)` is a trespass the actor alone witnessed,
+  reported to its crime faction. Other criminals do nothing.
+- A deferred kill: blows that would kill don't (Papyrus `Kill` neither); the
+  last killer is kept, and `EndDeferredKill` kills an actor left at no health
+  by it. Saved. Whether `EndDeferredKill` kills at once in SE, or only at the
+  next blow, is unverified.
+- `ClearArrested` on the player calls off their arrest; on anyone else it
+  does nothing (NPCs aren't arrested here).
+- `SendVampirismStateChanged` / `SendLycanthropyStateChanged` send
+  `OnVampirismStateChanged` / `OnLycanthropyStateChanged` to the actor's
+  scripts, its aliases and its effects. Whether other actors' scripts hear it
+  ("anyone who cares") is unknown.

@@ -433,11 +433,23 @@ impl Engine {
         owner: Option<FormId>,
         value: i32,
     ) -> bool {
+        let witnesses = self.witnesses();
+        self.commit_crime_seen_by(kind, victim, owner, value, witnesses)
+    }
+
+    /// `commit_crime`, seen by `witnesses` (`SendTrespassAlarm`'s actor).
+    pub(crate) fn commit_crime_seen_by(
+        &mut self,
+        kind: CrimeType,
+        victim: Option<FormId>,
+        owner: Option<FormId>,
+        value: i32,
+        mut witnesses: Vec<FormId>,
+    ) -> bool {
         if self.game_flags.crime_unreported {
             return false;
         }
         let victim_faction = victim.and_then(|v| self.crime_faction(v)).or(owner);
-        let mut witnesses = self.witnesses();
         if matches!(kind, CrimeType::Attack | CrimeType::Pickpocket)
             && let Some(v) = victim.filter(|v| !witnesses.contains(v) && !self.is_dead(*v))
         {

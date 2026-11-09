@@ -368,7 +368,7 @@ impl Engine {
         }
     }
 
-    pub(super) fn mount_driver(&self, horse: FormId) -> Option<FormId> {
+    pub(crate) fn mount_driver(&self, horse: FormId) -> Option<FormId> {
         self.rides.iter().find_map(|(&actor, r)| {
             (r.horse == horse && r.mounted() && !self.is_dead(actor) && !self.is_disabled(actor))
                 .then_some(actor)

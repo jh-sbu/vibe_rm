@@ -497,6 +497,31 @@ impl Engine {
         }
     }
 
+    /// `InterruptCast`: the player's hands stop charging or holding their
+    /// spells, and those let go but not yet fired are dropped; an NPC's hand
+    /// cast in combat stops. Spells scripts cast from objects land at once,
+    /// so there is nothing of theirs to stop.
+    pub(crate) fn interrupt_cast(&mut self, r: FormId) {
+        if r != PLAYER_REF {
+            if let Some(a) = self.actor_mut(r) {
+                a.stop_hand_cast();
+            }
+            return;
+        }
+        for hand in [RIGHT, LEFT] {
+            if let Some(h) = self.casting.hands[hand].take()
+                && h.graph
+            {
+                self.player_hand_idle(hand);
+            }
+            if self.casting.firing[hand].is_some_and(|f| !f.fired) {
+                self.casting.firing[hand] = None;
+                self.player_graph_event(&format!("{}_Equipped_Event", hand_prefix(hand)));
+                self.player_cast_stop();
+            }
+        }
+    }
+
     /// Whether the player is dual casting: holding a spell from both hands,
     /// or letting one go that hasn't left yet.
     fn player_dual_casting(&self) -> bool {

@@ -22,7 +22,7 @@
 //! `PDLG` (selected package Say responses and owning procedure tokens),
 //! `RLSP` (rolled leveled spell-list results),
 //! `WSTA` (ward-hit outcomes and their remaining `IsWardState` hold),
-//! `DETH` (killers and times of death), `DCNT` (deaths by actor base), `DSFL` (SetDestroyed flags), `UNCN` / `BRIB` / `INTI` / `BLDL` / `PCDL` (SetUnconscious, SetBribed, SetIntimidated, AllowBleedoutDialogue and AllowPCDialogue), `STPT` (stealth-point reservoirs and
+//! `DETH` (killers and times of death), `DCNT` (deaths by actor base), `DSFL` (SetDestroyed flags), `UNCN` / `BRIB` / `INTI` / `BLDL` / `PCDL` (SetUnconscious, SetBribed, SetIntimidated, AllowBleedoutDialogue and AllowPCDialogue), `DFKL` (StartDeferredKill's actors and their pending killers), `ACAU` (SetActorCause), `STPT` (stealth-point reservoirs and
 //! regeneration delays), `COWN` (the owners of dropped stolen items), `ORIG`
 //! (world-created references' initial transforms), and `VM` / `VMAR`
 //! (`super::vm`: the Papyrus VM) and `MBXW` (message boxes and supported
@@ -151,6 +151,8 @@ pub struct Snapshot {
     pub bribed: HashSet<FormId>,
     pub intimidated: HashSet<FormId>,
     pub pc_dialogue: HashMap<FormId, bool>,
+    pub deferred_kills: HashMap<FormId, Option<FormId>>,
+    pub actor_causes: HashMap<FormId, FormId>,
     pub bleedout_dialogue: HashSet<FormId>,
     pub body_poses: HashMap<FormId, Vec<Mat4>>,
     pub wounds: HashMap<FormId, Wounds>,
@@ -590,6 +592,8 @@ impl Snapshot {
             bribed: ws.bribed.clone(),
             intimidated: ws.intimidated.clone(),
             pc_dialogue: ws.pc_dialogue.clone(),
+            deferred_kills: ws.deferred_kills.clone(),
+            actor_causes: ws.actor_causes.clone(),
             bleedout_dialogue: ws.bleedout_dialogue.clone(),
             body_poses: ws.body_poses.clone(),
             wounds,
@@ -945,6 +949,22 @@ impl Snapshot {
             w.bool(*allowed);
         }
         file.add(b"PCDL", w.0);
+
+        let mut w = Writer::default();
+        w.len(self.deferred_kills.len());
+        for (actor, killer) in sorted(&self.deferred_kills) {
+            w.form(actor);
+            w.form(killer.unwrap_or(FormId::NULL));
+        }
+        file.add(b"DFKL", w.0);
+
+        let mut w = Writer::default();
+        w.len(self.actor_causes.len());
+        for (source, actor) in sorted(&self.actor_causes) {
+            w.form(source);
+            w.form(*actor);
+        }
+        file.add(b"ACAU", w.0);
 
         let mut w = Writer::default();
         w.len(self.destruction.len());
@@ -2161,6 +2181,25 @@ impl Snapshot {
             }
             r.finish()?;
         }
+        if let Some(data) = file.section(b"DFKL") {
+            let mut r = Reader::new(data);
+            for _ in 0..r.count(8)? {
+                let actor = r.form()?;
+                let killer = r.form()?;
+                s.deferred_kills
+                    .insert(actor, (!killer.is_null()).then_some(killer));
+            }
+            r.finish()?;
+        }
+        if let Some(data) = file.section(b"ACAU") {
+            let mut r = Reader::new(data);
+            for _ in 0..r.count(8)? {
+                let source = r.form()?;
+                let actor = r.form()?;
+                s.actor_causes.insert(source, actor);
+            }
+            r.finish()?;
+        }
         if let Some(data) = file.section(b"DSTR") {
             let mut r = Reader::new(data);
             for _ in 0..r.count(16)? {
@@ -2510,6 +2549,8 @@ impl Snapshot {
         ws.bribed = self.bribed;
         ws.intimidated = self.intimidated;
         ws.pc_dialogue = self.pc_dialogue;
+        ws.deferred_kills = self.deferred_kills;
+        ws.actor_causes = self.actor_causes;
         ws.bleedout_dialogue = self.bleedout_dialogue;
         ws.body_poses = self.body_poses;
         ws.moved = self.moved;

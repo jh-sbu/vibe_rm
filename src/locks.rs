@@ -501,6 +501,40 @@ impl Engine {
         self.cell_doors(cell)
     }
 
+    /// `UnlockOwnedDoorsInCell`: the doors in the actor's cell that it, or
+    /// a faction it is in at the rank asked, owns are unlocked.
+    pub(crate) fn unlock_owned_doors_in_cell(&mut self, achr: FormId) {
+        let (Some(cell), Some(npc)) = (self.ref_cell(achr), self.base_of(achr)) else {
+            return;
+        };
+        let Some(idx) = self.lo.cell(cell) else {
+            return;
+        };
+        let doors: Vec<FormId> = idx
+            .persistent
+            .iter()
+            .chain(&idx.temporary)
+            .copied()
+            .filter(|&r| {
+                self.base_of(r)
+                    .and_then(|b| self.lo.tag_of(b))
+                    .is_some_and(|t| t.0 == *b"DOOR")
+            })
+            .collect();
+        let factions = self.npc_factions(achr);
+        for door in doors {
+            let owns = self.ref_owner(door).is_some_and(|owner| {
+                owner == npc
+                    || factions.iter().any(|&(f, rank)| {
+                        f == owner && i32::from(rank) >= self.ref_owner_rank(door).max(0)
+                    })
+            });
+            if owns && self.is_locked(door) {
+                self.set_locked(door, false);
+            }
+        }
+    }
+
     /// Locked load doors on either side of a cell, shared by home and procedure locks.
     pub(crate) fn cell_doors(&self, cell: FormId) -> Vec<FormId> {
         let Some(idx) = self.lo.cell(cell) else {

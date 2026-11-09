@@ -2184,6 +2184,119 @@ pub fn call(
             }
             none()
         }
+        // Killmoves aren't played yet.
+        ("actor", "isinkillmove") => v(Value::Bool(false)),
+        // A horse (or dragon) an actor is riding now.
+        ("actor", "isbeingridden") => {
+            v(Value::Bool(me.is_some_and(|r| e.mount_driver(r).is_some())))
+        }
+        // The player doesn't ride yet: no horse is theirs.
+        ("game", "getplayerslastriddenhorse") => none(),
+        ("actor", "isplayerslastriddenhorse") => v(Value::Bool(false)),
+        // `SetAllowFlying`'s permission (allowed until set).
+        ("actor", "isallowedtofly") => {
+            v(Value::Bool(me.is_some_and(|r| {
+                e.flights.get(&r).is_none_or(|f| f.allowed)
+            })))
+        }
+        // Allowed to fly, and out of doors.
+        ("actor", "canflyhere") => v(Value::Bool(me.is_some_and(|r| {
+            e.flights.get(&r).is_none_or(|f| f.allowed)
+                && matches!(
+                    e.current_place_of(r),
+                    Some((crate::ai::schedule::Place::Exterior(..), _))
+                )
+        }))),
+        // `HasMagicEffectWithKeyword`, on any reference: applied effects
+        // count whether or not their conditions hold.
+        ("objectreference", "haseffectkeyword") => v(Value::Bool(match (me, form_arg(args, 0)) {
+            (Some(r), Some(k)) => e.has_effect_keyword_applied(r, k),
+            _ => false,
+        })),
+        ("objectreference", "interruptcast") => {
+            if let Some(r) = me {
+                e.interrupt_cast(r);
+            }
+            none()
+        }
+        ("objectreference", "setactorcause") => {
+            if let Some(r) = me {
+                match form_arg(args, 0) {
+                    Some(a) => e.world_state.actor_causes.insert(r, a),
+                    None => e.world_state.actor_causes.remove(&r),
+                };
+            }
+            none()
+        }
+        // Toggles the stance: an actor already sneaking stands; not while
+        // swimming, in the air or attacking.
+        ("actor", "startsneaking") => {
+            if me == Some(crate::engine::PLAYER_REF) {
+                let p = &e.player;
+                if !p.swimming && p.grounded && e.player_swing.is_none() {
+                    e.player.sneaking = !e.player.sneaking;
+                }
+            } else if let Some(a) = me.and_then(|r| e.actor_mut(r)) {
+                let attacking = a.exec.combat.as_ref().is_some_and(|c| c.swinging());
+                if !a.swimming && !attacking {
+                    a.script_sneak = Some(!a.is_sneaking());
+                }
+            }
+            none()
+        }
+        ("actor", "unlockowneddoorsincell") => {
+            if let Some(r) = me {
+                e.unlock_owned_doors_in_cell(r);
+            }
+            none()
+        }
+        // As if this actor had caught the criminal (only the player's crimes
+        // are tracked) trespassing: no warning first.
+        ("actor", "sendtrespassalarm") => {
+            if let Some(r) = me
+                && form_arg(args, 0) == Some(crate::engine::PLAYER_REF)
+            {
+                e.commit_crime_seen_by(
+                    crate::crime::CrimeType::Trespass,
+                    Some(r),
+                    None,
+                    0,
+                    vec![r],
+                );
+            }
+            none()
+        }
+        ("actor", "startdeferredkill") => {
+            if let Some(r) = me {
+                e.world_state.deferred_kills.entry(r).or_insert(None);
+            }
+            none()
+        }
+        ("actor", "enddeferredkill") => {
+            if let Some(r) = me {
+                e.end_deferred_kill(r);
+            }
+            none()
+        }
+        // The player's arrest (no one else is arrested) is called off.
+        ("actor", "cleararrested") => {
+            if me == Some(crate::engine::PLAYER_REF) {
+                e.crime.arrests.arresting = None;
+            }
+            none()
+        }
+        // Tell the actor's scripts, its aliases' and its effects'.
+        ("actor", "sendvampirismstatechanged") | ("actor", "sendlycanthropystatechanged") => {
+            if let Some(r) = me {
+                let event = if func == "sendvampirismstatechanged" {
+                    "OnVampirismStateChanged"
+                } else {
+                    "OnLycanthropyStateChanged"
+                };
+                e.send_script_event(r, event, vec![Value::Bool(arg(0).as_bool())]);
+            }
+            none()
+        }
         ("actor", "setrestrained") | ("actor", "setdontmove") => none(),
         // An essential actor bleeding out with this set doesn't get up until
         // it is cleared (CK wiki, `SetNoBleedoutRecovery`).

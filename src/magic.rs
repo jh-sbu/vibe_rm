@@ -1864,6 +1864,19 @@ impl Engine {
             })
     }
 
+    /// `ObjectReference.HasEffectKeyword`: an effect with the keyword is
+    /// applied to `r`, whether or not its conditions hold now.
+    pub fn has_effect_keyword_applied(&self, r: FormId, kw: FormId) -> bool {
+        self.magic
+            .effects
+            .iter()
+            .filter(|x| x.target == r && !x.done)
+            .any(|x| {
+                self.magic_effect(x.effect)
+                    .is_some_and(|m| m.keywords.contains(&kw))
+            })
+    }
+
     /// `ActiveMagicEffect.Dispel`.
     /// A cloak on `x.target` gives its related spell to everyone (the
     /// player too) within its magnitude in feet whom its conditions pass,

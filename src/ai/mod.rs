@@ -425,6 +425,9 @@ pub struct ActorRuntime {
     turning: i8,
     /// The graph is sneaking (`SneakStart` sent).
     sneaking: bool,
+    /// `StartSneaking`'s stance, in place of the package's until called
+    /// again.
+    pub(crate) script_sneak: Option<bool>,
     /// What to look at (world space), for humanoids' head tracking.
     pub look_at: Option<Vec3>,
     /// Running whatever the package's gait (an escort fallen behind).
@@ -631,6 +634,7 @@ impl ActorRuntime {
             graph_heading: f32::NAN,
             turning: 0,
             sneaking: false,
+            script_sneak: None,
             look_at: None,
             hurry: false,
             face: None,
@@ -814,6 +818,13 @@ impl ActorRuntime {
     /// Its graph is sneaking.
     pub(crate) fn is_sneaking(&self) -> bool {
         self.sneaking
+    }
+
+    /// Whether it should sneak: as `StartSneaking` left it, else as its
+    /// package's goal asks.
+    pub(crate) fn wants_sneak(&self) -> bool {
+        self.script_sneak
+            .unwrap_or_else(|| self.exec.goal.is_some_and(|g| g.sneak))
     }
 
     /// The kind of furniture it is heading for, in or leaving and how far
@@ -2156,10 +2167,8 @@ impl ActorRuntime {
 
     fn base_move_speed(&self) -> f32 {
         let walk = self.walk_speed();
-        let (gait, sneak) = self
-            .exec
-            .goal
-            .map_or((package::Gait::Walk, false), |g| (g.gait, g.sneak));
+        let gait = self.exec.goal.map_or(package::Gait::Walk, |g| g.gait);
+        let sneak = self.wants_sneak();
         if self.swimming {
             return self.swim_moves.map_or(walk, |(m, _)| {
                 if gait == package::Gait::Run {
@@ -2199,7 +2208,7 @@ impl ActorRuntime {
     fn turn_rate(&self) -> f32 {
         let m = if self.swimming {
             self.swim_moves.or(self.moves)
-        } else if self.exec.goal.is_some_and(|g| g.sneak) {
+        } else if self.wants_sneak() {
             self.sneak_moves.or(self.moves)
         } else {
             self.moves
@@ -2268,7 +2277,7 @@ impl ActorRuntime {
         };
         let still = !walking && !self.in_furniture();
         let model = self.transform();
-        let sneak = self.exec.goal.is_some_and(|g| g.sneak) && !self.in_furniture();
+        let sneak = self.wants_sneak() && !self.in_furniture();
         let state = if self.swimming {
             self.swim_moves.or(self.moves)
         } else if self.sprinting {
