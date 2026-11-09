@@ -30,6 +30,15 @@ pub struct WorldState {
     /// `SetIntimidated`; saved in `BRIB` / `INTI`).
     pub bribed: std::collections::HashSet<FormId>,
     pub intimidated: std::collections::HashSet<FormId>,
+    /// `SetContainerAllowStolenItems`: containers told whether stolen items
+    /// show in their menu (kept, with no effect yet; not saved).
+    pub container_stolen: HashMap<FormId, bool>,
+    /// `SetPlayerControls(true)`: NPCs put under the player's controls (not
+    /// saved).
+    pub player_controlled: std::collections::HashSet<FormId>,
+    /// `SetHeadTracking(false)`: actors that don't turn their heads to look
+    /// (not saved).
+    pub no_head_tracking: std::collections::HashSet<FormId>,
     /// Actors in `StartDeferredKill`'s state: they don't die until
     /// `EndDeferredKill`; the value is who dealt a killing blow meanwhile
     /// (saved in `DFKL`).

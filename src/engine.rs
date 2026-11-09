@@ -67,6 +67,14 @@ pub enum Location {
 /// and again dressing actors whose models came in (one of each always).
 const DRESS_BUDGET: std::time::Duration = std::time::Duration::from_millis(3);
 
+/// Scripts' movement requests (`crate::ai::script_moves`).
+#[derive(Default)]
+pub(crate) struct ScriptMoves {
+    pub paths: Vec<crate::ai::script_moves::PathWait>,
+    pub keep_offsets: HashMap<FormId, crate::ai::script_moves::KeepOffset>,
+    pub next_key: u64,
+}
+
 /// `Game.ShowTitleSequenceMenu` / `StartTitleSequence` /
 /// `HideTitleSequenceMenu`: whether the menu is up and the sequences started
 /// since the UI last looked.
@@ -280,6 +288,8 @@ pub struct Engine {
     /// Scripts' fog for interiors (`Cell.SetFogColor` and its kin; not
     /// saved).
     pub cell_fog: crate::cell_fog::CellFog,
+    /// `PathToReference` waits and `KeepOffsetFromActor` settings (not saved).
+    pub(crate) script_moves: ScriptMoves,
     /// `ShaderParticleGeometry.Apply`'s geometry and its fade (not saved).
     pub script_precip: Option<crate::script_precip::ScriptPrecip>,
     /// Joints scripts made (`AddHavokBallAndSocketConstraint`; not saved:
@@ -747,6 +757,7 @@ impl Engine {
             sitting_rotation: 0.0,
             player_seat_heading: None,
             cell_fog: Default::default(),
+            script_moves: Default::default(),
             script_precip: None,
             havok_constraints: Vec::new(),
             dependent_animated: Vec::new(),
@@ -3377,6 +3388,7 @@ impl Engine {
             self.scene.env = env;
         }
         self.update_script_precip(dt);
+        self.update_script_moves(dt);
         let wind = self.wind_now();
         self.renderer.precip.blow(wind, dt);
         self.renderer.wind = wind;

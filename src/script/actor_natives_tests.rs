@@ -665,3 +665,83 @@ fn the_title_sequence_and_first_person_geometry_follow_the_opening() {
     game(&mut e, "showfirstpersongeometry", &[]);
     assert!(!e.first_person_hidden);
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn path_to_reference_waits_for_arrival_and_keep_offset_steers() {
+    let (_f, mut e) = fixture("paths");
+    place(&mut e, ACTOR, NPC);
+    place(&mut e, OTHER_REF, OTHER_NPC);
+    e.actor_mut(OTHER_REF).unwrap().exec.pos = glam::Vec3::new(1000.0, 0.0, 0.0);
+    let target = e.object_value(OTHER_REF);
+    let this = e.object_value(ACTOR);
+    let key = match crate::script::natives::call(
+        &mut e,
+        "actor",
+        "pathtoreference",
+        Some(&this),
+        &[target.clone(), Value::Float(1.0)],
+    ) {
+        NativeResult::WaitFor { key, .. } => key,
+        _ => panic!("PathToReference didn't wait"),
+    };
+    assert!(key != 0);
+    e.update_script_moves(0.016);
+    assert_eq!(e.script_moves.paths.len(), 1, "still on its way");
+    e.actor_mut(ACTOR).unwrap().exec.pos = glam::Vec3::new(950.0, 0.0, 0.0);
+    e.update_script_moves(0.016);
+    assert!(e.script_moves.paths.is_empty(), "arrived");
+    // Keeping 200 to the right of the other actor, which faces north.
+    call(
+        &mut e,
+        "actor",
+        "keepoffsetfromactor",
+        ACTOR,
+        &[
+            target,
+            Value::Float(200.0),
+            Value::Float(0.0),
+            Value::Float(0.0),
+        ],
+    );
+    e.update_script_moves(0.016);
+    let goal = e.actor_ref(ACTOR).unwrap().exec.goal.unwrap();
+    assert!((goal.centre - glam::Vec3::new(1200.0, 0.0, 0.0)).length() < 1.0);
+    call(&mut e, "actor", "clearkeepoffsetfromactor", ACTOR, &[]);
+    assert!(e.script_moves.keep_offsets.is_empty());
+    // Head tracking off, then on again.
+    call(
+        &mut e,
+        "actor",
+        "setheadtracking",
+        ACTOR,
+        &[Value::Bool(false)],
+    );
+    assert!(e.world_state.no_head_tracking.contains(&ACTOR));
+    call(&mut e, "actor", "setheadtracking", ACTOR, &[]);
+    assert!(e.world_state.no_head_tracking.is_empty());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn remove_all_stolen_items_moves_only_the_stolen_stacks() {
+    let (_f, mut e) = fixture("stolen");
+    e.inventory_mut(FIRST)
+        .add_owned(CUIRASS, Some(OTHER_NPC), 2);
+    e.inventory_mut(FIRST).add_owned(BOOTS, None, 1);
+    let to = e.object_value(SECOND);
+    call(
+        &mut e,
+        "objectreference",
+        "removeallstolenitems",
+        FIRST,
+        &[to],
+    );
+    assert_eq!(e.item_count(FIRST, CUIRASS), 0);
+    assert_eq!(e.item_count(FIRST, BOOTS), 1);
+    assert_eq!(
+        e.inventory_mut(SECOND)
+            .count_owned(CUIRASS, Some(OTHER_NPC)),
+        2
+    );
+}

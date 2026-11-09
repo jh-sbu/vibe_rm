@@ -2488,6 +2488,44 @@ pub fn call(
             }
             none()
         }
+        // SplineTranslateToRefNode(akTarget, asNodeName, afTangentMagnitude,
+        // afSpeed, afMaxRotationSpeed): to the node of the target's model.
+        ("objectreference", "splinetranslatetorefnode") => {
+            if let (Some(r), Some(to)) = (me, form_arg(args, 0)) {
+                match e.ref_node_transform(to, &str_arg(args, 1)) {
+                    Some((world, local)) => {
+                        let (_, rot, at) = (world * local).to_scale_rotation_translation();
+                        let max = args.get(4).map_or(0.0, Value::as_float);
+                        e.start_translation(
+                            r,
+                            at,
+                            crate::loose::euler_of(rot),
+                            arg(3).as_float(),
+                            max,
+                            Some(arg(2).as_float()),
+                        );
+                    }
+                    None => e.send_script_event(r, "OnTranslationFailed", Vec::new()),
+                }
+            }
+            none()
+        }
+        // An NPC put under the player's controls: its AI stops (the source's
+        // note). The player's input isn't routed to it yet.
+        ("actor", "setplayercontrols") => {
+            if let Some(a) = me.filter(|&a| a != crate::engine::PLAYER_REF) {
+                if arg(0).as_bool() {
+                    e.world_state.player_controlled.insert(a);
+                    e.ai_off.insert(a);
+                } else {
+                    e.world_state.player_controlled.remove(&a);
+                }
+            }
+            none()
+        }
+        ("actor", "getplayercontrols") => v(Value::Bool(me.is_some_and(|a| {
+            a == crate::engine::PLAYER_REF || e.world_state.player_controlled.contains(&a)
+        }))),
         ("objectreference", "stoptranslation") => {
             if let Some(r) = me {
                 e.stop_translation(r);
@@ -3124,6 +3162,63 @@ pub fn call(
         }
         // An actor's "sub graphs": its art objects' behaviour graphs (the CK
         // wiki's note; its armor addons' graphs don't run here).
+        ("objectreference", "removeallstolenitems") => {
+            if let Some(r) = me {
+                e.remove_all_stolen_items(r, form_arg(args, 0));
+            }
+            none()
+        }
+        ("objectreference", "setcontainerallowstolenitems") => {
+            if let Some(r) = me {
+                e.world_state.container_stolen.insert(r, arg(0).as_bool());
+            }
+            none()
+        }
+        // Latent: the script waits until the actor gets there (True), or
+        // can't (False).
+        ("actor", "pathtoreference") => match (me, form_arg(args, 0)) {
+            (Some(a), Some(t)) => match e.path_to_reference(a, t, arg(1).as_float()) {
+                Some(key) => NativeResult::WaitFor {
+                    key,
+                    timeout: crate::ai::script_moves::PATH_WAIT_LIMIT,
+                    value: Value::Bool(false),
+                },
+                None => v(Value::Bool(false)),
+            },
+            _ => v(Value::Bool(false)),
+        },
+        ("actor", "keepoffsetfromactor") => {
+            if let (Some(a), Some(t)) = (me, form_arg(args, 0)) {
+                let f = |i: usize, d: f32| args.get(i).map_or(d, Value::as_float);
+                e.keep_offset_from_actor(
+                    a,
+                    crate::ai::script_moves::KeepOffset {
+                        target: t,
+                        offset: glam::Vec3::new(f(1, 0.0), f(2, 0.0), f(3, 0.0)),
+                        angle: f(6, 0.0).to_radians(),
+                        catch_up: f(7, 20.0),
+                        follow: f(8, 5.0),
+                    },
+                );
+            }
+            none()
+        }
+        ("actor", "clearkeepoffsetfromactor") => {
+            if let Some(a) = me {
+                e.clear_keep_offset(a);
+            }
+            none()
+        }
+        ("actor", "setheadtracking") => {
+            if let Some(a) = me {
+                if args.first().is_none_or(|x| x.as_bool()) {
+                    e.world_state.no_head_tracking.remove(&a);
+                } else {
+                    e.world_state.no_head_tracking.insert(a);
+                }
+            }
+            none()
+        }
         ("actor", "playsubgraphanimation") => {
             if let Some(a) = me {
                 let n = e.subgraph_event(a, &str_arg(args, 0));

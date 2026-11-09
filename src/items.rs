@@ -254,6 +254,28 @@ impl Engine {
         cap.is_none_or(|cap| value > cap)
     }
 
+    /// `RemoveAllStolenItems(akTransferTo)`: every stolen stack `from`
+    /// holds goes, to `to` if given (still stolen there).
+    pub(crate) fn remove_all_stolen_items(&mut self, from: FormId, to: Option<FormId>) {
+        let owned = self.inventory_mut(from).owned.clone();
+        for (form, owner, n) in owned {
+            let taken: i32 = self
+                .inventory_mut(from)
+                .remove_split(form, n, Some(Some(owner)))
+                .iter()
+                .map(|(_, c)| c)
+                .sum();
+            if taken <= 0 {
+                continue;
+            }
+            self.inventory_event(from, false, form, taken, to);
+            if let Some(t) = to {
+                self.inventory_mut(t).add_owned(form, Some(owner), taken);
+                self.inventory_event(t, true, form, taken, Some(from));
+            }
+        }
+    }
+
     /// Who owns a reference (or cell): as a script set it
     /// (`SetActorOwner` / `SetFactionOwner`), else what a dropped stolen item
     /// was stolen from, else its `XOWN`, else its cell's.

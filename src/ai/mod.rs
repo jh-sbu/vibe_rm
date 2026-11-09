@@ -29,6 +29,7 @@ pub mod practice;
 pub(crate) mod procedure;
 mod procedure_runtime;
 pub mod schedule;
+pub(crate) mod script_moves;
 mod sleep_warnings;
 pub(crate) mod speech;
 mod summons;
@@ -4403,6 +4404,10 @@ impl Engine {
                     {
                         a.turn_towards((at - a.exec.pos).normalize_or_zero(), dt);
                     }
+                }
+                // `SetHeadTracking(false)`: it looks where its body faces.
+                if self.world_state.no_head_tracking.contains(&a.ref_id) {
+                    a.look_at = None;
                 }
                 if a.swimming
                     && let Some(surface) = crate::water::surface_at(&water, a.exec.pos)
