@@ -61,6 +61,9 @@ use schedule::Place;
 
 /// Forward walk speed (units/s) when the walk clip has no root motion.
 pub const WALK_SPEED: f32 = 80.0;
+/// How far a fast walk goes from walking towards running: fitted to MQ101's
+/// cart ride in SE (`known_ambiguities/movement-gaits.md`).
+const FAST_WALK: f32 = 0.1;
 /// Turn rate while walking, radians/s.
 const TURN_RATE: f32 = 4.0;
 /// How close the player must be for NPCs to look at them.
@@ -999,7 +1002,10 @@ impl ActorRuntime {
                 self.exec.pos = p;
             }
             // No room to step aside: wait behind them.
-            _ if blocked => self.exec.pos = before,
+            _ if blocked => {
+                log::trace!("{} waits behind someone at {before:.0?}", self.ref_id);
+                self.exec.pos = before
+            }
             _ => {}
         }
     }
@@ -2183,7 +2189,7 @@ impl ActorRuntime {
         }
         match gait {
             package::Gait::Walk => walk,
-            package::Gait::FastWalk => walk + (run - walk) * 0.25,
+            package::Gait::FastWalk => walk + (run - walk) * FAST_WALK,
             package::Gait::Jog => (walk + run) * 0.5,
             package::Gait::Run => run,
         }
@@ -4346,8 +4352,12 @@ impl Engine {
                             .iter()
                             .filter(|(horse, ..)| *horse != Some(a.ref_id))
                             .map(|&(_, lo, hi)| (lo, hi));
+                        let wanted = a.exec.pos;
                         a.exec.pos =
                             clutter::steer(before, a.exec.pos, others, dt, |p| nav.height_at(p));
+                        if a.exec.pos == before && wanted != before {
+                            log::trace!("{} held by clutter at {before:.0?}", a.ref_id);
+                        }
                     }
                 }
                 if a.mount_driver.is_none()

@@ -86,7 +86,7 @@ fn armor_scales_package_gaits_and_combat_without_changing_animation_speeds() {
     a.armor_speed_mult = crate::encumbrance::armor_speed(115.0, 115.0, 0.3);
     for (gait, speed) in [
         (package::Gait::Walk, 70.0),
-        (package::Gait::FastWalk, 105.0),
+        (package::Gait::FastWalk, 84.0),
         (package::Gait::Jog, 140.0),
         (package::Gait::Run, 210.0),
     ] {
