@@ -4,8 +4,16 @@ Research: `research/carriages.md`. The scripts establish independent passenger
 attachments, animation idles, and horse tethers. Their attachment frames and
 native-created hitch constraint are not described publicly.
 
-Choices: keep a passenger's relative position and rotation at SetVehicle time;
-apply the cart's simulated root transform on subsequent updates. Preserve
+Choices: on a cart (a vehicle that isn't an actor), a passenger's root goes
+to the cart's origin, facing its way, and the seat is the idle's: the cart
+idles' clips (`cartprisonerasway.hkx` to `cartprisonerdsway.hkx`,
+`cartdriveridlesway.hkx`) hold the body 63 to 200 units back, about 40 to
+either side and 139 up from the root, as benches in the bed and the
+driver's seat. MQ101 calls `SetVehicle` for its other cart's prisoners
+while they stand beside the player's cart, then plays their seat idles, so
+SE can't seat them where they stood (2026-11-08). On an actor (a horse, a
+dragon), the relative position and rotation at SetVehicle time are kept.
+The vehicle's transform is applied on subsequent updates. Preserve
 script-selected idles and packages. A player passenger receives the dynamic
 RidingInCarriage keyword (000DD631), and movement input does not walk them out
 of the cart. SetVehicle(None) releases the attachment and collider.

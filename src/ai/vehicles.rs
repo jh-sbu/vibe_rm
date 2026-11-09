@@ -89,12 +89,25 @@ impl Engine {
         let Some(pos) = self.ref_position(actor) else {
             return;
         };
-        let rotation = self.ref_rotation(actor) - self.ref_rotation(vehicle);
+        // On a cart, the root goes to the cart's origin, facing its way: the
+        // seat is in the idle the scripts play next (`IdleCartPrisonerASway`'s
+        // clip has the body 200 back and 139 up from the root, seat B to D and
+        // the driver's elsewhere). MQ101 seats its other cart's prisoners
+        // from where they stand beside the player's.
+        let (offset, rotation) = if self.is_actor_ref(vehicle) {
+            (
+                transform.inverse().transform_point3(pos),
+                self.ref_rotation(actor) - self.ref_rotation(vehicle),
+            )
+        } else {
+            (Vec3::ZERO, Vec3::ZERO)
+        };
+        log::debug!(target: "carts", "{actor} rides {vehicle} at {offset:.0?}");
         self.passengers.insert(
             actor,
             Passenger {
                 vehicle,
-                offset: transform.inverse().transform_point3(pos),
+                offset,
                 rotation,
             },
         );
@@ -522,20 +535,17 @@ mod tests {
 
     #[test]
     #[ignore = "needs a headless GPU adapter; synthetic records only"]
-    fn passengers_keep_relative_offsets_save_and_detach_without_restarting_packages() {
+    fn cart_passengers_ride_at_its_origin_save_and_detach_without_restarting_packages() {
         let (_f, mut e) = fixture();
         loaded_actor(&mut e);
         e.location = crate::engine::Location::Interior(CELL);
-        let before = e.actor_ref(ACTOR).unwrap().exec.pos;
+        // Wherever it stands, its seat is the cart's origin (the idle seats it).
         e.set_vehicle(ACTOR, Some(MARKER));
         let p = e.passengers[&ACTOR];
-        assert_eq!(p.offset, before - Vec3::X * 3000.);
+        assert_eq!((p.offset, p.rotation), (Vec3::ZERO, Vec3::ZERO));
         e.moved_refs.insert(MARKER, Vec3::X * 3500.);
         e.sync_passengers();
-        assert_eq!(
-            e.actor_ref(ACTOR).unwrap().exec.pos,
-            before + Vec3::X * 500.
-        );
+        assert_eq!(e.actor_ref(ACTOR).unwrap().exec.pos, Vec3::X * 3500.);
         let file = crate::save::state::Snapshot::capture(&e).write();
         assert_eq!(
             crate::save::state::Snapshot::read(&file)
@@ -666,6 +676,6 @@ mod away_tests {
         e.sync_away_vehicles(ACTOR);
         let after = e.ref_position(MARKER).unwrap();
         assert!((after - before - Vec3::X * 400.).length() < 0.01);
-        assert!((e.away[&passenger].pos - Vec3::new(3400., 10., 100.)).length() < 0.01);
+        assert!((e.away[&passenger].pos - after).length() < 0.01);
     }
 }
