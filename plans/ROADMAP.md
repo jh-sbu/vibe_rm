@@ -2454,19 +2454,18 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      10 sets the scene and fades in from black (14 s, then 15 s), the
      horses' aliases count their cells loading (stage 12), both carts drive
      off with their passengers seated, and Ralof's "Hey, you. You're
-     finally awake." scene plays (stage 14). The horses walk all of
-     `Patrol1`, the carts, their passengers and Hadvar going with them from
-     cell (5, -24) past (5, -20), to its end at about (21520, -79370), about
-     145 s in. There `MQ101SetStage20` (00084058), a box across the road,
-     waits for Hadvar's horse (base `MQ101Horse`), and his patrol ends on
-     the same last points as the carts'. The carts arrive first and stop on
-     them; Cart2 then blocks the road and Hadvar stops about 90 units short
-     of the box (`clutter::steer` finds no way round the cart), so stage 20
-     never comes. Open: how SE gets him there (past or round the stopped
-     carts, which are dynamic 12700 kg loose objects, or a trigger touched
-     by more of his horse's body than our column of points at its
-     position). `Patrol2` to `Patrol5` and the stage 20-59 triggers should
-     then take the horses on to Helgen. Still
+     finally awake." scene plays (stage 14). Tullius (starting out on his
+     horse) leads the carts and Hadvar down `Patrol1`, from cell (5, -24)
+     past (5, -20); reaching its end he sets stage 20 (`MQ101SetStage20`
+     waits for `MQ101Horse`), and stages 22 and 25 follow at about 140 s.
+     The cart horses, switched to `Patrol2` / `Patrol3` mid-route, walk
+     navmesh paths to those routes' starts; at about 175-190 s both stop
+     at about (20935, -79635), their capsules against `RockCliff06Snow`
+     (000D698E) beside the road, where the navmesh lets them go. Open:
+     whether SE's horses take the road there (static pathing along the
+     routes, a smaller capsule, or a path kept clear of collision).
+     `Patrol4` / `Patrol5` (stages 30-59) should take them on into Helgen,
+     timed in SE at 3:30-3:40 from the fade-in. Still
      missing: the title sequence's natives (`ShowTitleSequenceMenu`,
      `StartTitleSequence`, `HideTitleSequenceMenu`) and
      `ShowFirstPersonGeometry`
