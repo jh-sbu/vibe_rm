@@ -307,3 +307,9 @@ Research: `research/pex-natives/actor-batch12-states.md` and
 - `ShaderParticleGeometry.Apply` / `Remove`: one script geometry at a time,
   falling indoors unsheltered; choices in
   `research/pex-natives/render-batch18-shader-particles.md`.
+- `SendWereWolfTransformation`: the nearest actor that detects the player and
+  has a crime faction reports a werewolf crime (the source: "an actor in high
+  who can detect the player"); none, nothing.
+- `StartVampireFeed` sends `OnVampireFeed(akTarget)` to the feeder's scripts
+  at once; the feeding animation isn't played.
+- `PlayBink` plays nothing.

@@ -5,6 +5,18 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- **The rest of the PEX natives** (2026-11-09; 150 unhandled natives down to
+  the 30 under Next, "Natives left"; research in `research/pex-natives/`
+  batches 11–20, choices in `known_ambiguities/remaining-natives.md` and
+  `speech-checks.md`): bribes and intimidation (with `<BribeCost>` /
+  `<CrimeGold>` in prompts and the speech-check conditions), races that can't
+  be talked to, deferred kills, actor causes, `InterruptCast`,
+  `StartSneaking`, line-of-sight and tracked-stats registrations, the Debug
+  and Utility natives, the opening's title sequence and
+  `ShowFirstPersonGeometry`, `SetSittingRotation`, `ObjectReference.Say`,
+  `Weapon.Fire`, `PlayImpactEffect`, cell fog, Havok ball-and-socket
+  constraints (hanging corpses), `ShaderParticleGeometry`, sub-graph events
+  on art objects, `PathToReference`, `KeepOffsetFromActor` and more.
 - **Noises in detection** (2026-11-07; `known_ambiguities/detection.md`,
   "Noises"): UESP's action term (`level * fSneakActionMult`) in the sound
   factor, levels valued by `iSoundLevel*`. Weapon swings (the hand's
@@ -2286,40 +2298,41 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
    - Dialogue selection: Say Once, Hours Until Reset and DIAL's Do All Before
      Repeating (flags parsed, not enforced; scope open in
      `known_ambiguities/dialogue-selection.md`); automatic Invisible Continue
-   - Natives scripts call that still do nothing, most called first
-     (`vrm-tool pex-natives` call counts, checked 2026-11-07 against
-     `src/script/natives.rs`; the tool counts calls by bare name, so names
-     shared between classes such as `Apply`, `Remove`, `Add` and `Fire` get
-     no count here; done 2026-11-07: `SetAlpha`, the translations,
-     `MoveToPackageLocation`, `HasLOS`, `Game.FastTravel`, `AttachAshPile`,
-     `MoveToNode`, `SetNoBleedoutRecovery`, `WaitForAnimationEvent`, the
-     alarms and `IsTrespassing`, `known_ambiguities/remaining-natives.md`;
-     `CreateDetectionEvent`, with noises in detection):
-     `ShaderParticleGeometry.Apply` (118) / `Remove` (84), a script's
-     precipitation layer with its fades (the renderer's two layers follow
-     the weathers); `SetSubGraphFloatVariable` (100) and
-     `PlaySubGraphAnimation` (77) reach art objects' graphs, but armor
-     addons' behaviour graphs (spriggan skins, glowing sabre cats and deer,
-     Dwarven centurions) don't run yet;
-     `Game.AddAchievement` (97) and `ShakeController` (91), with nothing to
-     show without an achievement service or gamepad rumble;
-     `SetRace` (45) on NPCs, their model swapped live (the player's is done:
-     `plans/character-creation.md`);
-     `KnockAreaEffect` (27), `PushActorAway` (9) and
-     `ForceAddRagdollToWorld` / `ForceRemoveRagdollFromWorld`, all waiting on
-     ragdolls for living actors and their getting up (only the dead ragdoll
-     now); `SetHeadTracking` (8); `PathToReference` (only a test rig calls
-     it); `ObjectReference.Say`, `Topic.Add`, `Weapon.Fire`, the LOS
-     registrations;
-     riding (`SetVehicle`), flying (`SetAllowFlying`, `SetForcedLandingMarker`),
-     character creation, killmoves and beast forms (`SetBeastForm`);
-     `SetOutfit`'s sleep outfits
-     (`known_ambiguities/outfits.md`); `Delete`'s "once nothing holds it"
-     (`known_ambiguities/created-refs.md`); follower favors (nothing asks, so
-     `SetNoFavorAllowed` and `SetDoingFavor` are only stored); `Quest.Reset`
-     rebuilding the quest's script variables; resetting a loaded behaviour-graph
-     object in place; categories for dialogue, music and weather sounds;
-     `Actor.IsArrested` (always False; declared but no vanilla script calls it)
+   - Natives left (checked 2026-11-09 against `vrm-tool pex-natives`; done
+     2026-11-09: see Done, "The rest of the PEX natives"). Each waits on a
+     system that doesn't exist yet, or has no vanilla caller:
+     - Ragdolls for living actors and getting up from them:
+       `KnockAreaEffect` (27), `PushActorAway` (9),
+       `ForceAddRagdollToWorld` / `ForceRemoveRagdollFromWorld`; Havok
+       constraints on living actors (they fail now).
+     - Armor addons' behaviour graphs: `PlaySubGraphAnimation` and
+       `SetSubGraphFloatVariable` reach art objects' graphs only, not the
+       creature skins' (spriggans, glowing sabre cats and deer, centurions).
+     - Beast forms and paired animations: `SetBeastForm`, `StartCannibal`,
+       `StartVampireFeed`'s animation (its `OnVampireFeed` is sent),
+       killmoves (`IsInKillMove` is False).
+     - The player running packages: `SetPlayerAIDriven`; player input routed
+       to an NPC under `SetPlayerControls` (its AI only stops).
+     - Faces: `SetExpressionOverride` / `ClearExpressionOverride` (no facial
+       expressions yet), `SetEyeTexture` on pre-baked heads.
+     - Rendering: `TriggerScreenBlood` (the art is
+       `textures/blood/screenbloodalpha01opt.dds`, timed by the
+       `fBloodSplatter*` settings); `PlayBink` videos (only the E3 demo).
+     - `IsLockBroken` (no broken-lock state; no public description).
+     - No vanilla caller: `ForceMovement*` / `ForceTarget*` /
+       `ClearForcedMovement`, `PlaySyncedAnimation(AndWait)SS`,
+       `MoveToInteractionLocation`, `PlayTerrainEffect`, `SetCameraTarget`.
+     - Recorded with no effect: `SetContainerAllowStolenItems`,
+       `AddDependentAnimatedObjectReference`, `Topic.Add` (Skyrim keeps no
+       known-topics list), `AddAchievement` / `ShakeController` (no service).
+     - Also: `SetRace` on NPCs (the player's is done:
+       `plans/character-creation.md`); `SetOutfit`'s sleep outfits
+       (`known_ambiguities/outfits.md`); `Delete`'s "once nothing holds it"
+       (`known_ambiguities/created-refs.md`); follower favors (nothing asks, so
+       `SetNoFavorAllowed` and `SetDoingFavor` are only stored); `Quest.Reset`
+       rebuilding the quest's script variables; resetting a loaded
+       behaviour-graph object in place; categories for dialogue, music and
+       weather sounds; `Actor.IsArrested` (always False; no vanilla caller).
    - World state: moved references appearing at once when moved out of an
      unloaded cell and following their new cell between loaded ones; looping sounds of enabled references checked
      with an audio device

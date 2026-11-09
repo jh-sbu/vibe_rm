@@ -3209,6 +3209,25 @@ pub fn call(
             }
             none()
         }
+        ("game", "sendwerewolftransformation") => {
+            e.send_werewolf_transformation();
+            none()
+        }
+        // The feeding's paired animation isn't played (no paired animations
+        // yet); `OnVampireFeed` is sent at once, as the source says it is
+        // even when the animation fails.
+        ("actor", "startvampirefeed") => {
+            if let (Some(a), Some(t)) = (me, form_arg(args, 0)) {
+                let target = e.object_value(t);
+                e.send_script_event(a, "OnVampireFeed", vec![target]);
+            }
+            none()
+        }
+        // Bink videos aren't played: only the E3 demo's finale asks for one.
+        ("game", "playbink") => {
+            log::info!("Game.PlayBink({}): not played", str_arg(args, 0));
+            none()
+        }
         ("actor", "setheadtracking") => {
             if let Some(a) = me {
                 if args.first().is_none_or(|x| x.as_bool()) {

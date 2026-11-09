@@ -406,6 +406,23 @@ impl Engine {
 
     /// Living actors who detect the player now (stealth points don't count
     /// for crimes: the CK wiki's Stealth Points page).
+    /// `Game.SendWereWolfTransformation`: one actor nearby who detects the
+    /// player reports a werewolf crime (the nearest with a crime faction).
+    pub(crate) fn send_werewolf_transformation(&mut self) -> bool {
+        let player = self.player.position;
+        let mut seen: Vec<(f32, FormId)> = self
+            .witnesses()
+            .into_iter()
+            .filter(|&w| self.crime_faction(w).is_some())
+            .filter_map(|w| Some((self.ref_position(w)?.distance(player), w)))
+            .collect();
+        seen.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let Some(&(_, w)) = seen.first() else {
+            return false;
+        };
+        self.commit_crime_seen_by(CrimeType::Werewolf, None, None, 0, vec![w])
+    }
+
     fn witnesses(&self) -> Vec<FormId> {
         self.cells
             .values()
