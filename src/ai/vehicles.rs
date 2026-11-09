@@ -158,6 +158,30 @@ impl Engine {
                 if let Some(anchor) = self.physics.world.bodies.get_mut(h.anchor) {
                     anchor.set_next_kinematic_translation(point);
                 }
+                if log::log_enabled!(target: "carts", log::Level::Trace)
+                    && let Some(m) = self.vehicle_transform(cart)
+                {
+                    let inv = horse.inverse();
+                    log::trace!(
+                        target: "carts",
+                        "{cart} in {}'s frame: hitch target {:.0?}, cart at {:.0?}, facing {:.2?}",
+                        t.horse,
+                        t.horse_point,
+                        inv.transform_point3(m.w_axis.truncate()),
+                        inv.transform_vector3(m.transform_vector3(Vec3::Y)).normalize_or_zero()
+                    );
+                    let up = m.transform_vector3(Vec3::Z).normalize_or_zero();
+                    let hitch = m.transform_point3(t.cart_point);
+                    let at = m.w_axis.truncate();
+                    log::trace!(
+                        target: "carts",
+                        "{cart} tilt {:.0} deg, hitch {:.0} from the horse's ({:.0} up), {:.0} above ground",
+                        up.angle_between(Vec3::Z).to_degrees(),
+                        (hitch - point).truncate().length(),
+                        hitch.z - point.z,
+                        at.z - self.ground_height(at.truncate()).unwrap_or(f32::NAN),
+                    );
+                }
                 continue;
             }
             let Some(l) = self
@@ -168,15 +192,19 @@ impl Engine {
             else {
                 continue;
             };
-            // The articulated bar has the front-most body origin.
-            let Some(body) = l
-                .bodies
-                .iter()
-                .max_by(|a, b| a.frame.w_axis.y.total_cmp(&b.frame.w_axis.y))
-            else {
+            // The cart's own (root, heaviest) body. Not the front-most body
+            // origin: that was a front wheel, a hair ahead of the bar, which
+            // the horse then dragged by its axle. Nor the 100 kg bar: pulling
+            // 12000 kg through its hinge tore the joints apart.
+            let Some(body) = l.bodies.get(l.root) else {
                 continue;
             };
             let cart_body = body.handle;
+            log::debug!(
+                target: "carts",
+                "{cart} hitched by its body at {:.0?}",
+                body.frame.w_axis.truncate()
+            );
             let Some((world, _)) = self.physics.body_pose(cart_body) else {
                 continue;
             };
