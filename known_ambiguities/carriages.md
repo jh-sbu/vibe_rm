@@ -10,21 +10,31 @@ script-selected idles and packages. A player passenger receives the dynamic
 RidingInCarriage keyword (000DD631), and movement input does not walk them out
 of the cart. SetVehicle(None) releases the attachment and collider.
 
-For dynamic carts, tether a kinematic anchor following the horse to the cart's
-front body with a joint that holds the hitch only along the ground (world X
-and Y), leaving its height and every rotation to the cart's wheels. A
-spherical joint, which also held the height, flipped MQ101's carts where the
-road steepens: `PrisonerCarriage01.nif`'s FrontBar hinge only steers (a
-vertical axis, ±0.698 rad), so a hitch held at the horse's height levers the
-cart round its front axle by about atan(drop / 180) (2026-11-08). The joint holds the cart's root
-(heaviest) body at a cart-local hitch (0,180,53), based on the FrontBar's
-position and front geometry, preserving its initial relation to the horse.
-Picking the front-most body origin took the left front wheel (0.24 units
-ahead of the bar), which the horse dragged by its axle; hitching the 100 kg
-bar pulled 12000 kg through its hinge and threw the cart about (2026-11-08). The native joint's exact pivot,
-limits and compliance remain unmeasured. Existing NIF wheel/steering hinges
-continue to run; static carts remain static. Rebuild joints after cell loads;
-save the relationship and passenger offsets rather than physics handles.
+Loaded carts, while hitched, are keyframed rather than simulated (decided
+with the user, 2026-11-08). Each frame the hitch point, a cart-local
+(0,180,53) based on the FrontBar's position and front geometry, goes where
+the horse holds it (its relation to the horse kept from when the tether was
+made); the rear axle trails it at its distance, as a trailer's does; and the
+cart sits on the ground under its wheels: rays down to the world's fixed
+collision at each wheel's underside, the cart's height, pitch and roll
+fitted to them (pitch and roll eased in, a fifth of the way each frame, and
+held within a slope of 0.8). Wheels are the cart's bodies reaching lowest;
+they spin with the distance gone. The NIF's hinges have no say meanwhile,
+and the front wheels don't steer. Untethered, the bodies go back to the
+simulation.
+
+Why: SE's carts roll down MQ101's mountain road upright and steady (the
+user's observation). Simulated in Rapier, with the horse pulling the cart
+along the ground, they lagged, tipped and tumbled: `PrisonerCarriage01.nif`
+joins a 12000 kg body to 150 kg wheels and a 100 kg steering bar, ratios
+Rapier's joints don't hold, and a hitch that also held the height levered
+the cart round its front axle where the road steepens. Hitched by the
+front-most body origin, the horse dragged the cart by its left front wheel.
+What SE does (a Havok constraint between horse and cart, its pivot, limits
+and compliance) remains unmeasured, and keyframed carts don't react to
+being hit while hitched. Static carts remain static. Rebuild hitches after
+cell loads; save the relationship and passenger offsets rather than physics
+handles.
 Unloaded carts preserve their initial relative angle and hitch position while
 following the horse; their passengers follow their saved local frames. This
 logical away movement does not simulate the cart's individual wheel bodies.

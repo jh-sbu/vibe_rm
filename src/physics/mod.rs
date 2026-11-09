@@ -366,6 +366,56 @@ impl Physics {
         Some((b.position().to_mat4(), b.is_sleeping()))
     }
 
+    /// The bounds of a body's colliders in the body's own frame (no scale).
+    pub fn body_local_bounds(&self, h: RigidBodyHandle) -> Option<(Vec3, Vec3)> {
+        let b = self.world.bodies.get(h)?;
+        b.colliders()
+            .iter()
+            .filter_map(|&c| {
+                let c = self.world.colliders.get(c)?;
+                let at = c.position_wrt_parent().copied().unwrap_or_default();
+                let aabb = c.shape().compute_aabb(&at);
+                Some((aabb.mins, aabb.maxs))
+            })
+            .reduce(|(lo, hi), (l, h)| (lo.min(l), hi.max(h)))
+    }
+
+    /// Hand a body to scripted motion (`keyframed`: moved where it is told,
+    /// carrying what it meets) or back to the simulation.
+    pub fn set_body_keyframed(&mut self, h: RigidBodyHandle, keyframed: bool) {
+        if let Some(b) = self.world.bodies.get_mut(h) {
+            b.set_body_type(
+                if keyframed {
+                    RigidBodyType::KinematicPositionBased
+                } else {
+                    RigidBodyType::Dynamic
+                },
+                true,
+            );
+        }
+    }
+
+    /// Move a keyframed body to `m` (no scale) over the next step.
+    pub fn move_keyframed(&mut self, h: RigidBodyHandle, m: Mat4) {
+        if let Some(b) = self.world.bodies.get_mut(h) {
+            b.set_next_kinematic_position(shapes::decompose(m).0);
+        }
+    }
+
+    /// How far below `origin` (within `max`) the world's fixed collision is:
+    /// the land, roads and rocks, not loose objects or actors.
+    pub fn fixed_below(&self, origin: Vec3, max: f32) -> Option<f32> {
+        let ray = Ray::new(origin, -Vec3::Z);
+        let not_actor = |h: ColliderHandle, _: &Collider| !self.capsules.contains(&h);
+        let (_, t) = self.world.cast_ray(
+            &ray,
+            max,
+            true,
+            QueryFilter::only_fixed().predicate(&not_actor),
+        )?;
+        Some(t)
+    }
+
     /// Put a body somewhere (no scale), at rest.
     pub fn set_body_pose(&mut self, h: RigidBodyHandle, m: Mat4) {
         if let Some(b) = self.world.bodies.get_mut(h) {

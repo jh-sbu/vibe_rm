@@ -1,6 +1,7 @@
 //! Scripted carriage passengers and physical horse tethers.
 use super::*;
-use rapier3d::prelude::{ImpulseJointHandle, RigidBodyHandle};
+use glam::Vec2;
+use rapier3d::prelude::RigidBodyHandle;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Passenger {
@@ -16,11 +17,31 @@ pub(crate) struct Tether {
     pub cart_point: Vec3,
     pub rotation: Vec3,
 }
+/// A loaded cart hitched to its horse: its bodies are keyframed, the cart
+/// trailing the hitch with its wheels on the ground (`update_tethers`).
 pub(crate) struct Hitch {
-    anchor: RigidBodyHandle,
-    cart: RigidBodyHandle,
-    joint: ImpulseJointHandle,
+    /// The cart's bodies with their frames in the cart reference (scale
+    /// included), and for a wheel its radius and how far it has turned.
+    bodies: Vec<(RigidBodyHandle, Mat4, Option<(f32, f32)>)>,
+    /// Where its wheels touch the ground, in the cart reference's frame.
+    contacts: Vec<Vec3>,
+    /// The rear axle's distance behind the hitch, and where it is (world):
+    /// the trailer's memory of which way it points.
+    reach: f32,
+    rear: Vec3,
+    /// The ground's slope across and along the cart, eased in.
+    slope: Vec2,
 }
+
+/// Wheels: the bodies reaching within this of the lowest (game units).
+const WHEEL_SPAN: f32 = 15.0;
+/// How far above the hitch and below it to look for the ground.
+const ABOVE: f32 = 300.0;
+const BELOW: f32 = 600.0;
+/// The steepest a hitched cart leans (rise over run), and how much of the
+/// way to the ground's slope it goes each frame (no source).
+const MAX_SLOPE: f32 = 0.8;
+const SLOPE_EASE: f32 = 0.2;
 
 impl Engine {
     fn vehicle_transform(&self, r: FormId) -> Option<Mat4> {
@@ -109,8 +130,9 @@ impl Engine {
 
     fn remove_hitch(&mut self, cart: FormId) {
         if let Some(h) = self.hitches.remove(&cart) {
-            self.physics.world.remove_impulse_joint(h.joint);
-            self.physics.remove_body(h.anchor);
+            for (body, ..) in h.bodies {
+                self.physics.set_body_keyframed(body, false);
+            }
         }
     }
 
@@ -129,15 +151,18 @@ impl Engine {
         }
     }
 
-    /// Rebuild constraints lazily after a cell load. The cart's NIF wheel and
-    /// steering constraints continue to be simulated by the ordinary loose path.
+    /// Hitched carts follow their horses: each frame the hitch goes where the
+    /// horse holds it, the rear axle trails it (a trailer's track), and the
+    /// cart sits on the ground under its wheels. Its bodies are keyframed
+    /// while hitched (`known_ambiguities/carriages.md`); hitches are made
+    /// lazily after a cell load and let go when the tether goes.
     pub(crate) fn update_tethers(&mut self) {
-        use rapier3d::prelude::{GenericJointBuilder, JointAxesMask, RigidBodyBuilder};
         for cart in self.hitches.keys().copied().collect::<Vec<_>>() {
             let h = &self.hitches[&cart];
             if !self.tethers.contains_key(&cart)
-                || self.physics.world.bodies.get(h.cart).is_none()
-                || self.physics.world.impulse_joints.get(h.joint).is_none()
+                || h.bodies
+                    .iter()
+                    .any(|(b, ..)| self.physics.world.bodies.get(*b).is_none())
             {
                 self.remove_hitch(cart);
             }
@@ -154,86 +179,200 @@ impl Engine {
                 continue;
             };
             let point = horse.transform_point3(t.horse_point);
-            if let Some(h) = self.hitches.get(&cart) {
-                if let Some(anchor) = self.physics.world.bodies.get_mut(h.anchor) {
-                    anchor.set_next_kinematic_translation(point);
-                }
-                if log::log_enabled!(target: "carts", log::Level::Trace)
-                    && let Some(m) = self.vehicle_transform(cart)
-                {
-                    let inv = horse.inverse();
-                    log::trace!(
-                        target: "carts",
-                        "{cart} in {}'s frame: hitch target {:.0?}, cart at {:.0?}, facing {:.2?}",
-                        t.horse,
-                        t.horse_point,
-                        inv.transform_point3(m.w_axis.truncate()),
-                        inv.transform_vector3(m.transform_vector3(Vec3::Y)).normalize_or_zero()
-                    );
-                    let up = m.transform_vector3(Vec3::Z).normalize_or_zero();
-                    let hitch = m.transform_point3(t.cart_point);
-                    let at = m.w_axis.truncate();
-                    log::trace!(
-                        target: "carts",
-                        "{cart} tilt {:.0} deg, hitch {:.0} from the horse's ({:.0} up), {:.0} above ground",
-                        up.angle_between(Vec3::Z).to_degrees(),
-                        (hitch - point).truncate().length(),
-                        hitch.z - point.z,
-                        at.z - self.ground_height(at.truncate()).unwrap_or(f32::NAN),
-                    );
-                }
+            if !self.hitches.contains_key(&cart) && !self.make_hitch(cart, &t) {
                 continue;
             }
-            let Some(l) = self
-                .cells
-                .values()
-                .flat_map(|rt| &rt.loose)
-                .find(|l| l.ref_id == cart)
-            else {
-                continue;
-            };
-            // The cart's own (root, heaviest) body. Not the front-most body
-            // origin: that was a front wheel, a hair ahead of the bar, which
-            // the horse then dragged by its axle. Nor the 100 kg bar: pulling
-            // 12000 kg through its hinge tore the joints apart.
-            let Some(body) = l.bodies.get(l.root) else {
-                continue;
-            };
-            let cart_body = body.handle;
-            log::debug!(
-                target: "carts",
-                "{cart} hitched by its body at {:.0?}",
-                body.frame.w_axis.truncate()
-            );
-            let Some((world, _)) = self.physics.body_pose(cart_body) else {
-                continue;
-            };
-            let hitch = l.transform.transform_point3(t.cart_point);
-            let local = world.inverse().transform_point3(hitch);
-            let anchor = self
-                .physics
-                .world
-                .insert_body(RigidBodyBuilder::kinematic_position_based().translation(point));
-            // The horse pulls the hitch along the ground; its height is left
-            // to the cart's wheels. The bar only steers, so a hitch held at
-            // the horse's height levers the cart over where the road's slope
-            // changes between the horse and the wheels.
-            let joint = self.physics.world.insert_impulse_joint(
-                anchor,
-                cart_body,
-                GenericJointBuilder::new(JointAxesMask::LIN_X | JointAxesMask::LIN_Y)
-                    .local_anchor2(local)
-                    .contacts_enabled(false),
-            );
-            self.hitches.insert(
-                cart,
-                Hitch {
-                    anchor,
-                    cart: cart_body,
-                    joint,
-                },
-            );
+            self.pull_cart(cart, &t, point);
         }
+    }
+
+    /// Keyframe a loaded cart's bodies and find its wheels.
+    fn make_hitch(&mut self, cart: FormId, t: &Tether) -> bool {
+        let Some(l) = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.loose)
+            .find(|l| l.ref_id == cart)
+        else {
+            return false;
+        };
+        let transform = l.transform;
+        let scale = transform.to_scale_rotation_translation().0.x;
+        let unscale = Mat4::from_scale(Vec3::splat(1. / scale.max(1e-3)));
+        // Each body's bounds in the cart's frame; wheels are the bodies
+        // reaching lowest, besides the cart's own.
+        let parts: Vec<(RigidBodyHandle, Mat4, Option<(Vec3, Vec3)>, bool)> = l
+            .bodies
+            .iter()
+            .enumerate()
+            .map(|(i, b)| {
+                let local = self.physics.body_local_bounds(b.handle).map(|(lo, hi)| {
+                    let to_cart = b.frame * unscale;
+                    let (a, c) = (to_cart.transform_point3(lo), to_cart.transform_point3(hi));
+                    (a.min(c), a.max(c))
+                });
+                (b.handle, b.frame, local, i == l.root)
+            })
+            .collect();
+        let lowest = parts
+            .iter()
+            .filter_map(|(.., bounds, _)| bounds.map(|(lo, _)| lo.z))
+            .fold(f32::INFINITY, f32::min);
+        let mut contacts = Vec::new();
+        let bodies = parts
+            .iter()
+            .map(|&(h, frame, bounds, root)| {
+                let wheel = bounds.filter(|(lo, _)| !root && lo.z < lowest + WHEEL_SPAN);
+                let wheel = wheel.map(|(lo, hi)| {
+                    let mid = (lo + hi) * 0.5;
+                    contacts.push(Vec3::new(mid.x, mid.y, lo.z));
+                    (mid.z - lo.z, 0.)
+                });
+                (h, frame, wheel)
+            })
+            .collect::<Vec<_>>();
+        if contacts.len() < 3 {
+            // No wheels to speak of: the corners of the cart's underside.
+            let (lo, hi) = parts
+                .iter()
+                .filter_map(|(.., bounds, _)| *bounds)
+                .reduce(|(a, b), (c, d)| (a.min(c), b.max(d)))
+                .unwrap_or((Vec3::splat(-1.), Vec3::splat(1.)));
+            contacts = vec![
+                Vec3::new(lo.x, lo.y, lo.z),
+                Vec3::new(hi.x, lo.y, lo.z),
+                Vec3::new(lo.x, hi.y, lo.z),
+                Vec3::new(hi.x, hi.y, lo.z),
+            ];
+        }
+        let rear_y = contacts.iter().map(|c| c.y).fold(f32::INFINITY, f32::min);
+        for (h, ..) in &bodies {
+            self.physics.set_body_keyframed(*h, true);
+        }
+        log::debug!(
+            target: "carts",
+            "{cart} hitched to {}: {} wheels, rear axle {:.0} behind the hitch",
+            t.horse,
+            bodies.iter().filter(|b| b.2.is_some()).count(),
+            t.cart_point.y - rear_y
+        );
+        self.hitches.insert(
+            cart,
+            Hitch {
+                bodies,
+                contacts,
+                reach: t.cart_point.y - rear_y,
+                rear: transform.transform_point3(Vec3::new(0., rear_y, 0.)),
+                slope: Vec2::NAN,
+            },
+        );
+        true
+    }
+
+    /// Bring a hitched cart after its horse's hitch point (world).
+    fn pull_cart(&mut self, cart: FormId, t: &Tether, point: Vec3) {
+        let Some(scale) = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.loose)
+            .find(|l| l.ref_id == cart)
+            .map(|l| l.transform.to_scale_rotation_translation().0.x)
+        else {
+            return;
+        };
+        let h = &self.hitches[&cart];
+        // The rear axle trails the hitch at its distance.
+        let along = (point - h.rear).truncate();
+        let Some(fwd) = along.try_normalize() else {
+            return;
+        };
+        let reach = h.reach * scale;
+        let rear = point - (fwd * reach).extend(0.);
+        let travelled = (rear - h.rear).truncate().length();
+        let right = Vec2::new(fwd.y, -fwd.x);
+        // Level first: where the wheels are, and the ground under them.
+        let origin = point.truncate() - (right * t.cart_point.x + fwd * t.cart_point.y) * scale;
+        let samples: Vec<(Vec3, f32)> = h
+            .contacts
+            .iter()
+            .map(|c| {
+                let at = origin + (right * c.x + fwd * c.y) * scale;
+                let above = point.z + ABOVE;
+                let z = self
+                    .physics
+                    .fixed_below(at.extend(above), ABOVE + BELOW)
+                    .map_or(point.z, |d| above - d);
+                (*c * scale, z)
+            })
+            .collect();
+        // The plane through them (least squares, in the cart's level frame).
+        let n = samples.len() as f32;
+        let mean = samples
+            .iter()
+            .fold((Vec3::ZERO, 0.), |(p, z), (c, g)| (p + *c, z + g));
+        let (mc, mz) = (mean.0 / n, mean.1 / n);
+        let (mut sxx, mut syy, mut sxy, mut sxz, mut syz) = (0., 0., 0., 0., 0.);
+        for (c, z) in &samples {
+            let (dx, dy, dz) = (c.x - mc.x, c.y - mc.y, z - mz);
+            sxx += dx * dx;
+            syy += dy * dy;
+            sxy += dx * dy;
+            sxz += dx * dz;
+            syz += dy * dz;
+        }
+        let det = sxx * syy - sxy * sxy;
+        let target = if det.abs() > 1e-3 {
+            Vec2::new((sxz * syy - syz * sxy) / det, (syz * sxx - sxz * sxy) / det)
+        } else {
+            Vec2::ZERO
+        }
+        .clamp(Vec2::splat(-MAX_SLOPE), Vec2::splat(MAX_SLOPE));
+        // A stone under one wheel doesn't throw it over at once.
+        let slope = if h.slope.is_nan() {
+            target
+        } else {
+            h.slope + (target - h.slope) * SLOPE_EASE
+        };
+        let (roll, pitch) = (slope.x, slope.y);
+        let x = (right.extend(0.) + Vec3::Z * roll).normalize();
+        let y0 = (fwd.extend(0.) + Vec3::Z * pitch).normalize();
+        let z = x.cross(y0).normalize();
+        let y = z.cross(x);
+        let turn = glam::Mat3::from_cols(x, y, z);
+        // Its wheels' undersides on that plane.
+        let level = turn * mc;
+        let at = origin.extend(mz - level.z);
+        let transform = Mat4::from_cols(
+            (x * scale).extend(0.),
+            (y * scale).extend(0.),
+            (z * scale).extend(0.),
+            at.extend(1.),
+        );
+        let unscale = Mat4::from_scale(Vec3::splat(1. / scale.max(1e-3)));
+        let h = self.hitches.get_mut(&cart).unwrap();
+        h.rear = rear;
+        h.slope = slope;
+        let mut moves = Vec::with_capacity(h.bodies.len());
+        for (body, frame, wheel) in h.bodies.iter_mut() {
+            let spin = match wheel {
+                Some((radius, angle)) => {
+                    *angle += travelled / (*radius * scale).max(1.);
+                    Mat4::from_rotation_x(-*angle)
+                }
+                None => Mat4::IDENTITY,
+            };
+            moves.push((*body, transform * *frame * unscale * spin));
+        }
+        for (body, m) in moves {
+            self.physics.move_keyframed(body, m);
+        }
+        log::trace!(
+            target: "carts",
+            "{cart} at {:.0?}, pitch {:.2}, roll {:.2}",
+            at,
+            pitch,
+            roll
+        );
     }
 
     /// Away carts retain their hitch relation without simulating wheel bodies.
@@ -429,7 +568,7 @@ mod tests {
 
     #[test]
     #[ignore = "needs a headless GPU adapter; synthetic records only"]
-    fn tether_creates_a_real_constraint_rebuilds_after_unload_and_releases() {
+    fn tether_keyframes_the_cart_after_its_horse_rebuilds_after_unload_and_releases() {
         use rapier3d::prelude::{ColliderBuilder, RigidBodyBuilder};
         let (_f, mut e) = fixture();
         loaded_actor(&mut e);
@@ -464,30 +603,31 @@ mod tests {
         e.tether_to_horse(MARKER, Some(ACTOR));
         e.update_tethers();
         assert_eq!(e.hitches.len(), 1);
-        let old = e.hitches[&MARKER].anchor;
-        e.actor_mut(ACTOR).unwrap().exec.pos.x += 100.;
-        e.update_tethers();
-        for _ in 0..60 {
+        let keyframed = |e: &Engine| e.physics.world.bodies[body].is_kinematic();
+        assert!(keyframed(&e));
+        let before = e.physics.body_pose(body).unwrap().0.w_axis;
+        // Ahead (the cart faces +Y), as a trailer: it comes on behind.
+        e.actor_mut(ACTOR).unwrap().exec.pos.y += 100.;
+        for _ in 0..3 {
+            e.update_tethers();
             e.physics.step(1. / 60.);
         }
         let pose = e.physics.body_pose(body).unwrap().0.w_axis;
-        assert!(pose.x > 3050., "pulled along: {pose}");
-        // Only along the ground: nothing under it, it falls as the horse
-        // goes on above.
-        let anchor = e
-            .physics
-            .body_pose(e.hitches[&MARKER].anchor)
-            .unwrap()
-            .0
-            .w_axis;
-        assert!(pose.z < anchor.z - 100., "held up: {pose} under {anchor}");
+        assert!(
+            (pose.y - before.y - 100.).abs() < 10. && (pose.x - before.x).abs() < 10.,
+            "pulled along: {pose} from {before}"
+        );
+        // Nothing under it: it keeps to the hitch's height, it doesn't fall.
+        assert!((pose.z - before.z).abs() < 100., "{pose} from {before}");
         e.clear_vehicle_bodies();
-        assert!(e.physics.world.bodies.get(old).is_none());
+        assert!(e.hitches.is_empty() && !keyframed(&e));
         e.update_tethers();
         assert_eq!(e.hitches.len(), 1);
+        assert!(keyframed(&e));
         e.tether_to_horse(MARKER, None);
         assert!(e.hitches.is_empty());
         assert!(e.tethers.is_empty());
+        assert!(!keyframed(&e), "let go to the simulation");
     }
 }
 
