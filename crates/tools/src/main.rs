@@ -19,6 +19,7 @@ mod package;
 #[path = "../../../src/ai/procedure.rs"]
 #[allow(dead_code)]
 mod procedure;
+mod ragdoll_census;
 mod ai {
     pub(crate) use crate::{package, procedure};
 }
@@ -64,6 +65,7 @@ fn main() -> Result<()> {
     env_logger::init();
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
+        Some("ragdoll-census") => ragdoll_census::run(&args[1])?,
         Some("first-person") => first_person::run(&args[1])?,
         Some("hkb-masks") => mask_survey::run(&args[1], args.get(2).map(String::as_str))?,
         Some("crafting-survey") => crafting_survey::run(&args[1])?,
@@ -1677,6 +1679,9 @@ fn main() -> Result<()> {
                     .find(|&s| s > o.offset)
                     .unwrap_or(p.data.len() as u32);
                 println!("{} @{:#x} ({} bytes)", o.class, o.offset, end - o.offset);
+                if let Some(fields) = ragdoll_census::decode(&p, o.offset, &o.class) {
+                    println!("  {fields}");
+                }
                 let mut at = o.offset;
                 while at < end {
                     let rel = at - o.offset;
