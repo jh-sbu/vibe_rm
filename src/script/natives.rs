@@ -3122,6 +3122,18 @@ pub fn call(
                 _ => false,
             }))
         }
+        ("shaderparticlegeometry", "apply") => {
+            if let Some(s) = me {
+                e.apply_shader_particles(s, args.first().map_or(0.0, Value::as_float));
+            }
+            none()
+        }
+        ("shaderparticlegeometry", "remove") => {
+            if let Some(s) = me {
+                e.remove_shader_particles(s, args.first().map_or(0.0, Value::as_float));
+            }
+            none()
+        }
         ("cell", "setfogcolor") => {
             if let Some(c) = me {
                 let ch = |i| crate::cell_fog::channel(arg(i).as_int());

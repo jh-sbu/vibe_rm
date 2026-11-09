@@ -304,3 +304,6 @@ Research: `research/pex-natives/actor-batch12-states.md` and
   animated objects: choices in
   `research/pex-natives/cell-batch17-fog-constraints.md`. Dependent animated
   objects have no effect yet; the source doesn't say what they do.
+- `ShaderParticleGeometry.Apply` / `Remove`: one script geometry at a time,
+  falling indoors unsheltered; choices in
+  `research/pex-natives/render-batch18-shader-particles.md`.

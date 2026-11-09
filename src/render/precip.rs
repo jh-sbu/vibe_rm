@@ -57,6 +57,9 @@ struct OcclusionUniform {
 /// it (made up).
 const SHELTER_BIAS: f32 = 12.0;
 
+/// The layer slot scripts' shader particle geometry falls in.
+pub const SCRIPT_SLOT: usize = 2;
+
 /// One weather's precipitation, ready to draw.
 struct Layer {
     params: Precipitation,
@@ -69,8 +72,9 @@ struct Layer {
 pub struct PrecipRenderer {
     pipeline: wgpu::RenderPipeline,
     bgl: wgpu::BindGroupLayout,
-    /// The incoming weather's and the outgoing one's.
-    layers: [Option<Layer>; 2],
+    /// The incoming weather's, the outgoing one's, and a script's
+    /// (`ShaderParticleGeometry.Apply`, [`SCRIPT_SLOT`]).
+    layers: [Option<Layer>; 3],
     color: Vec3,
     wind: Vec2,
     /// How far the wind has carried everything.
@@ -207,7 +211,7 @@ impl PrecipRenderer {
         PrecipRenderer {
             pipeline,
             bgl,
-            layers: [None, None],
+            layers: [None, None, None],
             color: Vec3::ONE,
             wind: Vec2::ZERO,
             drift: DVec2::ZERO,
@@ -287,7 +291,14 @@ impl PrecipRenderer {
         });
     }
 
-    /// How much of each layer falls (0..1) and the light it's lit by.
+    /// How much of the script's layer falls (0..1).
+    pub fn set_script_intensity(&mut self, intensity: f32) {
+        if let Some(l) = &mut self.layers[SCRIPT_SLOT] {
+            l.intensity = intensity.clamp(0.0, 1.0);
+        }
+    }
+
+    /// How much of each weather layer falls (0..1) and the light it's lit by.
     pub fn set_intensity(&mut self, intensities: [f32; 2], color: Vec3) {
         for (l, i) in self.layers.iter_mut().zip(intensities) {
             if let Some(l) = l {
@@ -305,13 +316,18 @@ impl PrecipRenderer {
     }
 
     /// The layers' particle counts now.
-    pub fn particle_counts(&self) -> [u32; 2] {
+    pub fn particle_counts(&self) -> [u32; 3] {
         self.layers.each_ref().map(|l| l.as_ref().map_or(0, count))
     }
 
     /// Draw into a pass whose frame bind group (group 0) is set.
-    pub fn draw(&self, queue: &wgpu::Queue, pass: &mut wgpu::RenderPass, time: f32) {
-        for l in self.layers.iter().flatten() {
+    /// Indoors (`sky` false) only a script's layer falls.
+    pub fn draw(&self, queue: &wgpu::Queue, pass: &mut wgpu::RenderPass, time: f32, sky: bool) {
+        for (slot, l) in self.layers.iter().enumerate() {
+            let Some(l) = l else { continue };
+            if !sky && slot != SCRIPT_SLOT {
+                continue;
+            }
             let n = count(l);
             if n == 0 {
                 continue;

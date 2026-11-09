@@ -280,6 +280,8 @@ pub struct Engine {
     /// Scripts' fog for interiors (`Cell.SetFogColor` and its kin; not
     /// saved).
     pub cell_fog: crate::cell_fog::CellFog,
+    /// `ShaderParticleGeometry.Apply`'s geometry and its fade (not saved).
+    pub script_precip: Option<crate::script_precip::ScriptPrecip>,
     /// Joints scripts made (`AddHavokBallAndSocketConstraint`; not saved:
     /// the attach points' scripts make them again as their cells load).
     pub havok_constraints: Vec<crate::havok_constraints::ScriptConstraint>,
@@ -745,6 +747,7 @@ impl Engine {
             sitting_rotation: 0.0,
             player_seat_heading: None,
             cell_fog: Default::default(),
+            script_precip: None,
             havok_constraints: Vec::new(),
             dependent_animated: Vec::new(),
             first_person_hidden: false,
@@ -3373,6 +3376,7 @@ impl Engine {
         if let Some(env) = self.sky_environment() {
             self.scene.env = env;
         }
+        self.update_script_precip(dt);
         let wind = self.wind_now();
         self.renderer.precip.blow(wind, dt);
         self.renderer.wind = wind;

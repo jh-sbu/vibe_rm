@@ -3207,9 +3207,7 @@ impl Renderer {
             drop(draw);
             stats.draws += skinned_draws + grass_draws;
             stats.instances += grass_instances;
-            if env.sky {
-                self.precip.draw(&self.queue, &mut pass, self.time);
-            }
+            self.precip.draw(&self.queue, &mut pass, self.time, env.sky);
         }
         if scene.first_person.is_some() && (!first_skin.is_empty() || !first_draws.is_empty()) {
             let projection = camera.first_person_proj(self.width as f32 / self.height as f32);

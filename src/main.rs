@@ -81,6 +81,7 @@ mod resets;
 mod save;
 mod scene;
 mod script;
+mod script_precip;
 mod script_sounds;
 mod settings;
 mod shouts;
