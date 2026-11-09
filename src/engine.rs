@@ -283,8 +283,14 @@ pub struct Engine {
     /// `Game.SetSittingRotation`: the first-person sitting camera's turn
     /// from straight ahead (radians).
     pub sitting_rotation: f32,
-    /// The heading of the seat the player rides in, last frame.
+    /// The heading of the seat the player rides in, last frame: the way
+    /// the seated body faces.
     pub player_seat_heading: Option<f32>,
+    /// How steeply that seat rose along the view's heading, last frame.
+    pub player_seat_slope: Option<f32>,
+    /// Riding, where the seated body's idle puts the eye and which way it
+    /// turns the body (`update_player_body`).
+    pub player_seat_view: Option<crate::ai::vehicles::SeatView>,
     /// Scripts' fog for interiors (`Cell.SetFogColor` and its kin; not
     /// saved).
     pub cell_fog: crate::cell_fog::CellFog,
@@ -756,6 +762,8 @@ impl Engine {
             sungazing: false,
             sitting_rotation: 0.0,
             player_seat_heading: None,
+            player_seat_slope: None,
+            player_seat_view: None,
             cell_fog: Default::default(),
             script_moves: Default::default(),
             script_precip: None,

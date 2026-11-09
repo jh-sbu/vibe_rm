@@ -18,6 +18,11 @@ pub(crate) const PLAYER_NPC: FormId = FormId(0x7);
 /// How quickly the body turns to face where it goes in third person (radians
 /// per second).
 const TURN_RATE: f32 = 10.0;
+/// The third-person skeleton's node the view follows while seated: its
+/// bind height (120.3) is the standing eye's (120).
+const SEATED_EYE_NODE: &str = "NPC Head [Head]";
+/// The node whose turn from its bind pose is the way a seated body faces.
+const SEATED_FACING_NODE: &str = "NPC COM [COM ]";
 
 pub struct PlayerBody {
     pub(crate) skeleton: Arc<Skeleton>,
@@ -597,6 +602,27 @@ impl Engine {
         };
         let actions = self.locomotion_actions(PLAYER_REF);
         let turn_rate = self.player_turn_rate();
+        // Riding, they face the seat's way whatever the view does.
+        // (The seat's heading is the seated body's: the vehicle's is that
+        // less the idle's turn.)
+        let seat = self
+            .player_seat_heading
+            .filter(|_| self.passengers.contains_key(&PLAYER_REF))
+            .map(|h| h - self.player_seat_view.map_or(0., |v| v.facing));
+        if seat.is_none() {
+            self.player_seat_view = None;
+        }
+        // Riding, the root rides as other passengers' do, tilting with the
+        // vehicle: on a slope an upright body would sit out of its seat.
+        let seat_frame = seat
+            .and_then(|_| {
+                let p = self.passengers.get(&PLAYER_REF)?;
+                self.passenger_frame(PLAYER_REF, p)
+            })
+            .map(|m| {
+                let (_, rotation, translation) = m.to_scale_rotation_translation();
+                (rotation, translation)
+            });
         let Some(body) = self.player_body.as_mut() else {
             return;
         };
@@ -614,7 +640,9 @@ impl Engine {
             motion.heading.filter(|_| walking)
         };
         body.turn_request = None;
-        if let Some(want) = want {
+        if let Some(h) = seat {
+            body.heading = h;
+        } else if let Some(want) = want {
             let d = wrap(want - body.heading);
             if body.graph.as_ref().is_some_and(|g| g.rotates_character()) {
                 body.turn_request = Some(d.clamp(-turn_rate * dt, turn_rate * dt));
@@ -626,7 +654,12 @@ impl Engine {
         }
         let out = body.weapon_out;
         let first_out = body.first.as_ref().map(|f| f.weapon_out);
-        let world_from_model = body.transform(feet);
+        let world_from_model = match seat_frame {
+            Some((rotation, at)) => {
+                Mat4::from_scale_rotation_translation(Vec3::splat(body.scale), rotation, at)
+            }
+            None => body.transform(feet),
+        };
         if let Some(g) = body.graph.as_mut() {
             g.world_from_model = world_from_model;
         }
@@ -638,6 +671,31 @@ impl Engine {
             f.graph.set_variable("MagicAimOffsetPitch", 0.0);
         }
         let pose = body.animate(dt, &motion, &actions, &self.vfs, &mut self.anims);
+        // Seated, the view is the posed body's: the seat is where the idle
+        // holds the body, away from the root at the vehicle's origin, and
+        // turned from the vehicle's heading (MQ101's cart idles face the
+        // bench across). See `known_ambiguities/carriages.md`.
+        let eye = match seat {
+            Some(_) => {
+                let posed = pose
+                    .as_deref()
+                    .or(self.scene.player.as_ref().map(|p| &p.pose[..]));
+                let view = posed.and_then(|posed| {
+                    let skel = &body.skeleton;
+                    let head = posed.get(skel.find(SEATED_EYE_NODE)?)?.w_axis.truncate();
+                    let torso = skel.find(SEATED_FACING_NODE)?;
+                    let turn = *posed.get(torso)? * skel.bind_model(torso).inverse();
+                    let ahead = turn.transform_vector3(Vec3::Y);
+                    Some(crate::ai::vehicles::SeatView {
+                        eye: world_from_model.transform_point3(head),
+                        facing: ahead.x.atan2(ahead.y),
+                    })
+                });
+                self.player_seat_view = view;
+                view.map_or(eye, |v| v.eye)
+            }
+            None => eye,
+        };
         // `place` pitches the pose in place: only a freshly sampled pose, or
         // the pitch would compound each frame.
         if pose.is_some()
@@ -658,7 +716,11 @@ impl Engine {
                 }
             }
         }
-        let transform = body.transform(feet);
+        // (The graph may have turned them meanwhile.)
+        let transform = match seat_frame {
+            Some(_) => world_from_model,
+            None => body.transform(feet),
+        };
         let events = std::mem::take(&mut body.combat_events);
         let step_events = std::mem::take(&mut body.step_events);
         let script_events = std::mem::take(&mut body.script_events);

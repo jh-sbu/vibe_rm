@@ -9,6 +9,15 @@ pub(crate) struct Passenger {
     pub offset: Vec3,
     pub rotation: Vec3,
 }
+/// The player's view from a seat, from the seated body's pose.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct SeatView {
+    /// The head (world).
+    pub eye: Vec3,
+    /// How far the idle turns the body from the vehicle's heading (radians,
+    /// clockwise).
+    pub facing: f32,
+}
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Tether {
     pub horse: FormId,
@@ -67,6 +76,8 @@ impl Engine {
     pub(crate) fn set_vehicle(&mut self, actor: FormId, vehicle: Option<FormId>) {
         if actor == PLAYER_REF {
             self.player_seat_heading = None;
+            self.player_seat_slope = None;
+            self.player_seat_view = None;
         }
         let Some(vehicle) = vehicle.filter(|&v| v != actor && !v.is_null()) else {
             self.passengers.remove(&actor);
@@ -153,6 +164,8 @@ impl Engine {
     }
 
     pub(crate) fn clear_vehicle_bodies(&mut self) {
+        self.player_seat_view = None;
+        self.player_seat_slope = None;
         let actors = self.passengers.keys().copied().collect::<Vec<_>>();
         for actor in actors {
             if let Some(a) = self.actor_mut(actor) {
@@ -459,6 +472,24 @@ impl Engine {
         )
     }
 
+    /// Where a passenger's root rides (world): its place on the vehicle,
+    /// tilting with it, or in a dragon's talons.
+    pub(crate) fn passenger_frame(&self, actor: FormId, p: &Passenger) -> Option<Mat4> {
+        let vehicle = self.vehicle_transform(p.vehicle)?;
+        let talon = self
+            .flights
+            .get(&p.vehicle)
+            .filter(|f| f.grabbed == Some(actor))
+            .and_then(|_| self.actor_node_transform(p.vehicle, "NPC RLegFoot"));
+        Some(talon.unwrap_or(
+            vehicle
+                * Mat4::from_rotation_translation(
+                    crate::world::records::rotation_from_euler(p.rotation),
+                    p.offset,
+                ),
+        ))
+    }
+
     pub(crate) fn sync_passengers(&mut self) {
         let mut passengers = self
             .passengers
@@ -475,36 +506,35 @@ impl Engine {
                 self.set_vehicle(actor, None);
                 continue;
             }
-            let Some(vehicle) = self.vehicle_transform(p.vehicle) else {
+            let Some(transform) = self.passenger_frame(actor, &p) else {
                 continue;
             };
-            let talon = self
-                .flights
-                .get(&p.vehicle)
-                .filter(|f| f.grabbed == Some(actor))
-                .and_then(|_| self.actor_node_transform(p.vehicle, "NPC RLegFoot"));
-            let transform = talon.unwrap_or(
-                vehicle
-                    * Mat4::from_rotation_translation(
-                        crate::world::records::rotation_from_euler(p.rotation),
-                        p.offset,
-                    ),
-            );
             let pos = transform.w_axis.truncate();
             if actor == PLAYER_REF {
                 self.player.position =
                     pos + Vec3::Z * (self.physics.player_half_height + self.physics.player_radius);
                 self.player.vertical_velocity = 0.;
-                self.camera.position = self.player.eye();
+                // The seat is in the idle, not at the root: the view goes to
+                // the seated body's head, facing its way, once it is posed.
+                let view = self.player_seat_view;
+                self.camera.position = view.map_or(self.player.eye(), |v| v.eye);
                 // The view turns with the seat; seated in first person, it
                 // starts `SetSittingRotation`'s turn from the seat's heading.
-                let h = self::heading(transform);
+                let h = self::heading(transform) + view.map_or(0., |v| v.facing);
                 match self.player_seat_heading {
                     Some(last) => self.camera.yaw += wrap_angle(h - last),
                     None if !self.third_person => self.camera.yaw = h + self.sitting_rotation,
                     None => {}
                 }
                 self.player_seat_heading = Some(h);
+                // And it tilts with the seat: level with the vehicle where it
+                // was, looking along it uphill or down.
+                let (_, rotation, _) = transform.to_scale_rotation_translation();
+                let slope = seat_slope(rotation, self.camera.yaw);
+                if let Some(last) = self.player_seat_slope {
+                    self.camera.pitch = (self.camera.pitch + slope - last).clamp(-1.55, 1.55);
+                }
+                self.player_seat_slope = Some(slope);
             } else if let Some(a) = self.actor_mut(actor) {
                 a.exec.pos = pos;
                 a.exec.heading = self::heading(transform);
@@ -535,6 +565,15 @@ impl Engine {
         }
     }
 }
+/// How steeply a seat turned by `rotation` rises along the view's heading
+/// `yaw` (radians, up positive): the slope of the vehicle's floor that way.
+fn seat_slope(rotation: glam::Quat, yaw: f32) -> f32 {
+    let local = rotation.inverse() * Vec3::new(yaw.sin(), yaw.cos(), 0.);
+    Vec3::new(local.x, local.y, 0.)
+        .try_normalize()
+        .map_or(0., |flat| (rotation * flat).z.clamp(-1., 1.).asin())
+}
+
 /// An angle brought within (-pi, pi].
 fn wrap_angle(a: f32) -> f32 {
     let tau = std::f32::consts::TAU;
@@ -550,6 +589,20 @@ fn heading(m: Mat4) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_seat_slopes_along_the_view_as_its_vehicle_tilts() {
+        // Nose down 20 degrees (about the cart's right, +x), heading north.
+        let down = glam::Quat::from_rotation_x((-20f32).to_radians());
+        let deg = |yaw: f32| seat_slope(down, yaw.to_radians()).to_degrees();
+        assert!((deg(0.) + 20.).abs() < 0.01, "{}", deg(0.));
+        assert!((deg(180.) - 20.).abs() < 0.01, "{}", deg(180.));
+        assert!(deg(90.).abs() < 0.01, "{}", deg(90.));
+        // Turned east too: still downhill along its own length.
+        let east = glam::Quat::from_rotation_z((-90f32).to_radians()) * down;
+        assert!((seat_slope(east, 90f32.to_radians()).to_degrees() + 20.).abs() < 0.01);
+        assert_eq!(seat_slope(glam::Quat::IDENTITY, 1.), 0.);
+    }
     use crate::ai::exec::tests::{ACTOR, CELL, MARKER, fixture, loaded_actor};
 
     #[test]

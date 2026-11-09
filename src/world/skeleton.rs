@@ -102,6 +102,17 @@ impl Skeleton {
         out
     }
 
+    /// Bone `i`'s bind pose in model space.
+    pub fn bind_model(&self, i: usize) -> Mat4 {
+        let mut m = self.bones[i].bind.to_mat4();
+        let mut parent = self.bones[i].parent;
+        while let Some(p) = parent {
+            m = self.bones[p].bind.to_mat4() * m;
+            parent = self.bones[p].parent;
+        }
+        m
+    }
+
     pub fn bind_locals(&self) -> Vec<Transform> {
         self.bones.iter().map(|b| b.bind).collect()
     }
