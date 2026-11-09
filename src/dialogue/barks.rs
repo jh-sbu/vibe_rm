@@ -35,6 +35,8 @@ pub struct Bark {
 #[derive(Default)]
 pub struct Barks {
     pub(crate) packages: HashMap<FormId, crate::ai::speech::Speech>,
+    /// Lines scripts had references say (`ObjectReference.Say`).
+    pub(crate) script: super::script_say::ScriptSays,
     pub(crate) npc_hellos: super::social::HelloContacts,
     /// The line being said, if any.
     pub current: Option<Bark>,
@@ -58,6 +60,7 @@ impl Engine {
     pub(crate) fn bark_channel_available(&self) -> bool {
         self.barks.available(self.scripts.real_time)
             && self.barks.packages.values().all(|s| s.paused_at.is_some())
+            && self.barks.script.is_empty()
             && self.conversation.is_none()
             && self.ai_enabled
             && self.scene_lines().is_empty()

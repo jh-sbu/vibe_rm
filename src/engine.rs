@@ -3388,6 +3388,7 @@ impl Engine {
             self.update_actors(world_dt);
             ai_timing.next("ai.package_dialogue");
             self.update_package_dialogue();
+            self.update_script_says();
             ai_timing.next("ai.npc_hellos");
             self.update_npc_hellos();
         }

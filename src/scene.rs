@@ -1379,6 +1379,7 @@ impl Engine {
                     .filter(|s| s.paused_at.is_none())
                     .map(|s| &s.line),
             )
+            .chain(self.barks.script.values().map(|s| &s.line))
             .filter(|l| {
                 self.ref_position(l.speaker)
                     .is_some_and(|p| p.distance(player) < SUBTITLE_DISTANCE)

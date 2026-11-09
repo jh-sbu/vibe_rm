@@ -648,7 +648,7 @@ fn vampirism_and_lycanthropy_changes_reach_the_actors_scripts() {
 #[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn the_title_sequence_and_first_person_geometry_follow_the_opening() {
     let (_f, mut e) = fixture("titles");
-    let mut game = |e: &mut Engine, func: &str, args: &[Value]| {
+    let game = |e: &mut Engine, func: &str, args: &[Value]| {
         crate::script::natives::call(e, "game", func, None, args);
     };
     // A sequence started with no menu up is lost.

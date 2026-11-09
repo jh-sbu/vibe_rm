@@ -85,6 +85,17 @@ pub fn call(
         ("debug", "getplatformname") => v(Value::str("PC")),
         // No gamepad is read yet.
         ("game", "usinggamepad") => v(Value::Bool(false)),
+        // `Say(akTopicToSay, akActorToSpeakAs, abSpeakInPlayersHead)`.
+        ("objectreference", "say") | ("actor", "say") => {
+            if let (Some(r), Some(topic)) = (me, form_arg(args, 0)) {
+                let in_head = args.get(2).is_some_and(|a| a.as_bool());
+                e.script_say(r, topic, form_arg(args, 1), in_head);
+            }
+            none()
+        }
+        // Skyrim's dialogue has no list of topics the player knows: topics
+        // show by their conditions alone.
+        ("topic", "add") => none(),
         ("game", "showfirstpersongeometry") => {
             e.first_person_hidden = !args.first().is_none_or(|a| a.as_bool());
             e.sync_first_person();

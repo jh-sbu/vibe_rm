@@ -6,6 +6,7 @@ use crate::condition::{self, Condition};
 use crate::engine::{Engine, PLAYER_REF};
 
 pub mod barks;
+mod script_say;
 mod social;
 
 pub mod info_flags {

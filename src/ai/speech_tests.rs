@@ -441,3 +441,25 @@ fn vanilla_force_greet_wait_sitting_and_say_to_player_trees_are_enabled() {
         Some(Input::Target(_))
     ));
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic dialogue only"]
+fn a_scripted_say_speaks_every_response_and_then_ends() {
+    let mut e = engine(leaf("Wait", vec![]));
+    e.script_say(OTHER, TOPIC, None, false);
+    assert!(e.is_script_saying(OTHER));
+    assert!(
+        e.scene_lines()
+            .iter()
+            .any(|l| l.speaker == OTHER && l.text == "First response.")
+    );
+    e.scripts.real_time += 2.1;
+    e.update_script_says();
+    assert_eq!(e.barks.script[&OTHER].line.text, "Second response.");
+    e.scripts.real_time += 2.1;
+    e.update_script_says();
+    assert!(!e.is_script_saying(OTHER));
+    // A marker (not an actor) speaking as an actor.
+    e.script_say(MARKER, TOPIC, Some(OTHER), true);
+    assert!(e.is_script_saying(MARKER));
+}
