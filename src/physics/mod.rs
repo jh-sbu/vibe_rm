@@ -74,9 +74,23 @@ pub enum Motion {
 
 /// A ragdoll in the simulation: one body per ragdoll body of the description, and
 /// the actor's scale.
+#[derive(Clone)]
 pub struct Ragdoll {
+    joints: Vec<(ImpulseJointHandle, usize, usize)>,
+    mode: RagdollMode,
     pub bodies: Vec<RigidBodyHandle>,
     pub scale: f32,
+}
+
+/// Joint control while living, or a limp corpse. Forces use simulation units.
+#[derive(Debug, Clone, Copy)]
+pub enum RagdollMode {
+    Limp,
+    Powered {
+        tau: f32,
+        damping: f32,
+        max_force: f32,
+    },
 }
 
 /// A joint from a NIF constraint (x: the twist / hinge axis), its pivots
@@ -817,6 +831,7 @@ impl Physics {
         body_world: impl Fn(usize) -> Mat4,
         velocity: Vec3,
         owner: esp::FormId,
+        mode: RagdollMode,
     ) -> Ragdoll {
         let groups = InteractionGroups::new(
             RAGDOLL_GROUP,
@@ -892,11 +907,163 @@ impl Physics {
             bodies.push(h);
         }
         self.next_ragdoll += 1;
-        for j in &desc.joints {
-            self.world
-                .insert_impulse_joint(bodies[j.a], bodies[j.b], joint(j, scale));
+        let joints = desc
+            .joints
+            .iter()
+            .map(|j| {
+                (
+                    self.world
+                        .insert_impulse_joint(bodies[j.a], bodies[j.b], joint(j, scale)),
+                    j.a,
+                    j.b,
+                )
+            })
+            .collect();
+        Ragdoll {
+            bodies,
+            scale,
+            joints,
+            mode,
         }
-        Ragdoll { bodies, scale }
+    }
+
+    /// An actor-level velocity impulse, distributed by body mass. Applying the
+    /// same velocity change to every body avoids tearing a joint chain apart.
+    /// `at`, when supplied, is a world-space application point.
+    pub fn apply_ragdoll_impulse(&mut self, r: &Ragdoll, delta_velocity: Vec3, at: Option<Vec3>) {
+        if !delta_velocity.is_finite() {
+            return;
+        }
+        for &h in &r.bodies {
+            if let Some(b) = self.world.bodies.get_mut(h) {
+                let impulse = delta_velocity * b.mass();
+                if let Some(at) = at {
+                    b.apply_impulse_at_point(impulse, at, true);
+                } else {
+                    b.apply_impulse(impulse, true);
+                }
+            }
+        }
+    }
+
+    /// Drive joint-local angular targets from desired body rotations. Locked
+    /// axes and rope joints are never motorized. A zero authored force is limp.
+    pub fn set_ragdoll_targets(
+        &mut self,
+        r: &mut Ragdoll,
+        rotations: &[glam::Quat],
+        weights: &[f32],
+        mode: RagdollMode,
+    ) {
+        r.mode = mode;
+        let (tau, damping, force) = match mode {
+            RagdollMode::Limp => (0.0, 0.0, 0.0),
+            RagdollMode::Powered {
+                tau,
+                damping,
+                max_force,
+            } => (tau.max(0.0), damping.max(0.0), max_force.max(0.0)),
+        };
+        for &(h, a, b) in &r.joints {
+            let Some(j) = self.world.impulse_joints.get_mut(h, true) else {
+                continue;
+            };
+            let (Some(ra), Some(rb)) = (rotations.get(a), rotations.get(b)) else {
+                continue;
+            };
+            let relative = (j.data.local_frame1.rotation.inverse()
+                * ra.inverse()
+                * *rb
+                * j.data.local_frame2.rotation)
+                .normalize();
+            let target = relative.to_scaled_axis();
+            let weight = weights.get(b).copied().unwrap_or(1.0).clamp(0.0, 1.0);
+            j.data.motor_axes = JointAxesMask::empty();
+            if !target.is_finite() || !force.is_finite() || force == 0.0 {
+                continue;
+            }
+            for (axis, angle) in [JointAxis::AngX, JointAxis::AngY, JointAxis::AngZ]
+                .into_iter()
+                .zip(target.to_array())
+            {
+                if j.data.locked_axes.contains(axis.into()) {
+                    continue;
+                }
+                // Acceleration motors make the response independent of the
+                // actor's mass. Havok-to-Rapier gain mapping is provisional.
+                j.data.set_motor_model(axis, MotorModel::AccelerationBased);
+                j.data
+                    .set_motor_position(axis, angle, tau * 40.0 * weight, damping * 8.0 * weight);
+                j.data.set_motor_max_force(axis, force * weight);
+            }
+        }
+    }
+
+    pub fn keyframe_ragdoll(&mut self, r: &Ragdoll, transforms: &[Mat4], dt: f32) {
+        if dt <= 0.0 {
+            return;
+        }
+        for (&h, &m) in r.bodies.iter().zip(transforms) {
+            if !m.is_finite() {
+                continue;
+            }
+            if let Some(b) = self.world.bodies.get_mut(h) {
+                b.set_body_type(RigidBodyType::KinematicPositionBased, true);
+                b.set_next_kinematic_position(shapes::decompose(m).0);
+            }
+        }
+    }
+
+    pub fn ragdoll_velocities(&self, r: &Ragdoll) -> Vec<(Vec3, Vec3)> {
+        r.bodies
+            .iter()
+            .map(|&h| {
+                self.world
+                    .bodies
+                    .get(h)
+                    .map_or((Vec3::ZERO, Vec3::ZERO), |b| (b.linvel(), b.angvel()))
+            })
+            .collect()
+    }
+    pub fn place_ragdoll(&mut self, r: &Ragdoll, transforms: &[Mat4], velocities: &[(Vec3, Vec3)]) {
+        for (i, (&h, &m)) in r.bodies.iter().zip(transforms).enumerate() {
+            if let Some(b) = self.world.bodies.get_mut(h) {
+                b.set_position(shapes::decompose(m).0, true);
+                if let Some(&(v, w)) = velocities.get(i) {
+                    b.set_linvel(v, true);
+                    b.set_angvel(w, true);
+                }
+            }
+        }
+    }
+
+    pub fn ragdoll_at_rest(&self, r: &Ragdoll, linear: f32, angular: f32) -> bool {
+        !r.bodies.is_empty()
+            && r.bodies.iter().all(|&h| {
+                self.world.bodies.get(h).is_some_and(|b| {
+                    b.linvel().length() <= linear && b.angvel().length() <= angular
+                })
+            })
+    }
+
+    /// Keep every body and joint, disabling motors and releasing keyframes.
+    pub fn ragdoll_into_corpse(&mut self, r: &mut Ragdoll) {
+        r.mode = RagdollMode::Limp;
+        for &(h, _, _) in &r.joints {
+            if let Some(j) = self.world.impulse_joints.get_mut(h, true) {
+                j.data.motor_axes = JointAxesMask::empty();
+            }
+        }
+        for &h in &r.bodies {
+            if let Some(b) = self.world.bodies.get_mut(h) {
+                let keyframed = b.is_kinematic();
+                b.set_body_type(RigidBodyType::Dynamic, true);
+                if keyframed {
+                    b.set_linvel(Vec3::ZERO, true);
+                    b.set_angvel(Vec3::ZERO, true);
+                }
+            }
+        }
     }
 
     /// A ball-and-socket joint between two bodies at the points given in
@@ -1045,6 +1212,22 @@ impl Physics {
             true,
             QueryFilter::default().predicate(&not_actor),
         )?;
+        Some((hit.time_of_impact, hit.normal))
+    }
+
+    /// Support below a recovering actor, excluding its own physical bodies.
+    pub fn recovery_ground(&self, origin: Vec3, max: f32) -> Option<(f32, Vec3)> {
+        let filter =
+            QueryFilter::exclude_dynamic()
+                .exclude_sensors()
+                .groups(InteractionGroups::new(
+                    Group::ALL,
+                    Group::ALL ^ RAGDOLL_GROUP ^ ACTOR_GROUP,
+                    InteractionTestMode::And,
+                ));
+        let (_, hit) =
+            self.world
+                .cast_ray_and_get_normal(&Ray::new(origin, -Vec3::Z), max, true, filter)?;
         Some((hit.time_of_impact, hit.normal))
     }
 
@@ -1453,6 +1636,7 @@ mod tests {
             |_| Mat4::from_translation(at),
             Vec3::ZERO,
             esp::FormId(owner),
+            RagdollMode::Limp,
         );
         rd.bodies[0]
     }
@@ -1461,6 +1645,100 @@ mod tests {
         for _ in 0..steps {
             p.step(1.0 / 60.0);
         }
+    }
+
+    #[test]
+    fn living_ragdoll_impulses_rest_keyframes_and_corpse_handoff() {
+        let mut p = floor();
+        let desc = RagdollDesc {
+            bodies: vec![capsule(-Vec3::X * 10.0, Vec3::X * 10.0, 5.0)],
+            joints: vec![],
+        };
+        let mut r = p.spawn_ragdoll(
+            &desc,
+            |_| Mat4::from_translation(Vec3::Z * 20.0),
+            Vec3::ZERO,
+            esp::FormId(1),
+            RagdollMode::Limp,
+        );
+        assert!(p.ragdoll_at_rest(&r, 1.0, 0.1));
+        p.apply_ragdoll_impulse(&r, Vec3::X * 100.0, None);
+        assert!(!p.ragdoll_at_rest(&r, 1.0, 0.1));
+        settle(&mut p, 300);
+        assert!(p.ragdoll_bodies(&r)[0].w_axis.x > 10.0);
+        assert!(p.ragdoll_at_rest(&r, 2.0, 0.1));
+        let at = Mat4::from_translation(Vec3::new(0.0, 0.0, 50.0));
+        p.keyframe_ragdoll(&r, &[at], 1.0 / 60.0);
+        p.step(1.0 / 60.0);
+        assert!((p.ragdoll_bodies(&r)[0].w_axis.z - 50.0).abs() < 0.01);
+        let handles = r.bodies.clone();
+        p.ragdoll_into_corpse(&mut r);
+        assert_eq!(r.bodies, handles);
+        settle(&mut p, 60);
+        assert!(
+            p.ragdoll_bodies(&r)[0].w_axis.z < 10.0,
+            "corpse height {}",
+            p.ragdoll_bodies(&r)[0].w_axis.z
+        );
+    }
+
+    #[test]
+    fn powered_joint_returns_toward_its_target_and_zero_force_is_limp() {
+        let mut p = Physics::new();
+        p.world.gravity = Vec3::ZERO;
+        let desc = RagdollDesc {
+            bodies: vec![
+                capsule(-Vec3::X, Vec3::X, 1.0),
+                capsule(-Vec3::X, Vec3::X, 1.0),
+            ],
+            joints: vec![crate::world::ragdoll::RagdollJoint {
+                a: 0,
+                b: 1,
+                frame_a: (Vec3::ZERO, glam::Quat::IDENTITY),
+                frame_b: (Vec3::ZERO, glam::Quat::IDENTITY),
+                limits: [Some((-2.0, 2.0)); 3],
+                kind: crate::world::ragdoll::JointKind::Limited,
+                breaks: None,
+            }],
+        };
+        let mut r = p.spawn_ragdoll(
+            &desc,
+            |i| Mat4::from_rotation_z(i as f32),
+            Vec3::ZERO,
+            esp::FormId(1),
+            RagdollMode::Limp,
+        );
+        let targets = [glam::Quat::IDENTITY; 2];
+        p.set_ragdoll_targets(
+            &mut r,
+            &targets,
+            &[1.0; 2],
+            RagdollMode::Powered {
+                tau: 0.8,
+                damping: 1.0,
+                max_force: 0.0,
+            },
+        );
+        settle(&mut p, 10);
+        let handles = r.bodies.clone();
+        let error = |p: &Physics| {
+            let a = p.world.bodies[handles[0]].rotation();
+            let b = p.world.bodies[handles[1]].rotation();
+            a.angle_between(*b).abs()
+        };
+        assert!(error(&p) > 0.9);
+        p.set_ragdoll_targets(
+            &mut r,
+            &targets,
+            &[1.0; 2],
+            RagdollMode::Powered {
+                tau: 0.8,
+                damping: 1.0,
+                max_force: 200.0,
+            },
+        );
+        settle(&mut p, 180);
+        assert!(error(&p) < 0.2, "remaining angle {}", error(&p));
     }
 
     #[test]
@@ -1489,6 +1767,7 @@ mod tests {
             |_| Mat4::from_translation(Vec3::Z * 10.0),
             Vec3::ZERO,
             esp::FormId(1),
+            RagdollMode::Limp,
         );
         settle(&mut p, 60);
         for h in rd.bodies {
@@ -1551,6 +1830,7 @@ mod tests {
             |i| Mat4::from_translation(at[i]),
             Vec3::ZERO,
             esp::FormId(1),
+            RagdollMode::Limp,
         );
         let leg = p.body_pose(rd.bodies[1]).unwrap().0.w_axis;
         assert!(

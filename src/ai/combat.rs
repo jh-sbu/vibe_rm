@@ -3876,6 +3876,7 @@ impl Engine {
                 },
                 velocity,
                 actor,
+                crate::physics::RagdollMode::Limp,
             );
             let mapping = RagdollPose::new(&desc, &skeleton, &pose, transform);
             if let Some(a) = self
