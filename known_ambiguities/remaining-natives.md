@@ -297,3 +297,6 @@ Research: `research/pex-natives/actor-batch12-states.md` and
   a cart starts that many degrees from the seat's heading, positive to the
   right (the sign is a guess; MQ101 passes -55), and turns with the seat.
   Furniture seats don't use it yet (the player doesn't sit in furniture).
+- `ShowFirstPersonGeometry(false)` stops drawing the player's first-person
+  body until shown again (saved); the third-person body is unaffected.
+- The title sequence: see `research/ui/title-sequence.md`.

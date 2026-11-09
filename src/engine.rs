@@ -67,6 +67,15 @@ pub enum Location {
 /// and again dressing actors whose models came in (one of each always).
 const DRESS_BUDGET: std::time::Duration = std::time::Duration::from_millis(3);
 
+/// `Game.ShowTitleSequenceMenu` / `StartTitleSequence` /
+/// `HideTitleSequenceMenu`: whether the menu is up and the sequences started
+/// since the UI last looked.
+#[derive(Default)]
+pub struct TitleSequence {
+    pub shown: bool,
+    pub started: Vec<String>,
+}
+
 pub struct Engine {
     pub lo: LoadOrder,
     pub(crate) recipes: crate::world::crafting::Recipes,
@@ -268,6 +277,12 @@ pub struct Engine {
     pub sitting_rotation: f32,
     /// The heading of the seat the player rides in, last frame.
     pub player_seat_heading: Option<f32>,
+    /// `Game.ShowFirstPersonGeometry(false)`: the first-person body isn't
+    /// drawn (saved in `FPGH`).
+    pub first_person_hidden: bool,
+    /// The title sequence menu (`ShowTitleSequenceMenu`) and the sequences
+    /// started on it, for the UI to play.
+    pub title_sequence: TitleSequence,
     /// `Debug.SetGodMode` (the console's `tgm`): the player takes no damage.
     pub god_mode: bool,
     /// `Debug.ToggleMenus` (the console's `tm`): the HUD and menus aren't
@@ -720,6 +735,8 @@ impl Engine {
             sungazing: false,
             sitting_rotation: 0.0,
             player_seat_heading: None,
+            first_person_hidden: false,
+            title_sequence: Default::default(),
             god_mode: false,
             menus_hidden: false,
             frame_rates: Default::default(),

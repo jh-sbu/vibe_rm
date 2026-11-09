@@ -95,6 +95,8 @@ pub struct SwfUi {
     credits: Option<main_menu::Credits>,
     /// The loading menu, while a load's screen is up.
     loading: Option<loading_menu::LoadingMenu>,
+    /// The title sequence (`titles.swf`), while scripts show it.
+    titles: Option<Menu>,
     buttons: Arc<Buttons>,
     size: (u32, u32),
     /// The keyboard's modifiers and the cursor, for the menus' input.
@@ -142,6 +144,7 @@ impl SwfUi {
             hud,
             message_box,
             cursor_menu,
+            titles: None,
             items: None,
             item_indices: Vec::new(),
             favorite: false,
@@ -302,6 +305,7 @@ impl SwfUi {
         self.map_menu(engine, dt);
         self.dialogue_menu(engine, dt);
         self.loading_menu(engine, dt);
+        self.title_sequence(engine, dt);
         self.message_box.update(engine);
         self.message_box.menu.advance(dt);
         for call in self.message_box.menu.take_calls() {
@@ -366,6 +370,34 @@ impl SwfUi {
                 answer(&main.menu, engine, &call);
             }
         }
+    }
+
+    /// The title sequence menu (`titles.swf`) while `ShowTitleSequenceMenu`
+    /// has it up: `StartTitleSequence("SequenceN")` plays its `sequenceN`
+    /// clip, which stops on its first frame again at its end.
+    fn title_sequence(&mut self, engine: &mut Engine, dt: Duration) {
+        if !engine.title_sequence.shown {
+            self.titles = None;
+            return;
+        }
+        if self.titles.is_none() {
+            match self.ui.open("titles.swf", self.size) {
+                Ok(m) => self.titles = Some(m),
+                Err(e) => {
+                    log::error!("title sequence: {e:#}");
+                    engine.title_sequence.shown = false;
+                    return;
+                }
+            }
+        }
+        let Some(titles) = &mut self.titles else {
+            return;
+        };
+        for name in std::mem::take(&mut engine.title_sequence.started) {
+            let clip = format!("_root.{}", name.to_ascii_lowercase());
+            titles.invoke(&format!("{clip}.gotoAndPlay"), &[num(2.0)]);
+        }
+        titles.advance(dt);
     }
 
     /// Opens the loading menu while a load's screen is up, closes it once
@@ -1574,6 +1606,10 @@ impl SwfUi {
             if let Some(level_up) = &stats.level_up {
                 menus.push(level_up);
             }
+        }
+        if let Some(titles) = &mut self.titles {
+            titles.render();
+            menus.push(titles);
         }
         if let Some(loading) = &mut self.loading {
             loading.menu.render();

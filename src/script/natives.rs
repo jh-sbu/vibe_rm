@@ -85,6 +85,26 @@ pub fn call(
         ("debug", "getplatformname") => v(Value::str("PC")),
         // No gamepad is read yet.
         ("game", "usinggamepad") => v(Value::Bool(false)),
+        ("game", "showfirstpersongeometry") => {
+            e.first_person_hidden = !args.first().is_none_or(|a| a.as_bool());
+            e.sync_first_person();
+            none()
+        }
+        // The opening's titles (`titles.swf`, played by the UI).
+        ("game", "showtitlesequencemenu") => {
+            e.title_sequence.shown = true;
+            none()
+        }
+        ("game", "starttitlesequence") => {
+            if e.title_sequence.shown {
+                e.title_sequence.started.push(arg(0).to_string());
+            }
+            none()
+        }
+        ("game", "hidetitlesequencemenu") => {
+            e.title_sequence = Default::default();
+            none()
+        }
         // The jail bed's sleep (`JailBedScript`).
         ("game", "servetime") => {
             e.serve_sentence();

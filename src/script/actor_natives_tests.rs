@@ -643,3 +643,25 @@ fn vampirism_and_lycanthropy_changes_reach_the_actors_scripts() {
             && args == &[Value::Bool(true)]
     }));
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn the_title_sequence_and_first_person_geometry_follow_the_opening() {
+    let (_f, mut e) = fixture("titles");
+    let mut game = |e: &mut Engine, func: &str, args: &[Value]| {
+        crate::script::natives::call(e, "game", func, None, args);
+    };
+    // A sequence started with no menu up is lost.
+    game(&mut e, "starttitlesequence", &[Value::str("Sequence1")]);
+    assert!(e.title_sequence.started.is_empty());
+    game(&mut e, "showtitlesequencemenu", &[]);
+    game(&mut e, "starttitlesequence", &[Value::str("Sequence1")]);
+    assert!(e.title_sequence.shown);
+    assert_eq!(e.title_sequence.started, vec!["Sequence1".to_string()]);
+    game(&mut e, "hidetitlesequencemenu", &[]);
+    assert!(!e.title_sequence.shown && e.title_sequence.started.is_empty());
+    game(&mut e, "showfirstpersongeometry", &[Value::Bool(false)]);
+    assert!(e.first_person_hidden);
+    game(&mut e, "showfirstpersongeometry", &[]);
+    assert!(!e.first_person_hidden);
+}

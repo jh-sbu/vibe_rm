@@ -535,8 +535,8 @@ impl Engine {
         first.particles.retain(|path, _| used.contains(path));
     }
 
-    fn sync_first_person(&mut self) {
-        self.scene.first_person = if self.third_person {
+    pub(crate) fn sync_first_person(&mut self) {
+        self.scene.first_person = if self.third_person || self.first_person_hidden {
             None
         } else {
             self.player_body

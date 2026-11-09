@@ -22,7 +22,7 @@
 //! `PDLG` (selected package Say responses and owning procedure tokens),
 //! `RLSP` (rolled leveled spell-list results),
 //! `WSTA` (ward-hit outcomes and their remaining `IsWardState` hold),
-//! `DETH` (killers and times of death), `DCNT` (deaths by actor base), `DSFL` (SetDestroyed flags), `UNCN` / `BRIB` / `INTI` / `BLDL` / `PCDL` (SetUnconscious, SetBribed, SetIntimidated, AllowBleedoutDialogue and AllowPCDialogue), `DFKL` (StartDeferredKill's actors and their pending killers), `ACAU` (SetActorCause), `LOSR` (line-of-sight registrations), `TSTL` (tracked-stats listeners), `STPT` (stealth-point reservoirs and
+//! `DETH` (killers and times of death), `DCNT` (deaths by actor base), `DSFL` (SetDestroyed flags), `UNCN` / `BRIB` / `INTI` / `BLDL` / `PCDL` (SetUnconscious, SetBribed, SetIntimidated, AllowBleedoutDialogue and AllowPCDialogue), `DFKL` (StartDeferredKill's actors and their pending killers), `ACAU` (SetActorCause), `LOSR` (line-of-sight registrations), `TSTL` (tracked-stats listeners), `FPGH` (ShowFirstPersonGeometry), `STPT` (stealth-point reservoirs and
 //! regeneration delays), `COWN` (the owners of dropped stolen items), `ORIG`
 //! (world-created references' initial transforms), and `VM` / `VMAR`
 //! (`super::vm`: the Papyrus VM) and `MBXW` (message boxes and supported
@@ -155,6 +155,7 @@ pub struct Snapshot {
     pub actor_causes: HashMap<FormId, FormId>,
     pub los: Vec<crate::registrations::LosRegistration>,
     pub tracked_stats_listeners: Vec<papyrus::ObjectId>,
+    pub first_person_hidden: bool,
     pub bleedout_dialogue: HashSet<FormId>,
     pub body_poses: HashMap<FormId, Vec<Mat4>>,
     pub wounds: HashMap<FormId, Wounds>,
@@ -598,6 +599,7 @@ impl Snapshot {
             actor_causes: ws.actor_causes.clone(),
             los: e.scripts.los.clone(),
             tracked_stats_listeners: e.scripts.tracked_stats_listeners.clone(),
+            first_person_hidden: e.first_person_hidden,
             bleedout_dialogue: ws.bleedout_dialogue.clone(),
             body_poses: ws.body_poses.clone(),
             wounds,
@@ -991,6 +993,10 @@ impl Snapshot {
             super::vm::put_object(&mut w, o);
         }
         file.add(b"TSTL", w.0);
+
+        let mut w = Writer::default();
+        w.bool(self.first_person_hidden);
+        file.add(b"FPGH", w.0);
 
         let mut w = Writer::default();
         w.len(self.destruction.len());
@@ -2263,6 +2269,11 @@ impl Snapshot {
             }
             r.finish()?;
         }
+        if let Some(data) = file.section(b"FPGH") {
+            let mut r = Reader::new(data);
+            s.first_person_hidden = r.bool()?;
+            r.finish()?;
+        }
         if let Some(data) = file.section(b"DSTR") {
             let mut r = Reader::new(data);
             for _ in 0..r.count(16)? {
@@ -2556,6 +2567,7 @@ impl Snapshot {
         s.sleep_listeners = self.vm.sleep_listeners;
         s.los = self.los;
         s.tracked_stats_listeners = self.tracked_stats_listeners;
+        e.first_person_hidden = self.first_person_hidden;
         s.inventory_filters = self
             .vm
             .inventory_filters
