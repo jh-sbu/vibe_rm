@@ -16,9 +16,12 @@ and Y), leaving its height and every rotation to the cart's wheels. A
 spherical joint, which also held the height, flipped MQ101's carts where the
 road steepens: `PrisonerCarriage01.nif`'s FrontBar hinge only steers (a
 vertical axis, ±0.698 rad), so a hitch held at the horse's height levers the
-cart round its front axle by about atan(drop / 180) (2026-11-08). Pick the body nearest the hitch, using a
-cart-local hitch (0,180,53), based on the FrontBar's position and front geometry;
-preserve its initial relation to the horse. The native joint's exact pivot,
+cart round its front axle by about atan(drop / 180) (2026-11-08). The joint holds the cart's root
+(heaviest) body at a cart-local hitch (0,180,53), based on the FrontBar's
+position and front geometry, preserving its initial relation to the horse.
+Picking the front-most body origin took the left front wheel (0.24 units
+ahead of the bar), which the horse dragged by its axle; hitching the 100 kg
+bar pulled 12000 kg through its hinge and threw the cart about (2026-11-08). The native joint's exact pivot,
 limits and compliance remain unmeasured. Existing NIF wheel/steering hinges
 continue to run; static carts remain static. Rebuild joints after cell loads;
 save the relationship and passenger offsets rather than physics handles.
