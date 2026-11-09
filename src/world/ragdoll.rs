@@ -246,6 +246,31 @@ impl RagdollPose {
         }
     }
 
+    pub fn rebase(&mut self, actor: Mat4) {
+        self.inv_actor = actor.inverse();
+    }
+    pub fn initial_pose(&self) -> Vec<Mat4> {
+        self.base.clone()
+    }
+    pub fn pose_animated(
+        &self,
+        skeleton: &Skeleton,
+        bodies: &[Mat4],
+        animation: &[Mat4],
+    ) -> Vec<Mat4> {
+        let mut out = self.pose(skeleton, bodies);
+        for (i, b) in skeleton.bones.iter().enumerate() {
+            if self.driven[i].is_none() {
+                if let Some(parent) = b.parent.filter(|_| self.has_driven_ancestor(skeleton, i)) {
+                    if let (Some(&a), Some(&p)) = (animation.get(i), animation.get(parent)) {
+                        out[i] = out[parent] * p.inverse() * a;
+                    }
+                }
+            }
+        }
+        out
+    }
+
     /// The body that drives bone `bone`, if one does.
     pub fn body_of_bone(&self, bone: usize) -> Option<usize> {
         self.driven.get(bone).copied().flatten()

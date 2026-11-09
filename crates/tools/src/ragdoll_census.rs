@@ -145,6 +145,22 @@ pub fn run(data: &str) -> Result<()> {
                     }
                 }
             }
+            for (i, m) in g.modifiers.iter().enumerate() {
+                if matches!(
+                    m,
+                    havok::behavior::Modifier::GetUp(_)
+                        | havok::behavior::Modifier::PoweredRagdoll(_)
+                        | havok::behavior::Modifier::RigidBodyRagdoll(_)
+                        | havok::behavior::Modifier::KeyframeBones(_)
+                        | havok::behavior::Modifier::ContactListener(_)
+                ) {
+                    println!(
+                        "PARSED_CONTROL {full} {m:?} bindings={:?} properties={:?}",
+                        g.modifier_bindings.get(i),
+                        g.modifier_property_bindings.get(i)
+                    );
+                }
+            }
             if let Some(bytes) = v.read(&full) {
                 let pack = havok::Packfile::parse(&bytes)?;
                 for o in &pack.objects {

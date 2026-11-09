@@ -79,7 +79,8 @@ impl Project {
                 entered.push((gi, g, s.id));
                 self.descend(gi, s.generator?, stack, nested, entered, depth + 1)
             }
-            Generator::Blender { .. }
+            Generator::PoseMatching { .. }
+            | Generator::Blender { .. }
             | Generator::Selector { .. }
             | Generator::Wrap { .. }
             | Generator::BoneSwitch { .. } => {

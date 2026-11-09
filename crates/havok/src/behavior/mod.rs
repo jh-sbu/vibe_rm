@@ -5,6 +5,7 @@
 //! does this event play?" questions.
 
 pub mod expr;
+pub mod ragdoll;
 pub mod resolve;
 pub mod runtime;
 
@@ -404,7 +405,7 @@ pub enum Generator {
         states: Vec<State>,
         wildcards: Vec<Transition>,
     },
-    /// Weighted blend of children (`hkbBlenderGenerator`, `hkbPoseMatchingGenerator`).
+    /// Weighted blend of children (`hkbBlenderGenerator`).
     Blender {
         name: String,
         parameter: f32,
@@ -414,6 +415,11 @@ pub enum Generator {
         sync_master_child: i16,
         flags: u16,
         children: Vec<BlendChild>,
+    },
+    PoseMatching {
+        name: String,
+        children: Vec<GenId>,
+        settings: ragdoll::PoseMatching,
     },
     /// One child at a time, picked by a (bound) index.
     Selector {
@@ -453,6 +459,7 @@ impl Generator {
             | Generator::Clip { name, .. }
             | Generator::StateMachine { name, .. }
             | Generator::Blender { name, .. }
+            | Generator::PoseMatching { name, .. }
             | Generator::Selector { name, .. }
             | Generator::Wrap { name, .. }
             | Generator::BoneSwitch { name, .. }
@@ -467,7 +474,9 @@ impl Generator {
             Generator::Blender { children, .. } => {
                 children.iter().filter_map(|c| c.generator).collect()
             }
-            Generator::Selector { children, .. } => children.clone(),
+            Generator::Selector { children, .. } | Generator::PoseMatching { children, .. } => {
+                children.clone()
+            }
             Generator::Wrap { child, .. } => child.iter().copied().collect(),
             Generator::BoneSwitch {
                 default, children, ..
@@ -548,6 +557,11 @@ pub enum Modifier {
     /// `hkbRotateCharacterModifier`: character rotation settings; the
     /// runtime turns them into a yaw the engine adds to root motion.
     RotateCharacter(RotateCharacter),
+    GetUp(ragdoll::GetUp),
+    PoweredRagdoll(ragdoll::PoweredRagdoll),
+    RigidBodyRagdoll(ragdoll::RigidBodyRagdoll),
+    KeyframeBones(ragdoll::KeyframeBones),
+    ContactListener(ragdoll::ContactListener),
     Other(String),
 }
 
@@ -1203,6 +1217,23 @@ impl<'a> Reader<'a> {
                 result: p.f32(o + 0x58),
                 duration: p.f32(o + 0x5C),
             },
+            "hkbGetUpModifier" => Modifier::GetUp(ragdoll::GetUp::read(p, o)),
+            "hkbPoweredRagdollControlsModifier" => {
+                Modifier::PoweredRagdoll(ragdoll::PoweredRagdoll::read(p, o))
+            }
+            "hkbRigidBodyRagdollControlsModifier" => {
+                Modifier::RigidBodyRagdoll(ragdoll::RigidBodyRagdoll::read(p, o))
+            }
+            "hkbKeyframeBonesModifier" => {
+                Modifier::KeyframeBones(ragdoll::KeyframeBones::read(p, o))
+            }
+            "BSRagdollContactListenerModifier" => {
+                Modifier::ContactListener(ragdoll::ContactListener {
+                    enabled: p.u8(o + 0x48) != 0,
+                    event: self.event_property(o + 0x58),
+                    bones: ragdoll::indices(p, o + 0x68),
+                })
+            }
             "hkbTwistModifier" => Modifier::Twist(Twist::read(p, o)),
             "hkbRotateCharacterModifier" => Modifier::RotateCharacter(RotateCharacter::read(p, o)),
             "BSLookAtModifier" => {
@@ -1353,16 +1384,24 @@ impl<'a> Reader<'a> {
                         bone_weights_property: self.character_property(c, "boneWeights"),
                     });
                 }
-                Generator::Blender {
-                    name,
-                    parameter: p.f32(o + 0x4C),
-                    min_cyclic: p.f32(o + 0x50),
-                    max_cyclic: p.f32(o + 0x54),
-                    // Community editor source identifies the integer member;
-                    // installed behavior assets corroborate its signed i16 slot.
-                    sync_master_child: p.i16(o + 0x58),
-                    flags: p.u16(o + 0x5A),
-                    children,
+                if class == "hkbPoseMatchingGenerator" {
+                    Generator::PoseMatching {
+                        name,
+                        children: children.into_iter().filter_map(|c| c.generator).collect(),
+                        settings: ragdoll::PoseMatching::read(p, o),
+                    }
+                } else {
+                    Generator::Blender {
+                        name,
+                        parameter: p.f32(o + 0x4C),
+                        min_cyclic: p.f32(o + 0x50),
+                        max_cyclic: p.f32(o + 0x54),
+                        // Community editor source identifies the integer member;
+                        // installed behavior assets corroborate its signed i16 slot.
+                        sync_master_child: p.i16(o + 0x58),
+                        flags: p.u16(o + 0x5A),
+                        children,
+                    }
                 }
             }
             "hkbManualSelectorGenerator" => {

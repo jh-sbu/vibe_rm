@@ -1268,6 +1268,18 @@ fn main() -> Result<()> {
                             .collect();
                         println!("{pad}clip {name} {animation} {mode:?} x{speed} {t:?}");
                     }
+                    G::PoseMatching {
+                        name,
+                        children,
+                        settings,
+                    } => {
+                        println!("{pad}pose matcher {name} {settings:?}");
+                        if depth < max {
+                            for &c in children {
+                                show(g, c, depth + 1, max);
+                            }
+                        }
+                    }
                     G::StateMachine {
                         name,
                         start,

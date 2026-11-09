@@ -190,6 +190,7 @@ impl GraphLibrary {
 
 /// What a graph update produced.
 pub struct Frame {
+    pub ragdoll: havok::behavior::ragdoll::FrameOutput,
     pub pose: Vec<Mat4>,
     /// The bones' local transforms the pose is made of.
     pub locals: Vec<Transform>,
@@ -233,6 +234,9 @@ pub struct GraphAnim {
     pinned: ScriptPins,
     /// A second graph posing some of the same skeleton's bones (a tail's).
     aux: Option<Box<AuxGraph>>,
+    ragdoll_pose: Option<Vec<Mat4>>,
+    get_up_source: Option<Vec<Transform>>,
+    pub ragdoll_controls: havok::behavior::ragdoll::FrameOutput,
 }
 
 /// A graph running beside an actor's own, posing bones of the actor's skeleton
@@ -366,6 +370,34 @@ impl Source<'_> {
 }
 
 impl havok::behavior::runtime::ClipSource for Source<'_> {
+    fn model_pose(&mut self, animation: &str, time: f32) -> Option<Vec<Mat4>> {
+        let clip = self.clip(animation)?;
+        let mut locals = self.skeleton.bind_locals();
+        let mut qs = Vec::new();
+        clip.anim.sample(time, &mut qs);
+        for (track, q) in qs.iter().enumerate() {
+            if let Some(Some(b)) = clip.track_to_bone.get(track) {
+                locals[*b] = Transform {
+                    translation: q.translation,
+                    rotation: glam::Mat3::from_quat(q.rotation),
+                    scale: q.scale.x,
+                };
+            }
+        }
+        let model = self.skeleton.model_space(&locals);
+        let map = self
+            .anims
+            .havok_bone_map(self.vfs, self.skeleton_path, self.skeleton);
+        Some(
+            map.iter()
+                .map(|b| {
+                    b.and_then(|i| model.get(i))
+                        .copied()
+                        .unwrap_or(Mat4::IDENTITY)
+                })
+                .collect(),
+        )
+    }
     fn duration(&mut self, animation: &str) -> Option<f32> {
         self.clip(animation).map(|c| c.duration())
     }
@@ -427,6 +459,9 @@ impl GraphAnim {
             scratch: Vec::new(),
             pinned: ScriptPins::default(),
             aux: None,
+            ragdoll_pose: None,
+            get_up_source: None,
+            ragdoll_controls: Default::default(),
         }
     }
 
@@ -605,6 +640,73 @@ impl GraphAnim {
         self.aux = Some(aux);
     }
 
+    pub fn reset_get_up_source(&mut self) {
+        self.get_up_source = None;
+    }
+    pub fn clear_ragdoll_pose(&mut self) {
+        self.ragdoll_pose = None;
+        self.get_up_source = None;
+        self.inst.set_ragdoll_pose(Vec::new());
+    }
+
+    pub fn set_ragdoll_pose(
+        &mut self,
+        pose: Vec<Mat4>,
+        skeleton: &Skeleton,
+        vfs: &vfs::Vfs,
+        anims: &mut AnimationLibrary,
+    ) {
+        let map = self
+            .hk_bones
+            .get_or_insert_with(|| anims.havok_bone_map(vfs, &self.skeleton_path, skeleton));
+        self.inst.set_ragdoll_pose(
+            map.iter()
+                .map(|b| {
+                    b.and_then(|i| pose.get(i))
+                        .copied()
+                        .unwrap_or(Mat4::IDENTITY)
+                })
+                .collect(),
+        );
+        self.ragdoll_pose = Some(pose);
+    }
+
+    /// Powered controls' weights refer to the Havok skeleton, not the NIF.
+    pub fn ragdoll_body_weights(
+        &mut self,
+        skeleton: &Skeleton,
+        vfs: &vfs::Vfs,
+        anims: &mut AnimationLibrary,
+        hk_weights: &[f32],
+    ) -> Vec<f32> {
+        let map = self
+            .hk_bones
+            .get_or_insert_with(|| anims.havok_bone_map(vfs, &self.skeleton_path, skeleton));
+        skeleton
+            .ragdoll
+            .as_ref()
+            .map(|d| {
+                d.bodies
+                    .iter()
+                    .map(|b| {
+                        map.iter()
+                            .position(|i| *i == Some(b.bone))
+                            .and_then(|i| hk_weights.get(i))
+                            .copied()
+                            .unwrap_or(1.0)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    pub fn can_get_up(&self) -> bool {
+        self.project.shared.project.graphs.iter().any(|(_, g)| g.generators.iter().any(|n| {
+            matches!(n, havok::behavior::Generator::StateMachine { states, .. } if states.iter().any(|s|
+                s.name.to_ascii_lowercase().replace([' ', '_'], "").contains("getupfromragdoll")))
+        }))
+    }
+
     pub fn project(&self) -> &Arc<ProjectRuntime> {
         &self.project
     }
@@ -722,6 +824,7 @@ impl GraphAnim {
         let samples = inst.samples();
         let raised = inst.take_raised();
         let turn = inst.character_turn(dt);
+        let ragdoll = inst.ragdoll_controls();
         let clips: Vec<Option<Arc<BoundClip>>> =
             samples.iter().map(|s| src.clip(&s.animation)).collect();
 
@@ -909,7 +1012,34 @@ impl GraphAnim {
             self.inst
                 .set_variable("LookAtOutOfRange", if outside { 1.0 } else { 0.0 });
         }
+        if let Some((get_up, elapsed)) = &ragdoll.get_up {
+            if self.get_up_source.is_none() {
+                self.get_up_source = self.ragdoll_pose.as_ref().map(|p| {
+                    skeleton
+                        .bones
+                        .iter()
+                        .enumerate()
+                        .map(|(i, b)| {
+                            let m = b.parent.map_or(p[i], |parent| p[parent].inverse() * p[i]);
+                            let (scale, rotation, translation) = m.to_scale_rotation_translation();
+                            Transform {
+                                translation,
+                                rotation: glam::Mat3::from_quat(rotation),
+                                scale: scale.x,
+                            }
+                        })
+                        .collect()
+                });
+            }
+            if let Some(from) = &self.get_up_source {
+                blend_get_up(&mut locals, from, *elapsed, get_up);
+            }
+        } else {
+            self.get_up_source = None;
+        }
+        self.ragdoll_controls = ragdoll.clone();
         Frame {
+            ragdoll,
             pose: skeleton.model_space(&locals),
             locals,
             motion,
@@ -919,10 +1049,68 @@ impl GraphAnim {
     }
 }
 
+/// Local-space interpolation preserves the parent/child skeleton hierarchy.
+fn blend_get_up(
+    locals: &mut [Transform],
+    from: &[Transform],
+    elapsed: f32,
+    settings: &havok::behavior::ragdoll::GetUp,
+) {
+    let t = if settings.duration > 0.0 {
+        (elapsed / settings.duration).clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    for (i, (out, start)) in locals.iter_mut().zip(from).enumerate() {
+        let rotation_t = if i == 0 && settings.align_duration > 0.0 {
+            (elapsed / settings.align_duration).clamp(0.0, 1.0)
+        } else {
+            t
+        };
+        out.translation = start.translation.lerp(out.translation, t);
+        out.rotation = glam::Mat3::from_quat(
+            Quat::from_mat3(&start.rotation).slerp(Quat::from_mat3(&out.rotation), rotation_t),
+        );
+        out.scale = start.scale + (out.scale - start.scale) * t;
+    }
+}
+
 #[cfg(test)]
 mod pin_tests {
     use super::{ScriptPins, draw_event, redraw_event, take_bones};
     use nif::Transform;
+
+    #[test]
+    fn get_up_blend_preserves_endpoints_and_aligns_root_first() {
+        use glam::{Mat3, Vec3};
+        let from = vec![Transform {
+            translation: Vec3::new(1.0, 2.0, 3.0),
+            rotation: Mat3::from_rotation_x(1.0),
+            scale: 1.0,
+        }];
+        let target = vec![Transform {
+            translation: Vec3::Z * 10.0,
+            rotation: Mat3::IDENTITY,
+            scale: 1.0,
+        }];
+        let settings = havok::behavior::ragdoll::GetUp {
+            enabled: true,
+            ground_normal: Vec3::Z,
+            duration: 1.0,
+            align_duration: 0.25,
+            bones: [0, 1, 2],
+        };
+        let mut p = target.clone();
+        super::blend_get_up(&mut p, &from, 0.0, &settings);
+        assert!(p[0].to_mat4().abs_diff_eq(from[0].to_mat4(), 1e-5));
+        let mut p = target.clone();
+        super::blend_get_up(&mut p, &from, 0.25, &settings);
+        assert!(p[0].rotation.abs_diff_eq(Mat3::IDENTITY, 1e-5));
+        assert!(p[0].translation.distance(target[0].translation) > 1.0);
+        let mut p = target.clone();
+        super::blend_get_up(&mut p, &from, 1.0, &settings);
+        assert!(p[0].to_mat4().abs_diff_eq(target[0].to_mat4(), 1e-5));
+    }
 
     #[test]
     fn outfit_changes_keep_replace_and_remove_wearer_graphs() {

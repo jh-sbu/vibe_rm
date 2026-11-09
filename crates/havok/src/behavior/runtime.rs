@@ -21,6 +21,10 @@ use super::*;
 /// (`Animations\male\MT_Idle.hkx`).
 pub trait ClipSource {
     fn duration(&mut self, animation: &str) -> Option<f32>;
+    /// Model-space pose in Havok bone order, used only by pose matchers.
+    fn model_pose(&mut self, _animation: &str, _time: f32) -> Option<Vec<glam::Mat4>> {
+        None
+    }
     fn sequence_looping(&mut self, _name: &str) -> bool {
         false
     }
@@ -515,6 +519,10 @@ pub struct Instance {
     queue: VecDeque<Event>,
     raised: Vec<Raised>,
     rng: u64,
+    ragdoll_pose: Vec<glam::Mat4>,
+    pose_playing: bool,
+    matching_yaw: Option<f32>,
+    modifier_times: HashMap<(usize, ModId), f32>,
     /// State changes so far (see [`Instance::changes`]).
     changes: u64,
     /// Transitions taken, when tracing.
@@ -523,6 +531,10 @@ pub struct Instance {
 
 /// Passed down while activating / updating.
 struct Ctx<'a> {
+    ragdoll_pose: &'a [glam::Mat4],
+    pose_playing: &'a mut bool,
+    matching_yaw: &'a mut Option<f32>,
+    modifier_times: &'a mut HashMap<(usize, ModId), f32>,
     shared: &'a Shared,
     values: &'a mut Vec<f32>,
     queue: &'a mut VecDeque<Event>,
@@ -695,6 +707,47 @@ impl Ctx<'_> {
             .iter()
             .position(|&e| e == global)
             .map(|i| i as i32)
+    }
+
+    fn first_pose(&mut self, gi: usize, g: GenId, depth: usize) -> Option<Vec<glam::Mat4>> {
+        if depth > 32 {
+            return None;
+        }
+        match &self.shared.graph(gi).generators[g] {
+            Generator::Clip {
+                animation,
+                crop_start,
+                start_time,
+                ..
+            } => self.clips.model_pose(animation, *crop_start + *start_time),
+            other => {
+                let children = other.children();
+                children
+                    .into_iter()
+                    .find_map(|c| self.first_pose(gi, c, depth + 1))
+            }
+        }
+    }
+
+    fn match_child(
+        &mut self,
+        gi: usize,
+        children: &[GenId],
+        settings: &ragdoll::PoseMatching,
+    ) -> (usize, Option<f32>) {
+        let mut best = None;
+        for (i, &c) in children.iter().enumerate() {
+            if let Some(pose) = self.first_pose(gi, c, 0) {
+                if let Some((error, yaw)) =
+                    ragdoll::match_error(self.ragdoll_pose, &pose, &settings.bones)
+                {
+                    if best.is_none_or(|(_, e, _)| error < e) {
+                        best = Some((i, error, yaw));
+                    }
+                }
+            }
+        }
+        best.map_or((0, None), |(i, _, yaw)| (i, Some(yaw)))
     }
 
     // ------------------------------------------------------------ activation
@@ -874,6 +927,16 @@ impl Ctx<'_> {
                         phase: 0.0,
                     }
                 }
+                Generator::PoseMatching {
+                    children, settings, ..
+                } => {
+                    let (i, yaw) = self.match_child(gi, children, settings);
+                    *self.matching_yaw = yaw;
+                    let child = children
+                        .get(i)
+                        .map(|&c| Box::new(self.activate(gi, c, nested, depth + 1)));
+                    Kind::Select { index: i, child }
+                }
                 Generator::Selector {
                     children, index, ..
                 } => {
@@ -985,6 +1048,7 @@ impl Ctx<'_> {
             }
             _ => ModKind::Plain,
         };
+        self.modifier_times.insert((gi, m), 0.0);
         ModState { gi, m, kind }
     }
 
@@ -1078,6 +1142,20 @@ impl Ctx<'_> {
     /// Offer `ev` to the active tree, outer state machines first. True when some
     /// state machine changed state.
     fn handle(&mut self, node: &mut Node, ev: &Event) -> bool {
+        for (gi, (_, graph)) in self.shared.project.graphs.iter().enumerate() {
+            let local = self.local_event(gi, ev.id);
+            for gen_ in &graph.generators {
+                if let Generator::PoseMatching { settings, .. } = gen_ {
+                    if local == Some(settings.start_playing_event) {
+                        *self.pose_playing = true;
+                    }
+                    if local == Some(settings.start_matching_event) {
+                        *self.pose_playing = false;
+                    }
+                }
+            }
+        }
+
         let gi = node.gi;
         match &mut node.kind {
             Kind::Machine(m) => {
@@ -1660,6 +1738,28 @@ impl Ctx<'_> {
             }
             Kind::Select { index, child } => {
                 let graph = self.shared.graph(gi);
+                if let Generator::PoseMatching {
+                    children, settings, ..
+                } = &graph.generators[g]
+                {
+                    let playing = *self.pose_playing || settings.mode == 1;
+                    if !playing {
+                        let (want, yaw) = self.match_child(gi, children, settings);
+                        *self.matching_yaw = yaw;
+                        if want != *index {
+                            if let Some(old) = child.take() {
+                                self.deactivate(*old);
+                            }
+                            *child = children
+                                .get(want)
+                                .map(|&c| Box::new(self.activate(gi, c, &mut None, 1)));
+                            *index = want;
+                        }
+                    } else if let Some(c) = child {
+                        self.advance(c, dt);
+                    }
+                    return;
+                }
                 let Generator::Selector {
                     children,
                     index: fixed,
@@ -1871,6 +1971,7 @@ impl Ctx<'_> {
     }
 
     fn advance_modifier(&mut self, m: &mut ModState, dt: f32) {
+        *self.modifier_times.entry((m.gi, m.m)).or_default() += dt;
         let gi = m.gi;
         let graph = self.shared.graph(gi);
         if self
@@ -2366,6 +2467,10 @@ impl Instance {
             rng: seed | 1,
             changes: 0,
             trace: None,
+            ragdoll_pose: Vec::new(),
+            pose_playing: false,
+            matching_yaw: None,
+            modifier_times: HashMap::new(),
         }
     }
 
@@ -2386,6 +2491,10 @@ impl Instance {
 
     fn ctx<'a>(&'a mut self, clips: &'a mut dyn ClipSource) -> Ctx<'a> {
         Ctx {
+            ragdoll_pose: &self.ragdoll_pose,
+            pose_playing: &mut self.pose_playing,
+            matching_yaw: &mut self.matching_yaw,
+            modifier_times: &mut self.modifier_times,
             shared: &self.shared,
             values: &mut self.values,
             queue: &mut self.queue,
@@ -2506,6 +2615,10 @@ impl Instance {
         let mut out = Vec::new();
         if let Some(root) = &self.root {
             let ctx = Ctx {
+                ragdoll_pose: &self.ragdoll_pose,
+                pose_playing: &mut self.pose_playing.clone(),
+                matching_yaw: &mut self.matching_yaw.clone(),
+                modifier_times: &mut self.modifier_times.clone(),
                 shared: &self.shared,
                 values: &mut self.values.clone(),
                 queue: &mut VecDeque::new(),
@@ -2639,6 +2752,65 @@ impl Instance {
                             .any(|b| b.member == *member)
                     }),
             )
+    }
+
+    /// Physics input stays separate from simulation; the engine supplies it in
+    /// Havok bone order before updating the graph.
+    pub fn set_ragdoll_pose(&mut self, pose: Vec<glam::Mat4>) {
+        self.ragdoll_pose = pose;
+    }
+
+    pub fn ragdoll_controls(&self) -> ragdoll::FrameOutput {
+        let mut out = ragdoll::FrameOutput {
+            matching_yaw: self.matching_yaw,
+            ..Default::default()
+        };
+        for (gi, m) in self.running_modifiers() {
+            match &self.shared.graph(gi).modifiers[m] {
+                Modifier::GetUp(g) => {
+                    let mut g = g.clone();
+                    for (name, v) in self.bound_members(gi, m) {
+                        match name {
+                            "enable" => g.enabled = v.is_finite() && v != 0.0,
+                            "duration" => g.duration = v,
+                            "alignWithGroundDuration" => g.align_duration = v,
+                            _ => {}
+                        }
+                    }
+                    if g.enabled {
+                        out.get_up =
+                            Some((g, self.modifier_times.get(&(gi, m)).copied().unwrap_or(0.0)));
+                    }
+                }
+                Modifier::PoweredRagdoll(p) => {
+                    let mut p = p.clone();
+                    for (name, v) in self.bound_members(gi, m) {
+                        match name {
+                            "enable" => p.enabled = v.is_finite() && v != 0.0,
+                            "controlData/maxForce" => p.max_force = v,
+                            "controlData/tau" => p.tau = v,
+                            "controlData/damping" => p.damping = v,
+                            "controlData/proportionalRecoveryVelocity" => {
+                                p.proportional_recovery_velocity = v
+                            }
+                            "controlData/constantRecoveryVelocity" => {
+                                p.constant_recovery_velocity = v
+                            }
+                            "mode" => p.mode = v as u8,
+                            _ => {}
+                        }
+                    }
+                    if p.enabled {
+                        out.powered.push(p);
+                    }
+                }
+                Modifier::RigidBodyRagdoll(r) if r.enabled => out.rigid.push(r.clone()),
+                Modifier::KeyframeBones(k) if k.enabled => out.keyframe.push(k.clone()),
+                Modifier::ContactListener(c) if c.enabled => out.contacts.push(c.clone()),
+                _ => {}
+            }
+        }
+        out
     }
 
     /// Running character-rotation modifiers with scalar inputs resolved. Unsupported bindings omit the modifier rather than
@@ -2862,6 +3034,76 @@ mod tests {
             crop_start: 0.0,
             crop_end: 0.0,
             start_time: 0.0,
+        }
+    }
+
+    #[test]
+    fn pose_matching_selects_facing_and_only_advances_after_play_event() {
+        use glam::{Mat4, Quat, Vec3};
+        fn pose(front: bool) -> Vec<Mat4> {
+            let q = Quat::from_rotation_x(if front { 1.5 } else { -1.5 });
+            vec![
+                Mat4::from_quat(q),
+                Mat4::from_rotation_translation(q, Vec3::Z * 10.0),
+            ]
+        }
+        struct Clips;
+        impl ClipSource for Clips {
+            fn duration(&mut self, _: &str) -> Option<f32> {
+                Some(2.0)
+            }
+            fn model_pose(&mut self, name: &str, _: f32) -> Option<Vec<Mat4>> {
+                Some(pose(name == "front"))
+            }
+        }
+        let graph = BehaviorGraph::new(
+            "match",
+            Some(0),
+            vec![
+                Generator::PoseMatching {
+                    name: "matcher".into(),
+                    children: vec![1, 2],
+                    settings: ragdoll::PoseMatching {
+                        world_from_model_rotation: Quat::IDENTITY,
+                        blend_speed: 1.0,
+                        min_speed_to_switch: 0.2,
+                        min_switch_time_no_error: 0.2,
+                        min_switch_time_full_error: 0.0,
+                        start_playing_event: 0,
+                        start_matching_event: 1,
+                        bones: [0, 1, 1, 0],
+                        mode: 0,
+                    },
+                },
+                clip("front", ClipMode::SinglePlay, vec![]),
+                clip("back", ClipMode::SinglePlay, vec![]),
+            ],
+            vec!["Play".into(), "Match".into()],
+        );
+        let shared = Shared::new(Arc::new(Project {
+            graphs: vec![("match.hkx".into(), graph)],
+            character: None,
+        }));
+        for front in [false, true] {
+            let mut inst = Instance::new(shared.clone(), 1);
+            // Translation and yaw don't affect which side faces up.
+            let offset = Mat4::from_rotation_translation(
+                Quat::from_rotation_z(0.8),
+                Vec3::new(30.0, 40.0, 50.0),
+            );
+            inst.set_ragdoll_pose(pose(front).into_iter().map(|m| offset * m).collect());
+            inst.update(0.25, &mut Clips);
+            assert_eq!(
+                &*inst.samples()[0].animation,
+                if front { "front" } else { "back" }
+            );
+            assert_eq!(inst.samples()[0].time, 0.0);
+            inst.send_event("Play");
+            inst.update(0.25, &mut Clips);
+            assert!(inst.samples()[0].time > 0.2);
+            inst.send_event("Match");
+            inst.update(0.25, &mut Clips);
+            assert_eq!(inst.samples()[0].time, 0.25);
         }
     }
 
