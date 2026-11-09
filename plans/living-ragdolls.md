@@ -1,18 +1,37 @@
 # Plan: living actors' ragdolls and getting up
 
-**Status: drafted** (2026-11-09). ROADMAP Next item 5, "Natives left": "Ragdolls
-for living actors and getting up from them: `KnockAreaEffect` (27),
-`PushActorAway` (9), `ForceAddRagdollToWorld` / `ForceRemoveRagdollFromWorld`;
-Havok constraints on living actors (they fail now)". Each numbered step is one
-commit (or a few, where it says so); run `cargo fmt` before each.
+**Status: implemented, SE calibration pending** (2026-11-09).
+
+The census, physics controls, living knock state, graph matching/recovery,
+natives/conditions/constraints, paralysis, ragdolled fall damage, native saves,
+player handling and vanilla probe generator are implemented. Research:
+[research/living-ragdolls.md](../research/living-ragdolls.md). Implementation
+policies and approximations:
+[known_ambiguities/ragdolls.md](../known_ambiguities/ragdolls.md).
+
+Validation includes physics and synthetic graph tests, GPU engine fixtures,
+vanilla VoicePushEffectScript execution, immunity and ward routing, and an
+engine offscreen capture of Sinmir recovering automatically in the Bannered
+Mare. These are engine checks, not vanilla SE observations. The generated
+`tests/assets/VrmRagdolls.esp` and its script await the user's SE run; instructions
+and the pending-results record are in
+[research/ragdolls-se.md](../research/ragdolls-se.md).
+
+Remaining work without a decision: SE measurements of force/area/timing and
+persistence; explode/out knock states; EXPL "By Formula"; and the ATKD trigger
+rule (the census found nonzero values on werewolf/werebear sprint attacks, but
+no verified application rule). Ordinary airborne NPC falls remain separate.
+The original design below records the starting point and intended behavior;
+implemented approximations, including keeping bodies until recovery ends and
+restarting saved recovery clips from the physical pose, are documented above.
 
 In Skyrim SE a living actor can be knocked off its feet: the last word of
 Unrelenting Force, a werewolf's or a shield charge's knockback, a giant's
 or a dragon's landing, a collapsing hall, paralysis. Its body goes limp as a
 ragdoll, comes to rest, then gets up through its behaviour graph and carries
-on. Here only the dead have ragdolls. The natives that knock actors down do
-nothing, paralysed NPCs keep walking, and `AddHavokBallAndSocketConstraint` on a
-living actor fails.
+on. At the start of this work only the dead had ragdolls. The natives that knocked actors down did
+nothing, paralysed NPCs kept walking, and `AddHavokBallAndSocketConstraint` on a
+living actor failed.
 
 ## The evidence
 

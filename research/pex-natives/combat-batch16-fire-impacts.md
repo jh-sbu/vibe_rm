@@ -38,5 +38,8 @@ volleys and catapults fire weapons from markers.
   its local one with "use node local rotation". The pick hits the static
   world. Whether SE's pick also hits actors is unknown.
 - KnockAreaEffect, PushActorAway and ForceAddRagdollToWorld /
-  ForceRemoveRagdollFromWorld need ragdolls for living actors (and getting up
-  from them), which don't exist yet: open in `plans/ROADMAP.md`.
+  ForceRemoveRagdollFromWorld now use living ragdolls and graph recovery;
+  corpse pushes use their existing bodies. Force scale, area threshold and
+  living ForceAdd/Remove behavior remain provisional after the asset census:
+  `research/living-ragdolls.md`, `known_ambiguities/ragdolls.md`. The generated
+  `test-mod ragdolls` awaits SE observations (`research/ragdolls-se.md`).

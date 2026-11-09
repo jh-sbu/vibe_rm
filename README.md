@@ -31,7 +31,7 @@ Early but already visual:
 | Papyrus VM, conditions, quests, dialogue, console, audio, music | in progress |
 | The game's own menus (Interface `.swf` through the vendored Ruffle): the HUD, message boxes, the inventory, containers, bartering, gifts, magic, favorites, the tween menu, the map, sleeping and waiting, training, the journal | in progress |
 | Inventories (NPC items, outfits, containers), sheathed weapons and shields | in progress |
-| Combat (melee between NPCs, creatures and the player), ragdoll deaths; skills, leveling and perk trees | in progress |
+| Combat (melee between NPCs, creatures and the player), ragdoll knockdowns/recovery and deaths; skills, leveling and perk trees | in progress |
 | Magic: effects on actors, abilities, potions, enchantments, effect scripts; the player casting spells and powers by hand (magicka, projectiles, areas); shouts (words of power, dragon souls, the voice's rest) | in progress |
 | Saves | native `.vrs` saves implemented; original `.ess` import remains planned |
 
@@ -53,6 +53,7 @@ cargo build --release
 ```
 
 Testing aids: `--console "<command>"` runs console commands after loading (e.g.
+`knock [ref] [force]` / `getup [ref]` to test a living ragdoll and request recovery,
 `use <actor> <furniture>`, `travel <actor> <ref> [run|jog|fastwalk] [sneak]`, `sae <actor> <event>`, `pi <actor> <idle>`, `gstate <actor>` (`00000014` for the player), `cgf Actor.GetCombatState @<actor>` to call a Papyrus native, `cqf <quest> <function>` to call a function of a quest's scripts, `loose` for the loose objects near the player, `pwalk <frames> [forward|back|left|right] [run|sprint]` to walk the player (`tcl` first under `--wait`), `pjump` to jump, `useitem <item>` to use one of the player's items as the inventory would, `[ref.]equipitem <item> [left|right]` to equip one in a hand, `set gamedayspassed to <days>` to move the clock on, `pdraw [off]` and `ppress` / `prelease [left|both]` (the attack buttons) for the player's weapons, `pcast <right|left|power> [off]` for the spell in a hand (`[ref.]equipspell <spell> <left|right|voice>` readies one), `tpcam <degrees>` to turn the third-person view about the player (180 sees them from the front), `impact <IPCT>` for an impact on what the camera faces; `"@<frame> <command>"`
 runs it at that frame of `--wait`), `--menu-key <key>` presses a key in the menus after loading (`click:x,y` clicks there, `equip:right` / `equip:left` are the attack buttons, `pause` lets a third of a second pass), `--watch-angle`
 orbits the `--watch` camera, `--burst-from <frame>` starts `--burst` at that frame, `--player-at-camera` puts the player there (NPCs look at it),

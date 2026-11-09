@@ -44,7 +44,9 @@ and source references remain under `refs/`.
   must inspect states/events rather than require the humanoid spelling.
 - FullyRagdoll's no-matching powered modifier has maxForce **0**, tau 0.8,
   damping 1, recovery velocities 2 and 1. Matching has maxForce **200**, the same
-  other settings, and different bone weights. A zero maxForce must stay limp.
+  other settings. Both humanoid weight arrays are empty (default weights); the
+  objects still have Bindable headers with the array at 0x30. A zero maxForce
+  must stay limp.
 - GetUpMod: normal +Z, duration 1 second, ground alignment 0.25 seconds.
   Humanoid root/other/another bones are 0/11/10 in Havok skeleton order.
 - Rigid-body controls: hierarchy 0.17, velocity damping 0, acceleration 1,
@@ -58,8 +60,49 @@ and source references remain under `refs/`.
   mode 0x7e, weights pointer 0x80. Rigid controls scalars 0x50–0x80,
   bones pointer 0x90. Keyframe info array 0x50, bone-list pointer 0x60.
   Contact-listener event id 0x58, payload pointer 0x60, bones pointer 0x68.
+  Bone-index and bone-weight arrays have a Bindable header: their hkArray is
+  at 0x30, with signed 16-bit indices / float weights respectively.
 
 The plan's furniture/mount behavior, force units, area threshold, recovery timing,
 constraint release timing and living ForceAdd/Remove semantics cannot be settled
 from these assets. Choices belong in `known_ambiguities/ragdolls.md`; the supplied
 SE probe is needed to replace them with observations. No game results are claimed.
+
+## Implementation validation
+
+Engine checks on 2026-11-09 (not SE observations):
+
+- Physics tests exercise powered rotation recovery, zero-force limp controls,
+  impulses, resting detection, kinematic targets and preserving corpse handles.
+- Synthetic graph tests select face-up/down clips independent of world yaw and
+  translation, hold the matching frame, and advance only after the play event.
+  Get-up blending checks both endpoints and earlier root alignment.
+- GPU fixtures cover capsule disable/re-enable, retained package run,
+  No Knockdowns, area threshold, paralysis hold/expiry, saved physical pose,
+  living constraints and release, and death adopting the same bodies.
+- An installed-asset fixture applies the third-word spell and runs the real
+  VoicePushEffectScript through the native dispatcher; it knocks down Sinmir,
+  selects the non-ragdoll effect for Arngeir's ImmuneStrongUnrelentingForce
+  keyword, and stops the script behind a player ward. It also checks player
+  third-person knockdown and return to the prior first-person view.
+- `KNCK` tests cover read/write, absent chunks, duplicate chunks and invalid
+  matrices. Recovery clips restart from their saved physical pose.
+- Offscreen Bannered Mare capture (`--no-scripts`, AI off, Sinmir 000813BA,
+  force 5): FullyRagdoll -> GetUpFromRagdoll -> Root, with the drawn equipment
+  retained. A stricter angular rest cutoff never accumulated enough rest on
+  the fire surround; the current provisional thresholds allow recovery.
+  Captures/logs are outside the repository under `/tmp/vrm-ragdoll-captures/`.
+
+Reproduction:
+
+```
+WGPU_BACKEND=vulkan cargo test --workspace --offline
+WGPU_BACKEND=vulkan cargo test --bin vibe_rm knock::tests -- --include-ignored --test-threads=1
+bash scripts/ragdoll-captures.sh /tmp/vrm-ragdoll-captures
+```
+
+The GPU fixture tests are explicitly ignored by the default suite; they need a
+working headless GPU adapter. The vanilla-script fixture additionally needs the
+installed assets at their external path. The workspace tests pass with the host
+Vulkan adapter; the sandbox's GL adapter cannot build the existing terrain
+pipeline (16 sampled-texture limit, 17 required).

@@ -39,8 +39,9 @@ attributed to the Creation Kit wiki (CC BY-SA 4.0):
 - Constraints: a dead actor's node is the bone its ragdoll body drives; a
   loose object's is the body on that node (else its root body); any other
   placed object's is a fixed point at that node of its model. Offsets are in
-  game units. Living actors have no ragdoll here, so constraints on them fail
-  (false). Constraints aren't saved: the attach points' scripts make them as
+  game units. Living actors resolve their bodies while down, and recovery
+  releases their script constraints. Standing/getting-up actors have no eligible
+  body (`known_ambiguities/ragdolls.md`). Constraints aren't saved: the attach points' scripts make them as
   their cells load.
 - Dependent animated objects are only recorded (true when added); what the
   dependency does in SE is unknown.

@@ -890,6 +890,15 @@ game each piece unlocks.
   `GetDead`, `IsDead`, `Kill()`, `OnDying` / `OnDeath`; console `kill`;
   `GetTimeDead`, `IsKiller`, `IsKillerObject` over the killer and time of deaths in play
   (`WorldState::deaths`, saved in `DETH`)
+- Living actors' ragdolls: `PushActorAway`, `KnockAreaEffect`,
+  `ForceAddRagdollToWorld` / `ForceRemoveRagdollFromWorld`, paralysis, and
+  graph-driven recovery for NPCs and the player. Powered joints, front/back pose
+  matching, controller reinsertion, paused packages, corpse handoff, living
+  Havok constraints, knock-state conditions 107/725, ragdolled fall damage and
+  optional `KNCK` save continuity. Console `knock` / `getup`;
+  `vrm-tool ragdoll-census` and `test-mod ragdolls`. Provisional policies:
+  `known_ambiguities/ragdolls.md`; pending SE measurements and gated attack-data
+  work: `plans/living-ragdolls.md`, `research/ragdolls-se.md`.
 - Combat state for scripts: fighting, or searching for a target it lost
   (`GetCombatState`; the player is in combat while anyone fights them). Papyrus
   `StartCombat`, `StopCombat` (searchers give up too), `IsInCombat`,
@@ -2200,10 +2209,12 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      model), simulating constraint motors (none in the vanilla meshes), the
      player throwing what they hold, traps (pushback, disarming, trip wires; see
      `known_ambiguities/traps.md`), arrows knocking down beehives, NPCs' blows and spells pushing them
-     (and falls hurting NPCs: `fJumpFall*NPC`, `crate::falling`; UESP
-     [Skyrim:Damage](https://en.uesp.net/w/index.php?oldid=3485809) gives the
-     formula, but NPCs need airborne movement and a landing first:
-     `ActorRuntime::stand_on_ground` only follows navmesh height)
+     (ragdolled falls now use `fJumpFall*NPC` via `crate::falling`; ordinary
+     NPC falls still need airborne movement and a landing:
+     `ActorRuntime::stand_on_ground` only follows navmesh height). Explosion
+     knockdowns should call `Engine::knock_down` once explosions exist; the
+     EXPL "By Formula" rule and ATKD knockdown trigger rule still need SE
+     evidence (`plans/living-ragdolls.md`)
    - Scenes: the player's own lines (skipped for now; see `known_ambiguities/scenes.md`);
      priority between scenes
    - Physics, more: arrows sticking in loose objects; opened display-case lids
@@ -2301,11 +2312,6 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
    - Natives left (checked 2026-11-09 against `vrm-tool pex-natives`; done
      2026-11-09: see Done, "The rest of the PEX natives"). Each waits on a
      system that doesn't exist yet, or has no vanilla caller:
-     - Ragdolls for living actors and getting up from them:
-       `KnockAreaEffect` (27), `PushActorAway` (9),
-       `ForceAddRagdollToWorld` / `ForceRemoveRagdollFromWorld`; Havok
-       constraints on living actors (they fail now). Planned:
-       `plans/living-ragdolls.md` (drafted 2026-11-09).
      - Armor addons' behaviour graphs: `PlaySubGraphAnimation` and
        `SetSubGraphFloatVariable` reach art objects' graphs only, not the
        creature skins' (spriggans, glowing sabre cats and deer, centurions).
