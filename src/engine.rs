@@ -3402,8 +3402,12 @@ impl Engine {
             }
             input.sprint = false;
         }
-        self.player
-            .update(&mut self.physics, &cam, input, sneak_speed, armor_speed, dt);
+        // Riding in a cart, the cart carries them (`sync_passengers`): no
+        // falling into its floor, pushing it about.
+        if !self.passengers.contains_key(&PLAYER_REF) {
+            self.player
+                .update(&mut self.physics, &cam, input, sneak_speed, armor_speed, dt);
+        }
         if let Some(h) = self.player.landed_from {
             self.player_landed(h);
         }
