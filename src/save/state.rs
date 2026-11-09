@@ -22,7 +22,7 @@
 //! `PDLG` (selected package Say responses and owning procedure tokens),
 //! `RLSP` (rolled leveled spell-list results),
 //! `WSTA` (ward-hit outcomes and their remaining `IsWardState` hold),
-//! `DETH` (killers and times of death), `DCNT` (deaths by actor base), `DSFL` (SetDestroyed flags), `STPT` (stealth-point reservoirs and
+//! `DETH` (killers and times of death), `DCNT` (deaths by actor base), `DSFL` (SetDestroyed flags), `UNCN` / `BRIB` / `INTI` / `BLDL` / `PCDL` (SetUnconscious, SetBribed, SetIntimidated, AllowBleedoutDialogue and AllowPCDialogue), `STPT` (stealth-point reservoirs and
 //! regeneration delays), `COWN` (the owners of dropped stolen items), `ORIG`
 //! (world-created references' initial transforms), and `VM` / `VMAR`
 //! (`super::vm`: the Papyrus VM) and `MBXW` (message boxes and supported
@@ -147,6 +147,11 @@ pub struct Snapshot {
     pub open_doors: HashSet<FormId>,
     pub actor_open_doors: HashSet<FormId>,
     pub destroyed_flags: HashSet<FormId>,
+    pub unconscious: HashSet<FormId>,
+    pub bribed: HashSet<FormId>,
+    pub intimidated: HashSet<FormId>,
+    pub pc_dialogue: HashMap<FormId, bool>,
+    pub bleedout_dialogue: HashSet<FormId>,
     pub body_poses: HashMap<FormId, Vec<Mat4>>,
     pub wounds: HashMap<FormId, Wounds>,
     pub moved: HashMap<FormId, Moved>,
@@ -581,6 +586,11 @@ impl Snapshot {
             open_doors: ws.open_doors.clone(),
             actor_open_doors: ws.actor_open_doors.clone(),
             destroyed_flags: ws.destroyed_flags.clone(),
+            unconscious: ws.unconscious.clone(),
+            bribed: ws.bribed.clone(),
+            intimidated: ws.intimidated.clone(),
+            pc_dialogue: ws.pc_dialogue.clone(),
+            bleedout_dialogue: ws.bleedout_dialogue.clone(),
             body_poses: ws.body_poses.clone(),
             wounds,
             moved: ws.moved.clone(),
@@ -917,6 +927,24 @@ impl Snapshot {
         let mut w = Writer::default();
         put_forms(&mut w, &self.destroyed_flags);
         file.add(b"DSFL", w.0);
+
+        for (tag, set) in [
+            (b"UNCN", &self.unconscious),
+            (b"BRIB", &self.bribed),
+            (b"INTI", &self.intimidated),
+            (b"BLDL", &self.bleedout_dialogue),
+        ] {
+            let mut w = Writer::default();
+            put_forms(&mut w, set);
+            file.add(tag, w.0);
+        }
+        let mut w = Writer::default();
+        w.len(self.pc_dialogue.len());
+        for (actor, allowed) in sorted(&self.pc_dialogue) {
+            w.form(actor);
+            w.bool(*allowed);
+        }
+        file.add(b"PCDL", w.0);
 
         let mut w = Writer::default();
         w.len(self.destruction.len());
@@ -2111,6 +2139,28 @@ impl Snapshot {
             s.destroyed_flags = get_forms(&mut r)?;
             r.finish()?;
         }
+        // Optional: saves from before the speech checks had none.
+        for (tag, set) in [
+            (b"UNCN", &mut s.unconscious),
+            (b"BRIB", &mut s.bribed),
+            (b"INTI", &mut s.intimidated),
+            (b"BLDL", &mut s.bleedout_dialogue),
+        ] {
+            if let Some(data) = file.section(tag) {
+                let mut r = Reader::new(data);
+                *set = get_forms(&mut r)?;
+                r.finish()?;
+            }
+        }
+        if let Some(data) = file.section(b"PCDL") {
+            let mut r = Reader::new(data);
+            for _ in 0..r.count(5)? {
+                let actor = r.form()?;
+                let allowed = r.bool()?;
+                s.pc_dialogue.insert(actor, allowed);
+            }
+            r.finish()?;
+        }
         if let Some(data) = file.section(b"DSTR") {
             let mut r = Reader::new(data);
             for _ in 0..r.count(16)? {
@@ -2456,6 +2506,11 @@ impl Snapshot {
         ws.open_doors = self.open_doors;
         ws.actor_open_doors = self.actor_open_doors;
         ws.destroyed_flags = self.destroyed_flags;
+        ws.unconscious = self.unconscious;
+        ws.bribed = self.bribed;
+        ws.intimidated = self.intimidated;
+        ws.pc_dialogue = self.pc_dialogue;
+        ws.bleedout_dialogue = self.bleedout_dialogue;
         ws.body_poses = self.body_poses;
         ws.moved = self.moved;
         ws.item_charges = self.item_charges;

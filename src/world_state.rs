@@ -21,11 +21,20 @@ pub struct WorldState {
     /// Automatic detection-state changes are not mapped to this flag yet.
     pub alerted: std::collections::HashSet<FormId>,
     /// Papyrus `SetUnconscious` flags (`GetUnconscious`). Only the flag: the
-    /// state's effect on the actor isn't modelled, and it isn't saved yet.
+    /// state's effect on the actor isn't modelled (saved in `UNCN`).
     pub unconscious: std::collections::HashSet<FormId>,
     /// Papyrus `SetNoBleedoutRecovery(true)`: actors kept bleeding out
-    /// until it is cleared. Not saved yet, as `unconscious`.
+    /// until it is cleared. Not saved yet.
     pub no_bleedout_recovery: std::collections::HashSet<FormId>,
+    /// Actors the player bribed or intimidated (`SetBribed`,
+    /// `SetIntimidated`; saved in `BRIB` / `INTI`).
+    pub bribed: std::collections::HashSet<FormId>,
+    pub intimidated: std::collections::HashSet<FormId>,
+    /// `AllowPCDialogue` overrides of the race's flag (saved in `PCDL`).
+    pub pc_dialogue: HashMap<FormId, bool>,
+    /// `AllowBleedoutDialogue(true)`: talkable while bleeding out (saved in
+    /// `BLDL`).
+    pub bleedout_dialogue: std::collections::HashSet<FormId>,
     /// References on their way by `TranslateTo` and its kin (not saved:
     /// a load leaves them where they were).
     pub translations: std::collections::HashMap<FormId, crate::translation::Translation>,

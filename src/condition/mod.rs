@@ -967,6 +967,15 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         // GetUnconscious: `SetUnconscious`'s flag, not bleeding out (test-mod
         // autotest22).
         242 => b(subject.is_some_and(|s| e.world_state.unconscious.contains(&s))),
+        // IsIntimidatedbyPlayer, IsBribedbyPlayer: `SetIntimidated` /
+        // `SetBribed`'s flags.
+        116 => b(subject.is_some_and(|s| e.world_state.intimidated.contains(&s))),
+        402 => b(subject.is_some_and(|s| e.world_state.bribed.contains(&s))),
+        // GetBribeAmount, GetBribeSuccess (the player carries it),
+        // GetIntimidateSuccess (`crate::speech_checks`).
+        653 => Some(subject.map_or(0.0, |s| e.bribe_amount(s) as f32)),
+        654 => b(subject.is_some_and(|s| e.bribe_succeeds(s))),
+        655 => b(subject.is_some_and(|s| e.intimidate_succeeds(s))),
         // Nor flees, attacks, staggers, recoils or is ridden.
         329 => b(subject.is_some_and(|s| e.is_fleeing(s))), // IsFleeing
         477 => Some(subject.map_or(0.0, |s| e.threat_ratio(s, p1))), // GetThreatRatio

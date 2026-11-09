@@ -170,6 +170,8 @@ pub mod ep {
     pub const MOD_SELL_PRICES: u8 = 60;
     pub const MOD_COMMANDED_ACTOR_LIMIT: u8 = 68;
     pub const MOD_POISON_DOSE_COUNT: u8 = 83;
+    pub const MOD_PLAYER_INTIMIDATION: u8 = 43;
+    pub const MOD_BRIBE_AMOUNT: u8 = 46;
 }
 
 /// An entry point's value (`EPFT` / `EPFD`).

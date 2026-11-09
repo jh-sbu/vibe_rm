@@ -906,6 +906,9 @@ impl Engine {
                 .map(|o| (&o.prompt, o.topic.id, o.info.id))
                 .collect::<Vec<_>>()
         );
+        for o in &mut opts {
+            o.prompt = self.dialogue_text(&o.prompt, npc_ref, o.topic.quest);
+        }
         if let Some(c) = self.conversation.as_mut() {
             c.options = opts;
         }

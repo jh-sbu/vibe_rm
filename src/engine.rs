@@ -3710,7 +3710,9 @@ impl Engine {
             return Ok(());
         }
         if is_actor {
-            self.start_conversation(owner);
+            if self.can_talk_to(owner) {
+                self.start_conversation(owner);
+            }
             return Ok(());
         }
         if base_tag.map(|t| t.0) == Some(*b"CONT") {

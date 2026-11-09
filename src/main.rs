@@ -83,6 +83,7 @@ mod shouts;
 mod skills;
 mod sleep;
 mod soul_trap;
+mod speech_checks;
 mod spell_fx;
 mod spells;
 mod staffs;

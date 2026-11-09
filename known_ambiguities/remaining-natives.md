@@ -199,7 +199,7 @@ script calls it. To settle: on a save past its first days,
 ## Natives added 2026-11-07
 
 - `SetNoBleedoutRecovery(true)` keeps an actor bleeding out until cleared
-  (`GetNoBleedoutRecovery` reads it). Not saved, as `SetUnconscious`'s flag.
+  (`GetNoBleedoutRecovery` reads it). Not saved yet.
 - `HasLOS` is `GetLineOfSight`'s view-cone line (autotest22 read the two
   alike). `IsTrespassing` is the player's trespass; NPCs never trespass.
 - `Actor.SendAssaultAlarm()` is the player assaulting the actor (autotest2:

@@ -2138,6 +2138,52 @@ pub fn call(
             }
             none()
         }
+        ("actor", "isunconscious") => v(Value::Bool(
+            me.is_some_and(|r| e.world_state.unconscious.contains(&r)),
+        )),
+        // The flags `FavorDialogueScript` sets after a bribe or intimidation
+        // (`IsBribedbyPlayer`, `IsIntimidatedbyPlayer`).
+        ("actor", "setbribed") | ("actor", "setintimidated") => {
+            if let Some(r) = me {
+                let set = if func == "setbribed" {
+                    &mut e.world_state.bribed
+                } else {
+                    &mut e.world_state.intimidated
+                };
+                if args.first().is_none_or(|a| a.as_bool()) {
+                    set.insert(r);
+                } else {
+                    set.remove(&r);
+                }
+            }
+            none()
+        }
+        ("actor", "isbribed") => v(Value::Bool(
+            me.is_some_and(|r| e.world_state.bribed.contains(&r)),
+        )),
+        ("actor", "isintimidated") => v(Value::Bool(
+            me.is_some_and(|r| e.world_state.intimidated.contains(&r)),
+        )),
+        ("actor", "getbribeamount") => v(Value::Int(me.map_or(0, |r| e.bribe_amount(r)))),
+        ("actor", "willintimidatesucceed") => {
+            v(Value::Bool(me.is_some_and(|r| e.intimidate_succeeds(r))))
+        }
+        ("actor", "allowpcdialogue") => {
+            if let Some(r) = me {
+                e.world_state.pc_dialogue.insert(r, arg(0).as_bool());
+            }
+            none()
+        }
+        ("actor", "allowbleedoutdialogue") => {
+            if let Some(r) = me {
+                if arg(0).as_bool() {
+                    e.world_state.bleedout_dialogue.insert(r);
+                } else {
+                    e.world_state.bleedout_dialogue.remove(&r);
+                }
+            }
+            none()
+        }
         ("actor", "setrestrained") | ("actor", "setdontmove") => none(),
         // An essential actor bleeding out with this set doesn't get up until
         // it is cleared (CK wiki, `SetNoBleedoutRecovery`).
