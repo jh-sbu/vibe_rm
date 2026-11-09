@@ -37,6 +37,21 @@ impl Ride {
 
 const ACTOR_TYPE_HORSE: FormId = FormId(0x26110);
 
+/// The package tree's procedure, if it has just the one.
+fn sole_procedure(tree: &package::Node) -> Option<&package::Node> {
+    fn procedures<'a>(n: &'a package::Node, out: &mut Vec<&'a package::Node>) {
+        if n.kind == "Procedure" {
+            out.push(n);
+        }
+        for c in &n.children {
+            procedures(c, out);
+        }
+    }
+    let mut out = Vec::new();
+    procedures(tree, &mut out);
+    (out.len() == 1).then(|| out[0])
+}
+
 fn horse_input(n: &package::Node) -> bool {
     let i = match n.procedure.as_str() {
         "Travel" => 1,
@@ -65,8 +80,14 @@ impl Engine {
             return None;
         }
         let p = x.current.and_then(|i| x.packages.get(i))?;
-        let c = x.run.as_ref()?.cursor.as_ref()?;
-        let (_, n) = c.moving(p.tree.as_ref()?)?;
+        let tree = p.tree.as_ref()?;
+        let moving = x.run.as_ref().and_then(|r| r.cursor.as_ref()?.moving(tree));
+        let n = match moving {
+            Some((_, n)) => n,
+            // Done already (a hold-position travel to where it was placed):
+            // a package of one procedure still asks for its horse.
+            None => sole_procedure(tree)?,
+        };
         horse_input(n).then_some(p.id)
     }
 
@@ -214,7 +235,11 @@ impl Engine {
                         continue;
                     }
                     self.rides.remove(&actor);
-                } else if package != Some(ride.package) {
+                } else if let Some(next) = package.filter(|&p| p != ride.package) {
+                    // Another package that rides too: still on (or getting on)
+                    // the same horse.
+                    self.rides.get_mut(&actor).unwrap().package = next;
+                } else if package.is_none() {
                     self.dismount(actor);
                 }
             }

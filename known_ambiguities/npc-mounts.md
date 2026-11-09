@@ -11,6 +11,13 @@ but do not settle these details. Choices made to execute riding packages:
   HorseEnter, and enter the riding idle after 2.5 seconds. Exit takes 2.5 seconds
   and places the actor 100 units to the side, floor checked. IsOnMount and
   IsRidingMount include entering and exiting, but exclude approaching.
+- A package of a single procedure that rides (`MQ101TulliusHoldPosition`, a
+  Travel to where stage 10 put him) still asks for the horse once it is done.
+  A change to another package that rides keeps the ride, mounted or getting
+  on, rather than releasing it. In SE, Tullius is on his horse when the
+  opening fades in, and doesn't dismount between packages until Helgen
+  (observed by the user, 2026-11-08); the data's only riding packages for
+  him are that hold and his patrols.
 - The rider keeps its package/cursor; movement uses the horse's movement type
   and collider, and rendering follows SaddleBone. Combat/package changes or
   death release the relationship. Dismount inhibits remounting that package.
