@@ -246,6 +246,11 @@ impl RagdollPose {
         }
     }
 
+    /// The body that drives bone `bone`, if one does.
+    pub fn body_of_bone(&self, bone: usize) -> Option<usize> {
+        self.driven.get(bone).copied().flatten()
+    }
+
     /// The model-space pose for bodies now at `bodies` (world, scale included).
     pub fn pose(&self, skeleton: &Skeleton, bodies: &[Mat4]) -> Vec<Mat4> {
         let mut out: Vec<Mat4> = Vec::with_capacity(skeleton.bones.len());

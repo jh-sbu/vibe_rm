@@ -899,6 +899,44 @@ impl Physics {
         Ragdoll { bodies, scale }
     }
 
+    /// A ball-and-socket joint between two bodies at the points given in
+    /// each (`AddHavokBallAndSocketConstraint`); both are woken.
+    pub fn add_ball_socket(
+        &mut self,
+        a: RigidBodyHandle,
+        local_a: Vec3,
+        b: RigidBodyHandle,
+        local_b: Vec3,
+    ) -> ImpulseJointHandle {
+        let joint = SphericalJointBuilder::new()
+            .local_anchor1(local_a)
+            .local_anchor2(local_b);
+        let h = self.world.insert_impulse_joint(a, b, joint);
+        for body in [a, b] {
+            self.world.wake_up(body, true);
+        }
+        h
+    }
+
+    /// A fixed body with no shape to hang a joint on, at `at`.
+    pub fn add_anchor(&mut self, at: Mat4) -> RigidBodyHandle {
+        let (pose, _) = shapes::decompose(at);
+        self.world.insert_body(RigidBodyBuilder::fixed().pose(pose))
+    }
+
+    /// Remove a joint (and an anchor body made for it).
+    pub fn remove_joint(&mut self, h: ImpulseJointHandle, anchor: Option<RigidBodyHandle>) {
+        self.world.remove_impulse_joint(h);
+        if let Some(a) = anchor {
+            self.world.remove_body_with_colliders(a, true);
+        }
+    }
+
+    /// Whether a joint is still there (its bodies weren't removed).
+    pub fn has_joint(&self, h: ImpulseJointHandle) -> bool {
+        self.world.impulse_joints.get(h).is_some()
+    }
+
     /// Where a ragdoll's bodies are now (world, with the actor's scale).
     pub fn ragdoll_bodies(&self, r: &Ragdoll) -> Vec<Mat4> {
         r.bodies

@@ -35,6 +35,8 @@ const SETTLE_STEPS: u32 = 3;
 
 /// One of a loose object's bodies.
 pub(crate) struct LooseBody {
+    /// The model's node it is on.
+    pub node: String,
     pub handle: RigidBodyHandle,
     /// Its frame in the model (`BodyDesc::frame`), and where it is in the world
     /// now (the object's scale included).
@@ -100,6 +102,7 @@ impl Engine {
                 index[i] = Some(bodies.len());
                 let frame = c.bodies[i].frame;
                 bodies.push(LooseBody {
+                    node: c.bodies[i].node.clone(),
                     handle: h,
                     frame,
                     world: transform * frame,

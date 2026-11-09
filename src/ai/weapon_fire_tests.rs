@@ -4,7 +4,6 @@
 use esp::FormId;
 use esp::writer::{Node, RecordBuilder, write_plugin};
 use glam::Vec3;
-use papyrus::Value;
 
 const ARROW: FormId = FormId(0x800);
 const BOW: FormId = FormId(0x801);

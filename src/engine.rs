@@ -277,6 +277,15 @@ pub struct Engine {
     pub sitting_rotation: f32,
     /// The heading of the seat the player rides in, last frame.
     pub player_seat_heading: Option<f32>,
+    /// Scripts' fog for interiors (`Cell.SetFogColor` and its kin; not
+    /// saved).
+    pub cell_fog: crate::cell_fog::CellFog,
+    /// Joints scripts made (`AddHavokBallAndSocketConstraint`; not saved:
+    /// the attach points' scripts make them again as their cells load).
+    pub havok_constraints: Vec<crate::havok_constraints::ScriptConstraint>,
+    /// `AddDependentAnimatedObjectReference` pairs (owner, dependent): kept,
+    /// with no effect yet (no source says what the dependency does).
+    pub dependent_animated: Vec<(FormId, FormId)>,
     /// `Game.ShowFirstPersonGeometry(false)`: the first-person body isn't
     /// drawn (saved in `FPGH`).
     pub first_person_hidden: bool,
@@ -735,6 +744,9 @@ impl Engine {
             sungazing: false,
             sitting_rotation: 0.0,
             player_seat_heading: None,
+            cell_fog: Default::default(),
+            havok_constraints: Vec::new(),
+            dependent_animated: Vec::new(),
             first_person_hidden: false,
             title_sequence: Default::default(),
             god_mode: false,
@@ -2637,7 +2649,9 @@ impl Engine {
         self.weather_indoors();
         self.lod = None;
         self.scene.lod.clear();
-        self.scene.env = interior_environment(&contents.lighting);
+        let mut env = interior_environment(&contents.lighting);
+        self.apply_cell_fog(cell_id, &mut env);
+        self.scene.env = env;
         self.set_interior_image_space(Some(contents.info.image_space));
         let key = CellKey::Interior(cell_id);
         let (mut objects, mut lights, mut doors) = (

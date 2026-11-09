@@ -616,6 +616,7 @@ mod tests {
             .push(crate::loose::Loose {
                 ref_id: MARKER,
                 bodies: vec![crate::loose::LooseBody {
+                    node: String::new(),
                     handle: body,
                     frame: Mat4::IDENTITY,
                     world: Mat4::from_translation(Vec3::X * 3000.),

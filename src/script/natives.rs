@@ -3079,6 +3079,74 @@ pub fn call(
                 },
             })
         }))),
+        ("objectreference", "adddependentanimatedobjectreference") => {
+            v(Value::Bool(match (me, form_arg(args, 0)) {
+                (Some(r), Some(d)) if r != d => {
+                    if !e.dependent_animated.contains(&(r, d)) {
+                        e.dependent_animated.push((r, d));
+                    }
+                    true
+                }
+                _ => false,
+            }))
+        }
+        ("objectreference", "removedependentanimatedobjectreference") => {
+            v(Value::Bool(match (me, form_arg(args, 0)) {
+                (Some(r), Some(d)) => {
+                    let before = e.dependent_animated.len();
+                    e.dependent_animated.retain(|&p| p != (r, d));
+                    e.dependent_animated.len() != before
+                }
+                _ => false,
+            }))
+        }
+        ("game", "addhavokballandsocketconstraint") => {
+            v(Value::Bool(match (form_arg(args, 0), form_arg(args, 2)) {
+                (Some(a), Some(b)) => {
+                    let f = |i: usize| args.get(i).map_or(0.0, Value::as_float);
+                    e.add_ball_socket_constraint(
+                        (a, &str_arg(args, 1)),
+                        (b, &str_arg(args, 3)),
+                        glam::Vec3::new(f(4), f(5), f(6)),
+                        glam::Vec3::new(f(7), f(8), f(9)),
+                    )
+                }
+                _ => false,
+            }))
+        }
+        ("game", "removehavokconstraints") => {
+            v(Value::Bool(match (form_arg(args, 0), form_arg(args, 2)) {
+                (Some(a), Some(b)) => {
+                    e.remove_havok_constraints((a, &str_arg(args, 1)), (b, &str_arg(args, 3)))
+                }
+                _ => false,
+            }))
+        }
+        ("cell", "setfogcolor") => {
+            if let Some(c) = me {
+                let ch = |i| crate::cell_fog::channel(arg(i).as_int());
+                let colors = (
+                    glam::Vec3::new(ch(0), ch(1), ch(2)),
+                    glam::Vec3::new(ch(3), ch(4), ch(5)),
+                );
+                e.set_cell_fog(c, |o| o.colors = Some(colors));
+            }
+            none()
+        }
+        ("cell", "setfogplanes") => {
+            if let Some(c) = me {
+                let (a, b) = (arg(0).as_float(), arg(1).as_float());
+                e.set_cell_fog(c, |o| o.planes = Some((a.min(b), a.max(b))));
+            }
+            none()
+        }
+        ("cell", "setfogpower") => {
+            if let Some(c) = me {
+                let p = arg(0).as_float();
+                e.set_cell_fog(c, |o| o.power = Some(p));
+            }
+            none()
+        }
         ("cell", "isinterior") => v(Value::Bool(me.and_then(|c| e.lo.get(c)).is_some_and(|r| {
             r.tag().0 == *b"CELL"
                 && r.get(b"DATA")
