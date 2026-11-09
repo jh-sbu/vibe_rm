@@ -2304,7 +2304,8 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      - Ragdolls for living actors and getting up from them:
        `KnockAreaEffect` (27), `PushActorAway` (9),
        `ForceAddRagdollToWorld` / `ForceRemoveRagdollFromWorld`; Havok
-       constraints on living actors (they fail now).
+       constraints on living actors (they fail now). Planned:
+       `plans/living-ragdolls.md` (drafted 2026-11-09).
      - Armor addons' behaviour graphs: `PlaySubGraphAnimation` and
        `SetSubGraphFloatVariable` reach art objects' graphs only, not the
        creature skins' (spriggans, glowing sabre cats and deer, centurions).
