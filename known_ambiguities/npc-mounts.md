@@ -18,6 +18,11 @@ but do not settle these details. Choices made to execute riding packages:
   opening fades in, and doesn't dismount between packages until Helgen
   (observed by the user, 2026-11-08); the data's only riding packages for
   him are that hold and his patrols.
+- Spawned with its cell (`fresh`, as actors who start out in furniture), an
+  actor whose package rides starts out on its horse at once (`HorseEnterInstant`),
+  where it was placed. Tullius is on his horse when the opening fades in and
+  leads the carts from the start; mounting on foot let the cart horses
+  overtake him.
 - The rider keeps its package/cursor; movement uses the horse's movement type
   and collider, and rendering follows SaddleBone. Combat/package changes or
   death release the relationship. Dismount inhibits remounting that package.

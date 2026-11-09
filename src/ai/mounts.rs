@@ -254,8 +254,17 @@ impl Engine {
                     self.put_away(horse, place, pos);
                 }
                 if self.actor_ref(horse).is_some() {
-                    let ride = self.new_ride(horse, package, APPROACH);
+                    // Just spawned with its cell, it starts out on the horse,
+                    // as in furniture (MQ101's Tullius, mounted when the
+                    // opening fades in).
+                    let fresh = self.actor_ref(actor).is_some_and(|a| a.fresh);
+                    let ride =
+                        self.new_ride(horse, package, if fresh { MOUNTED } else { APPROACH });
                     self.rides.insert(actor, ride);
+                    if fresh {
+                        log::debug!("{actor} starts out on {horse}");
+                        self.send_actor_graph_event(actor, "HorseEnterInstant");
+                    }
                 }
             }
             let Some(mut ride) = self
@@ -636,6 +645,8 @@ mod integration_tests {
     fn mount_lifecycle_claims_owned_horse_preserves_run_and_dismount_returns_bool() {
         let (_f, mut e) = fixture();
         install(&mut e);
+        // Not just spawned with its cell: it gets on.
+        e.actor_mut(ACTOR).unwrap().fresh = false;
         assert_eq!(e.horse_for(ACTOR), Some(HORSE));
         let run = e.execution(ACTOR).unwrap().run.clone();
         e.prepare_mounts(0.);
@@ -668,6 +679,17 @@ mod integration_tests {
         );
         e.scripts.disabled.insert(HORSE, true);
         assert!(e.horse_for(ACTOR).is_none());
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn a_rider_spawned_with_its_cell_starts_out_mounted() {
+        let (_f, mut e) = fixture();
+        install(&mut e);
+        assert!(e.actor_ref(ACTOR).unwrap().fresh);
+        e.prepare_mounts(0.);
+        assert_eq!(e.rides[&ACTOR].phase, MOUNTED);
+        assert!(e.is_on_mount(ACTOR));
     }
 
     #[test]
