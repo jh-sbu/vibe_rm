@@ -51,7 +51,7 @@ impl ArrayTable {
     }
 }
 
-fn put_object(w: &mut Writer, id: ObjectId) {
+pub(super) fn put_object(w: &mut Writer, id: ObjectId) {
     match id {
         ObjectId::Form(f) => {
             w.u8(0);
@@ -69,7 +69,7 @@ fn put_object(w: &mut Writer, id: ObjectId) {
     }
 }
 
-fn get_object(r: &mut Reader) -> Result<ObjectId> {
+pub(super) fn get_object(r: &mut Reader) -> Result<ObjectId> {
     match r.u8()? {
         0 => Ok(ObjectId::Form(r.u32()?)),
         1 => Ok(ObjectId::Alias {

@@ -385,7 +385,12 @@ impl Engine {
 
     /// `Game.IncrementStat`.
     pub fn increment_stat(&mut self, name: &str, by: i32) {
-        *self.scripts.stats.entry(name.to_string()).or_default() += by;
+        let v = self.scripts.stats.entry(name.to_string()).or_default();
+        *v += by;
+        let v = *v;
+        if by != 0 {
+            self.tracked_stat_changed(name, v);
+        }
     }
 
     /// An actor the player killed, counted by what it is: under each of its
@@ -428,7 +433,10 @@ impl Engine {
     /// bounty).
     pub(crate) fn raise_stat_to(&mut self, name: &str, n: i32) {
         let v = self.scripts.stats.entry(name.to_string()).or_default();
-        *v = (*v).max(n);
+        if n > *v {
+            *v = n;
+            self.tracked_stat_changed(name, n);
+        }
     }
 
     /// `Game.QueryStat`: a counted statistic (names give 0).

@@ -22,7 +22,7 @@
 //! `PDLG` (selected package Say responses and owning procedure tokens),
 //! `RLSP` (rolled leveled spell-list results),
 //! `WSTA` (ward-hit outcomes and their remaining `IsWardState` hold),
-//! `DETH` (killers and times of death), `DCNT` (deaths by actor base), `DSFL` (SetDestroyed flags), `UNCN` / `BRIB` / `INTI` / `BLDL` / `PCDL` (SetUnconscious, SetBribed, SetIntimidated, AllowBleedoutDialogue and AllowPCDialogue), `DFKL` (StartDeferredKill's actors and their pending killers), `ACAU` (SetActorCause), `STPT` (stealth-point reservoirs and
+//! `DETH` (killers and times of death), `DCNT` (deaths by actor base), `DSFL` (SetDestroyed flags), `UNCN` / `BRIB` / `INTI` / `BLDL` / `PCDL` (SetUnconscious, SetBribed, SetIntimidated, AllowBleedoutDialogue and AllowPCDialogue), `DFKL` (StartDeferredKill's actors and their pending killers), `ACAU` (SetActorCause), `LOSR` (line-of-sight registrations), `TSTL` (tracked-stats listeners), `STPT` (stealth-point reservoirs and
 //! regeneration delays), `COWN` (the owners of dropped stolen items), `ORIG`
 //! (world-created references' initial transforms), and `VM` / `VMAR`
 //! (`super::vm`: the Papyrus VM) and `MBXW` (message boxes and supported
@@ -153,6 +153,8 @@ pub struct Snapshot {
     pub pc_dialogue: HashMap<FormId, bool>,
     pub deferred_kills: HashMap<FormId, Option<FormId>>,
     pub actor_causes: HashMap<FormId, FormId>,
+    pub los: Vec<crate::registrations::LosRegistration>,
+    pub tracked_stats_listeners: Vec<papyrus::ObjectId>,
     pub bleedout_dialogue: HashSet<FormId>,
     pub body_poses: HashMap<FormId, Vec<Mat4>>,
     pub wounds: HashMap<FormId, Wounds>,
@@ -594,6 +596,8 @@ impl Snapshot {
             pc_dialogue: ws.pc_dialogue.clone(),
             deferred_kills: ws.deferred_kills.clone(),
             actor_causes: ws.actor_causes.clone(),
+            los: e.scripts.los.clone(),
+            tracked_stats_listeners: e.scripts.tracked_stats_listeners.clone(),
             bleedout_dialogue: ws.bleedout_dialogue.clone(),
             body_poses: ws.body_poses.clone(),
             wounds,
@@ -965,6 +969,28 @@ impl Snapshot {
             w.form(*actor);
         }
         file.add(b"ACAU", w.0);
+
+        let mut w = Writer::default();
+        w.len(self.los.len());
+        for r in &self.los {
+            super::vm::put_object(&mut w, r.obj);
+            w.form(r.viewer);
+            w.form(r.target);
+            w.u8(r.mode as u8);
+            w.u8(match r.seen {
+                None => 0,
+                Some(false) => 1,
+                Some(true) => 2,
+            });
+        }
+        file.add(b"LOSR", w.0);
+
+        let mut w = Writer::default();
+        w.len(self.tracked_stats_listeners.len());
+        for &o in &self.tracked_stats_listeners {
+            super::vm::put_object(&mut w, o);
+        }
+        file.add(b"TSTL", w.0);
 
         let mut w = Writer::default();
         w.len(self.destruction.len());
@@ -2200,6 +2226,43 @@ impl Snapshot {
             }
             r.finish()?;
         }
+        if let Some(data) = file.section(b"LOSR") {
+            use crate::registrations::{LosMode, LosRegistration};
+            let mut r = Reader::new(data);
+            for _ in 0..r.count(15)? {
+                let obj = super::vm::get_object(&mut r)?;
+                let viewer = r.form()?;
+                let target = r.form()?;
+                let mode = match r.u8()? {
+                    0 => LosMode::Both,
+                    1 => LosMode::Gain,
+                    2 => LosMode::Lost,
+                    n => return Err(Corrupt(format!("LOS mode {n}"))),
+                };
+                let seen = match r.u8()? {
+                    0 => None,
+                    1 => Some(false),
+                    2 => Some(true),
+                    n => return Err(Corrupt(format!("LOS seen {n}"))),
+                };
+                s.los.push(LosRegistration {
+                    obj,
+                    viewer,
+                    target,
+                    mode,
+                    seen,
+                });
+            }
+            r.finish()?;
+        }
+        if let Some(data) = file.section(b"TSTL") {
+            let mut r = Reader::new(data);
+            for _ in 0..r.count(5)? {
+                s.tracked_stats_listeners
+                    .push(super::vm::get_object(&mut r)?);
+            }
+            r.finish()?;
+        }
         if let Some(data) = file.section(b"DSTR") {
             let mut r = Reader::new(data);
             for _ in 0..r.count(16)? {
@@ -2491,6 +2554,8 @@ impl Snapshot {
         s.initialized = self.vm.initialized.into_iter().collect();
         s.timers = self.vm.timers;
         s.sleep_listeners = self.vm.sleep_listeners;
+        s.los = self.los;
+        s.tracked_stats_listeners = self.tracked_stats_listeners;
         s.inventory_filters = self
             .vm
             .inventory_filters

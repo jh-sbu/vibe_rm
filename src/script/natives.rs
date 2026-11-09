@@ -575,6 +575,52 @@ pub fn call(
             }
             none()
         }
+        ("form", "registerforlos")
+        | ("alias", "registerforlos")
+        | ("activemagiceffect", "registerforlos")
+        | ("form", "registerforsinglelosgain")
+        | ("alias", "registerforsinglelosgain")
+        | ("activemagiceffect", "registerforsinglelosgain")
+        | ("form", "registerforsingleloslost")
+        | ("alias", "registerforsingleloslost")
+        | ("activemagiceffect", "registerforsingleloslost") => {
+            if let (Some(t), Some(viewer), Some(target)) = (
+                this.and_then(|t| t.as_object()),
+                form_arg(args, 0),
+                form_arg(args, 1),
+            ) {
+                let mode = match func {
+                    "registerforlos" => crate::registrations::LosMode::Both,
+                    "registerforsinglelosgain" => crate::registrations::LosMode::Gain,
+                    _ => crate::registrations::LosMode::Lost,
+                };
+                e.register_for_los(t, viewer, target, mode);
+            }
+            none()
+        }
+        ("form", "unregisterforlos")
+        | ("alias", "unregisterforlos")
+        | ("activemagiceffect", "unregisterforlos") => {
+            if let (Some(t), Some(viewer), Some(target)) = (
+                this.and_then(|t| t.as_object()),
+                form_arg(args, 0),
+                form_arg(args, 1),
+            ) {
+                e.unregister_for_los(t, viewer, target);
+            }
+            none()
+        }
+        ("form", "registerfortrackedstatsevent")
+        | ("alias", "registerfortrackedstatsevent")
+        | ("activemagiceffect", "registerfortrackedstatsevent")
+        | ("form", "unregisterfortrackedstatsevent")
+        | ("alias", "unregisterfortrackedstatsevent")
+        | ("activemagiceffect", "unregisterfortrackedstatsevent") => {
+            if let Some(t) = this.and_then(|t| t.as_object()) {
+                e.register_for_tracked_stats(t, func.starts_with("register"));
+            }
+            none()
+        }
         ("form", "registerforsleep")
         | ("alias", "registerforsleep")
         | ("activemagiceffect", "registerforsleep")

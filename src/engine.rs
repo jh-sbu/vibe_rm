@@ -4686,6 +4686,7 @@ impl Engine {
         self.scripts.real_time += dt as f64;
         let now = self.scripts.real_time;
         let game_now = self.game_hours_total();
+        self.update_los();
         // Timers
         let mut fired = Vec::new();
         self.scripts.timers.retain_mut(|t| {

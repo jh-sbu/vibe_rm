@@ -145,6 +145,12 @@ pub struct ScriptState {
     /// The forms, aliases and effects registered for sleep
     /// (`RegisterForSleep`: `OnSleepStart`, `OnSleepStop`).
     pub sleep_listeners: Vec<ObjectId>,
+    /// Line-of-sight registrations (`RegisterForLOS`; saved in `LOSR`) and
+    /// which to look at next.
+    pub los: Vec<crate::registrations::LosRegistration>,
+    pub los_cursor: usize,
+    /// `RegisterForTrackedStatsEvent` (saved in `TSTL`).
+    pub tracked_stats_listeners: Vec<ObjectId>,
     /// References' and cells' owners set by scripts (`SetActorOwner`,
     /// `SetFactionOwner`; `None` clears it), over the data's.
     pub owners: HashMap<FormId, Option<FormId>>,
