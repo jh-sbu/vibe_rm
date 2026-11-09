@@ -2303,8 +2303,10 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      show without an achievement service or gamepad rumble;
      `SetRace` (45) on NPCs, their model swapped live (the player's is done:
      `plans/character-creation.md`);
-     `KnockAreaEffect` (27) and `PushActorAway` (9), with living actors'
-     ragdolls; `SetHeadTracking` (8); `PathToReference` (only a test rig calls
+     `KnockAreaEffect` (27), `PushActorAway` (9) and
+     `ForceAddRagdollToWorld` / `ForceRemoveRagdollFromWorld`, all waiting on
+     ragdolls for living actors and their getting up (only the dead ragdoll
+     now); `SetHeadTracking` (8); `PathToReference` (only a test rig calls
      it); `ObjectReference.Say`, `Topic.Add`, `Weapon.Fire`, the LOS
      registrations;
      riding (`SetVehicle`), flying (`SetAllowFlying`, `SetForcedLandingMarker`),

@@ -437,6 +437,48 @@ impl Engine {
         self.impact(ipds, material, landing);
     }
 
+    /// `PlayImpactEffect(ipds, node, x, y, z, length, applyNodeRotation,
+    /// useNodeLocalRotation)`: a pick from the reference (or its model's
+    /// node) along the direction, for `length` units; the impact plays where
+    /// it lands. False when it lands on nothing.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn play_impact_effect(
+        &mut self,
+        r: FormId,
+        ipds: FormId,
+        node: &str,
+        dir: Vec3,
+        length: f32,
+        node_rotation: bool,
+        local_rotation: bool,
+    ) -> bool {
+        let node_at = (!node.is_empty())
+            .then(|| self.ref_node_transform(r, node))
+            .flatten();
+        let (from, dir) = match node_at {
+            Some((world, local)) => {
+                let m = world * local;
+                let turn = if local_rotation { local } else { m };
+                let dir = if node_rotation {
+                    turn.transform_vector3(dir)
+                } else {
+                    dir
+                };
+                (m.w_axis.truncate(), dir)
+            }
+            None => match self.ref_position(r) {
+                Some(p) => (p, dir),
+                None => return false,
+            },
+        };
+        let dir = dir.normalize_or(-Vec3::Z);
+        let Some((t, _)) = self.physics.ground_ray(from, dir, length.max(0.0)) else {
+            return false;
+        };
+        self.impact_at(ipds, Some(r), None, from + dir * t, dir);
+        true
+    }
+
     /// The impact `ipds` has for `material`, landing: its sound, effect and decal.
     pub(crate) fn impact(&mut self, ipds: FormId, material: FormId, landing: Landing) {
         let Some(ipct) = self.footsteps.impacts.impact(&self.lo, ipds, material) else {

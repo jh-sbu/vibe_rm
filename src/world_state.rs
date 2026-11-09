@@ -413,12 +413,20 @@ impl Engine {
     /// pivot). The node's rest transform in the model counts, not an
     /// animated one; an actor's nodes and a missing node move nothing.
     pub fn move_to_node(&mut self, r: FormId, target: FormId, node: &str) -> bool {
-        if self.actor_ref(target).is_some() || target == crate::engine::PLAYER_REF {
-            return false;
-        }
-        let Some(at) = self.ref_transform(target) else {
+        let Some((at, local)) = self.ref_node_transform(target, node) else {
             return false;
         };
+        let (_, rot, pos) = (at * local).to_scale_rotation_translation();
+        self.move_ref(r, target, pos, crate::loose::euler_of(rot))
+    }
+
+    /// A placed object's transform and its model's node `node` in it (the
+    /// rest transform; case ignored). None for actors and missing nodes.
+    pub(crate) fn ref_node_transform(&self, target: FormId, node: &str) -> Option<(Mat4, Mat4)> {
+        if self.actor_ref(target).is_some() || target == crate::engine::PLAYER_REF {
+            return None;
+        }
+        let at = self.ref_transform(target)?;
         let Some(model) = self
             .base_of(target)
             .and_then(|b| self.lo.get(b))
@@ -426,7 +434,7 @@ impl Engine {
             .filter(|m| !m.is_empty())
             .map(|m| crate::world::records::mesh_path(&m))
         else {
-            return false;
+            return None;
         };
         let Some(local) = self
             .vfs
@@ -439,11 +447,10 @@ impl Engine {
                     .map(|(_, m)| m)
             })
         else {
-            log::debug!("MoveToNode: {target} has no node {node}");
-            return false;
+            log::debug!("{target} has no node {node}");
+            return None;
         };
-        let (_, rot, pos) = (at * local).to_scale_rotation_translation();
-        self.move_ref(r, target, pos, crate::loose::euler_of(rot))
+        Some((at, local))
     }
 
     /// Back where it was placed in the editor (`MoveToMyEditorLocation`).

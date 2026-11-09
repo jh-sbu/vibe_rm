@@ -48,6 +48,10 @@ const ANIM_CROSSBOW: u8 = 9;
 #[path = "archery_ammo_tests.rs"]
 mod ammo_tests;
 
+#[cfg(test)]
+#[path = "weapon_fire_tests.rs"]
+mod weapon_fire_tests;
+
 /// Where an archer is in its shot.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum Draw {
@@ -409,6 +413,46 @@ impl Engine {
     /// else its best by damage, or iron ones with none (NPCs never run out).
     pub(crate) fn arrows_of(&self, actor: FormId) -> Option<Arrow> {
         arrows_in(&self.lo, self.inventories.get(&actor), actor != PLAYER_REF)
+    }
+
+    /// `Weapon.Fire(akSource, akAmmo)`: `weapon` shoots from the source the
+    /// way it faces (an actor its heading, the player their aim). The ammo
+    /// is `ammo`, else what the source wears; with neither nothing flies.
+    /// The player's worn ammo is used up by the shot whichever is fired;
+    /// given ammo with none worn costs nothing (the Papyrus index's notes).
+    pub(crate) fn weapon_fire(&mut self, weapon: FormId, source: FormId, ammo: Option<FormId>) {
+        let worn = self
+            .arrows_of(source)
+            .filter(|_| source == PLAYER_REF || self.is_actor_ref(source));
+        let Some(arrow) = ammo
+            .and_then(|a| arrow(&self.lo, a))
+            .or_else(|| worn.clone())
+        else {
+            log::debug!("{weapon} fired from {source}: no ammo");
+            return;
+        };
+        let (from, dir) = if source == PLAYER_REF {
+            self.player_aim()
+        } else if let Some(a) = self.actor_ref(source) {
+            (
+                a.exec.pos + Vec3::Z * 110.0 * a.scale,
+                Vec3::new(a.exec.heading.sin(), a.exec.heading.cos(), 0.0),
+            )
+        } else {
+            let Some(at) = self.ref_position(source) else {
+                return;
+            };
+            let rot = crate::world::records::rotation_from_euler(self.ref_rotation(source));
+            (at, rot * Vec3::Y)
+        };
+        if source == PLAYER_REF
+            && let Some(w) = worn
+        {
+            self.remove_item(PLAYER_REF, w.ammo, 1, None);
+        }
+        let damage = crate::ai::combat::weapon_damage(&self.lo, weapon) + arrow.damage;
+        log::debug!("{weapon} fired from {source} at {from:.0} along {dir:.2}");
+        self.spawn_arrow(source, arrow, from + dir * 10.0, dir, 1.0, damage);
     }
 
     /// The weakest ammunition the actor carries that `weapon` shoots: what

@@ -93,6 +93,27 @@ pub fn call(
             }
             none()
         }
+        ("objectreference", "playimpacteffect") => v(Value::Bool(match (me, form_arg(args, 0)) {
+            (Some(r), Some(ipds)) => {
+                let f = |i: usize, d: f32| args.get(i).map_or(d, Value::as_float);
+                e.play_impact_effect(
+                    r,
+                    ipds,
+                    &str_arg(args, 1),
+                    glam::Vec3::new(f(2, 0.0), f(3, 0.0), f(4, -1.0)),
+                    f(5, 512.0),
+                    args.get(6).is_some_and(|a| a.as_bool()),
+                    args.get(7).is_some_and(|a| a.as_bool()),
+                )
+            }
+            _ => false,
+        })),
+        ("weapon", "fire") => {
+            if let (Some(w), Some(source)) = (me, form_arg(args, 0)) {
+                e.weapon_fire(w, source, form_arg(args, 1));
+            }
+            none()
+        }
         // Skyrim's dialogue has no list of topics the player knows: topics
         // show by their conditions alone.
         ("topic", "add") => none(),
