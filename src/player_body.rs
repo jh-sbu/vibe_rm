@@ -559,6 +559,9 @@ impl Engine {
 
     /// Place and animate the body after the player moved `moved` this update.
     pub(crate) fn update_player_body(&mut self, moved: Vec3, dt: f32) {
+        if self.player_knock.is_some() {
+            return;
+        }
         if self.player_body.is_none()
             || self.player_body.as_ref().unwrap().worn != self.player_worn()
             || self.player_body.as_ref().unwrap().appearance != self.player_appearance
@@ -902,6 +905,10 @@ impl PlayerBody {
             } else {
                 self.ready
             }
+    }
+
+    pub(crate) fn third_graph(&self) -> Option<&GraphAnim> {
+        self.graph.as_ref()
     }
 
     pub(crate) fn active_graph(&self) -> Option<&GraphAnim> {
@@ -1674,6 +1681,9 @@ impl Engine {
 
     /// Switch between first and third person.
     pub fn set_third_person(&mut self, on: bool) {
+        if !on && self.player_knock.is_some() {
+            return;
+        }
         if on && self.first_person_furniture.is_some() {
             return;
         }

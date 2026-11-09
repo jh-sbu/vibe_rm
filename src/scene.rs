@@ -1737,6 +1737,19 @@ impl Engine {
     }
 
     /// Say the action's line; true once said (looping lines never finish).
+    pub(crate) fn stop_scene_voice_for_knock(&mut self, actor: FormId) {
+        for scene in &mut self.scenes.running {
+            for action in &mut scene.actions {
+                if let Some(line) = action.line.as_mut().filter(|l| l.speaker == actor) {
+                    if let (Some(voice), Some(audio)) = (line.voice.take(), &self.audio) {
+                        audio.stop(voice);
+                    }
+                    line.ends_at = self.scripts.real_time;
+                }
+            }
+        }
+    }
+
     fn update_dialogue_action(
         &mut self,
         i: usize,
@@ -1752,6 +1765,9 @@ impl Engine {
         else {
             return true;
         };
+        if self.is_knocked(speaker) {
+            return false;
+        }
         // Speakers say their lines where they are loaded.
         if self.actor_ref(speaker).is_none() {
             return false;

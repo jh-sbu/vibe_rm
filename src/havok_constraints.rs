@@ -27,11 +27,20 @@ enum Hold {
 impl Engine {
     /// The rigid body of `r` at `node`: a dead actor's ragdoll body on that
     /// bone, a loose object's body on that node; else, for a placed object
-    /// with that node in its model, a fixed point there. Living actors have
-    /// no ragdoll here, so nothing.
+    /// with that node in its model, a fixed point there. A living actor has
+    /// rigid bodies only while down, before its recovery starts.
     fn hold_of(&self, r: FormId, node: &str) -> Option<Hold> {
         if let Some(a) = self.actor_ref(r) {
-            let (ragdoll, pose) = a.ragdoll.as_ref()?;
+            let (ragdoll, pose) = if let Some(k) = a
+                .knock
+                .as_ref()
+                .filter(|k| k.state != crate::knock::KnockState::GetUp)
+            {
+                (&k.ragdoll, &k.mapping)
+            } else {
+                let (r, p) = a.ragdoll.as_ref()?;
+                (r, p)
+            };
             let bone = a.skeleton.by_name.get(node).copied().or_else(|| {
                 a.skeleton
                     .bones
@@ -92,6 +101,18 @@ impl Engine {
             anchor,
         });
         true
+    }
+
+    pub(crate) fn release_actor_constraints(&mut self, actor: FormId) {
+        let mut keep = Vec::new();
+        for c in std::mem::take(&mut self.havok_constraints) {
+            if c.a.0 == actor || c.b.0 == actor {
+                self.physics.remove_joint(c.joint, c.anchor);
+            } else {
+                keep.push(c);
+            }
+        }
+        self.havok_constraints = keep;
     }
 
     /// `RemoveHavokConstraints`: the joints scripts made between those

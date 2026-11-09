@@ -85,6 +85,7 @@ pub struct TitleSequence {
 }
 
 pub struct Engine {
+    pub(crate) player_knock: Option<crate::knock::Knock>,
     pub lo: LoadOrder,
     pub(crate) recipes: crate::world::crafting::Recipes,
     pub(crate) crafting: crate::crafting::CraftingState,
@@ -588,6 +589,7 @@ impl Engine {
             .map(|id| id.0)
             .collect();
         Engine {
+            player_knock: None,
             lo,
             recipes,
             crafting: Default::default(),
@@ -1434,6 +1436,7 @@ impl Engine {
     }
 
     pub(crate) fn unload_all(&mut self) {
+        self.finish_player_knock();
         self.tree_lod = None;
         self.scene.tree_lod.clear();
         if let Some(a) = self.audio.as_mut() {
@@ -2360,6 +2363,11 @@ impl Engine {
             let lying = self.world_state.body_poses.get(&r).cloned();
             self.kill_actor_lying(r, lying);
         }
+        let saved = living
+            .iter()
+            .filter_map(|r| self.world_state.pending_knocks.remove(r))
+            .collect();
+        self.restore_saved_knocks(saved);
         self.carry_unloaded_damage(&living);
     }
 
@@ -3413,6 +3421,7 @@ impl Engine {
         }
         self.place_decals();
         self.update_loose();
+        self.update_knocks(world_dt);
         self.update_traps();
         timing.next("sim.ai");
         {
@@ -3457,6 +3466,13 @@ impl Engine {
         self.update_casting(dt);
         self.update_shouts(dt);
         self.update_lockpick(dt);
+        if (input.jump || self.test_jump)
+            && self.player_knock.is_some()
+            && self.jump_during_get_up()
+        {
+            input.jump = true;
+            self.test_jump = false;
+        }
         if self.test_jump && self.player.grounded {
             input.jump = true;
             self.test_jump = false;
@@ -3486,11 +3502,13 @@ impl Engine {
         }
         // Riding in a cart, the cart carries them (`sync_passengers`): no
         // falling into its floor, pushing it about.
-        if !self.passengers.contains_key(&PLAYER_REF) {
+        if !self.passengers.contains_key(&PLAYER_REF) && self.player_knock.is_none() {
             self.player
                 .update(&mut self.physics, &cam, input, sneak_speed, armor_speed, dt);
         }
-        if let Some(h) = self.player.landed_from {
+        if self.player_knock.is_none()
+            && let Some(h) = self.player.landed_from
+        {
             self.player_landed(h);
         }
         let stride = (self.player.position - before).truncate().length();
@@ -3499,7 +3517,9 @@ impl Engine {
         self.player.sprinting = self.player.moving && sprint;
         self.update_swimming_states();
         self.update_player_footsteps(dt, stride, run, sprint);
-        self.camera.position = self.player.eye();
+        self.camera.position = self
+            .knock_camera_position()
+            .unwrap_or_else(|| self.player.eye());
         self.update_player_body(self.player.position - before, dt);
         if self.passengers.contains_key(&PLAYER_REF) {
             self.sync_passengers();
@@ -3730,6 +3750,9 @@ impl Engine {
 
     /// Activate whatever the player is looking at.
     pub fn activate(&mut self) -> Result<()> {
+        if self.player_knock.is_some() {
+            return Ok(());
+        }
         let Some((owner, name)) = self.look_target.clone() else {
             return Ok(());
         };

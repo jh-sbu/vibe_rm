@@ -87,7 +87,7 @@ pub struct ContactListener {
 pub(super) fn indices(p: &Packfile, at: u32) -> Vec<i16> {
     p.ptr(at)
         .map(|o| {
-            let (d, n) = p.array(o + 0x10);
+            let (d, n) = p.array(o + 0x30);
             d.map(|d| (0..n as u32).map(|i| p.i16(d + i * 2)).collect())
                 .unwrap_or_default()
         })
@@ -110,7 +110,7 @@ impl PoweredRagdoll {
         let weights = p
             .ptr(o + 0x80)
             .map(|o| {
-                let (d, n) = p.array(o + 0x10);
+                let (d, n) = p.array(o + 0x30);
                 d.map(|d| (0..n as u32).map(|i| p.f32(d + i * 4)).collect())
                     .unwrap_or_default()
             })
@@ -216,4 +216,105 @@ pub fn match_error(input: &[Mat4], candidate: &[Mat4], bones: &[i16; 4]) -> Opti
         error += 100.0 * ra.angle_between(q * rb).powi(2);
     }
     (error.is_finite() && yaw.is_finite()).then_some((error, yaw))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn ragdoll_bone_arrays_follow_bindable_header_and_fixups() {
+        let start = 0xb0;
+        let mut bytes = vec![0u8; start + 0x1f0];
+        let word =
+            |b: &mut [u8], at: usize, v: u32| b[at..at + 4].copy_from_slice(&v.to_le_bytes());
+        word(&mut bytes, 0, 0x57e0e057);
+        word(&mut bytes, 4, 0x10c0c010);
+        word(&mut bytes, 12, 8);
+        bytes[16] = 8;
+        bytes[17] = 1;
+        word(&mut bytes, 20, 2);
+        bytes[0x40..0x4e].copy_from_slice(b"__classnames__");
+        word(&mut bytes, 0x54, start as u32);
+        bytes[0x70..0x78].copy_from_slice(b"__data__");
+        word(&mut bytes, 0x84, start as u32);
+        word(&mut bytes, 0x88, 0x1d0);
+        for at in [0x8c, 0x90, 0x94, 0xa0] {
+            word(&mut bytes, at, 0x1f0);
+        }
+        let d = &mut bytes[start..];
+        word(d, 0x138, 3);
+        word(d, 0x198, 3);
+        for (i, v) in [-1i16, 3, 7].into_iter().enumerate() {
+            d[0x140 + i * 2..0x142 + i * 2].copy_from_slice(&v.to_le_bytes());
+        }
+        for (i, v) in [0.25f32, 0.5, 1.0].into_iter().enumerate() {
+            word(d, 0x1a0 + i * 4, v.to_bits());
+        }
+        for (i, (src, dst)) in [(0x70, 0x100), (0x80, 0x160), (0x130, 0x140), (0x190, 0x1a0)]
+            .into_iter()
+            .enumerate()
+        {
+            word(d, 0x1d0 + i * 8, src);
+            word(d, 0x1d4 + i * 8, dst);
+        }
+        let p = Packfile::parse(&bytes).unwrap();
+        let powered = PoweredRagdoll::read(&p, 0);
+        assert_eq!(powered.bones, [-1, 3, 7]);
+        assert_eq!(powered.weights, [0.25, 0.5, 1.0]);
+    }
+
+    #[test]
+    fn aligned_readers_keep_signed_bones_and_distinct_controls() {
+        let start = 0xb0;
+        let mut bytes = vec![0u8; start + 0x100];
+        let word =
+            |b: &mut [u8], at: usize, v: u32| b[at..at + 4].copy_from_slice(&v.to_le_bytes());
+        word(&mut bytes, 0, 0x57e0e057);
+        word(&mut bytes, 4, 0x10c0c010);
+        word(&mut bytes, 12, 8);
+        bytes[16] = 8;
+        bytes[17] = 1;
+        word(&mut bytes, 20, 2);
+        bytes[0x40..0x4e].copy_from_slice(b"__classnames__");
+        word(&mut bytes, 0x54, start as u32);
+        bytes[0x70..0x78].copy_from_slice(b"__data__");
+        word(&mut bytes, 0x84, start as u32);
+        for at in [0x88, 0x8c, 0x90, 0x94, 0xa0] {
+            word(&mut bytes, at, 0x100);
+        }
+        let d = &mut bytes[start..];
+        d[0x48] = 1;
+        for (at, v) in [
+            (0x50, 200.0f32),
+            (0x54, 0.8),
+            (0x58, 1.0),
+            (0x5c, 2.0),
+            (0x60, 1.0),
+            (0x64, 0.25),
+        ] {
+            word(d, at, v.to_bits());
+        }
+        d[0x68..0x6a].copy_from_slice(&(-1i16).to_le_bytes());
+        d[0x6a..0x6c].copy_from_slice(&11i16.to_le_bytes());
+        d[0x6c..0x6e].copy_from_slice(&10i16.to_le_bytes());
+        let p = Packfile::parse(&bytes).unwrap();
+        let get = GetUp::read(&p, 0);
+        assert!(get.enabled);
+        assert_eq!(get.bones, [-1, 11, 10]);
+        assert_eq!(get.duration, 1.0);
+        assert_eq!(get.align_duration, 0.25);
+        let powered = PoweredRagdoll::read(&p, 0);
+        assert_eq!(
+            (powered.max_force, powered.tau, powered.damping),
+            (200.0, 0.8, 1.0)
+        );
+        assert_eq!(
+            (
+                powered.proportional_recovery_velocity,
+                powered.constant_recovery_velocity
+            ),
+            (2.0, 1.0)
+        );
+        assert!(powered.bones.is_empty() && powered.weights.is_empty());
+    }
 }

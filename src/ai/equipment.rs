@@ -212,7 +212,11 @@ impl Engine {
             .cells
             .values()
             .flat_map(|rt| &rt.actors)
-            .filter(|a| !a.dead && a.graph.as_ref().is_some_and(|g| g.project().humanoid()))
+            .filter(|a| {
+                !a.dead
+                    && a.knock.is_none()
+                    && a.graph.as_ref().is_some_and(|g| g.project().humanoid())
+            })
             .map(|a| {
                 let package_drawn = self
                     .running_package(a.ref_id)

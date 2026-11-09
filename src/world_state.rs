@@ -17,6 +17,7 @@ use crate::engine::Engine;
 
 #[derive(Default)]
 pub struct WorldState {
+    pub(crate) pending_knocks: HashMap<FormId, crate::save::knock::SavedKnock>,
     /// Explicit Papyrus `SetAlert` flags, independent of loaded actor runtimes.
     /// Automatic detection-state changes are not mapped to this flag yet.
     pub alerted: std::collections::HashSet<FormId>,
@@ -206,6 +207,17 @@ impl Engine {
     /// Before a cell unloads: where its dead actors' bodies came to rest (and
     /// how), and the living's executions (how hurt they are among them).
     pub(crate) fn remember_actors(&mut self, key: crate::render::CellKey) {
+        let knocked: Vec<_> = self
+            .cells
+            .get(&key)
+            .into_iter()
+            .flat_map(|r| &r.actors)
+            .filter(|a| a.knock.is_some())
+            .map(|a| a.ref_id)
+            .collect();
+        for actor in knocked {
+            self.finish_knock(actor);
+        }
         let Some(place) = self.place_of_key(key) else {
             return;
         };

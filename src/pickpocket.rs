@@ -62,6 +62,14 @@ impl Engine {
     /// settings that is UESP's `15 + skill - target skill / 4 - 4 x weight -
     /// gold / 10`.
     pub fn pickpocket_chance(&self, victim: FormId, item: FormId, count: i32) -> f32 {
+        if self.knocked_state(victim) == crate::knock::KnockState::GetUp
+            && self
+                .actor_ref(victim)
+                .is_some_and(|a| a.exec.combat.is_none())
+            && !self.detects(victim, PLAYER_REF)
+        {
+            return 100.0;
+        }
         let g = |name: &str, default: f32| crate::ai::combat::gmst_f32(&self.lo, name, default);
         let info = crate::world::inventory::item_info(&self.lo, item);
         let (weight, gold) = if item == crate::crime::GOLD {

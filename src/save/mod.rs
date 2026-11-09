@@ -8,6 +8,7 @@ pub mod codec;
 mod continuity;
 mod copies;
 pub mod file;
+pub(crate) mod knock;
 pub mod metadata;
 mod speech;
 pub mod state;

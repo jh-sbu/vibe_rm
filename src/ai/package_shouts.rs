@@ -18,6 +18,9 @@ impl Engine {
         let mut actors = self.actor_cells.keys().copied().collect::<Vec<_>>();
         actors.sort();
         for actor in actors {
+            if self.is_knocked(actor) {
+                continue;
+            }
             if self.is_disabled(actor)
                 || self
                     .actor_ref(actor)
@@ -171,6 +174,9 @@ impl Engine {
         let mut actors = self.actor_cells.keys().copied().collect::<Vec<_>>();
         actors.sort();
         for actor in actors {
+            if self.is_knocked(actor) {
+                continue;
+            }
             let target = self
                 .actor_ref(actor)
                 .filter(|a| !a.dead && a.exec.bleeding.is_none())

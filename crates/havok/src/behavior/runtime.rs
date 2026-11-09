@@ -2804,9 +2804,60 @@ impl Instance {
                         out.powered.push(p);
                     }
                 }
-                Modifier::RigidBodyRagdoll(r) if r.enabled => out.rigid.push(r.clone()),
-                Modifier::KeyframeBones(k) if k.enabled => out.keyframe.push(k.clone()),
-                Modifier::ContactListener(c) if c.enabled => out.contacts.push(c.clone()),
+                Modifier::RigidBodyRagdoll(r) => {
+                    let mut r = r.clone();
+                    let fields = [
+                        "hierarchyGain",
+                        "velocityDamping",
+                        "accelerationGain",
+                        "velocityGain",
+                        "positionGain",
+                        "positionMaxLinearVelocity",
+                        "positionMaxAngularVelocity",
+                        "snapGain",
+                        "snapMaxLinearVelocity",
+                        "snapMaxAngularVelocity",
+                        "snapMaxLinearDistance",
+                        "snapMaxAngularDistance",
+                    ];
+                    for (name, v) in self.bound_members(gi, m) {
+                        if name == "enable" {
+                            r.enabled = v.is_finite() && v != 0.0;
+                        } else if name == "durationToBlend" {
+                            r.blend = v;
+                        } else if let Some(index) = name
+                            .strip_prefix("controlData/")
+                            .and_then(|n| fields.iter().position(|f| *f == n))
+                        {
+                            r.gains[index] = v;
+                        }
+                    }
+                    if r.enabled {
+                        out.rigid.push(r);
+                    }
+                }
+                Modifier::KeyframeBones(k) => {
+                    let mut k = k.clone();
+                    for (name, v) in self.bound_members(gi, m) {
+                        if name == "enable" {
+                            k.enabled = v.is_finite() && v != 0.0;
+                        }
+                    }
+                    if k.enabled {
+                        out.keyframe.push(k);
+                    }
+                }
+                Modifier::ContactListener(c) => {
+                    let mut c = c.clone();
+                    for (name, v) in self.bound_members(gi, m) {
+                        if name == "enable" {
+                            c.enabled = v.is_finite() && v != 0.0;
+                        }
+                    }
+                    if c.enabled {
+                        out.contacts.push(c);
+                    }
+                }
                 _ => {}
             }
         }

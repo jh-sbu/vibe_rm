@@ -817,7 +817,11 @@ impl Engine {
 
     /// The voice key (Z): the power readied is used. Shouts aren't built.
     pub fn player_use_power(&mut self) {
-        if self.disabled_controls.fighting || self.player_dead() || self.conversation.is_some() {
+        if self.disabled_controls.fighting
+            || self.player_dead()
+            || self.player_knock.is_some()
+            || self.conversation.is_some()
+        {
             return;
         }
         let Some(power) = self.equipped_spell(PLAYER_REF, VOICE) else {
@@ -1337,7 +1341,7 @@ impl Engine {
                     Some(c) => !c.fleeing,
                     None => a.magic_practising(),
                 };
-                if a.dead || a.exec.bleeding.is_some() || !casting {
+                if a.dead || a.knock.is_some() || a.exec.bleeding.is_some() || !casting {
                     continue;
                 }
                 // A practice target may be a thing, not an actor.

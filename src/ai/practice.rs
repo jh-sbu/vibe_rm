@@ -420,7 +420,7 @@ impl crate::engine::Engine {
     pub(crate) fn update_practice_weapons(&mut self) {
         let mut swaps = Vec::new();
         for a in self.cells.values().flat_map(|rt| &rt.actors) {
-            if a.exec.combat.is_some() || a.dead {
+            if a.exec.combat.is_some() || a.dead || a.knock.is_some() {
                 continue;
             }
             let kind = a.exec.goal.and_then(|g| g.practice).map(|p| p.weapon);

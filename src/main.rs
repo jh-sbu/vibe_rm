@@ -44,6 +44,7 @@ mod invisibility;
 mod item_copies;
 mod items;
 mod journal;
+mod knock;
 mod knowledge;
 mod leveled;
 mod load_screens;

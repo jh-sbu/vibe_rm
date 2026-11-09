@@ -380,6 +380,14 @@ impl Player {
         }
     }
 
+    pub(crate) fn reset_fall_tracking(&mut self) {
+        self.fall_top = None;
+        self.landed_from = None;
+        self.last = self.position;
+        self.vertical_velocity = 0.0;
+        self.jumped = false;
+    }
+
     pub fn eye(&self) -> Vec3 {
         self.position + Vec3::Z * (EYE_OFFSET - SNEAK_DROP * self.crouch)
     }

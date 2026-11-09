@@ -72,6 +72,9 @@ pub struct Shouts {
 }
 
 impl Shouts {
+    pub(crate) fn interrupt(&mut self) {
+        self.held = None;
+    }
     pub(crate) fn restore_recovery(&mut self, remaining: f32, total: f32) {
         self.recovery = remaining;
         self.recovery_total = total;
@@ -320,7 +323,11 @@ impl Engine {
     /// The voice key went down: speaking starts if the voice has rested
     /// (else its meter flashes). A power readied is used instead.
     pub fn player_voice_press(&mut self) {
-        if self.disabled_controls.fighting || self.player_dead() || self.conversation.is_some() {
+        if self.disabled_controls.fighting
+            || self.player_dead()
+            || self.player_knock.is_some()
+            || self.conversation.is_some()
+        {
             return;
         }
         let Some(shout) = self.equipped_shout(PLAYER_REF) else {
@@ -361,6 +368,9 @@ impl Engine {
 
     /// Shout the readied shout, held for `held` seconds.
     pub fn player_shout(&mut self, held: f32) {
+        if self.player_knock.is_some() {
+            return;
+        }
         let Some(shout_id) = self.equipped_shout(PLAYER_REF) else {
             return;
         };

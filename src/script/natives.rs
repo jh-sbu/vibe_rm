@@ -1277,6 +1277,30 @@ pub fn call(
             v(Value::Bool(me.is_some_and(|r| e.map_marker_visible(r))))
         }
         // ------------------------------------------------------------ Havok
+        ("objectreference", "pushactoraway") => {
+            if let (Some(source), Some(target)) = (me, form_arg(args, 0)) {
+                e.push_actor_away(source, target, arg(1).as_float());
+            }
+            none()
+        }
+        ("objectreference", "knockareaeffect") => {
+            if let Some(source) = me {
+                e.knock_area(source, arg(0).as_float(), arg(1).as_float());
+            }
+            none()
+        }
+        ("objectreference", "forceaddragdolltoworld") => {
+            if let Some(actor) = me {
+                e.knock_down(actor, glam::Vec3::ZERO, crate::knock::KnockCause::Script);
+            }
+            none()
+        }
+        ("objectreference", "forceremoveragdollfromworld") => {
+            if let Some(actor) = me {
+                e.request_get_up(actor);
+            }
+            none()
+        }
         ("objectreference", "applyhavokimpulse") => {
             if let Some(r) = me {
                 let dir = glam::Vec3::new(arg(0).as_float(), arg(1).as_float(), arg(2).as_float());

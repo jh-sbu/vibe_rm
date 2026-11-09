@@ -250,7 +250,7 @@ impl Engine {
         for actor in ids {
             let mut s = self.barks.packages.remove(&actor).unwrap();
             let same = self.owns_speech(actor, &s.owner);
-            if self.is_dead(actor) || (!same && !s.finish) {
+            if self.is_dead(actor) || self.is_knocked(actor) || (!same && !s.finish) {
                 if let (Some(audio), Some(voice)) = (&self.audio, s.line.voice) {
                     audio.stop(voice);
                 }

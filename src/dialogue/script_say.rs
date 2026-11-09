@@ -46,7 +46,7 @@ impl Engine {
         } else {
             as_actor
         };
-        if voice.is_some_and(|v| self.is_dead(v)) {
+        if voice.is_some_and(|v| self.is_dead(v) || self.is_knocked(v)) {
             return;
         }
         // Without an actor, the conditions run on the reference itself.
@@ -76,7 +76,7 @@ impl Engine {
         );
     }
 
-    fn stop_script_say(&mut self, speaker: FormId) {
+    pub(crate) fn stop_script_say(&mut self, speaker: FormId) {
         if let Some(s) = self.barks.script.remove(&speaker) {
             if let (Some(audio), Some(voice)) = (&self.audio, s.line.voice) {
                 audio.stop(voice);
@@ -152,7 +152,9 @@ impl Engine {
         speakers.sort();
         for speaker in speakers {
             let mut s = self.barks.script.remove(&speaker).unwrap();
-            if s.voice.is_some_and(|v| self.is_dead(v)) {
+            if s.voice
+                .is_some_and(|v| self.is_dead(v) || self.is_knocked(v))
+            {
                 if let (Some(audio), Some(voice)) = (&self.audio, s.line.voice) {
                     audio.stop(voice);
                 }

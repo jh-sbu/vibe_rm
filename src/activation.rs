@@ -127,6 +127,9 @@ impl Engine {
     /// scripts hear `OnActivate` (unless `default_only`), and unless its
     /// activation is blocked its children are activated in turn.
     pub(crate) fn activate_ref(&mut self, target: FormId, by: Option<FormId>, default_only: bool) {
+        if by.is_some_and(|r| self.is_knocked(r)) {
+            return;
+        }
         // Scripts explicitly activating as the player also interrupt it
         // (USKP's TGDoorCloserTriggerScript fix documents this behavior), but
         // not on something locked (test-mod autotest22: a key-only chest).

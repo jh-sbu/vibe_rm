@@ -250,6 +250,8 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
     };
     let subj_base = subject.and_then(|s| e.base_of(s));
     match c.func {
+        107 => b(subject.is_some_and(|r| e.is_knocked(r))),
+        725 => Some(subject.map_or(0.0, |r| e.knocked_state(r) as u8 as f32)),
         GET_NUMERIC_PACKAGE_DATA => match c.package_data {
             Some(PackageData::Number(v)) => Some(v),
             _ => None,

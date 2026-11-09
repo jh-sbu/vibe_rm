@@ -807,6 +807,9 @@ impl Engine {
     /// player...), else it greets the player with its first `HELO` line. A
     /// guard come to arrest the player starts the arrest.
     pub fn start_conversation(&mut self, npc_ref: FormId) {
+        if self.is_knocked(npc_ref) || self.player_knock.is_some() {
+            return;
+        }
         if self.base_of(npc_ref).is_none() {
             return;
         }
@@ -852,6 +855,9 @@ impl Engine {
 
     /// Start a conversation with `npc_ref`, opening with `greeting`.
     pub(crate) fn open_conversation(&mut self, npc_ref: FormId, greeting: Option<(Topic, Info)>) {
+        if self.is_knocked(npc_ref) || self.player_knock.is_some() {
+            return;
+        }
         let Some(npc) = self.base_of(npc_ref) else {
             return;
         };

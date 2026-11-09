@@ -899,6 +899,10 @@ impl ActorRuntime {
 }
 
 impl Combat {
+    pub(crate) fn pause_for_knock(&mut self) {
+        self.swing = 0.0;
+    }
+
     pub fn new(target: FormId) -> Combat {
         Combat {
             target,
@@ -2965,7 +2969,7 @@ impl Engine {
         }
         // Flinch unless mid-swing or behind its guard; heavy hits stagger.
         let swinging = a.exec.combat.as_ref().is_some_and(|c| c.swing > 0.0) || a.guarding();
-        if let Some(g) = a.graph.as_mut() {
+        if let Some(g) = a.graph.as_mut().filter(|_| a.knock.is_none()) {
             if stagger > 0.0 {
                 g.set_variable("staggerMagnitude", stagger.min(1.0));
                 g.send_event("staggerStart");
@@ -3020,7 +3024,7 @@ impl Engine {
         log::info!("{actor} bleeds out (was {})", a.state_name());
         a.fall_out_of_furniture(&mut self.furniture, &self.nav);
         a.halt(BLEEDOUT_TIME);
-        if let Some(g) = a.graph.as_mut() {
+        if let Some(g) = a.graph.as_mut().filter(|_| a.knock.is_none()) {
             g.send_event("bleedOutStart");
         }
         self.send_script_event(actor, "OnEnterBleedout", Vec::new());
@@ -3079,7 +3083,7 @@ impl Engine {
                 }
                 a.exec.bleeding = None;
                 a.exec.health = a.stats.max_health * 0.25;
-                if let Some(g) = a.graph.as_mut() {
+                if let Some(g) = a.graph.as_mut().filter(|_| a.knock.is_none()) {
                     g.send_event("bleedOutStop");
                 }
                 log::info!("{} recovers", a.ref_id);
@@ -3295,7 +3299,7 @@ impl Engine {
     /// with the other hand's held, both hands strike (a dual-wield attack,
     /// or the fists' combo).
     pub fn player_attack_press(&mut self, hand: usize) {
-        if self.disabled_controls.fighting {
+        if self.disabled_controls.fighting || self.player_knock.is_some() {
             return;
         }
         self.player_breaks_ethereal();
@@ -3421,7 +3425,11 @@ impl Engine {
     }
 
     fn player_bash_kind(&mut self, power: bool) {
-        if self.player_dead() || self.conversation.is_some() || self.disabled_controls.fighting {
+        if self.player_dead()
+            || self.player_knock.is_some()
+            || self.conversation.is_some()
+            || self.disabled_controls.fighting
+        {
             return;
         }
         let set = self.combat_settings();
@@ -3582,7 +3590,7 @@ impl Engine {
     /// power attack takes its damage multiplier and stagger, and stamina
     /// (the hands' heavier weapon's cost); without enough it is a basic one.
     pub fn player_attack(&mut self, side: Side, power: bool) {
-        if self.disabled_controls.fighting {
+        if self.disabled_controls.fighting || self.player_knock.is_some() {
             return;
         }
         self.player_breaks_ethereal();
@@ -3857,7 +3865,10 @@ impl Engine {
         if let Some(c) = capsule {
             self.physics.set_enabled(&[c], false);
         }
-        if let Some(desc) = skeleton.ragdoll.clone() {
+        if let Some(mut knock) = a.knock.take() {
+            self.physics.ragdoll_into_corpse(&mut knock.ragdoll);
+            a.ragdoll = Some((knock.ragdoll, knock.mapping));
+        } else if let Some(desc) = skeleton.ragdoll.clone() {
             let lying = lying.filter(|b| b.len() == desc.bodies.len());
             let velocity = if lying.is_some() {
                 Vec3::ZERO

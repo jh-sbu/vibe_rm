@@ -76,7 +76,7 @@ pub enum Motion {
 /// the actor's scale.
 #[derive(Clone)]
 pub struct Ragdoll {
-    joints: Vec<(ImpulseJointHandle, usize, usize)>,
+    joints: Vec<(ImpulseJointHandle, usize, usize, bool)>,
     mode: RagdollMode,
     pub bodies: Vec<RigidBodyHandle>,
     pub scale: f32,
@@ -916,6 +916,7 @@ impl Physics {
                         .insert_impulse_joint(bodies[j.a], bodies[j.b], joint(j, scale)),
                     j.a,
                     j.b,
+                    !matches!(j.kind, crate::world::ragdoll::JointKind::Rope(_)),
                 )
             })
             .collect();
@@ -964,8 +965,11 @@ impl Physics {
                 max_force,
             } => (tau.max(0.0), damping.max(0.0), max_force.max(0.0)),
         };
-        for &(h, a, b) in &r.joints {
-            let Some(j) = self.world.impulse_joints.get_mut(h, true) else {
+        for &(h, a, b, motorized) in &r.joints {
+            if !motorized {
+                continue;
+            }
+            let Some(j) = self.world.impulse_joints.get_mut(h, force > 0.0) else {
                 continue;
             };
             let (Some(ra), Some(rb)) = (rotations.get(a), rotations.get(b)) else {
@@ -1049,7 +1053,7 @@ impl Physics {
     /// Keep every body and joint, disabling motors and releasing keyframes.
     pub fn ragdoll_into_corpse(&mut self, r: &mut Ragdoll) {
         r.mode = RagdollMode::Limp;
-        for &(h, _, _) in &r.joints {
+        for &(h, _, _, _) in &r.joints {
             if let Some(j) = self.world.impulse_joints.get_mut(h, true) {
                 j.data.motor_axes = JointAxesMask::empty();
             }
@@ -1118,7 +1122,7 @@ impl Physics {
 
     pub fn remove_ragdoll(&mut self, r: &Ragdoll) {
         for &h in &r.bodies {
-            self.world.remove_body_with_colliders(h, true);
+            self.remove_body(h);
         }
     }
 
@@ -1213,6 +1217,48 @@ impl Physics {
             QueryFilter::default().predicate(&not_actor),
         )?;
         Some((hit.time_of_impact, hit.normal))
+    }
+
+    /// Resolve initial overlaps when returning a character controller to the
+    /// world. Each contact pushes out along its separating normal; dynamic
+    /// bodies and other actors do not choose the standing location.
+    pub fn recover_actor_position(&self, capsule: Option<ColliderHandle>, feet: Vec3) -> Vec3 {
+        let shape = capsule
+            .and_then(|h| self.world.colliders.get(h))
+            .map_or_else(|| self.player_shape.clone(), |c| c.shared_shape().clone());
+        let lift = shape
+            .as_capsule()
+            .map_or(self.player_half_height + self.player_radius, |c| {
+                c.half_height() + c.radius
+            });
+        let filter =
+            QueryFilter::exclude_dynamic()
+                .exclude_sensors()
+                .groups(InteractionGroups::new(
+                    Group::ALL,
+                    Group::ALL ^ RAGDOLL_GROUP ^ ACTOR_GROUP,
+                    InteractionTestMode::And,
+                ));
+        let qp = self.world.query_pipeline_with_filter(filter);
+        let mut at = feet + Vec3::Z * lift;
+        for _ in 0..8 {
+            let pose = Pose::from_translation(at);
+            let mut correction = Vec3::ZERO;
+            for (_, c) in qp.intersect_shape(pose, &*shape.0) {
+                if let Ok(Some(contact)) =
+                    rapier3d::parry::query::contact(&pose, &*shape.0, c.position(), c.shape(), 0.0)
+                {
+                    if contact.dist < -0.05 {
+                        correction -= contact.normal1 * (0.1 - contact.dist);
+                    }
+                }
+            }
+            if correction.length_squared() < 1e-4 {
+                break;
+            }
+            at += correction.clamp_length_max(64.0);
+        }
+        at - Vec3::Z * lift
     }
 
     /// Support below a recovering actor, excluding its own physical bodies.

@@ -330,7 +330,7 @@ impl crate::engine::Engine {
             .cells
             .values()
             .flat_map(|rt| &rt.actors)
-            .filter(|a| a.magic_practising() && !a.dead)
+            .filter(|a| a.magic_practising() && !a.dead && a.knock.is_none())
             .filter_map(|a| {
                 let goal = a.exec.goal.and_then(|g| g.magic)?;
                 let target = goal.target.filter(|&t| t != a.ref_id)?;

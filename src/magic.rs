@@ -1256,6 +1256,7 @@ impl Engine {
             archetype::STAGGER => {
                 if x.target != PLAYER_REF
                     && !self.is_ethereal(x.target)
+                    && !self.is_knocked(x.target)
                     && let Some(g) = self.actor_mut(x.target).and_then(|a| a.graph.as_mut())
                 {
                     g.set_variable("staggerMagnitude", x.magnitude.clamp(0.0, 1.0));

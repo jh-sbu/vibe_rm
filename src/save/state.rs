@@ -101,6 +101,7 @@ impl std::fmt::Display for HalfApplied {
 
 #[derive(Default)]
 pub struct Snapshot {
+    pub(crate) knocks: Vec<super::knock::SavedKnock>,
     /// Owned runtime base records, in global form-ID order (optional FORM).
     pub forms: Vec<Vec<u8>>,
     pub crafting_help: HashSet<[u8; 4]>,
@@ -532,6 +533,7 @@ impl Snapshot {
         let mut continuity = super::continuity::Continuity::capture(e);
         continuity.executions = executions;
         Snapshot {
+            knocks: super::knock::capture(e),
             // Saved state omits runtime roots such as projectiles. Keep every
             // created form until lifetime tracking covers those roots too.
             forms: e.lo.runtime_records(),
@@ -1324,6 +1326,7 @@ impl Snapshot {
             w.bool(*can_do_favor);
         }
         file.add(b"TEAM", w.0);
+        super::knock::write(&self.knocks, &mut file);
         self.continuity.write(&mut file);
         self.vm.write(&mut file);
         file
@@ -1398,6 +1401,7 @@ impl Snapshot {
             validate_forms(&s.forms)?;
         }
         s.continuity = super::continuity::Continuity::read(file)?;
+        s.knocks = super::knock::read(file)?;
 
         if file
             .sections
@@ -2481,6 +2485,7 @@ impl Snapshot {
             "save has invalid ward-hit state"
         );
         self.continuity.validate()?;
+        super::knock::validate(&self.knocks)?;
         let is_package = |p: FormId| e.lo.get(p).is_some_and(|r| r.tag().0 == *b"PACK");
         for (actor, x) in &self.continuity.executions {
             let runs = [x.run.as_ref(), x.suspended.as_ref()]
@@ -2630,6 +2635,7 @@ impl Snapshot {
         ws.actor_causes = self.actor_causes;
         ws.bleedout_dialogue = self.bleedout_dialogue;
         ws.body_poses = self.body_poses;
+        ws.pending_knocks.clear();
         ws.moved = self.moved;
         ws.item_charges = self.item_charges;
         ws.broken_joints = self.broken_joints;
@@ -2701,6 +2707,7 @@ impl Snapshot {
                 .map_err(|err| err.context(HalfApplied))?,
             _ => {}
         }
+        e.restore_saved_knocks(self.knocks);
         // Rebuilding loaded actors may draw random numbers. Those draws must
         // not consume the saved gameplay/condition continuation.
         e.rng = random_streams.0;

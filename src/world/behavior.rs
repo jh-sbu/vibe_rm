@@ -235,6 +235,7 @@ pub struct GraphAnim {
     /// A second graph posing some of the same skeleton's bones (a tail's).
     aux: Option<Box<AuxGraph>>,
     ragdoll_pose: Option<Vec<Mat4>>,
+    ragdoll_ground: Option<Vec3>,
     get_up_source: Option<Vec<Transform>>,
     pub ragdoll_controls: havok::behavior::ragdoll::FrameOutput,
 }
@@ -460,6 +461,7 @@ impl GraphAnim {
             pinned: ScriptPins::default(),
             aux: None,
             ragdoll_pose: None,
+            ragdoll_ground: None,
             get_up_source: None,
             ragdoll_controls: Default::default(),
         }
@@ -640,11 +642,15 @@ impl GraphAnim {
         self.aux = Some(aux);
     }
 
+    pub fn set_ragdoll_ground(&mut self, normal: Vec3) {
+        self.ragdoll_ground = normal.try_normalize();
+    }
     pub fn reset_get_up_source(&mut self) {
         self.get_up_source = None;
     }
     pub fn clear_ragdoll_pose(&mut self) {
         self.ragdoll_pose = None;
+        self.ragdoll_ground = None;
         self.get_up_source = None;
         self.inst.set_ragdoll_pose(Vec::new());
     }
@@ -1032,7 +1038,9 @@ impl GraphAnim {
                 });
             }
             if let Some(from) = &self.get_up_source {
-                blend_get_up(&mut locals, from, *elapsed, get_up);
+                let mut settings = get_up.clone();
+                settings.ground_normal = self.ragdoll_ground.unwrap_or(settings.ground_normal);
+                blend_get_up(&mut locals, from, *elapsed, &settings);
             }
         } else {
             self.get_up_source = None;
@@ -1068,9 +1076,14 @@ fn blend_get_up(
             t
         };
         out.translation = start.translation.lerp(out.translation, t);
-        out.rotation = glam::Mat3::from_quat(
-            Quat::from_mat3(&start.rotation).slerp(Quat::from_mat3(&out.rotation), rotation_t),
-        );
+        let mut target = Quat::from_mat3(&out.rotation);
+        if i == 0 {
+            if let Some(normal) = settings.ground_normal.try_normalize() {
+                target = Quat::from_rotation_arc(Vec3::Z, normal) * target;
+            }
+        }
+        out.rotation =
+            glam::Mat3::from_quat(Quat::from_mat3(&start.rotation).slerp(target, rotation_t));
         out.scale = start.scale + (out.scale - start.scale) * t;
     }
 }

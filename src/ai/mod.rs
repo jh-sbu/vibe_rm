@@ -354,7 +354,7 @@ pub struct ActorRuntime {
     /// The actor's behaviour graph; actors without one play `anim`.
     pub graph: Option<GraphAnim>,
     actions: idles::LocomotionActions,
-    velocity: Vec3,
+    pub(crate) velocity: Vec3,
     target_heading: f32,
     turn_request: Option<f32>,
     /// Ground speed of the graph's walk (its clips' root motion).
@@ -509,6 +509,7 @@ pub struct ActorRuntime {
     hit_frames: u8,
     /// Dead, and the ragdoll it lies as (with the mapping back to its bones).
     pub(crate) dead: bool,
+    pub(crate) knock: Option<crate::knock::Knock>,
     pub(crate) ragdoll: Option<(crate::physics::Ragdoll, crate::world::ragdoll::RagdollPose)>,
     /// The lit torch it holds, and what it put away for it (a shield, a
     /// second weapon, a weapon in both hands).
@@ -589,6 +590,7 @@ impl ActorRuntime {
             wants_meal: false,
             wants_action_idle: false,
             dead: false,
+            knock: None,
             ragdoll: None,
             stats: Default::default(),
             strength: 0.0,
@@ -2224,6 +2226,21 @@ impl ActorRuntime {
         r.filter(|r| *r > 0.1).unwrap_or(TURN_RATE)
     }
 
+    /// Pause only action execution: keep the package procedure and combat target.
+    pub(crate) fn pause_for_knock(&mut self) {
+        self.speed = 0.0;
+        self.velocity = Vec3::ZERO;
+        self.sprinting = false;
+        self.moving = false;
+        self.hit_frames = 0;
+        self.casts = None;
+        self.loose = false;
+        self.combat_voice = None;
+        if let Some(c) = self.exec.combat.as_mut() {
+            c.pause_for_knock();
+        }
+    }
+
     pub fn animate(&mut self, dt: f32, clips: &mut Clips) -> Option<Vec<Mat4>> {
         if self.graph.is_some() {
             return Some(self.animate_graph(dt, clips));
@@ -3107,6 +3124,9 @@ impl Engine {
     /// tree for the speaker's graph (hands on hips, expressive or angry gestures,
     /// by the line's emotion and the pose the speaker is in).
     pub(crate) fn talking_gesture(&mut self, actor: FormId) {
+        if self.is_knocked(actor) {
+            return;
+        }
         use crate::condition::{Context, IdleQuery};
         let Some(key) = self.actor_cells.get(&actor).copied() else {
             return;
@@ -3868,7 +3888,7 @@ impl Engine {
             } else {
                 EVAL_INTERVAL
             };
-            if a.exec.pinned || a.dead {
+            if a.exec.pinned || a.dead || a.knock.is_some() {
                 continue;
             }
             // Home doors follow the package as it starts, not at the next
@@ -4257,6 +4277,9 @@ impl Engine {
                     if std::mem::take(&mut a.objects_changed) {
                         held.push((*key, index, Vec::new()));
                     }
+                    continue;
+                }
+                if a.knock.is_some() {
                     continue;
                 }
                 let was = a.exec.pos;
