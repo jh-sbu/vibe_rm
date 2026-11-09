@@ -2298,7 +2298,9 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
      `ShaderParticleGeometry.Apply` (118) / `Remove` (84), a script's
      precipitation layer with its fades (the renderer's two layers follow
      the weathers); `SetSubGraphFloatVariable` (100) and
-     `PlaySubGraphAnimation` (77), whose subgraphs no source describes;
+     `PlaySubGraphAnimation` (77) reach art objects' graphs, but armor
+     addons' behaviour graphs (spriggan skins, glowing sabre cats and deer,
+     Dwarven centurions) don't run yet;
      `Game.AddAchievement` (97) and `ShakeController` (91), with nothing to
      show without an achievement service or gamepad rumble;
      `SetRace` (45) on NPCs, their model swapped live (the player's is done:

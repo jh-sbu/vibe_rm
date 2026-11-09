@@ -3122,6 +3122,24 @@ pub fn call(
                 _ => false,
             }))
         }
+        // An actor's "sub graphs": its art objects' behaviour graphs (the CK
+        // wiki's note; its armor addons' graphs don't run here).
+        ("actor", "playsubgraphanimation") => {
+            if let Some(a) = me {
+                let n = e.subgraph_event(a, &str_arg(args, 0));
+                log::debug!(
+                    "{a}.PlaySubGraphAnimation({}): {n} graphs",
+                    str_arg(args, 0)
+                );
+            }
+            none()
+        }
+        ("actor", "setsubgraphfloatvariable") => {
+            if let Some(a) = me {
+                e.subgraph_variable(a, &str_arg(args, 0), arg(1).as_float());
+            }
+            none()
+        }
         ("shaderparticlegeometry", "apply") => {
             if let Some(s) = me {
                 e.apply_shader_particles(s, args.first().map_or(0.0, Value::as_float));

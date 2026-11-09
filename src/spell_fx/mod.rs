@@ -182,6 +182,31 @@ impl Engine {
         }
         Some(effect)
     }
+    /// `Actor.PlaySubGraphAnimation`: the event to the behaviour graphs of
+    /// the art objects on `actor` (its "sub graphs"). How many took it.
+    pub(crate) fn subgraph_event(&mut self, actor: FormId, event: &str) -> usize {
+        self.spell_fx
+            .art
+            .iter_mut()
+            .filter(|((owner, _), _)| *owner == actor)
+            .filter_map(|(_, a)| a.effect.graph.as_mut())
+            .map(|g| g.send_event(event))
+            .filter(|&taken| taken)
+            .count()
+    }
+
+    /// `Actor.SetSubGraphFloatVariable`: the variable on those graphs.
+    pub(crate) fn subgraph_variable(&mut self, actor: FormId, name: &str, value: f32) -> usize {
+        self.spell_fx
+            .art
+            .iter_mut()
+            .filter(|((owner, _), _)| *owner == actor)
+            .filter_map(|(_, a)| a.effect.graph.as_mut())
+            .map(|g| g.set_variable(name, value))
+            .filter(|&set| set)
+            .count()
+    }
+
     fn load_art(&mut self, id: FormId, default_node: &str) -> Option<ArtEffect> {
         let art = records::ArtObject::load(&self.lo, id)?;
         let model = art.model?;
