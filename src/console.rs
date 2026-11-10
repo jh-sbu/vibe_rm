@@ -40,11 +40,27 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
     }
     match lower.as_str() {
         "knock" | "getup" => {
-            let actor=args.first().and_then(|s|if s.eq_ignore_ascii_case("player") {Some(crate::engine::PLAYER_REF)} else {engine.resolve_form(s)}).or(engine.console_ref).unwrap_or(crate::engine::PLAYER_REF);
-            let result=if lower=="getup" {engine.request_get_up(actor)} else {
-                engine.push_actor_away(crate::engine::PLAYER_REF,actor,args.get(1).and_then(|s|s.parse().ok()).unwrap_or(10.0))
+            let actor = args
+                .first()
+                .and_then(|s| {
+                    if s.eq_ignore_ascii_case("player") {
+                        Some(crate::engine::PLAYER_REF)
+                    } else {
+                        engine.resolve_form(s)
+                    }
+                })
+                .or(engine.console_ref)
+                .unwrap_or(crate::engine::PLAYER_REF);
+            let result = if lower == "getup" {
+                engine.request_get_up(actor)
+            } else {
+                let force = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(10.0);
+                engine.push_actor_away(crate::engine::PLAYER_REF, actor, force)
             };
-            vec![format!("{actor}: {}",if result {"accepted"} else {"refused"})]
+            vec![format!(
+                "{actor}: {}",
+                if result { "accepted" } else { "refused" }
+            )]
         }
         "audio" => engine.audio_command(&args),
         "getgs" => {

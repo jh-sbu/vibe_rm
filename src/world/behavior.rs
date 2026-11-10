@@ -665,9 +665,13 @@ impl GraphAnim {
         }
     }
 
+    /// The ragdoll's pose for pose matching and the get-up blend. `moved`
+    /// marks the bones the bodies carry (NIF order); the others keep their
+    /// pose from before the fall and are hidden from matching.
     pub fn set_ragdoll_pose(
         &mut self,
         pose: Vec<Mat4>,
+        moved: &[bool],
         skeleton: &Skeleton,
         vfs: &vfs::Vfs,
         anims: &mut AnimationLibrary,
@@ -678,9 +682,9 @@ impl GraphAnim {
         self.inst.set_ragdoll_pose(
             map.iter()
                 .map(|b| {
-                    b.and_then(|i| pose.get(i))
+                    b.filter(|&i| moved.get(i).copied().unwrap_or(false))
+                        .and_then(|i| pose.get(i))
                         .copied()
-                        .unwrap_or(Mat4::IDENTITY)
                 })
                 .collect(),
         );

@@ -8,6 +8,9 @@ use esp::FormId;
 use glam::{Mat4, Vec3};
 use std::collections::HashSet;
 
+/// How far (horizontally) a restored actor may be from its saved first body.
+const MOVED_WHILE_SAVED: f32 = 256.0;
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SavedKnock {
     pub actor: FormId,
@@ -228,6 +231,21 @@ impl Engine {
             let actor = saved.actor;
             if actor != PLAYER_REF && self.actor_ref(actor).is_none() {
                 self.world_state.pending_knocks.insert(actor, saved);
+                continue;
+            }
+            // Moved while unloaded (a script's MoveTo, say): it stands where it
+            // is now rather than lying where it fell.
+            if actor != PLAYER_REF
+                && saved.bodies.first().is_some_and(|b| {
+                    self.actor_ref(actor).is_some_and(|a| {
+                        a.exec
+                            .pos
+                            .truncate()
+                            .distance(b.w_axis.truncate().truncate())
+                            > MOVED_WHILE_SAVED
+                    })
+                })
+            {
                 continue;
             }
             // Loaded bodies already passed capability checks when saved. Script

@@ -249,8 +249,11 @@ impl RagdollPose {
     pub fn rebase(&mut self, actor: Mat4) {
         self.inv_actor = actor.inverse();
     }
-    pub fn initial_pose(&self) -> Vec<Mat4> {
-        self.base.clone()
+    /// Per bone: whether the bodies move it (it has one, or one above it).
+    pub fn moved_bones(&self, skeleton: &Skeleton) -> Vec<bool> {
+        (0..skeleton.bones.len())
+            .map(|i| self.driven[i].is_some() || self.has_driven_ancestor(skeleton, i))
+            .collect()
     }
     pub fn pose_animated(
         &self,

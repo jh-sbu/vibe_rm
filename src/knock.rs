@@ -42,6 +42,19 @@ pub(crate) struct Knock {
     pub recovery_pose: Option<Vec<Mat4>>,
     pub recovery_time: f32,
     pub previous_view: Option<bool>,
+    /// While paralysed: the pose (model space) it stiffened in when the
+    /// paralysis struck, which the motors hold.
+    pub hold_pose: Option<Vec<Mat4>>,
+}
+
+/// `iGetUpType`: the ordinary get-up (1), or the swimming one (2) with the
+/// pelvis under water. Inferred from the selector's child order.
+fn get_up_type(water: Option<f32>, pelvis: f32) -> f32 {
+    if water.is_some_and(|w| w >= pelvis) {
+        2.0
+    } else {
+        1.0
+    }
 }
 
 impl Engine {
@@ -89,11 +102,10 @@ impl Engine {
             self.physics
                 .apply_ragdoll_impulse(&k.ragdoll, impulse, None);
             k.rest_for = 0.0;
-            k.peak_z = self
-                .physics
-                .ragdoll_bodies(&k.ragdoll)
-                .first()
-                .map_or(k.peak_z, |m| m.w_axis.z);
+            // A push mid-fall keeps the height already fallen from.
+            if let Some(m) = self.physics.ragdoll_bodies(&k.ragdoll).first() {
+                k.peak_z = k.peak_z.max(m.w_axis.z);
+            }
             k.fall_applied = false;
             if cause == KnockCause::Script {
                 k.script_hold = true;
@@ -203,6 +215,7 @@ impl Engine {
             recovery_pose: None,
             recovery_time: 0.0,
             previous_view: None,
+            hold_pose: None,
         });
         self.stop_knocked_voice(actor);
         true
@@ -210,6 +223,7 @@ impl Engine {
 
     pub(crate) fn request_get_up(&mut self, actor: FormId) -> bool {
         let paralyzed = self.actor_value(actor, esp::actor_value::PARALYSIS) > 0.0;
+        let get_up_type = self.knock_get_up_type(actor);
         let knock = if actor == PLAYER_REF {
             self.player_knock.as_mut()
         } else {
@@ -222,7 +236,7 @@ impl Engine {
             return false;
         }
         if actor == PLAYER_REF {
-            return self.request_player_get_up();
+            return self.request_player_get_up(get_up_type);
         }
         let Some(a) = self.actor_mut(actor) else {
             return false;
@@ -235,10 +249,28 @@ impl Engine {
         }
         k.getup_requested = true;
         if let Some(g) = a.graph.as_mut() {
-            g.set_variable("iGetUpType", 1.0);
+            g.set_variable("iGetUpType", get_up_type);
             g.send_event("GetUpBegin");
         }
         true
+    }
+
+    /// `iGetUpType` for a knocked actor, from its first body and the water.
+    fn knock_get_up_type(&self, actor: FormId) -> f32 {
+        let knock = if actor == PLAYER_REF {
+            self.player_knock.as_ref()
+        } else {
+            self.actor_ref(actor).and_then(|a| a.knock.as_ref())
+        };
+        let Some(pelvis) = knock.and_then(|k| {
+            self.physics
+                .ragdoll_bodies(&k.ragdoll)
+                .first()
+                .map(|m| m.w_axis.truncate())
+        }) else {
+            return 1.0;
+        };
+        get_up_type(self.water_level(pelvis), pelvis.z)
     }
 
     fn stop_knocked_voice(&mut self, actor: FormId) {
@@ -338,12 +370,18 @@ fn advance(
         } else {
             k.rest_for = 0.0;
         }
+        // Each landing counts the drop since the last one, so a body that
+        // rests on a ledge and then slides off it is hurt by the second fall.
+        if k.rest_for == 0.0 && k.fall_applied && pelvis < k.peak_z - 1.0 {
+            k.fall_applied = false;
+        }
         if k.rest_for >= 0.5 && !k.fall_applied {
             k.fall_applied = true;
             if k.cause != KnockCause::Paralysis && !paralysis && !water.is_some_and(|w| w >= pelvis)
             {
                 fall = Some(k.peak_z - pelvis);
             }
+            k.peak_z = pelvis;
         }
         if !k.getup_requested
             && !k.script_hold
@@ -352,18 +390,17 @@ fn advance(
             && k.rest_for >= 0.5
         {
             k.getup_requested = true;
-            graph.set_variable(
-                "iGetUpType",
-                if water.is_some_and(|w| w >= pelvis) {
-                    2.0
-                } else {
-                    1.0
-                },
-            );
+            graph.set_variable("iGetUpType", get_up_type(water, pelvis));
             graph.send_event("GetUpBegin");
         }
     }
-    graph.set_ragdoll_pose(physical.clone(), skeleton, vfs, anims);
+    let moved = k.mapping.moved_bones(skeleton);
+    if paralysis {
+        k.hold_pose.get_or_insert_with(|| physical.clone());
+    } else {
+        k.hold_pose = None;
+    }
+    graph.set_ragdoll_pose(physical.clone(), &moved, skeleton, vfs, anims);
     let mut frame = graph.update(dt, vfs, anims, skeleton);
     let recovering = frame.ragdoll.get_up.is_some()
         || graph.active_states().iter().any(|s| {
@@ -390,7 +427,7 @@ fn advance(
         let source = k.mapping.pose(skeleton, &bodies);
         k.recovery_pose = Some(source.clone());
         graph.reset_get_up_source();
-        graph.set_ragdoll_pose(source, skeleton, vfs, anims);
+        graph.set_ragdoll_pose(source, &moved, skeleton, vfs, anims);
         let again = graph.update(0.0, vfs, anims, skeleton);
         frame.pose = again.pose;
     }
@@ -423,10 +460,9 @@ fn advance(
     } else {
         if let Some(desc) = &skeleton.ragdoll {
             let powered = frame.ragdoll.powered.first();
-            let target = if paralysis {
-                &k.mapping.initial_pose()
-            } else {
-                &frame.pose
+            let target = match (&k.hold_pose, paralysis) {
+                (Some(held), true) => held,
+                _ => &frame.pose,
             };
             let rotations: Vec<_> = desc
                 .bodies
@@ -646,11 +682,10 @@ impl Engine {
             self.physics
                 .apply_ragdoll_impulse(&k.ragdoll, impulse, None);
             k.rest_for = 0.0;
-            k.peak_z = self
-                .physics
-                .ragdoll_bodies(&k.ragdoll)
-                .first()
-                .map_or(k.peak_z, |m| m.w_axis.z);
+            // A push mid-fall keeps the height already fallen from.
+            if let Some(m) = self.physics.ragdoll_bodies(&k.ragdoll).first() {
+                k.peak_z = k.peak_z.max(m.w_axis.z);
+            }
             k.fall_applied = false;
             if cause == KnockCause::Script {
                 k.script_hold = true;
@@ -719,12 +754,13 @@ impl Engine {
             recovery_pose: None,
             recovery_time: 0.0,
             previous_view: Some(previous),
+            hold_pose: None,
         });
         self.stop_knocked_voice(PLAYER_REF);
         true
     }
 
-    fn request_player_get_up(&mut self) -> bool {
+    fn request_player_get_up(&mut self, get_up_type: f32) -> bool {
         let Some(k) = self.player_knock.as_mut() else {
             return false;
         };
@@ -733,7 +769,7 @@ impl Engine {
         }
         k.getup_requested = true;
         if let Some(g) = self.player_body.as_mut().and_then(|b| b.graph_mut()) {
-            g.set_variable("iGetUpType", 1.0);
+            g.set_variable("iGetUpType", get_up_type);
             g.send_event("GetUpBegin");
         }
         true
@@ -890,7 +926,8 @@ impl Engine {
         {
             return;
         }
-        self.set_graph_variable(actor, "staggerMagnitude", magnitude.clamp(0.0, 1.5));
+        // The stagger graph blends its clips over staggerMagnitude 0..1.
+        self.set_graph_variable(actor, "staggerMagnitude", magnitude.clamp(0.0, 1.0));
         self.play_animation_event(actor, "staggerStart");
     }
 
@@ -943,9 +980,11 @@ impl Engine {
 }
 
 /// Provisional force scale and lift; isolated for correction by the SE probe.
+/// A negative force pulls toward the source, still lifting the body.
 fn push_velocity(from: Vec3, to: Vec3, force: f32) -> Vec3 {
     let direction = (to - from).with_z(0.0).normalize_or(Vec3::Y);
-    (direction + Vec3::Z * 0.35) * force.clamp(-128.0, 128.0) * 35.0
+    let force = force.clamp(-128.0, 128.0);
+    (direction * force + Vec3::Z * 0.35 * force.abs()) * 35.0
 }
 
 #[cfg(test)]

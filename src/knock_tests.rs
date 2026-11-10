@@ -287,9 +287,11 @@ fn frames(e: &mut Engine, n: usize) {
     }
 }
 #[test]
-fn negative_force_reverses_direction() {
-    assert!(push_velocity(Vec3::ZERO, Vec3::X, 10.0).x > 0.0);
-    assert!(push_velocity(Vec3::ZERO, Vec3::X, -10.0).x < 0.0);
+fn negative_force_reverses_direction_but_still_lifts() {
+    let push = push_velocity(Vec3::ZERO, Vec3::X, 10.0);
+    let pull = push_velocity(Vec3::ZERO, Vec3::X, -10.0);
+    assert!(push.x > 0.0 && pull.x < 0.0);
+    assert!(push.z > 0.0 && (pull.z - push.z).abs() < 1e-3);
 }
 #[test]
 #[ignore = "requires a headless GPU adapter; synthetic records only"]
@@ -601,4 +603,90 @@ fn player_ragdoll_accepts_constraint() {
             .active_states()
     );
     assert!(e.havok_constraints.is_empty());
+}
+
+#[test]
+fn get_up_type_is_swimming_only_with_the_pelvis_under_water() {
+    assert_eq!(get_up_type(None, 10.0), 1.0);
+    assert_eq!(get_up_type(Some(5.0), 10.0), 1.0);
+    assert_eq!(get_up_type(Some(15.0), 10.0), 2.0);
+}
+
+fn knock_of(e: &Engine) -> &Knock {
+    e.actor_ref(ACTOR).unwrap().knock.as_ref().unwrap()
+}
+
+#[test]
+#[ignore = "requires a headless GPU adapter; synthetic records only"]
+fn paralysis_holds_the_pose_it_struck_in_not_the_push_pose() {
+    let (_f, mut e) = fixture(false);
+    assert!(e.knock_down(ACTOR, Vec3::X * 300.0, KnockCause::Script));
+    frames(&mut e, 90);
+    assert!(knock_of(&e).hold_pose.is_none());
+    let skeleton = e.actor_ref(ACTOR).unwrap().skeleton.clone();
+    let lying = {
+        let k = knock_of(&e);
+        k.mapping
+            .pose(&skeleton, &e.physics.ragdoll_bodies(&k.ragdoll))
+    };
+    e.set_actor_value(ACTOR, esp::actor_value::PARALYSIS, 1.0);
+    frames(&mut e, 1);
+    let held = knock_of(&e)
+        .hold_pose
+        .clone()
+        .expect("paralysis holds a pose");
+    let bone = e
+        .actor_ref(ACTOR)
+        .unwrap()
+        .skeleton
+        .ragdoll
+        .as_ref()
+        .unwrap()
+        .bodies[0]
+        .bone;
+    assert!(held[bone].abs_diff_eq(lying[bone], 5.0));
+    frames(&mut e, 60);
+    assert_eq!(knock_of(&e).hold_pose.as_ref(), Some(&held));
+    e.set_actor_value(ACTOR, esp::actor_value::PARALYSIS, 0.0);
+    frames(&mut e, 1);
+    assert!(knock_of(&e).hold_pose.is_none());
+}
+
+#[test]
+#[ignore = "requires a headless GPU adapter; synthetic records only"]
+fn a_second_drop_after_resting_still_hurts() {
+    let (_f, mut e) = fixture(false);
+    assert!(e.knock_down(ACTOR, Vec3::ZERO, KnockCause::Script));
+    frames(&mut e, 120);
+    assert!(knock_of(&e).fall_applied);
+    let health = e.actor_value(ACTOR, esp::actor_value::HEALTH);
+    // Off the ledge it rested on.
+    let k = knock_of(&e);
+    let bodies: Vec<_> = e
+        .physics
+        .ragdoll_bodies(&k.ragdoll)
+        .iter()
+        .map(|m| Mat4::from_translation(Vec3::Z * 800.0) * *m)
+        .collect();
+    let still = vec![(Vec3::ZERO, Vec3::ZERO); bodies.len()];
+    let ragdoll = k.ragdoll.clone();
+    e.physics.place_ragdoll(&ragdoll, &bodies, &still);
+    frames(&mut e, 240);
+    assert!(
+        e.is_dead(ACTOR) || e.actor_value(ACTOR, esp::actor_value::HEALTH) < health,
+        "the second fall did no damage"
+    );
+}
+
+#[test]
+#[ignore = "requires a headless GPU adapter; synthetic records only"]
+fn a_saved_knock_is_dropped_when_its_actor_moved_meanwhile() {
+    let (_f, mut e) = fixture(false);
+    assert!(e.knock_down(ACTOR, Vec3::ZERO, KnockCause::Script));
+    frames(&mut e, 60);
+    let saved = crate::save::knock::capture(&e);
+    e.finish_knock(ACTOR);
+    e.actor_mut(ACTOR).unwrap().exec.pos += Vec3::X * 2000.0;
+    e.restore_saved_knocks(saved);
+    assert!(!e.is_knocked(ACTOR));
 }

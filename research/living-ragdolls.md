@@ -92,6 +92,11 @@ Engine checks on 2026-11-09 (not SE observations):
   during paralysis without letting the actor stand early. Player fixtures also
   attach constraints to living ragdoll bodies, reject new attachments during
   get-up, and release old constraints when recovery is interrupted.
+- Second audit regressions: matching ignores a root the bodies left behind
+  (a thrown body with the humanoid's Havok 0/11/10/0 matching bones still
+  picks its facing clip and turn), paralysis stiffens in the pose it struck
+  in, a body landing again after resting takes the second fall's damage,
+  pulls still lift, and a saved knock is dropped once its actor has moved.
 - Resurrection restarts graph playback at its authored start states, clearing
   pending events, matching controls and state-sync outputs while retaining other
   inputs and the random stream. Tests cover death while knocked and returning

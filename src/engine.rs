@@ -1437,6 +1437,9 @@ impl Engine {
 
     pub(crate) fn unload_all(&mut self) {
         self.finish_player_knock();
+        // Unloading stands knocked actors up; saved ones still waiting for
+        // their cells do too.
+        self.world_state.pending_knocks.clear();
         self.tree_lod = None;
         self.scene.tree_lod.clear();
         if let Some(a) = self.audio.as_mut() {
@@ -2356,16 +2359,20 @@ impl Engine {
             rt.actors.extend(runtimes);
         }
         let living: Vec<FormId> = runtimes_ids
-            .into_iter()
+            .iter()
+            .copied()
             .filter(|r| !corpses.contains(r))
             .collect();
         for r in corpses {
             let lying = self.world_state.body_poses.get(&r).cloned();
             self.kill_actor_lying(r, lying);
         }
-        let saved = living
+        // A saved knock waits only for its actor's cell: once that loads it is
+        // used (living) or dropped (dead).
+        let saved = runtimes_ids
             .iter()
             .filter_map(|r| self.world_state.pending_knocks.remove(r))
+            .filter(|k| living.contains(&k.actor))
             .collect();
         self.restore_saved_knocks(saved);
         self.carry_unloaded_damage(&living);

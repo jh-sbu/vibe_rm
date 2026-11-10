@@ -23,7 +23,8 @@ rule (the census found nonzero values on werewolf/werebear sprint attacks, but
 no verified application rule). Ordinary airborne NPC falls remain separate.
 The original design below records the starting point and intended behavior;
 implemented approximations, including keeping bodies until recovery ends and
-restarting saved recovery clips from the physical pose, are documented above.
+restarting saved recovery clips from the physical pose, are documented in
+`known_ambiguities/ragdolls.md`.
 
 In Skyrim SE a living actor can be knocked off its feet: the last word of
 Unrelenting Force, a werewolf's or a shield charge's knockback, a giant's

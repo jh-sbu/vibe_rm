@@ -180,24 +180,45 @@ pub struct FrameOutput {
 }
 
 /// Compare authored matching bones after the best horizontal alignment, using
-/// translations and rotations. Translation is relative to the pelvis, so an
-/// airborne or translated character still picks the same facing clip.
-pub fn match_error(input: &[Mat4], candidate: &[Mat4], bones: &[i16; 4]) -> Option<(f32, f32)> {
-    let pelvis = usize::try_from(bones[3]).ok()?;
-    let (a, b) = (
-        input.get(pelvis)?.w_axis.truncate(),
-        candidate.get(pelvis)?.w_axis.truncate(),
-    );
-    let pairs: Vec<_> = bones
+/// translations and rotations. `None` input bones aren't moved by the ragdoll
+/// (the humanoid's matching root is one), so they are left out. Translations
+/// are relative to the pelvis bone when the ragdoll moves it, else to the
+/// compared bones' centroid, so a thrown or airborne character still picks the
+/// same facing clip.
+pub fn match_error(
+    input: &[Option<Mat4>],
+    candidate: &[Mat4],
+    bones: &[i16; 4],
+) -> Option<(f32, f32)> {
+    let mut seen = Vec::new();
+    let pairs: Vec<(Mat4, Mat4)> = bones
         .iter()
         .filter_map(|&i| {
             let i = usize::try_from(i).ok()?;
-            Some((*input.get(i)?, *candidate.get(i)?))
+            if seen.contains(&i) {
+                return None;
+            }
+            seen.push(i);
+            Some(((*input.get(i)?)?, *candidate.get(i)?))
         })
         .collect();
     if pairs.is_empty() {
         return None;
     }
+    let pelvis = usize::try_from(bones[3])
+        .ok()
+        .and_then(|i| Some(((*input.get(i)?)?, *candidate.get(i)?)));
+    let (a, b) = match pelvis {
+        Some((x, y)) => (x.w_axis.truncate(), y.w_axis.truncate()),
+        None => {
+            let n = pairs.len() as f32;
+            pairs
+                .iter()
+                .fold((Vec3::ZERO, Vec3::ZERO), |(a, b), (x, y)| {
+                    (a + x.w_axis.truncate() / n, b + y.w_axis.truncate() / n)
+                })
+        }
+    };
     let mut dot = 0.0;
     let mut cross = 0.0;
     for (x, y) in &pairs {
@@ -205,6 +226,17 @@ pub fn match_error(input: &[Mat4], candidate: &[Mat4], bones: &[i16; 4]) -> Opti
         let v = (x.w_axis.truncate() - a).truncate();
         dot += u.dot(v);
         cross += u.perp_dot(v);
+    }
+    if dot.abs() + cross.abs() < 1e-3 {
+        // One compared bone: align its axes' horizontal directions instead.
+        for (x, y) in &pairs {
+            for axis in [Vec3::X, Vec3::Y, Vec3::Z] {
+                let u = y.transform_vector3(axis).truncate();
+                let v = x.transform_vector3(axis).truncate();
+                dot += u.dot(v);
+                cross += u.perp_dot(v);
+            }
+        }
     }
     let yaw = cross.atan2(dot);
     let q = Quat::from_rotation_z(yaw);
@@ -221,6 +253,42 @@ pub fn match_error(input: &[Mat4], candidate: &[Mat4], bones: &[i16; 4]) -> Opti
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn matching_ignores_a_root_the_ragdoll_left_behind() {
+        // Root, calf, foot, as the humanoid's [0, 11, 10, 0]: lying face up
+        // or face down, the clips' roots under the body.
+        fn clip(front: bool) -> Vec<Mat4> {
+            let q = Quat::from_rotation_x(if front { 1.5 } else { -1.5 });
+            vec![
+                Mat4::IDENTITY,
+                Mat4::from_rotation_translation(q, Vec3::new(10.0, 0.0, 8.0)),
+                Mat4::from_rotation_translation(q, Vec3::new(10.0, 30.0, 8.0)),
+            ]
+        }
+        let bones = [0, 2, 1, 0];
+        for front in [false, true] {
+            // Thrown 300 units and turned; the unmoved root stays at the start.
+            let moved = Mat4::from_rotation_translation(
+                Quat::from_rotation_z(0.8),
+                Vec3::new(300.0, -200.0, 0.0),
+            );
+            let mut input: Vec<_> = clip(front).iter().map(|m| Some(moved * *m)).collect();
+            input[0] = None;
+            let (same, yaw) = match_error(&input, &clip(front), &bones).unwrap();
+            let (other, _) = match_error(&input, &clip(!front), &bones).unwrap();
+            assert!(same < other, "front={front}: {same} vs {other}");
+            assert!((yaw - 0.8).abs() < 1e-3, "yaw {yaw}");
+        }
+        // A single compared bone still recovers the turn from its axes.
+        let input = vec![
+            None,
+            Some(Mat4::from_rotation_z(-0.5) * clip(true)[1]),
+            None,
+        ];
+        let (_, yaw) = match_error(&input, &clip(true), &[0, 1, 1, 0]).unwrap();
+        assert!((yaw + 0.5).abs() < 1e-3, "yaw {yaw}");
+    }
     #[test]
     fn ragdoll_bone_arrays_follow_bindable_header_and_fixups() {
         let start = 0xb0;

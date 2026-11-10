@@ -11,7 +11,7 @@
 //! generators. Pose settings (twist, foot IK, look-at) are exposed to the engine,
 //! which applies them to the sampled pose.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
 use super::expr::{self, Expr, Statement};
@@ -134,6 +134,10 @@ pub struct Shared {
     switch_weights: HashMap<(usize, GenId), Vec<BoneMask>>,
     /// Blender children's masks, including character-property bindings.
     blend_masks: HashMap<(usize, GenId), Vec<Option<BoneMask>>>,
+    /// Global ids of pose matchers' start-playing / start-matching events, so
+    /// handling an event needn't scan every generator.
+    pose_play_events: HashSet<usize>,
+    pose_match_events: HashSet<usize>,
 }
 
 impl Shared {
@@ -151,6 +155,8 @@ impl Shared {
             default_masks: HashMap::new(),
             switch_weights: HashMap::new(),
             blend_masks: HashMap::new(),
+            pose_play_events: HashSet::new(),
+            pose_match_events: HashSet::new(),
             project: project.clone(),
         };
         for (gi, (_, g)) in project.graphs.iter().enumerate() {
@@ -181,6 +187,19 @@ impl Shared {
                 .collect();
             s.maps.push(Maps { vars, events });
             for (id, node) in g.generators.iter().enumerate() {
+                if let Generator::PoseMatching { settings, .. } = node {
+                    let global = |local: i32| {
+                        usize::try_from(local)
+                            .ok()
+                            .and_then(|l| s.maps[gi].events.get(l).copied())
+                    };
+                    if let Some(e) = global(settings.start_playing_event) {
+                        s.pose_play_events.insert(e);
+                    }
+                    if let Some(e) = global(settings.start_matching_event) {
+                        s.pose_match_events.insert(e);
+                    }
+                }
                 match node {
                     Generator::StateMachine { states, .. } => {
                         let mut promoted = Vec::new();
@@ -519,7 +538,7 @@ pub struct Instance {
     queue: VecDeque<Event>,
     raised: Vec<Raised>,
     rng: u64,
-    ragdoll_pose: Vec<glam::Mat4>,
+    ragdoll_pose: Vec<Option<glam::Mat4>>,
     pose_playing: bool,
     matching_yaw: Option<f32>,
     modifier_times: HashMap<(usize, ModId), f32>,
@@ -531,7 +550,7 @@ pub struct Instance {
 
 /// Passed down while activating / updating.
 struct Ctx<'a> {
-    ragdoll_pose: &'a [glam::Mat4],
+    ragdoll_pose: &'a [Option<glam::Mat4>],
     pose_playing: &'a mut bool,
     matching_yaw: &'a mut Option<f32>,
     modifier_times: &'a mut HashMap<(usize, ModId), f32>,
@@ -1142,18 +1161,12 @@ impl Ctx<'_> {
     /// Offer `ev` to the active tree, outer state machines first. True when some
     /// state machine changed state.
     fn handle(&mut self, node: &mut Node, ev: &Event) -> bool {
-        for (gi, (_, graph)) in self.shared.project.graphs.iter().enumerate() {
-            let local = self.local_event(gi, ev.id);
-            for gen_ in &graph.generators {
-                if let Generator::PoseMatching { settings, .. } = gen_ {
-                    if local == Some(settings.start_playing_event) {
-                        *self.pose_playing = true;
-                    }
-                    if local == Some(settings.start_matching_event) {
-                        *self.pose_playing = false;
-                    }
-                }
-            }
+        // One flag for all of a graph's matchers: vanilla's share their events.
+        if self.shared.pose_play_events.contains(&ev.id) {
+            *self.pose_playing = true;
+        }
+        if self.shared.pose_match_events.contains(&ev.id) {
+            *self.pose_playing = false;
         }
 
         let gi = node.gi;
@@ -2788,8 +2801,10 @@ impl Instance {
     }
 
     /// Physics input stays separate from simulation; the engine supplies it in
-    /// Havok bone order before updating the graph.
-    pub fn set_ragdoll_pose(&mut self, pose: Vec<glam::Mat4>) {
+    /// Havok bone order before updating the graph. `None` marks bones the
+    /// ragdoll doesn't move (no body on them or above them), which pose
+    /// matching must not compare.
+    pub fn set_ragdoll_pose(&mut self, pose: Vec<Option<glam::Mat4>>) {
         self.ragdoll_pose = pose;
     }
 
@@ -3219,7 +3234,7 @@ mod tests {
                 Quat::from_rotation_z(0.8),
                 Vec3::new(30.0, 40.0, 50.0),
             );
-            inst.set_ragdoll_pose(pose(front).into_iter().map(|m| offset * m).collect());
+            inst.set_ragdoll_pose(pose(front).into_iter().map(|m| Some(offset * m)).collect());
             inst.update(0.25, &mut Clips);
             assert_eq!(
                 &*inst.samples()[0].animation,
