@@ -1457,8 +1457,9 @@ fn acbs_with_template(flags: u32, template: u16) -> [u8; 24] {
     d
 }
 
-/// Skyrim SE (autotest21, on the start date): `07/16/0201 00:00` for 0 and
-/// `07/16/0201 12:00` for 1.5.
+/// Skyrim SE (autotest21, autotest23): `07/16/0201 00:00` for 0 and 1,
+/// `07/16/0201 12:00` for 1.5, `08/15/0201 00:00` for 31 and
+/// `07/15/0202 00:00` for 365, whatever today is.
 #[test]
 #[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn game_time_string_counts_month_and_day_from_zero() {
@@ -1474,7 +1475,10 @@ fn game_time_string_counts_month_and_day_from_zero() {
         .to_string()
     };
     assert_eq!(text(&mut e, 0.0), "07/16/0201 00:00");
+    assert_eq!(text(&mut e, 1.0), "07/16/0201 00:00");
     assert_eq!(text(&mut e, 1.5), "07/16/0201 12:00");
+    assert_eq!(text(&mut e, 31.0), "08/15/0201 00:00");
+    assert_eq!(text(&mut e, 365.0), "07/15/0202 00:00");
     e.day = 15;
-    assert_eq!(text(&mut e, 0.25), "08/00/0201 06:00");
+    assert_eq!(text(&mut e, 0.25), "07/16/0201 06:00");
 }

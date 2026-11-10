@@ -186,15 +186,16 @@ is accepted (we cap it at 1, as the page says 0..1); and whether `SetINI*` rejec
 unknown names (we accept them). **test-mod** wanted: `Mute` then `UnMute` on the
 music category while music plays.
 
-`GameTimeToString`: Skyrim SE (autotest21, `research/autotest21.md`, a new
-character on the start date) printed `GameTimeToString(0)` as `07/16/0201 00:00`
-and `(1.5)` as `07/16/0201 12:00`: the year zero-padded, the month and day counted
-from 0 (17 Last Seed, month index 7), and 1.5 days not moving the date. Choice
-(2026-11-07): today's date, month and day from 0, with the hour and minute from the
-argument's fraction. Uncertain: whether the date is today's or the start date's (the
-same on that save), and whether a later save's whole days move it. No vanilla
-script calls it. To settle: on a save past its first days,
-`GameTimeToString(Utility.GetCurrentGameTime())` and `(2.25)`.
+`GameTimeToString`: Skyrim SE printed `GameTimeToString(0)` and `(1)` as
+`07/16/0201 00:00`, `(1.5)` as `07/16/0201 12:00`, `(31)` as `08/15/0201 00:00`
+and `(365)` as `07/15/0202 00:00`, and the current time (0.552) and one day
+on (1.552) alike as `07/16/0201 13:14` (autotest21; autotest23,
+`research/autotest23.md`). So the year is zero-padded, the month and day count
+from 0 (17 Last Seed, month index 7), the time of day is the fraction's, and
+the date is the start date moved on by the whole days less one, never before
+it. Both saves were in their first day, so whether today's date counts
+instead of the start date can't be told: taken as the start date, which fits
+every reading. No vanilla script calls it.
 
 ## Natives added 2026-11-07
 
