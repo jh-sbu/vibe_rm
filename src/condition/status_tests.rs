@@ -493,15 +493,13 @@ fn is_in_my_owned_cell_follows_the_actor_or_its_faction() {
 
 #[test]
 #[ignore = "needs a headless GPU adapter; synthetic records only"]
-fn get_xp_for_next_level_is_the_levels_whole_cost() {
+fn get_xp_for_next_level_reads_zero() {
     let (_f, mut e) = fixture();
-    // fXPLevelUpBase 75 and fXPLevelUpMult 25 at level 5.
     e.skills.level = 5;
     e.skills.level_xp = 40.0;
-    assert!(is(&e, PLAYER_REF, 530, 0, 200.0));
-    // A level up waiting makes the next one cost for the level after it.
+    assert!(is(&e, PLAYER_REF, 530, 0, 0.0));
     e.skills.pending = 1;
-    assert!(is(&e, PLAYER_REF, 530, 0, 225.0));
+    assert!(is(&e, PLAYER_REF, 530, 0, 0.0));
 }
 
 #[test]

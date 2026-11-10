@@ -308,9 +308,8 @@ game each piece unlocks.
   and `IsLocAliasLoaded`. Choices: `known_ambiguities/status-conditions.md`
 - `IsPCSleeping` and `IsPC1stPerson` read the sleep menu's hours and the
   camera. Choices: `known_ambiguities/status-conditions.md`
-- `GetXPForNextLevel` gives the player's next level-up cost. autotest22
-  read under 25 at level 1, so its value is open (Next, "Test results to act
-  on"). Choices: `known_ambiguities/status-conditions.md`
+- `GetXPForNextLevel` reads 0, as Skyrim SE did for the player
+  (autotest22, autotest23). Choices: `known_ambiguities/status-conditions.md`
 - Ownership conditions: `IsOwner`, `IsCellOwner` and `IsInMyOwnedCell` read
   owners the way theft and trespass do (scripts' owners included). Which
   party the Skyrim forms ask about: `known_ambiguities/status-conditions.md`
@@ -1853,8 +1852,6 @@ game each piece unlocks.
 readings are applied (see Done). autotest22 reran autotest21's faults.
 
 - From autotest22 (`research/autotest22.md`):
-  - `GetXPForNextLevel`'s value: under 25 at level 1, so not the cost of
-    100 we give.
   - `GetTimeDead`'s unit: not game hours, which we still give.
   - The sun position's scale: lengths 324–368 with Y at 40, where ours is
     a unit vector.

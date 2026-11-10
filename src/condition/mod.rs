@@ -356,7 +356,9 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         // The player's state: hours passing in bed, and the first-person camera.
         175 => b(e.waiting.is_some_and(|w| w.sleeping)), // IsPCSleeping
         391 => b(!e.third_person),                       // IsPC1stPerson
-        530 => Some(e.xp_for_next_level()),              // GetXPForNextLevel
+        // Skyrim SE reads 0 for the player at levels 1 and 6, before and
+        // after a skill increase (autotest22, autotest23).
+        530 => Some(0.0), // GetXPForNextLevel
         // Ownership (`ref_owner`: a script's, else the record's, else the cell's):
         // the subject's owner is the one named (none named: the player).
         278 => b(subject.is_some_and(|s| e.owned_by(e.ref_owner(s), p1))), // IsOwner
