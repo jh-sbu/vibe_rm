@@ -207,7 +207,7 @@ fn scripts_change_actor_bases_flags() {
 
 #[test]
 #[ignore = "needs a headless GPU adapter; synthetic records only"]
-fn invulnerable_actors_health_cant_be_lowered() {
+fn invulnerable_actors_take_no_blows_but_damage_actor_value() {
     use esp::actor_value as av;
     use papyrus::Value;
     let (_f, mut e) = fixture("invulnerable");
@@ -223,14 +223,18 @@ fn invulnerable_actors_health_cant_be_lowered() {
         Value::Bool(true)
     );
     e.damage(ACTOR, 30.0, Some(PLAYER_REF), 0.0);
-    e.damage_actor_value(ACTOR, av::HEALTH, 30.0);
     assert_eq!(e.actor_ref(ACTOR).unwrap().exec.health, 50.0);
+    // `DamageActorValue` still takes it (autotest21's invulnerable base lost
+    // 10 health).
+    e.damage_actor_value(ACTOR, av::HEALTH, 10.0);
+    assert_eq!(e.actor_ref(ACTOR).unwrap().exec.health, 40.0);
     // The player too, through their base.
     let health = e.player_health;
     e.set_base_flag(FormId(0x7), crate::protection::acbs::INVULNERABLE, true);
     e.damage(PLAYER_REF, 10.0, Some(ACTOR), 0.0);
-    e.damage_actor_value(PLAYER_REF, av::HEALTH, 10.0);
     assert_eq!(e.player_health, health);
+    e.damage_actor_value(PLAYER_REF, av::HEALTH, 10.0);
+    assert!(e.player_health < health);
     call(
         &mut e,
         "actorbase",
@@ -239,7 +243,7 @@ fn invulnerable_actors_health_cant_be_lowered() {
         &[Value::Bool(false)],
     );
     e.damage(ACTOR, 30.0, Some(PLAYER_REF), 0.0);
-    assert_eq!(e.actor_ref(ACTOR).unwrap().exec.health, 20.0);
+    assert_eq!(e.actor_ref(ACTOR).unwrap().exec.health, 10.0);
 }
 
 #[test]

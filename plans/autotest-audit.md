@@ -19,15 +19,15 @@ probe that faulted (no reading) leaves its item open.
 
 | Code | Meaning | Items |
 | --- | --- | ---: |
-| A | Automatic with the record writers test mods already have | 551 |
+| A | Automatic with the record writers test mods already have | 552 |
 | A* | Automatic, but needs a new writer (PACK trees of a shape no vanilla package has, dialogue, PHZD, LVSP, WATR, REFR overrides, perk ranks, region weather, quest stage fragments) or a method still unproven | 160 |
 | U | Needs the player: a menu (barter, crafting, dialogue, sleep/wait, lockpicking, difficulty), input (attacks, aiming, casting by hand) or a new game | 203 |
 | R | Needs a save to be loaded again (persistence questions) | 39 |
 | V | Only visible or audible: rendering, UI layout, sound | 355 |
 | N | Not observable in the game (internal formats, engine-only policies) | 74 |
-| | **Total** | **1382** |
+| | **Total** | **1383** |
 
-**Strictly automatic: 711** (551 A, 160 A*).
+**Strictly automatic: 712** (552 A, 160 A*).
 
 Conditions count as automatic: a test ability whose effect carries the
 condition, read by the OneHanded gain it gives (autotest22 showed this
@@ -85,9 +85,6 @@ SE readings that the ambiguity files still contradict (the items are
 settled, so they aren't listed below; the files and the engine need
 correcting):
 
-- `protection.md`: invulnerability spares health from `DamageActorValue`.
-  autotest21's invulnerable base lost 10 health and 10 stamina to it
-  (Protection, "Settled").
 - `combat-movement.md`: an unwanted draw is sheathed after two seconds.
   autotest21's unalerted NPC sheathed about 0.6 s after `DrawWeapon`
   (AlertFlag).
@@ -1318,12 +1315,13 @@ Line numbers point into the file as of 2026-11-10.
 - U: hit timing
 - U: torch bashes, dual wield guard
 
-### `protection.md` (6 A, 1 U)
+### `protection.md` (7 A, 1 U)
 
 - A: alias flag before start-up stage (1 min)
 - A: alias flag on an already essential base (1 min)
 - A: invulnerable: whether blows still stagger and count as assaults; whether magicka is spared (2 min)
 - A: ForceActorValue on an invulnerable actor (1 min)
+- A: the invulnerable player's DamageActorValue (1 min)
 - A: ghost: melee blows pass or land; enemies target it (3 min)
 - A: a base flagged ghost (ACBS 0x20000000) makes its actors ghosts (2 min)
 - U: ghost activation / talking

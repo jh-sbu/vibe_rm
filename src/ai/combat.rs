@@ -2896,6 +2896,26 @@ impl Engine {
         if amount > 0.0 && (self.is_invulnerable(target) || self.is_ghost(target)) {
             return;
         }
+        self.take_damage(target, amount, attacker, stagger, sneak);
+    }
+
+    /// The player's `DamageActorValue("Health")`: scaled as a blow, but not
+    /// spared by invulnerability or being a ghost (autotest21: an
+    /// invulnerable base and a ghost each lost 10 health to it).
+    pub(crate) fn damage_player_value(&mut self, amount: f32) {
+        let amount = amount * self.difficulty_multiplier(PLAYER_REF, false);
+        self.take_damage(PLAYER_REF, amount, None, 0.0, false);
+    }
+
+    /// `damage` past the protection checks.
+    fn take_damage(
+        &mut self,
+        target: FormId,
+        amount: f32,
+        attacker: Option<FormId>,
+        stagger: f32,
+        sneak: bool,
+    ) {
         let attacker = attacker.map(|a| self.actor_cause_of(a));
         if target == PLAYER_REF {
             if self.player_dead() || (self.god_mode && amount > 0.0) {

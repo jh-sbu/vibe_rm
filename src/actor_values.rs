@@ -303,12 +303,12 @@ impl Engine {
             match index {
                 av::HEALTH if actor == PLAYER_REF => {
                     if amount > 0.0 {
-                        self.damage(actor, amount, None, 0.0);
+                        self.damage_player_value(amount);
                     } else {
                         self.player_health = value;
                     }
                 }
-                av::HEALTH if amount > 0.0 && self.is_invulnerable(actor) => {}
+                // Invulnerability doesn't spare health from it (autotest21).
                 av::HEALTH => {
                     if let Some(a) = self
                         .actor_mut(actor)

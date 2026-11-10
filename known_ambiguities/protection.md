@@ -42,17 +42,20 @@
 ## Invulnerable
 
 - `ACBS` 0x80000000 (CommonLibSSE `TESActorBaseData::kInvulnerable`,
-  `GetInvulnerable`), from the record or `SetInvulnerable`: nothing lowers
-  the actor's health, neither blows, spells and falls (`damage`) nor
-  `DamageActorValue("Health")`; raising it still works. The player's base
+  `GetInvulnerable`), from the record or `SetInvulnerable`: blows, spells
+  and falls (`damage`) don't lower the actor's health. Scripts'
+  `DamageActorValue("Health")` still does: in Skyrim SE (`test-mod
+  autotest21`, Protection) an invulnerable base lost 10 health and 10
+  stamina to it, and a fire spell took nothing. The player's base
   (`0x7`) counts: the vampire lord's script makes the player invulnerable
   while transforming (UESP talk page
   [Skyrim talk:Vampire Lord/Archive 2, revision 2224214](https://en.uesp.net/w/index.php?oldid=2224214)
   quotes it, beside a commented-out `SetGhost`).
-- Unconfirmed: whether `DamageActorValue` and `ForceActorValue` bypass it,
-  whether blows still stagger and count as assaults (we drop the blow
-  entirely), and whether stamina and magicka are spared too (we spare health
-  only).
+- Unconfirmed: the player's `DamageActorValue` while invulnerable (only an
+  NPC was read; ours takes it as the NPC's is), whether `ForceActorValue`
+  lowers health past it (autotest21 read only that it "works"), whether
+  blows still stagger and count as assaults (we drop the blow entirely),
+  and whether blows spare stamina and magicka too (we spare health only).
 
 ## Ghosts (`SetGhost`, `IsGhost`, `GetIsGhost`)
 

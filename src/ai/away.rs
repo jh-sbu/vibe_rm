@@ -820,7 +820,9 @@ impl Engine {
             return false;
         }
         let bleeding = self.away.get(&actor).is_some_and(|x| x.bleeding.is_some());
-        if amount > 0.0 && (bleeding || self.is_invulnerable(actor)) {
+        // Invulnerability doesn't spare health from `DamageActorValue`
+        // (autotest21), its only caller.
+        if amount > 0.0 && bleeding {
             return true;
         }
         let (current, max) = self.actor_health(actor).unwrap_or_else(|| {
