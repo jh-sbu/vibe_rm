@@ -361,16 +361,16 @@ first faction lists towards the second: 0 neutral, 1 enemy, 2 ally, 3 friend.
   the clothing type (`BOD2` armor type 2). Oblivion's function may have
   returned something other than gold value; the thresholds above (12, 1000)
   don't settle it.
-- `GetDisease` is true while any disease spell (type Disease) has an effect on
-  the player, whatever its source. An NPC given Ataxia by `AddSpell` wasn't
-  diseased in the game (`test-mod autotest22`), so NPCs never are. Whether
-  that is because NPCs don't take diseases, or the condition is always 0,
-  wasn't read: the diseased player is untested. The vanilla uses all ask
-  about the player.
-- `IsActorUsingATorch` is a torch in the left hand with the weapons drawn.
-  In the game (`test-mod autotest22`), a torch held with the weapons
-  sheathed was out (`IsTorchOut` 1) but not used (0). The drawn case wasn't
-  read (the NPC sheathed again before the probe), so "drawn" is our choice.
+- `GetDisease` reads 0. Skyrim SE read 0 for an NPC given Ataxia by
+  `AddSpell` (autotest22), for the player given Ataxia by `AddSpell`
+  (autotest23, `HasSpell` True) or Sanguinare Vampiris (autotest24), and
+  after Ataxia cast at the player as the traps do, directly and by an NPC
+  (which didn't infect). What makes it 1, if anything (a disease caught from
+  a creature's blow?), is open. The vanilla uses all ask about the player.
+- `IsActorUsingATorch` is 0 for NPCs: Skyrim SE read 0 for an NPC holding a
+  torch, sheathed (`test-mod autotest22`) and drawn in combat (autotest23),
+  while `IsTorchOut` read 1. For the player, unread, it is kept as a torch
+  in the left hand with the weapons drawn.
 - `GetInCellParam(cell, reference)` is true when the reference named in the
   second parameter is in the cell; whether the game asks about the subject
   instead is unknown, and no vanilla record uses it.

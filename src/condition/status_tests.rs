@@ -818,12 +818,13 @@ fn clothing_value_totals_the_worn_clothes_only() {
 
 #[test]
 #[ignore = "needs a headless GPU adapter; synthetic records only"]
-fn get_disease_is_a_disease_effect_on_the_player() {
+fn get_disease_reads_zero_with_a_disease() {
+    // Skyrim SE (autotest22 to autotest24): 0 for the player and an NPC
+    // with a disease added.
     let (_f, mut e) = fixture();
     assert!(is(&e, PLAYER_REF, 39, 0, 0.0)); // GetDisease
     e.apply_item(PLAGUE, None, PLAYER_REF);
-    assert!(is(&e, PLAYER_REF, 39, 0, 1.0));
-    // An NPC given a disease isn't diseased (test-mod autotest22).
+    assert!(is(&e, PLAYER_REF, 39, 0, 0.0));
     e.apply_item(PLAGUE, None, HUMAN_REF);
     assert!(is(&e, HUMAN_REF, 39, 0, 0.0));
 }

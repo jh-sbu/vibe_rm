@@ -698,9 +698,16 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         // torch out with the weapons drawn (held sheathed, it is out but not
         // used: autotest22).
         41 => Some(subject.map_or(0, |s| e.clothing_value(s)) as f32), // GetClothingValue
-        39 => b(subject == Some(PLAYER_REF) && e.has_disease(PLAYER_REF)), // GetDisease
-        306 => b(subject.is_some_and(|s| e.torch_out(s) && e.weapon_drawn(s))), // IsActorUsingATorch
-        230 => b(e.ref_cell(FormId(c.p2)) == Some(p1)),                         // GetInCellParam
+        // Skyrim SE read 0 in every state tried: an NPC or the player with
+        // a disease added (autotest22, autotest23), Sanguinare Vampiris, and
+        // disease spells cast (autotest24). What makes it 1 is unknown.
+        39 => Some(0.0), // GetDisease
+        // An NPC holding a torch sheathed (autotest22) or drawn in combat
+        // (autotest23) read 0 in Skyrim SE; the player is unread.
+        306 => b(subject == Some(PLAYER_REF)
+            && e.torch_out(PLAYER_REF)
+            && e.weapon_drawn(PLAYER_REF)), // IsActorUsingATorch
+        230 => b(e.ref_cell(FormId(c.p2)) == Some(p1)), // GetInCellParam
         // Combat: the combat group the subject fights in (its side of the fight,
         // the player included while it is fought) and its targets.
         709 => Some(
