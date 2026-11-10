@@ -99,3 +99,9 @@ Skyrim SE and places the resulting saves in `tests/results/`; read them with
 # Commits
 
 Run `cargo fmt` before every commit; the tree must stay `cargo fmt --check` clean.
+
+When implementing a plan in `plans/`, follow its commit schedule. If the plan
+gives one (for example "each numbered sub-step is one commit"), make exactly
+those commits, in the plan's order. If it doesn't, commit each numbered step
+separately. Don't fold several steps into one commit. A follow-up fix that
+spans steps gets its own commit, named for what it fixes.
