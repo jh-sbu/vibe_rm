@@ -2037,13 +2037,13 @@ impl Engine {
             let teammate = fighter == PLAYER_REF && self.is_player_teammate(helper);
             if !teammate {
                 // The factions' regard, or the pair's relationship rank: Skyrim
-                // SE (autotest21) a helper of no faction at rank 3 (Ally) with
-                // the fighter came at once. Rank 3 and up taken as allies, 1
-                // and 2 (Friend, Confidant) as friends
-                // (`known_ambiguities/combat-assistance.md`).
+                // SE (autotest21, autotest23, autotest24) a helper of allies
+                // joined from rank 2 (Confidant), one of friends and allies
+                // from rank 1 (Friend). So rank 2 and up are allies, 1 a
+                // friend (`known_ambiguities/combat-assistance.md`).
                 let by_rank = match self.relationship_rank(helper, fighter) {
-                    3.. => 1,
-                    1 | 2 => 2,
+                    2.. => 1,
+                    1 => 2,
                     _ => u8::MAX,
                 };
                 let by_faction = match self.listed_faction_reaction(&stats.factions, ff) {

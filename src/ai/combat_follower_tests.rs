@@ -220,9 +220,9 @@ fn a_faction_that_doesnt_list_itself_doesnt_help_its_members() {
     assert_eq!(join(&mut e), Some(PLAYER_REF));
 }
 
-/// Skyrim SE (autotest21): a helper of no faction at relationship rank 3
-/// with the victim joined its fight at once. Rank 3 is taken as an ally,
-/// 1 and 2 as friends.
+/// Skyrim SE (autotest21, autotest23, autotest24): a helper of allies, of no
+/// faction, joined its victim's fight from relationship rank 2 (not at 1);
+/// one of friends and allies at every rank from 1 to 4.
 #[test]
 #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
 fn relationship_ranks_bring_help() {
@@ -253,8 +253,8 @@ fn relationship_ranks_bring_help() {
     rank(&mut e, 1);
     assert_eq!(e.relationship_rank(HELPER, BANDIT), 1);
     assert_eq!(join(&mut e), None, "a friend, and it helps only allies");
-    rank(&mut e, 3);
-    assert_eq!(join(&mut e), Some(PLAYER_REF));
+    rank(&mut e, 2);
+    assert_eq!(join(&mut e), Some(PLAYER_REF), "a confidant is an ally");
 }
 
 #[test]

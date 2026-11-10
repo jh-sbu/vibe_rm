@@ -1453,9 +1453,9 @@ impl Engine {
             return false;
         };
         // As combat's helpers: the factions' regard or the relationship rank
-        // (3 and up allies, 1 and 2 friends).
+        // (2 and up allies, 1 a friend).
         let ally =
-            self.faction_relation(helper, other) == 2 || self.relationship_rank(helper, other) >= 3;
+            self.faction_relation(helper, other) == 2 || self.relationship_rank(helper, other) >= 2;
         let friend =
             self.faction_relation(helper, other) == 3 || self.relationship_rank(helper, other) >= 1;
         (ally && a.stats.assistance >= 1) || (friend && a.stats.assistance >= 2)

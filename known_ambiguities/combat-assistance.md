@@ -66,12 +66,13 @@ Teal towards itself as 0. So a shared faction alone doesn't make allies
 
 ## Unconfirmed
 
-1. **Relationships.** A relationship rank brings help (autotest21, above: a
-   helper of no faction at rank 3 with assistance 2 joined). Choice: rank 3
-   and up (Ally, Lover) counts as an ally, 1 and 2 (Friend, Confidant) as a
-   friend, by the ranks' names (UESP Skyrim:Disposition, revision 3596727,
-   lists them but gives no combat rule); `ShouldHelp` reads the same.
-   Unobserved: ranks 1, 2 and 4, and a helper helping only allies.
+1. **Relationships.** A relationship rank brings help: Skyrim SE
+   (autotest21, autotest23 and autotest24, `research/autotest23.md`,
+   RelationshipHelp) with a helper of no faction, a helper of allies joined
+   from rank 2 (Confidant) up, not at 1 (Friend); a helper of friends and
+   allies at every rank from 1 to 4. So rank 2 and up count as allies, 1 as a
+   friend; `ShouldHelp` reads the same. Unobserved: the ranks between
+   helper and fighter that are set one way only, and negative ranks.
 2. **Crime.** The player's assaults and murders add crime gold and send the
    guards near by to arrest them (`known_ambiguities/crime.md`); the townsfolk who
    join an attack on the player do so through assistance alone, and stay
