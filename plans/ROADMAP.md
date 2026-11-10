@@ -1869,8 +1869,9 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
   taper would have hidden the answer: use untapered damage); and
   whether NPCs' `HealRateMult` and `StaminaRateMult` count, which ours ignores.
 - Compared (2026-11-07; `research/autotest21.md` and `autotest22.md`,
-  "Compared with ours"). Left open, each probed by `test-mod autotest23`
-  (built, waiting for the user's run; see Test plugins):
+  "Compared with ours"). Each was probed by `test-mod autotest23` (run
+  2026-11-10, `research/autotest23.md`; its readings are still to be
+  compared with ours and applied):
   - Slow Time's share (the fall read 0.5, the clock 0.35) and when time
     comes back after the effect.
   - NPCs' enchanted blows' charge (1.92 an enchanted blow in SE, about 3.6
@@ -1920,20 +1921,17 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
     carriage hitch/passenger frames and reloads (`carriages.md`); dragon Orbit,
     Hover/perch completion, flight/landing permissions, CSFL phases, FlightGrab
     release/damage and Shout word/timing (`dragon-flight.md`).
-  - `test-mod autotest23` (built 2026-11-10, waiting for the user's run):
-    autotest22's follow-up list ("Faults and open items") and the
-    comparisons above, plus audit items sharing their setups: game
-    settings for fleeing, healing and friendly hits; a deleted reference
-    still held and `Delete` on a plugin reference; Spells Learned after
-    `AddSpell`; `GetCurrentLocation` of dropped and picked-up items and
-    `Location.IsLoaded`; `IsKillerObject` run on the victim; effects on
-    the dead; a fire-and-forget effect whose condition fails; Disarm's
-    landing spot, greatsword, level cap (12 vs 30) and the weapon fought
-    with after; the view cone's edge between 90° and 135°; staffs'
-    empty-hand type, `DestructionMod` and a fire-and-forget staff;
-    ethereal targets; a follower-faction member helping without the
-    teammate flag. Its create-level test runs only on a save with a player
-    of level 5 or more; the sun position's scale isn't in it.
+  - `test-mod autotest23`: run 2026-11-10 (`research/autotest23.md`).
+    Its readings are to be compared with ours and applied: `IsGuard`
+    (faction plus crime faction), `GetRelativeAngle`'s sign,
+    `GetXPForNextLevel` reading 0, relationship rank 2 as an ally, staff
+    charge (skill, not `DestructionMod`), 1.919 per enchanted blow, Slow
+    Time, Delete, locations, game settings and the rest. Left for a
+    follow-up batch (its "Faults and open items"): `GetTimeDead`'s unit
+    (timescale 1000 crashed SE), the view cone's edge with the observer on
+    the floor, Attack on Sight with an `IsGuard` guard, Calm and Fury from
+    close by and Fear's flee, what decides Disarm, what makes `GetDisease`
+    true, and the Vigilant's healing.
   - Built and waiting for the user's run: `loadscreens`
     (`plans/loading-screen.md`), `crafting1` (`plans/crafting.md`) and
     `spell-visuals` (`plans/spell-visuals.md`, Pending SE validation; its

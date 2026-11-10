@@ -45,7 +45,11 @@
 //! Each test is announced as it starts (`vibe_rm autotest23 9/33: TimeDead`)
 //! and the game saves after each one ([`Batch::checkpoints`]). Run 1
 //! (2026-11-10) crashed to desktop between `XPNext`'s skill increase and the
-//! first save (after test 20), with no Papyrus log. After a crash, the
+//! first save (after test 20), with no Papyrus log. Run 2 (2026-11-10)
+//! showed TimeDead to be the crash (likely its timescale of 1000), and the
+//! rest ran with it skipped. Its readings and faults (TimeDead, the view
+//! cone off the floor, a crime guard that isn't `IsGuard`, Calm and Fury not
+//! landing) are in `research/autotest23.md`. After a crash, the
 //! newest save holds every result so far, and the test after the last one
 //! is the culprit. To go past it, load that save, open the console within a
 //! few seconds, `set VrmAt23SkipTest to <its number>`, and close it. The
