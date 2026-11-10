@@ -83,15 +83,18 @@ its data isn't public; the choices below are what the movie's code allows.
 - **What the engine counts** (the game's scripts count Horses Owned,
   Persuasions, Bribes and the rest they call `IncrementStat` for; when the
   game counts these isn't published):
-  - kills by the player, by the first of the victim's actor type keywords
-    in the order Dragon, NPC, Daedra, Dwarven, Undead, Animal, Creature
-    (so a vampire is one of the People Killed); hares (`HareRace`) count in
+  - kills by the player, under each of the victim's actor type keywords
+    (Dragon, NPC, Daedra, Dwarven, Undead, Animal), Creatures Killed only
+    when none of those match: a vampire is one of the People Killed and
+    the Undead Killed, as Skyrim SE counted it (`test-mod autotest21`,
+    KillStats, where creatures never moved); hares (`HareRace`) count in
     Bunnies Slaughtered too. Sneak Attacks count each of the player's.
   - Assaults, Murders and Trespasses count once when reported (a witness
     told a crime faction), Items Stolen every stolen item taken however
     unseen. Pockets Picked counts each successful theft from pockets,
     Items Pickpocketed the items in it (pickpocketed items aren't in Items
-    Stolen). Fines Paid is the gold paid, Days Jailed the days served;
+    Stolen). Fines Paid is the bounty paid off (not the gold taken: see
+    above), Days Jailed the days served;
     Times Jailed and Jail Escapes count each.
   - Total Lifetime Bounty is all the bounty ever added (the infamy, with
     every faction); Largest Bounty the highest bounty with one faction at

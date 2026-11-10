@@ -80,15 +80,12 @@ over again, against its current text and `research/autotest21.md` /
   items).
 - Files that grew with later work gained items: `remaining-natives` (+18),
   `package-trees` (+16), `escort` and `detection` (+7 each), and others.
-
-SE readings that the ambiguity files still contradict (the items are
-settled, so they aren't listed below; the files and the engine need
-correcting):
-
-- `journal.md`: a vampire counts once, under People. autotest21 counted it
-  under People and Undead, and the engine was changed to agree; the file's
-  text is stale. Its "Fines Paid" line (the gold paid) also disagrees with
-  its own confirmed reading (the bounty paid off).
+- Settled readings that the ambiguity files and the engine still
+  contradicted were applied the same day: NPCs' kills of lawful victims
+  (`KILL` crime 1), `DamageActorValue` on invulnerable actors, the 0.6 s
+  idle sheathe, and `journal.md`'s kill and fine statistics. autotest21's
+  TakeUpArmor conclusion was corrected instead: its iron cuirass rated
+  lower than the leather one, so the teammate keeping the leather fits ours.
 
 ## Covered by `test-mod autotest21` (2026-10-31)
 
