@@ -89,34 +89,18 @@ const MAX_SENTENCE: i32 = 7;
 
 impl Engine {
     /// Whether an actor is a guard: a member of `IsGuardFaction` (the hold
-    /// guards, at rank 0; their templates list it at -1) or of a class with
-    /// the Guard flag (`CLAS` `DATA`'s last byte, 0x1: the four guard classes
-    /// in Skyrim.esm). Which the game reads isn't documented.
+    /// guards, at rank 0; their templates list it at -1) with a crime
+    /// faction. Skyrim SE (autotest23, `research/autotest23.md`): the hold
+    /// guards and `IsGuardFaction` members with Whiterun's crime faction are
+    /// guards; members without a crime faction, and NPCs of a class flagged
+    /// Guard (with or without one), are not.
     pub fn is_guard(&self, actor: FormId) -> bool {
-        if actor == PLAYER_REF {
-            return false;
-        }
-        if self
-            .npc_factions(actor)
-            .iter()
-            .any(|&(f, rank)| f == IS_GUARD_FACTION && rank >= 0)
-        {
-            return true;
-        }
-        let Some(class) = self
-            .templates_of(actor)
-            .and_then(|t| t.form(&self.lo, crate::world::template::TRAITS, b"CNAM"))
-        else {
-            return false;
-        };
-        self.lo
-            .get(class)
-            .and_then(|r| {
-                r.get(b"DATA")
-                    .filter(|d| d.len() >= 36)
-                    .map(|d| d[35] & 1 != 0)
-            })
-            .unwrap_or(false)
+        actor != PLAYER_REF
+            && self.crime_faction(actor).is_some()
+            && self
+                .npc_factions(actor)
+                .iter()
+                .any(|&(f, rank)| f == IS_GUARD_FACTION && rank >= 0)
     }
 
     /// Whether `r` is a guard coming to arrest the player (`GetAlarmed`).

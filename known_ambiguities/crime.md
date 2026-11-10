@@ -112,6 +112,12 @@ locations name it.
   templates list it at -1); their class is the soldiers' `CWSoldierClass`.
   Four classes carry the class Guard flag (`CLAS` `DATA`'s last byte 0x1:
   `GuardImperial`, `GuardSonsSkyrim`, `GuardOrc1H` / `2H`).
+- `IsGuard` is `IsGuardFaction` membership with a crime faction. Skyrim SE
+  (autotest21 FactionRanks and autotest23 IsGuard, `research/autotest23.md`):
+  a Whiterun guard and copies of it, and an `IsGuardFaction` member with
+  Whiterun's crime faction, are guards; a member with no crime faction is
+  not, and neither is an NPC of a class flagged Guard, with or without a
+  crime faction.
 - A faction's `JAIL` is a prison marker (a `DOOR` marker, base 0x4) linked
   by `XTEL` to its pair in the jail cell, like a load door; `PLCN` is the
   player's belongings chest, `STOL` the evidence chest, `JOUT` the jail
@@ -273,17 +279,6 @@ locations name it.
   victim as a witness, the victim says `PICN` (`IsActorAVictim` true for it)
   and won't be pickpocketed by the player again (for the session). Being
   caught doesn't start a fight.
-- `IsGuard`: a member of `IsGuardFaction` or of a class flagged Guard.
-  Skyrim SE (autotest21, `research/autotest21.md`, FactionRanks) read False
-  for a plugin NPC of class `GuardImperial` (flagged Guard; the class isn't
-  templated: UESP's NPC_ page puts it under "Use Stats") and for one in
-  `IsGuardFaction` at rank 0, neither with a crime faction. Yet the hold
-  guards are guards only by `IsGuardFaction` (their class, `CWSoldierClass`,
-  isn't flagged), and `DialogueCrimeGuards`' quest needs `IsGuard`. So
-  something else the hold guards have counts too, perhaps their crime
-  faction; ours keeps the rule above (compared 2026-11-07). To settle: a
-  copy of a hold guard, the same without its crime faction, and the two
-  test NPCs with a hold's crime faction.
 - The guards of the faction told, within 2048 units of the player, awake
   and not fighting, come to arrest them (UESP: witnesses report to the
   guards); they run to the player calling a `PURS` line every 6 to 10
