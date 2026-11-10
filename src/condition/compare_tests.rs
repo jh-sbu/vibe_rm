@@ -393,9 +393,9 @@ fn explicit_alert_draws_and_unalerted_script_draw_sheathes_through_ai_readiness(
     e.cells.entry(key).or_default().actors.push(actor);
     assert!(e.draw_weapon(ALLY_REF, true));
     assert!(e.weapon_drawn(ALLY_REF));
-    e.update_weapon_readiness(1.0);
+    e.update_weapon_readiness(0.4);
     assert!(e.weapon_drawn(ALLY_REF));
-    e.update_weapon_readiness(1.0);
+    e.update_weapon_readiness(0.3);
     assert!(!e.weapon_drawn(ALLY_REF));
     e.set_alerted(ALLY_REF, true);
     assert!(e.weapon_drawn(ALLY_REF));

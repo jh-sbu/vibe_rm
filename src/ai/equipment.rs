@@ -205,8 +205,9 @@ impl Engine {
         took
     }
 
-    /// Autotest19: an unalerted NPC out of combat sheathes 1–3 s after a
-    /// scripted draw. Two seconds is provisional; explicit alert also draws.
+    /// An unalerted NPC out of combat sheathes a scripted draw again after
+    /// [`IDLE_SHEATHE_DELAY`] (autotest19: between 1 and 3 s; autotest21:
+    /// about 0.6 s); explicit alert also draws.
     pub(crate) fn update_weapon_readiness(&mut self, dt: f32) {
         let actors: Vec<_> = self
             .cells
@@ -669,6 +670,12 @@ impl Engine {
     }
 }
 
+/// Seconds an unwanted draw lasts before the actor sheathes again: in
+/// Skyrim SE (`test-mod autotest21`, AlertFlag) an unalerted NPC told to
+/// `DrawWeapon` read sheathed between about 0.52 and 0.62 s later (polled
+/// every 0.1 s).
+const IDLE_SHEATHE_DELAY: f32 = 0.6;
+
 /// Only time spent drawn and unwanted advances the idle-sheathing clock.
 fn idle_sheathe_due(elapsed: &mut f32, drawn: bool, wanted: bool, dt: f32) -> bool {
     if !drawn || wanted {
@@ -676,7 +683,7 @@ fn idle_sheathe_due(elapsed: &mut f32, drawn: bool, wanted: bool, dt: f32) -> bo
         return false;
     }
     *elapsed += dt.max(0.0);
-    *elapsed >= 2.0
+    *elapsed >= IDLE_SHEATHE_DELAY
 }
 
 #[cfg(test)]
@@ -765,19 +772,19 @@ mod readiness_tests {
         }
         // Leaving the practice location allows normal idle sheathing again.
         e.actor_mut(id).unwrap().exec.pos = Vec3::X * 5000.0;
-        e.update_weapon_readiness(1.0);
-        assert_eq!(e.actor_ref(id).unwrap().idle_weapon_time, 1.0);
+        e.update_weapon_readiness(0.25);
+        assert_eq!(e.actor_ref(id).unwrap().idle_weapon_time, 0.25);
         std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
-    fn idle_draw_sheathes_after_two_seconds_but_alert_or_combat_resets_delay() {
+    fn idle_draw_sheathes_after_0_6_seconds_but_alert_or_combat_resets_delay() {
         let mut elapsed = 0.0;
-        assert!(!idle_sheathe_due(&mut elapsed, true, false, 1.0));
+        assert!(!idle_sheathe_due(&mut elapsed, true, false, 0.3));
         assert!(!idle_sheathe_due(&mut elapsed, true, true, 10.0));
-        assert!(!idle_sheathe_due(&mut elapsed, true, false, 1.5));
-        assert!(idle_sheathe_due(&mut elapsed, true, false, 0.5));
+        assert!(!idle_sheathe_due(&mut elapsed, true, false, 0.5));
+        assert!(idle_sheathe_due(&mut elapsed, true, false, 0.1));
         assert!(!idle_sheathe_due(&mut elapsed, false, false, 10.0));
-        assert!(!idle_sheathe_due(&mut elapsed, true, false, 1.0));
+        assert!(!idle_sheathe_due(&mut elapsed, true, false, 0.3));
     }
 }

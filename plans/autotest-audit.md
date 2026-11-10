@@ -85,9 +85,6 @@ SE readings that the ambiguity files still contradict (the items are
 settled, so they aren't listed below; the files and the engine need
 correcting):
 
-- `combat-movement.md`: an unwanted draw is sheathed after two seconds.
-  autotest21's unalerted NPC sheathed about 0.6 s after `DrawWeapon`
-  (AlertFlag).
 - `crime.md`: an NPC given better armor puts it on. autotest21's plain NPC
   didn't, and only teammates do (TakeUpArmor). The file's autotest2 note
   agrees with SE. Its general rule doesn't.

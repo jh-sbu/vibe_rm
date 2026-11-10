@@ -37,10 +37,13 @@ All four test NPCs drew on DrawWeapon, including unalerted commoners and guards.
 Unalerted NPCs out of combat sheathed again between the 1 s and 3 s readings;
 SetAlert(true) drew by itself. The native remains unconditional. The humanoid
 AI now draws while explicitly alerted, in combat, or running a Weapon Drawn
-package, and sheathes an otherwise unwanted draw after two seconds. The exact
-delay and whether repeated explicit DrawWeapon calls restart it were not
-measured; chosen here: two seconds since the last accepted/requested draw,
-reset while readiness is wanted. Swim state prevents automatic draws.
+package, and sheathes an otherwise unwanted draw after 0.6 s: in Skyrim SE
+(`test-mod autotest21`, AlertFlag) an unalerted NPC given a sword and told to
+DrawWeapon read sheathed between about 0.52 and 0.62 s later (polled every
+0.1 s), before the second DrawWeapon was due. Whether a repeated DrawWeapon
+restarts the delay wasn't measured; chosen here: the delay counts from the
+last accepted/requested draw and resets while readiness is wanted. Swim
+state prevents automatic draws.
 
 Review follow-up: reaching melee range ends the charging locomotion stance;
 a sprint attack may still be selected on that arrival update. Entering flee
