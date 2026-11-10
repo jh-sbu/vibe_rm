@@ -38,10 +38,12 @@ release clips for hand type 8: `StfMagicRight_Release`, `SpellFire` at
   reduction through `PerkSkillBoosts`, so it isn't counted twice. An SE
   test could settle it (a plugin perk with an unconditioned `ModSpellCost`
   entry, `RightItemCharge` read before and after one staff cast).
-- **NPCs** get the reduction too: it reads the caster's own actor value.
-  For spells the reduction comes from `PerkSkillBoosts`, which only the
-  player owns; whether NPCs' worn reductions lower their staffs' and
-  weapons' charge use in the game isn't published.
+- **NPCs** get no reduction. Skyrim SE (autotest23,
+  `research/autotest23.md`, NpcStaffs): a warlock's staff of sparks spent
+  charge at the same rate with `DestructionMod` 50 as with 0 (about 5.8 a
+  second). For spells the reduction comes from `PerkSkillBoosts`, which
+  only the player owns, so this fits. Enchanted weapons' blows are taken to
+  go the same way (not read).
 - **Spell cost perks on enchantments**: `vrm-tool cost-entries <Data>`
   classifies the 43 vanilla `ModSpellCost` entries by whether their spell
   conditions could match an enchantment. 31 can't: the school perks'
@@ -106,9 +108,18 @@ spells isn't public. Here:
   copy without spells given a staff of sparks by `EquipItem` held it in
   its left hand (a dagger in the right, `IsEquipped` False) and fought with
   it, its charge 500 to 457.5 over 10.5 s (about 8.7 each 1.5 s while
-  casting, two Cast events). Ours fights with a staff only from the right
-  hand, and would spend `StaffEnchSparks`' 19 a second at its Destruction's
-  factor (14.8 at 39); open.
+  casting, two Cast events). autotest23 (`research/autotest23.md`,
+  NpcStaffs) again: the staff in the left hand, the dagger in the right
+  (type 2), and with nothing else carried an empty right hand (type 0).
+  Ours fights with a staff only from the right hand: differs, open (the
+  cast's hand would need carrying to the graph and the effects).
+- **NPCs' charge per use** (autotest23): at Destruction 39, `StaffEnchSparks`
+  (`ENIT` 19) about 5.8 a second and `StaffEnchFirebolt` (41) 11.557 a
+  cast, about 0.31 and 0.28 of the cost; at Destruction 100, sparks about
+  3 a second (rough: three casts with gaps). Ours (the player's skill
+  factor, 0.78 at 39) spends about 2.7 times as much. No formula from the
+  game settings gives these (`fMagicCasterSkillCostMult` 0.5 is the only
+  NPC-looking one in Skyrim.esm). Kept as ours until more readings fix one.
 - **Charge**: NPCs' staffs spend charge as the player's do (their cost by
   their own skill), and run dry.
 
@@ -156,10 +167,13 @@ weapons, the Ebony Blade, Keening, Bloodskal, trap darts. Here:
   5-point `EnchFireDamageFFContact`, base cost 0.9) went from 500 to 496.16
   charge in 10 s of fighting, the target seeing two enchantment effects
   among four hits: NPCs do pay, about 1.92 an enchanted blow (or 0.96 a
-  hit). Ours pays the `ENIT` 4 by the attacker's Destruction (about 3.6 at
-  skill 15): it differs, and no formula from the records gives 1.92. Open
-  (compared 2026-11-07): a probe with known skills (Destruction and
-  Enchanting at 15 and 100) reading the charge after each hit.
+  hit). autotest23 (`research/autotest23.md`, EnchantedBlows) read the
+  charge after each hit: 1.919 for each enchantment effect the target
+  received, at Enchanting 15 and 100 alike (the attacker's Destruction,
+  not printed, is taken as its record's 15). So Enchanting doesn't count;
+  1.919 is 0.48 of the cost. Ours pays the `ENIT` 4 by the attacker's
+  Destruction (about 3.5 at skill 15): differs, open with the staffs'
+  charge above.
 
 ## Recharging
 
