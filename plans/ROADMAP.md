@@ -1931,7 +1931,11 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
     (timescale 1000 crashed SE), the view cone's edge with the observer on
     the floor, Attack on Sight with an `IsGuard` guard, Calm and Fury from
     close by and Fear's flee, what decides Disarm, what makes `GetDisease`
-    true, and the Vigilant's healing.
+    true, and the Vigilant's healing. Those are `test-mod autotest24`
+    (built 2026-11-10, waiting for the user's run). In our engine its view
+    cone test read the observer about 1 unit from the player at every
+    spot (`GetDistance` after `MoveTo` with offsets, or a stale observer
+    position): unexplained, to look into.
   - Built and waiting for the user's run: `loadscreens`
     (`plans/loading-screen.md`), `crafting1` (`plans/crafting.md`) and
     `spell-visuals` (`plans/spell-visuals.md`, Pending SE validation; its

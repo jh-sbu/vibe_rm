@@ -48,7 +48,11 @@ Event OnDeath(Actor akKiller)
 EndEvent
 
 Event OnSpellCast(Form akSpell)
-    Add("cast")
+    If akSpell != None
+        Add("cast#" + akSpell.GetFormID())
+    Else
+        Add("cast")
+    EndIf
 EndEvent
 
 Event OnMagicEffectApply(ObjectReference akCaster, MagicEffect akEffect)

@@ -228,6 +228,8 @@ const DISARM_SPELL: u32 = 0xA24;
 const DISARM_STRONG_SPELL: u32 = 0xA25;
 const FAILING_FIRE_SPELL: u32 = 0xA26;
 const SKIP_TEST: u32 = 0xA27;
+// Added for autotest24.
+const AOS_IS_GUARD: u32 = 0xA28;
 /// The next free object id.
 const NEXT_OBJECT: u32 = 0xA30;
 
@@ -710,6 +712,8 @@ const VANILLA: &[(&str, &str, &str)] = &[
         "GuardWhiterunImperialExterior",
     ),
     ("GameDaysPassed", "GlobalVariable", "GameDaysPassed"),
+    ("TrapAtaxia", "Spell", "TrapDiseaseAtaxia"),
+    ("Sanguinare", "Spell", "DiseaseSanguinareVampiris"),
 ];
 
 /// The weathers whose transitions are timed, with their trans deltas: the
@@ -750,6 +754,7 @@ const OWN: &[(&str, &str, u32)] = &[
     ("AliasQuest", "Quest", ALIAS_QUEST),
     ("ProbeValue", "GlobalVariable", PROBE_VALUE),
     ("SkipTest", "GlobalVariable", SKIP_TEST),
+    ("AosIsGuardBase", "ActorBase", AOS_IS_GUARD),
     ("RedFaction", "Faction", RED),
     ("GreenFaction", "Faction", GREEN),
     ("TealFaction", "Faction", TEAL),
@@ -1900,6 +1905,17 @@ fn build_records(lo: &LoadOrder, batch: &Batch) -> Result<TestMod> {
             factions: vec![(v.id("IsGuardFaction")?, 0)],
             crime_faction: Some(v.id("CrimeFactionWhiterun")?),
             ..npc(GUARD_FACTION_CRIME, "VrmAt21GuardFactionCrime")
+        }
+        .record(),
+        // A guard by IsGuard (autotest23: IsGuardFaction and a crime
+        // faction), of the Attack on Sight faction.
+        Npc {
+            factions: vec![(own(AOS_CRIME), 0), (v.id("IsGuardFaction")?, 0)],
+            crime_faction: Some(own(AOS_CRIME)),
+            class: v.id("GuardImperial")?,
+            temper: (1, 3, 0),
+            items: vec![(sword, 1)],
+            ..npc(AOS_IS_GUARD, "VrmAt21AosIsGuard")
         }
         .record(),
     ];
