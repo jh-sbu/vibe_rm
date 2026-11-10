@@ -56,6 +56,7 @@ const AUTOTEST22: Batch = Batch {
     prefix: "VrmAt22",
     sources: SOURCES,
     probes_on_skill: true,
+    cell_location: None,
 };
 
 pub fn build(lo: &LoadOrder) -> Result<TestMod> {

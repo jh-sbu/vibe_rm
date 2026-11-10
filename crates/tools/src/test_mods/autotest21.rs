@@ -87,6 +87,9 @@ pub(super) struct Batch {
     /// potion's damage modifier (135), as autotest5 found they must;
     /// autotest21 ran without it.
     pub probes_on_skill: bool,
+    /// Our test cell's location (`XLCN`, a vanilla location's editor id);
+    /// autotest21 and autotest22's cell had none.
+    pub cell_location: Option<&'static str>,
 }
 
 pub(super) const AUTOTEST21: Batch = Batch {
@@ -94,6 +97,7 @@ pub(super) const AUTOTEST21: Batch = Batch {
     prefix: "VrmAt21",
     sources: SOURCES,
     probes_on_skill: false,
+    cell_location: None,
 };
 
 /// autotest21's test sources, in running order (base first: the helpers).
@@ -198,8 +202,27 @@ const UNIQUE_PLAIN: u32 = 0xA03;
 const LOW_LOGGED: u32 = 0xA04;
 const LOW_FIGHTER: u32 = 0xA05;
 const LEVEL20_FIGHTER: u32 = 0xA06;
+// Added for autotest23.
+const ESSENTIAL_LOGGED: u32 = 0xA10;
+const LEVEL8_LOGGED: u32 = 0xA11;
+const LOW_FIGHTER_LOGGED: u32 = 0xA12;
+const VERY_AGGRESSIVE: u32 = 0xA13;
+const FRENZIED: u32 = 0xA14;
+const HELPER_ALLIES: u32 = 0xA15;
+const AOS_GUARD: u32 = 0xA16;
+const GUARD_COPY: u32 = 0xA17;
+const GUARD_COPY_NO_CRIME: u32 = 0xA18;
+const GUARD_CLASS_CRIME: u32 = 0xA19;
+const GUARD_FACTION_CRIME: u32 = 0xA1A;
+const AOS_CRIME: u32 = 0xA20;
+const KILLER_ALPHA_BASES: u32 = 0xA21;
+const KILLER_ALPHA_REFS: u32 = 0xA22;
+const DISARM_EFFECT: u32 = 0xA23;
+const DISARM_SPELL: u32 = 0xA24;
+const DISARM_STRONG_SPELL: u32 = 0xA25;
+const FAILING_FIRE_SPELL: u32 = 0xA26;
 /// The next free object id.
-const NEXT_OBJECT: u32 = 0xA10;
+const NEXT_OBJECT: u32 = 0xA30;
 
 const DOOR: u32 = 0x850;
 const WEB: u32 = 0x851;
@@ -555,6 +578,39 @@ const PROBE_LIST: &[Probe] = &[
     probe("InCombat0", "IsInCombat", P::Int(0), P::None, EQ, ONE),
     probe("InCombat1", "IsInCombat", P::Int(1), P::None, EQ, ONE),
     probe("InCombat2", "IsInCombat", P::Int(2), P::None, EQ, ONE),
+    // autotest23: GetRelativeAngle with its axis, IsKillerObject run on the
+    // victim, IsFleeing.
+    probe(
+        "RelAngleZ",
+        "GetRelativeAngle",
+        P::Own(BETA),
+        P::Axis('Z'),
+        GE,
+        V::Probe,
+    ),
+    Probe {
+        on: Some(VICTIM),
+        ..probe(
+            "KillerObjBase",
+            "IsKillerObject",
+            P::Own(KILLER_ALPHA_BASES),
+            P::None,
+            EQ,
+            ONE,
+        )
+    },
+    Probe {
+        on: Some(VICTIM),
+        ..probe(
+            "KillerObjRef",
+            "IsKillerObject",
+            P::Own(KILLER_ALPHA_REFS),
+            P::None,
+            EQ,
+            ONE,
+        )
+    },
+    probe("Fleeing", "IsFleeing", P::None, P::None, EQ, ONE),
 ];
 
 /// Vanilla forms the scripts name: property, type, editor id.
@@ -635,6 +691,18 @@ const VANILLA: &[(&str, &str, &str)] = &[
     ("TimeScale", "GlobalVariable", "TimeScale"),
     ("WhiterunMarker", "ObjectReference", "WhiterunMapMarkerREF"),
     ("SolitudeMarker", "ObjectReference", "SolitudeMapmarkerRef"),
+    ("SlowTime2Spell", "Spell", "VoiceSlowTime2"),
+    ("SlowTime3Spell", "Spell", "VoiceSlowTime3"),
+    ("FireboltStaff", "Weapon", "StaffFirebolt"),
+    ("FollowerFaction", "Faction", "CurrentFollowerFaction"),
+    ("CrimeWhiterun", "Faction", "CrimeFactionWhiterun"),
+    ("CrimeRift", "Faction", "CrimeFactionRift"),
+    (
+        "GuardWhiterunBase",
+        "ActorBase",
+        "GuardWhiterunImperialExterior",
+    ),
+    ("GameDaysPassed", "GlobalVariable", "GameDaysPassed"),
 ];
 
 /// The weathers whose transitions are timed, with their trans deltas: the
@@ -748,6 +816,21 @@ const OWN: &[(&str, &str, u32)] = &[
     ("LowLoggedBase", "ActorBase", LOW_LOGGED),
     ("LowFighterBase", "ActorBase", LOW_FIGHTER),
     ("Level20FighterBase", "ActorBase", LEVEL20_FIGHTER),
+    ("EssentialLoggedBase", "ActorBase", ESSENTIAL_LOGGED),
+    ("Level8LoggedBase", "ActorBase", LEVEL8_LOGGED),
+    ("LowFighterLoggedBase", "ActorBase", LOW_FIGHTER_LOGGED),
+    ("VeryAggressiveBase", "ActorBase", VERY_AGGRESSIVE),
+    ("FrenziedBase", "ActorBase", FRENZIED),
+    ("HelperAlliesBase", "ActorBase", HELPER_ALLIES),
+    ("AosGuardBase", "ActorBase", AOS_GUARD),
+    ("GuardCopyBase", "ActorBase", GUARD_COPY),
+    ("GuardCopyNoCrimeBase", "ActorBase", GUARD_COPY_NO_CRIME),
+    ("GuardClassCrimeBase", "ActorBase", GUARD_CLASS_CRIME),
+    ("GuardFactionCrimeBase", "ActorBase", GUARD_FACTION_CRIME),
+    ("AosFaction", "Faction", AOS_CRIME),
+    ("OurDisarm", "Spell", DISARM_SPELL),
+    ("OurDisarmStrong", "Spell", DISARM_STRONG_SPELL),
+    ("FailingFireSpell", "Spell", FAILING_FIRE_SPELL),
 ];
 
 /// The tests, in running order: every `String Function TestName()` of the
@@ -1109,13 +1192,16 @@ fn outfit(object_id: u32, edid: &str, items: &[FormId]) -> RecordBuilder {
 }
 
 /// A faction: `DATA` flags (0x40 tracks crime), reactions (faction,
-/// reaction: 1 enemy, 2 ally, 3 friend) and a crime group list.
+/// reaction: 1 enemy, 2 ally, 3 friend), a crime group list and whether its
+/// guards attack on sight (`CRVA`'s second byte; Arrest, the first, is
+/// always set).
 fn faction(
     object_id: u32,
     edid: &str,
     flags: u32,
     reactions: &[(u32, u32)],
     group: Option<u32>,
+    attack_on_sight: bool,
 ) -> RecordBuilder {
     let mut rec = RecordBuilder::new(b"FACT", own(object_id))
         .zstring(b"EDID", edid)
@@ -1133,7 +1219,7 @@ fn faction(
         rec = rec.form(b"CRGR", own(g));
     }
     let crva: [u8; 20] = bytes(&[
-        &[1, 0],
+        &[1, attack_on_sight as u8],
         &1000u16.to_le_bytes(),
         &40u16.to_le_bytes(),
         &5u16.to_le_bytes(),
@@ -1400,11 +1486,19 @@ fn build_records(lo: &LoadOrder, batch: &Batch) -> Result<TestMod> {
     }
 
     let factions = vec![
-        faction(RED, "VrmAt21Red", 0, &[(GREEN, 1)], None),
-        faction(GREEN, "VrmAt21Green", 0, &[], None),
-        faction(TEAL, "VrmAt21Teal", 0, &[], None),
-        faction(GROUPED, "VrmAt21Grouped", 0x40, &[], Some(CRIME_GROUP)),
-        faction(CRIME, "VrmAt21Crime", 0x40, &[], None),
+        faction(RED, "VrmAt21Red", 0, &[(GREEN, 1)], None, false),
+        faction(GREEN, "VrmAt21Green", 0, &[], None, false),
+        faction(TEAL, "VrmAt21Teal", 0, &[], None, false),
+        faction(
+            GROUPED,
+            "VrmAt21Grouped",
+            0x40,
+            &[],
+            Some(CRIME_GROUP),
+            false,
+        ),
+        faction(CRIME, "VrmAt21Crime", 0x40, &[], None, false),
+        faction(AOS_CRIME, "VrmAt21AosCrime", 0x40, &[], None, true),
     ];
 
     let iron = v.id("ArmorIronCuirass")?;
@@ -1418,6 +1512,12 @@ fn build_records(lo: &LoadOrder, batch: &Batch) -> Result<TestMod> {
         form_list(CRIME_GROUP, "VrmAt21CrimeGroup", &[own(RED)]),
         form_list(KILLER_BASES, "VrmAt21KillerBases", &[own(VICTIM_NPC)]),
         form_list(KILLER_REFS, "VrmAt21KillerRefs", &[own(VICTIM)]),
+        form_list(
+            KILLER_ALPHA_BASES,
+            "VrmAt21KillerAlphaBases",
+            &[own(ALPHA_NPC)],
+        ),
+        form_list(KILLER_ALPHA_REFS, "VrmAt21KillerAlphaRefs", &[own(ALPHA)]),
         form_list(
             MATCH_QUESTS,
             "VrmAt21MatchQuests",
@@ -1705,6 +1805,85 @@ fn build_records(lo: &LoadOrder, batch: &Batch) -> Result<TestMod> {
             ..npc(LEVEL20_FIGHTER, "VrmAt21Level20Fighter")
         }
         .record(),
+        Npc {
+            flags: 0x2,
+            script: Some("VrmAt21ActorLog"),
+            ..npc(ESSENTIAL_LOGGED, "VrmAt21EssentialLogged")
+        }
+        .record(),
+        Npc {
+            level: 8,
+            script: Some("VrmAt21ActorLog"),
+            ..npc(LEVEL8_LOGGED, "VrmAt21Level8Logged")
+        }
+        .record(),
+        Npc {
+            level: 1,
+            temper: (1, 3, 0),
+            script: Some("VrmAt21ActorLog"),
+            items: vec![(sword, 1)],
+            ..npc(LOW_FIGHTER_LOGGED, "VrmAt21LowFighterLogged")
+        }
+        .record(),
+        Npc {
+            temper: (2, 3, 0),
+            items: vec![(sword, 1)],
+            ..npc(VERY_AGGRESSIVE, "VrmAt21VeryAggressive")
+        }
+        .record(),
+        Npc {
+            temper: (3, 3, 0),
+            items: vec![(sword, 1)],
+            ..npc(FRENZIED, "VrmAt21Frenzied")
+        }
+        .record(),
+        Npc {
+            temper: (1, 3, 1),
+            items: vec![(sword, 1)],
+            ..npc(HELPER_ALLIES, "VrmAt21HelperAllies")
+        }
+        .record(),
+        Npc {
+            factions: vec![(own(AOS_CRIME), 0)],
+            crime_faction: Some(own(AOS_CRIME)),
+            class: v.id("GuardImperial")?,
+            temper: (1, 3, 0),
+            items: vec![(sword, 1)],
+            ..npc(AOS_GUARD, "VrmAt21AosGuard")
+        }
+        .record(),
+        records::copy(
+            lo,
+            "GuardWhiterunImperialExterior",
+            GUARD_COPY,
+            "VrmAt21GuardCopy",
+            None,
+            |_, _| {},
+        )?,
+        records::copy(
+            lo,
+            "GuardWhiterunImperialExterior",
+            GUARD_COPY_NO_CRIME,
+            "VrmAt21GuardCopyNoCrime",
+            None,
+            |tag, d| {
+                if tag == b"CRIF" {
+                    d.clear();
+                }
+            },
+        )?,
+        Npc {
+            class: v.id("GuardImperial")?,
+            crime_faction: Some(v.id("CrimeFactionWhiterun")?),
+            ..npc(GUARD_CLASS_CRIME, "VrmAt21GuardClassCrime")
+        }
+        .record(),
+        Npc {
+            factions: vec![(v.id("IsGuardFaction")?, 0)],
+            crime_faction: Some(v.id("CrimeFactionWhiterun")?),
+            ..npc(GUARD_FACTION_CRIME, "VrmAt21GuardFactionCrime")
+        }
+        .record(),
     ];
 
     // Objects with a logger.
@@ -1794,6 +1973,54 @@ fn build_records(lo: &LoadOrder, batch: &Batch) -> Result<TestMod> {
         ),
     ];
 
+    // Disarm as a target-actor spell (the shout's own, cast by script, did
+    // nothing in autotest21 and autotest22), at magnitude 12 and 30; and the
+    // fire spell with a condition that fails (IsWin32 == 0).
+    effects.push(records::copy(
+        lo,
+        "VoiceDisarmEffect01",
+        DISARM_EFFECT,
+        "VrmAt21DisarmEffect",
+        None,
+        |tag, d| {
+            if tag == b"DATA" && d.len() >= 0x58 {
+                d[0x50..0x54].copy_from_slice(&spell::FIRE_AND_FORGET.to_le_bytes());
+                d[0x54..0x58].copy_from_slice(&spell::TARGET_ACTOR.to_le_bytes());
+            }
+        },
+    )?);
+    for (id, edid, magnitude) in [
+        (DISARM_SPELL, "VrmAt21Disarm", 12.0),
+        (DISARM_STRONG_SPELL, "VrmAt21DisarmStrong", 30.0),
+    ] {
+        spells.push(records::spell(
+            id,
+            edid,
+            spell::SPELL,
+            spell::FIRE_AND_FORGET,
+            spell::TARGET_ACTOR,
+            0,
+            None,
+            &[records::Effect::new(own(DISARM_EFFECT), magnitude, 0)],
+        ));
+    }
+    spells.push(records::spell(
+        FAILING_FIRE_SPELL,
+        "VrmAt21FailingFire",
+        spell::SPELL,
+        spell::FIRE_AND_FORGET,
+        spell::TARGET_ACTOR,
+        0,
+        None,
+        &[records::Effect::new(own(FIRE_EFFECT), 10.0, 0).when(ctda(
+            func_index("IsWin32"),
+            0,
+            0,
+            EQ,
+            0.0,
+        ))],
+    ));
+
     // Probes: a harmless constant +3 OneHanded on self, its condition the
     // probe's (autotest5 found this copy works as an ability's effect).
     for (i, p) in PROBE_LIST.iter().enumerate() {
@@ -1877,6 +2104,10 @@ fn build_records(lo: &LoadOrder, batch: &Batch) -> Result<TestMod> {
         .field(b"DATA", &1u16.to_le_bytes())
         .field(b"XCLL", &xcll())
         .u32(b"LTMP", 0);
+    let cell = match batch.cell_location {
+        Some(location) => cell.form(b"XLCN", v.id(location)?),
+        None => cell,
+    };
     let mut temporary = Vec::new();
     let mut k = 0;
     for gx in [-1.0f32, 0.0, 1.0] {
