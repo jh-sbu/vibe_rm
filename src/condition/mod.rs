@@ -1012,12 +1012,13 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
             let heading = (bearing - e.ref_rotation(s).z).to_degrees();
             Some((heading + 180.0).rem_euclid(360.0) - 180.0)
         } // GetHeadingAngle
-        // The reference's angle less the subject's along an axis, in [0, 360).
+        // The subject's angle less the reference's along an axis, in
+        // [0, 360) (Skyrim SE, autotest23).
         584 => {
             let s = subject?;
             let other = axis_component(c.p2, e.ref_rotation(reference_or_target(e, s, p1)?))?;
             let mine = axis_component(c.p2, e.ref_rotation(s))?;
-            Some((other - mine).to_degrees().rem_euclid(360.0))
+            Some((mine - other).to_degrees().rem_euclid(360.0))
         } // GetRelativeAngle
         // Within the distance the package's float input gives (its second
         // parameter); outside packages, the parameter is the float itself.

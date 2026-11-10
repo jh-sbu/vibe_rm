@@ -219,13 +219,14 @@ fn heading_angle_is_the_bearing_from_the_subjects_facing() {
 }
 
 #[test]
-fn relative_angle_is_the_references_angle_less_the_subjects() {
+fn relative_angle_is_the_subjects_angle_less_the_references() {
     let (_dir, mut e) = fixture();
     move_to(&mut e, C, [0.0; 3], [0.0; 3]);
     move_to(&mut e, B, [0.0; 3], [0.0, 0.0, std::f32::consts::FRAC_PI_2]);
-    assert!(holds(&e, C, GET_RELATIVE_ANGLE, B.0, Z, 90.0));
-    // The other way round: 270, in [0, 360).
-    assert!(holds(&e, B, GET_RELATIVE_ANGLE, C.0, Z, 270.0));
+    // autotest23: subject at 0, reference at 90 read 270.
+    assert!(holds(&e, C, GET_RELATIVE_ANGLE, B.0, Z, 270.0));
+    // The other way round: 90.
+    assert!(holds(&e, B, GET_RELATIVE_ANGLE, C.0, Z, 90.0));
     assert!(!holds(&e, C, GET_RELATIVE_ANGLE, 0, Z, 0.0));
 }
 

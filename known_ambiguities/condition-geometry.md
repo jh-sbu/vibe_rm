@@ -11,6 +11,11 @@ in `src/detection.rs`; tests in `src/condition/geometry_tests.rs`.
   (oldid 3089174, "An axis value (setpos/getpos) is simply output as a single
   uppercase character"); UESP Skyrim Mod:Mod File Format/Raw Function Data
   (oldid 3411473) for the function signatures.
+- `GetRelativeAngle` is the subject's angle less the reference's along the
+  axis, wrapped into [0, 360); where the reference stands doesn't matter.
+  Skyrim SE (autotest23, `research/autotest23.md`, RelAngle): subject 0 and
+  reference 90 read 270, reference 180 read 180, 270 read 90; subject 30 and
+  reference 90 read 300.
 - Positions and angles of a loaded or moved reference come from the same state
   Papyrus `GetPositionX` and `GetAngleZ` read (`ref_position`, `ref_rotation`).
   Angles are degrees, as `GetAngle` gives them in Morrowind (UESP Morrowind
@@ -62,9 +67,6 @@ transform. The `ORIG` extension does not change the existing `WRLD` layout.
   -45 and 45, which suggests the null is the combat target. No public source
   says so; the substitution is inference, and the idle's own context carries
   no target, so an idle chosen before combat starts still fails.
-- `GetRelativeAngle` returns the reference's angle less the subject's, in
-  [0, 360). Vanilla kill moves test `>= 90` and `<= 270`, symmetric about 180,
-  so the sign does not matter there; the wrap does. No source gives the formula.
 - References in different interiors or worldspaces are never within
   `GetWithinDistance`.
 - In package conditions (flag 0x08 on the first parameter), vanilla
