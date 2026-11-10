@@ -167,7 +167,11 @@ locations name it.
   each weapon it would pick at once (an iron sword, then a steel sword, then
   an iron greatsword), and wore no armor and no shield even 3.5 s later; a
   teammate given a cuirass wore it. Here `AddItem` takes up weapons, and for a
-  teammate (`SetPlayerTeammate`) armor and shields as well.
+  teammate (`SetPlayerTeammate`) armor and shields as well. Skyrim SE
+  (`test-mod autotest21`, TakeUpArmor) agrees: a plain NPC given a leather
+  cuirass didn't wear it in 15 s, a teammate did at once, and kept it when
+  given an iron cuirass, which rates lower (25 to 26). Unread: a teammate
+  given armor better than what it wears.
 - An NPC given an item (placed in its pockets, or into a teammate's
   inventory) takes it up at once if it is better: armor when its armor
   rating with it (the inventory's rating, with its skills and perks) is

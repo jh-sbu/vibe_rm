@@ -356,7 +356,11 @@ Ingredients Eaten and Potions Used +1 each. *Settled*.
 **TakeUpArmor**: a leather cuirass given to a plain NPC isn't worn after 3 s
 or 15 s; a teammate wears it at once. An iron cuirass given too: the plain
 NPC wears neither; the teammate keeps the leather. *Settled*: only
-teammates take up given armor, and not better armor over what they wear.
+teammates take up given armor. (Corrected 2026-11-10: the iron cuirass
+isn't better armor: it rates 25 to the leather's 26, UESP Skyrim:Iron,
+https://en.uesp.net/w/index.php?oldid=3532493, and Skyrim:Animal Hides,
+so keeping the leather is the "only if better" rule, not a refusal to
+swap; whether a teammate swaps to better armor is unread.)
 
 **Disarm**: Disarm cast by script at an NPC with a drawn iron sword: still
 held, count 1, no events. *Fault*: the shout spell did nothing, so the

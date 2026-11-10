@@ -19,15 +19,15 @@ probe that faulted (no reading) leaves its item open.
 
 | Code | Meaning | Items |
 | --- | --- | ---: |
-| A | Automatic with the record writers test mods already have | 552 |
+| A | Automatic with the record writers test mods already have | 553 |
 | A* | Automatic, but needs a new writer (PACK trees of a shape no vanilla package has, dialogue, PHZD, LVSP, WATR, REFR overrides, perk ranks, region weather, quest stage fragments) or a method still unproven | 160 |
 | U | Needs the player: a menu (barter, crafting, dialogue, sleep/wait, lockpicking, difficulty), input (attacks, aiming, casting by hand) or a new game | 203 |
 | R | Needs a save to be loaded again (persistence questions) | 39 |
 | V | Only visible or audible: rendering, UI layout, sound | 355 |
 | N | Not observable in the game (internal formats, engine-only policies) | 74 |
-| | **Total** | **1383** |
+| | **Total** | **1384** |
 
-**Strictly automatic: 712** (552 A, 160 A*).
+**Strictly automatic: 713** (553 A, 160 A*).
 
 Conditions count as automatic: a test ability whose effect carries the
 condition, read by the OneHanded gain it gives (autotest22 showed this
@@ -85,9 +85,6 @@ SE readings that the ambiguity files still contradict (the items are
 settled, so they aren't listed below; the files and the engine need
 correcting):
 
-- `crime.md`: an NPC given better armor puts it on. autotest21's plain NPC
-  didn't, and only teammates do (TakeUpArmor). The file's autotest2 note
-  agrees with SE. Its general rule doesn't.
 - `journal.md`: a vampire counts once, under People. autotest21 counted it
   under People and Undead, and the engine was changed to agree; the file's
   text is stale. Its "Fines Paid" line (the gold paid) also disagrees with
@@ -444,7 +441,7 @@ Line numbers point into the file as of 2026-11-10.
 - A: a script still holding a deleted reference sees its calls do nothing (1 min)
 - R: Delete on a plugin reference: whether it is removed from the save (needs a reload)
 
-### `crime.md` (15 A, 3 A*, 14 U, 1 N)
+### `crime.md` (16 A, 3 A*, 14 U, 1 N)
 
 - A: NPCs taking up given shields, and which weapon a plain NPC wields among several it carries (3 min)
 - A: witnesses = detecting actors; victim always knows (3 min)
@@ -459,6 +456,7 @@ Line numbers point into the file as of 2026-11-10.
 - A: which witnesses attack (3 min)
 - A: changes to an NPC's faction sit on the reference; the record stands for its first reference (2 min)
 - A: items removed by script take the unowned ones first (1 min)
+- A: a teammate given armor better than what it wears swaps to it (2 min)
 - A: taking from a container judges the theft by the container's owner (2 min)
 - A: picking up dropped unowned goods in an owner's house is not theft (2 min)
 - A*: GetCrime / IsPCAMurderer / GetPCFactionMurder / GetPCFactionAttack (3 min)
