@@ -936,7 +936,7 @@ impl Engine {
             && self.ward_stops(target, c, &m, power)
         {
             if self.item_hostile(&m) {
-                self.hostile_magic_landed(target, c, item);
+                self.hostile_magic_landed(target, c, item, true);
             }
             return false;
         }
@@ -973,7 +973,10 @@ impl Engine {
         }
         let constant = m.is_constant();
         let mut any = false;
+        // A hostile effect landed (a blow: fight and assault), and whether
+        // it sends `OnHit` (Disarm only when it disarms).
         let mut hostile = false;
+        let mut hit = false;
         for (index, ei) in m.effects.iter().enumerate() {
             if !applies(index) {
                 continue;
@@ -987,11 +990,23 @@ impl Engine {
                 dual_cast: dual,
                 ..Default::default()
             };
-            // Fire-and-forget effects whose conditions fail don't land; constant
-            // and lasting ones wait for them.
+            // Fire-and-forget effects whose conditions fail do nothing; constant
+            // and lasting ones wait for them. Skyrim SE (autotest23,
+            // FailingCondition): a fire spell whose condition failed did no
+            // damage, yet sent `OnMagicEffectApply` and `OnHit` and started a
+            // fight.
             let passes = condition::evaluate(self, &ei.conditions, ctx)
                 && condition::evaluate(self, &mgef.conditions, ctx);
             if !passes && !constant && ei.duration == 0 {
+                if mgef.has(flags::HOSTILE) && !quiet {
+                    hostile = true;
+                    hit |= mgef.archetype != archetype::DISARM;
+                    let args = vec![
+                        caster.map_or(Value::None, |c| self.object_value(c)),
+                        self.object_value(ei.effect),
+                    ];
+                    self.send_script_event(target, "OnMagicEffectApply", args);
+                }
                 continue;
             }
             let mut base = ei.magnitude;
@@ -1011,6 +1026,7 @@ impl Engine {
                     self.actor_level(target)
                 );
                 hostile |= mgef.has(flags::HOSTILE) && passes;
+                hit |= mgef.has(flags::HOSTILE) && passes && mgef.archetype != archetype::DISARM;
                 continue;
             }
             let channelled = m.cast_type == crate::spells::CONCENTRATION && ei.duration == 0;
@@ -1055,6 +1071,10 @@ impl Engine {
             );
             any = true;
             hostile |= mgef.has(flags::HOSTILE) && passes;
+            // Disarm's blow is its disarming (`Engine::disarm`): Skyrim SE
+            // (autotest23, autotest24) sent `OnHit` with each disarm, none
+            // when the weapon stayed.
+            hit |= mgef.has(flags::HOSTILE) && passes && mgef.archetype != archetype::DISARM;
             if passes {
                 self.start_magic_effect(id);
             }
@@ -1069,36 +1089,26 @@ impl Engine {
             && !quiet
             && let Some(c) = caster.filter(|&c| c != target)
         {
-            self.hostile_magic_landed(target, c, item);
+            self.hostile_magic_landed(target, c, item, hit);
         }
         any
     }
 
-    /// A hostile spell landed: `OnHit` (the spell as its source, its
-    /// projectile: Firebolt's `FireboltProjectile01` in the game, `test-mod
-    /// autotest2`) to the target, and like a first blow it starts a fight
-    /// (and an assault).
-    pub(crate) fn hostile_magic_landed(&mut self, target: FormId, caster: FormId, item: FormId) {
+    /// A hostile spell landed: `OnHit` (if `hit`; the spell as its source,
+    /// its projectile: Firebolt's `FireboltProjectile01` in the game,
+    /// `test-mod autotest2`) to the target, and like a first blow it starts a
+    /// fight (and an assault).
+    pub(crate) fn hostile_magic_landed(
+        &mut self,
+        target: FormId,
+        caster: FormId,
+        item: FormId,
+        hit: bool,
+    ) {
         self.break_calm(target);
-        let projectile = self.magic_item(item).and_then(|m| self.item_projectile(&m));
-        let proj_value = projectile.map_or(Value::None, |p| self.object_value(p));
-        let args = vec![
-            self.object_value(caster),
-            self.object_value(item),
-            proj_value,
-            Value::Bool(false),
-            Value::Bool(false),
-            Value::Bool(false),
-            Value::Bool(false),
-        ];
-        // A projectile with an explosion strikes twice: Firebolt's (and a
-        // spell of ours with only its fire damage) sent two alike 0.1 s apart
-        // in the game (`test-mod autotest4`), its projectile exploding
-        // (`PROJ` `DATA` 0x24); the second taken as the explosion's.
-        if projectile.is_some_and(|p| projectile_explodes(&self.lo, p)) {
-            self.send_script_event(target, "OnHit", args.clone());
+        if hit {
+            self.send_magic_hit(target, caster, item);
         }
-        self.send_script_event(target, "OnHit", args);
         if target == PLAYER_REF {
             self.assault_on_player(caster);
             return;
@@ -1118,6 +1128,30 @@ impl Engine {
             let crime = calm && self.law_abiding(&factions);
             self.send_assault(target, caster, crime);
         }
+    }
+
+    /// A spell's `OnHit` to its target: the spell as its source, its
+    /// projectile as the projectile.
+    pub(crate) fn send_magic_hit(&mut self, target: FormId, caster: FormId, item: FormId) {
+        let projectile = self.magic_item(item).and_then(|m| self.item_projectile(&m));
+        let proj_value = projectile.map_or(Value::None, |p| self.object_value(p));
+        let args = vec![
+            self.object_value(caster),
+            self.object_value(item),
+            proj_value,
+            Value::Bool(false),
+            Value::Bool(false),
+            Value::Bool(false),
+            Value::Bool(false),
+        ];
+        // A projectile with an explosion strikes twice: Firebolt's (and a
+        // spell of ours with only its fire damage) sent two alike 0.1 s apart
+        // in the game (`test-mod autotest4`), its projectile exploding
+        // (`PROJ` `DATA` 0x24); the second taken as the explosion's.
+        if projectile.is_some_and(|p| projectile_explodes(&self.lo, p)) {
+            self.send_script_event(target, "OnHit", args.clone());
+        }
+        self.send_script_event(target, "OnHit", args);
     }
 
     /// The magnitude an effect lands with: the caster's spell perks (Mod Spell
@@ -1251,7 +1285,7 @@ impl Engine {
                 e.id != id && e.effect_archetype == archetype::PARALYSIS
             }),
             archetype::DISARM => {
-                self.disarm(x.target, x.caster);
+                self.disarm(x.target, x.caster, x.item);
             }
             archetype::STAGGER => {
                 if x.target != PLAYER_REF

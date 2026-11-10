@@ -13,9 +13,10 @@ use crate::engine::{Engine, PLAYER_REF};
 use crate::world::inventory::{LEFT, RIGHT, item_droppable, weapon_bound};
 
 impl Engine {
-    /// Pull the weapon out of `target`'s hands for `caster`'s Disarm: whether
-    /// they held one the effect takes.
-    pub(crate) fn disarm(&mut self, target: FormId, caster: Option<FormId>) -> bool {
+    /// Pull the weapon out of `target`'s hands for `caster`'s Disarm (`item`,
+    /// the spell): whether they held one the effect takes. A disarm is a
+    /// blow: Skyrim SE (autotest23, autotest24) sent `OnHit` with each one.
+    pub(crate) fn disarm(&mut self, target: FormId, caster: Option<FormId>, item: FormId) -> bool {
         if self.is_dead(target) || !self.weapon_drawn(target) {
             return false;
         }
@@ -47,6 +48,9 @@ impl Engine {
         );
         if caster == Some(PLAYER_REF) && target != PLAYER_REF {
             self.increment_stat("Weapons Disarmed", 1);
+        }
+        if let Some(c) = caster.filter(|&c| c != target) {
+            self.send_magic_hit(target, c, item);
         }
         true
     }

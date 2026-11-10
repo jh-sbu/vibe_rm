@@ -22,6 +22,27 @@ xEdit's `WEAP` `DNAM` definition (flags2 0x2000 "Bound Weapon", checked on
 - The player is disarmed the same way (the drawn weapon is dropped); the
   player's count goes up for each actor they disarm.
 
+## Skyrim SE readings (autotest23, autotest24)
+
+`research/autotest23.md` and `research/autotest24.md`, Disarm. Our
+target-actor copy of the effect, cast by script from the player at NPCs
+fighting a held target:
+
+- A disarm sends `OnHit` with the unequip, and the weapon lands about 160
+  units off at hand height (dz 67.5 above the feet). Each cast that left the
+  weapon sent only `OnMagicEffectApply`. Ours sends `OnHit` with each
+  disarm and none otherwise (`Engine::disarm`).
+- Every disarm was within the cap (levels 1 and 10 at magnitude 12, 10 at
+  30), but some casts within it left the weapon (levels 1 and 10). The cap
+  stays as UESP has it. What else stops it is open: perhaps the target's
+  action as it lands (CommonLibSSE-NG declares `DisarmEffect` a
+  `StaggerEffect`). Ours always disarms within the cap.
+- A disarmed level 1 NPC carrying a dagger fought on with nothing in hand
+  for at least 4 s, not drawing the dagger or picking its sword up. Ours
+  takes up what it still carries: differs, open (how long before it does).
+- The shout's own spell (`VoiceDisarm1`) cast by script from 150 units did
+  nothing at all.
+
 ## Unconfirmed choices
 
 - **Where the weapon lands.** `Engine::drop_item`: in front of the owner, falling
@@ -37,4 +58,4 @@ xEdit's `WEAP` `DNAM` definition (flags2 0x2000 "Bound Weapon", checked on
   a weapon drawn, so is not disarmed.
 - **What follows.** A disarmed NPC fights with what it still carries (its
   other weapons or its fists).
-- No hit reaction (the target is not staggered), no `OnHit` and no sound or art.
+- No hit reaction (the target is not staggered) and no sound or art.

@@ -102,7 +102,10 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
 ## Open (choices made here)
 
 - **Conditions** of fire-and-forget effects with no duration that fail
-  don't land; lasting and constant ones wait, looked at again every second,
+  do nothing, but a hostile one is still a blow: Skyrim SE (autotest23,
+  `research/autotest23.md`, FailingCondition) sent `OnMagicEffectApply` and
+  `OnHit` and started a fight for a fire spell whose condition failed, with
+  no damage. Lasting and constant ones wait, looked at again every second,
   and stop (`OnEffectFinish`) or start again (`OnEffectStart`) as they
   change (the game's interval isn't known: `autotest4`'s lasting effect
   was a potion's, which raises another value; `autotest5`'s was frost,
