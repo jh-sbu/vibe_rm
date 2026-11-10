@@ -2474,6 +2474,39 @@ impl Instance {
         }
     }
 
+    /// Restart playback at the authored start states, retaining inputs and RNG.
+    pub fn restart(&mut self) {
+        self.root = None;
+        self.queue.clear();
+        self.raised.clear();
+        self.ragdoll_pose.clear();
+        self.pose_playing = false;
+        self.matching_yaw = None;
+        self.modifier_times.clear();
+        // Sync outputs describe the old active states, not external inputs.
+        for (gi, (_, graph)) in self.shared.project.graphs.iter().enumerate() {
+            for g in &graph.generators {
+                if let Generator::StateMachine {
+                    sync_variable,
+                    start_mode,
+                    ..
+                } = g
+                {
+                    let start = match start_mode {
+                        StartMode::Sync(v) => Some(*v),
+                        _ => None,
+                    };
+                    for local in sync_variable.iter().copied().chain(start) {
+                        if let Some(&v) = self.shared.maps[gi].vars.get(local) {
+                            self.values[v] = self.shared.var_defaults[v];
+                        }
+                    }
+                }
+            }
+        }
+        self.changes += 1;
+    }
+
     /// The active tree, activating the root graph the first time.
     fn take_root(&mut self, clips: &mut dyn ClipSource) -> Option<Node> {
         if self.root.is_none() {
@@ -3086,6 +3119,50 @@ mod tests {
             crop_end: 0.0,
             start_time: 0.0,
         }
+    }
+
+    #[test]
+    fn restart_discards_pending_events_and_sync_states_but_keeps_inputs() {
+        let mut graph = BehaviorGraph::new(
+            "restart",
+            Some(0),
+            vec![
+                Generator::StateMachine {
+                    name: "Root".into(),
+                    start: 0,
+                    start_variable: None,
+                    start_mode: StartMode::Sync(0),
+                    sync_variable: Some(0),
+                    change_event: None,
+                    states: vec![
+                        state(0, 1, vec![Transition::new(0, 1, None)]),
+                        state(1, 2, vec![]),
+                    ],
+                    wildcards: vec![],
+                },
+                clip("idle", ClipMode::Looping, vec![]),
+                clip("down", ClipMode::Looping, vec![]),
+            ],
+            vec!["Knock".into()],
+        );
+        graph.add_variable("State", VarType::Int, 0.0);
+        graph.add_variable("Input", VarType::Int, 0.0);
+        let mut inst = Instance::new(
+            Shared::new(Arc::new(Project {
+                graphs: vec![("restart.hkx".into(), graph)],
+                character: None,
+            })),
+            42,
+        );
+        inst.set_variable("Input", 5.0);
+        inst.send_event("Knock");
+        inst.update(0.1, &mut durations);
+        assert_eq!(&*inst.samples()[0].animation, "down");
+        inst.send_event("Knock");
+        inst.restart();
+        inst.update(0.1, &mut durations);
+        assert_eq!(&*inst.samples()[0].animation, "idle");
+        assert_eq!(inst.variable("Input"), Some(5.0));
     }
 
     #[test]

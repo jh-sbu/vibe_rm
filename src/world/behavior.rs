@@ -655,6 +655,16 @@ impl GraphAnim {
         self.inst.set_ragdoll_pose(Vec::new());
     }
 
+    /// Resurrection discards corpse/recovery playback, while keeping inputs.
+    pub fn restart(&mut self) {
+        self.clear_ragdoll_pose();
+        self.ragdoll_controls = Default::default();
+        self.inst.restart();
+        if let Some(aux) = self.aux.as_mut() {
+            aux.anim.restart();
+        }
+    }
+
     pub fn set_ragdoll_pose(
         &mut self,
         pose: Vec<Mat4>,

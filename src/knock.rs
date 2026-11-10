@@ -209,7 +209,16 @@ impl Engine {
     }
 
     pub(crate) fn request_get_up(&mut self, actor: FormId) -> bool {
-        if self.actor_value(actor, esp::actor_value::PARALYSIS) > 0.0 {
+        let paralyzed = self.actor_value(actor, esp::actor_value::PARALYSIS) > 0.0;
+        let knock = if actor == PLAYER_REF {
+            self.player_knock.as_mut()
+        } else {
+            self.actor_mut(actor).and_then(|a| a.knock.as_mut())
+        };
+        let Some(k) = knock else { return false };
+        // ForceRemove releases ForceAdd's hold even if paralysis delays recovery.
+        k.script_hold = false;
+        if paralyzed {
             return false;
         }
         if actor == PLAYER_REF {
@@ -221,7 +230,6 @@ impl Engine {
         let Some(k) = a.knock.as_mut() else {
             return false;
         };
-        k.script_hold = false;
         if k.getup_requested {
             return true;
         }
@@ -477,7 +485,13 @@ impl Engine {
             .chain([PLAYER_REF])
             .collect();
         for &actor in &actors {
-            if !self.is_knocked(actor) && self.actor_value(actor, esp::actor_value::PARALYSIS) > 0.0
+            let knock = if actor == PLAYER_REF {
+                self.player_knock.as_ref()
+            } else {
+                self.actor_ref(actor).and_then(|a| a.knock.as_ref())
+            };
+            if knock.is_none_or(|k| k.state == KnockState::GetUp || k.getup_requested)
+                && self.actor_value(actor, esp::actor_value::PARALYSIS) > 0.0
             {
                 self.knock_down(actor, Vec3::ZERO, KnockCause::Paralysis);
             }
@@ -616,6 +630,7 @@ impl Engine {
     fn knock_player(&mut self, impulse: Vec3, cause: KnockCause) -> bool {
         if let Some(mut k) = self.player_knock.take() {
             if k.state == KnockState::GetUp || k.getup_requested {
+                self.release_actor_constraints(PLAYER_REF);
                 self.physics.ragdoll_into_corpse(&mut k.ragdoll);
                 k.state = KnockState::Down;
                 k.down_for = 0.0;
@@ -713,7 +728,9 @@ impl Engine {
         let Some(k) = self.player_knock.as_mut() else {
             return false;
         };
-        k.script_hold = false;
+        if k.getup_requested {
+            return true;
+        }
         k.getup_requested = true;
         if let Some(g) = self.player_body.as_mut().and_then(|b| b.graph_mut()) {
             g.set_variable("iGetUpType", 1.0);

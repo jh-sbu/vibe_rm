@@ -901,6 +901,9 @@ impl ActorRuntime {
 impl Combat {
     pub(crate) fn pause_for_knock(&mut self) {
         self.swing = 0.0;
+        self.guard = 0.0;
+        self.guard_shown = false;
+        self.counter = false;
     }
 
     pub fn new(target: FormId) -> Combat {
@@ -1194,10 +1197,12 @@ impl ActorRuntime {
 
     /// Its guard is up (raised by the graph): blows from ahead are blocked.
     pub fn guarding(&self) -> bool {
-        self.exec
-            .combat
-            .as_ref()
-            .is_some_and(|c| c.guard > 0.0 && c.guard_shown)
+        self.knock.is_none()
+            && self
+                .exec
+                .combat
+                .as_ref()
+                .is_some_and(|c| c.guard > 0.0 && c.guard_shown)
     }
 
     /// Run from the target: to the place on the navmesh near by that is furthest
@@ -2619,7 +2624,7 @@ impl Engine {
             .cells
             .values()
             .flat_map(|rt| &rt.actors)
-            .filter(|a| a.exec.combat.is_some())
+            .filter(|a| a.knock.is_none() && a.exec.combat.is_some())
             .map(|a| {
                 (
                     a.ref_id,
@@ -2674,10 +2679,11 @@ impl Engine {
         let mut want: Vec<(FormId, f32)> = Vec::new();
         for &(attacker, target) in started {
             let Some(a) = self.actor_ref(target).filter(|a| {
-                a.exec
-                    .combat
-                    .as_ref()
-                    .is_some_and(|c| c.guard <= 0.0 && !c.swinging())
+                a.knock.is_none()
+                    && a.exec
+                        .combat
+                        .as_ref()
+                        .is_some_and(|c| c.guard <= 0.0 && !c.swinging())
             }) else {
                 continue;
             };
@@ -2711,6 +2717,7 @@ impl Engine {
             .cells
             .values()
             .flat_map(|rt| &rt.actors)
+            .filter(|a| a.knock.is_none())
             .filter(|a| {
                 let Some(c) = a
                     .exec
@@ -4305,6 +4312,20 @@ pub type FactionRelations = HashMap<FormId, Arc<Vec<(FormId, u32)>>>;
 #[cfg(test)]
 mod hand_tests {
     use super::*;
+
+    #[test]
+    fn knock_cancels_a_raised_guard_and_counterattack_but_keeps_target() {
+        let mut c = Combat::new(FormId(123));
+        c.guard = 1.5;
+        c.guard_shown = true;
+        c.counter = true;
+        c.swing = 1.0;
+        c.pause_for_knock();
+        assert_eq!(c.target, FormId(123));
+        assert!(!(c.guard > 0.0 && c.guard_shown));
+        assert!(!c.counter);
+        assert!(!c.swinging());
+    }
 
     fn attack(event: &str) -> Attack {
         Attack {

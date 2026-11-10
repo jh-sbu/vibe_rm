@@ -87,6 +87,16 @@ Engine checks on 2026-11-09 (not SE observations):
   third-person knockdown and return to the prior first-person view.
 - `KNCK` tests cover read/write, absent chunks, duplicate chunks and invalid
   matrices. Recovery clips restart from their saved physical pose.
+- Audit regressions cover paralysis interrupting both matching and get-up,
+  preserving the existing bodies, and ForceRemove releasing a scripted hold
+  during paralysis without letting the actor stand early. Player fixtures also
+  attach constraints to living ragdoll bodies, reject new attachments during
+  get-up, and release old constraints when recovery is interrupted.
+- Resurrection restarts graph playback at its authored start states, clearing
+  pending events, matching controls and state-sync outputs while retaining other
+  inputs and the random stream. Tests cover death while knocked and returning
+  to Root. NPC knockdown clears blocking and pending counterattacks; knocked
+  actors cannot acquire new automatic guards.
 - Offscreen Bannered Mare capture (`--no-scripts`, AI off, Sinmir 000813BA,
   force 5): FullyRagdoll -> GetUpFromRagdoll -> Root, with the drawn equipment
   retained. A stricter angular rest cutoff never accumulated enough rest on

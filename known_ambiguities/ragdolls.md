@@ -59,7 +59,8 @@ The generated vanilla probe is described in
   paralysis during the knock prevent it. UESP documents delayed damage just
   before recovery; the precise SE threshold remains unmeasured.
 - **ForceAdd/Remove:** dead actors are unchanged. Living ForceAdd starts/holds
-  a scripted knock; ForceRemove requests recovery without bypassing paralysis.
+  a scripted knock; ForceRemove releases that hold even during paralysis,
+  requesting recovery immediately only when paralysis permits it.
   Vanilla callers only attach placed corpses, so living semantics need probing.
 - **Persistence:** unloading stands living actors up at their current position.
   Native saves retain transforms, velocities, timers, cause, state and view in

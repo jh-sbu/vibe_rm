@@ -135,12 +135,18 @@ impl Engine {
         a.exec.bleeding = None;
         a.exec.combat = None;
         a.halt(1.0);
+        if let Some(g) = a.graph.as_mut() {
+            g.restart();
+        }
         let ragdoll = a.ragdoll.take();
         let capsule = a.capsule;
+        let pos = a.exec.pos;
+        self.release_actor_constraints(actor);
         if let Some((rd, _)) = ragdoll {
             self.physics.remove_ragdoll(&rd);
         }
         if let Some(c) = capsule {
+            self.physics.move_actor_capsule(c, pos);
             self.physics.set_enabled(&[c], true);
         }
         log::info!("{actor} is resurrected");

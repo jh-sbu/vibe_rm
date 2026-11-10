@@ -462,3 +462,143 @@ fn vanilla_third_word_runs_its_push_script_and_wards_stop_it() {
     assert!(!e.is_knocked(PLAYER_REF));
     assert!(!e.third_person);
 }
+
+#[test]
+#[ignore = "requires a headless GPU adapter; synthetic records only"]
+fn paralysis_during_matching_or_get_up_returns_to_down() {
+    for before in [10, 40] {
+        let (_f, mut e) = fixture(false);
+        assert!(e.knock_down(ACTOR, Vec3::ZERO, KnockCause::Script));
+        assert!(e.request_get_up(ACTOR));
+        frames(&mut e, before);
+        assert_eq!(
+            e.knocked_state(ACTOR),
+            if before == 40 {
+                KnockState::GetUp
+            } else {
+                KnockState::Down
+            }
+        );
+        e.set_actor_value(ACTOR, esp::actor_value::PARALYSIS, 1.0);
+        let bodies = e
+            .actor_ref(ACTOR)
+            .unwrap()
+            .knock
+            .as_ref()
+            .unwrap()
+            .ragdoll
+            .bodies
+            .clone();
+        frames(&mut e, 1);
+        assert_eq!(e.knocked_state(ACTOR), KnockState::Down);
+        assert!(
+            !e.actor_ref(ACTOR)
+                .unwrap()
+                .knock
+                .as_ref()
+                .unwrap()
+                .getup_requested
+        );
+        frames(&mut e, 179);
+        assert_eq!(e.knocked_state(ACTOR), KnockState::Down);
+        let a = e.actor_ref(ACTOR).unwrap();
+        assert_eq!(a.knock.as_ref().unwrap().ragdoll.bodies, bodies);
+        assert!(!e.physics.world.colliders[a.capsule.unwrap()].is_enabled());
+        e.set_actor_value(ACTOR, esp::actor_value::PARALYSIS, 0.0);
+        frames(&mut e, 240);
+        assert_eq!(e.knocked_state(ACTOR), KnockState::Normal);
+    }
+}
+
+#[test]
+#[ignore = "requires a headless GPU adapter; synthetic records only"]
+fn force_remove_releases_hold_even_while_paralyzed() {
+    let (_f, mut e) = fixture(false);
+    assert!(e.knock_down(ACTOR, Vec3::ZERO, KnockCause::Script));
+    e.set_actor_value(ACTOR, esp::actor_value::PARALYSIS, 1.0);
+    frames(&mut e, 90);
+    assert!(!e.request_get_up(ACTOR));
+    assert!(
+        !e.actor_ref(ACTOR)
+            .unwrap()
+            .knock
+            .as_ref()
+            .unwrap()
+            .script_hold
+    );
+    frames(&mut e, 90);
+    assert_eq!(e.knocked_state(ACTOR), KnockState::Down);
+    e.set_actor_value(ACTOR, esp::actor_value::PARALYSIS, 0.0);
+    frames(&mut e, 360);
+    assert_eq!(e.knocked_state(ACTOR), KnockState::Normal);
+}
+
+#[test]
+#[ignore = "requires a headless GPU adapter; synthetic records only"]
+fn resurrect_after_knock_returns_graph_to_root() {
+    let (_f, mut e) = fixture(false);
+    assert!(e.knock_down(ACTOR, Vec3::ZERO, KnockCause::Script));
+    frames(&mut e, 60);
+    assert!(e.kill_actor_quietly(ACTOR));
+    e.resurrect(ACTOR);
+    assert!(!e.is_dead(ACTOR));
+    let skeleton = e.actor_ref(ACTOR).unwrap().skeleton.clone();
+    let mut graph = e.actor_mut(ACTOR).unwrap().graph.take().unwrap();
+    for _ in 0..300 {
+        graph.update(1.0 / 60.0, &e.vfs, &mut e.anims, &skeleton);
+    }
+    assert_eq!(graph.active_states(), ["Root"]);
+}
+
+#[test]
+#[ignore = "requires installed vanilla assets and a headless GPU adapter"]
+fn player_ragdoll_accepts_constraint() {
+    let data = vfs::locate_data_dir().unwrap();
+    let names = esp::BASE_MASTERS
+        .iter()
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>();
+    let mut e = crate::stats::action_tests::headless_engine_plugins(&data, &names);
+    e.vfs = vfs::Vfs::new(&data, &names).into();
+    e.enter_interior(FormId(0x1605e), None).unwrap();
+    let actor = FormId(0x813ba);
+    assert!(e.knock_down(actor, Vec3::ZERO, KnockCause::Script));
+    assert!(e.knock_down(PLAYER_REF, Vec3::ZERO, KnockCause::Script));
+    assert!(e.add_ball_socket_constraint(
+        (actor, "NPC L Hand [LHnd]"),
+        (PLAYER_REF, "npc l hand [lhnd]"),
+        Vec3::ZERO,
+        Vec3::ZERO
+    ));
+    assert!(e.request_get_up(PLAYER_REF));
+    frames(&mut e, 40);
+    assert_eq!(e.knocked_state(PLAYER_REF), KnockState::GetUp);
+    assert!(!e.add_ball_socket_constraint(
+        (actor, "NPC L Hand [LHnd]"),
+        (PLAYER_REF, "NPC L Hand [LHnd]"),
+        Vec3::ZERO,
+        Vec3::ZERO
+    ));
+    let bodies = e.player_knock.as_ref().unwrap().ragdoll.bodies.clone();
+    e.set_actor_value(PLAYER_REF, esp::actor_value::PARALYSIS, 1.0);
+    frames(&mut e, 120);
+    assert_eq!(e.knocked_state(PLAYER_REF), KnockState::Down);
+    assert_eq!(e.player_knock.as_ref().unwrap().ragdoll.bodies, bodies);
+    assert!(e.havok_constraints.is_empty());
+    assert!(!e.request_get_up(PLAYER_REF));
+    assert!(!e.player_knock.as_ref().unwrap().script_hold);
+    e.set_actor_value(PLAYER_REF, esp::actor_value::PARALYSIS, 0.0);
+    frames(&mut e, 900);
+    assert_eq!(
+        e.knocked_state(PLAYER_REF),
+        KnockState::Normal,
+        "player recovery: {:?}",
+        e.player_body
+            .as_ref()
+            .unwrap()
+            .third_graph()
+            .unwrap()
+            .active_states()
+    );
+    assert!(e.havok_constraints.is_empty());
+}

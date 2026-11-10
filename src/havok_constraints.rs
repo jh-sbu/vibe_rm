@@ -30,6 +30,16 @@ impl Engine {
     /// with that node in its model, a fixed point there. A living actor has
     /// rigid bodies only while down, before its recovery starts.
     fn hold_of(&self, r: FormId, node: &str) -> Option<Hold> {
+        if r == crate::engine::PLAYER_REF {
+            let k = self.player_knock.as_ref()?;
+            if !self.player_dead() && k.state == crate::knock::KnockState::GetUp {
+                return None;
+            }
+            let skeleton = &self.player_body.as_ref()?.skeleton;
+            let bone = skeleton.find(node)?;
+            let body = k.mapping.body_of_bone(bone)?;
+            return k.ragdoll.bodies.get(body).copied().map(Hold::Body);
+        }
         if let Some(a) = self.actor_ref(r) {
             let (ragdoll, pose) = if let Some(k) = a
                 .knock

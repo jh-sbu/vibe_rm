@@ -2228,6 +2228,7 @@ impl ActorRuntime {
 
     /// Pause only action execution: keep the package procedure and combat target.
     pub(crate) fn pause_for_knock(&mut self) {
+        self.set_guard(0.0);
         self.speed = 0.0;
         self.velocity = Vec3::ZERO;
         self.sprinting = false;
