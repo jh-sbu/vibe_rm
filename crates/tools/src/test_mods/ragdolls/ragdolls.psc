@@ -27,6 +27,7 @@ MagicEffect Property Legacy7 Auto
 MagicEffect Property Legacy8 Auto
 Actor Player
 Actor Target
+Actor Anchor
 Int Phase = 0
 Int Samples = 0
 Int EventCount = 0
@@ -159,6 +160,12 @@ Event OnUpdate()
     Player = Game.GetPlayer()
     Int next = Run.GetValueInt()
     If next != Phase
+        If Anchor
+            Game.RemoveHavokConstraints(Target, "NPC L Hand [LHnd]", Anchor, "NPC L Hand [LHnd]")
+            Anchor.Disable()
+            Anchor.Delete()
+            Anchor = None
+        EndIf
         Watching = false
         Phase = next
         Samples = 0
@@ -223,11 +230,18 @@ Event OnUpdate()
             ElseIf Phase == 13
                 Paralyze5.Cast(Player, Target)
             ElseIf Phase == 14
-                ResultConstraints = "standing=" + Game.AddHavokBallAndSocketConstraint(Target, "NPC L Hand [LHnd]", Player, "NPC L Hand [LHnd]", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-                Game.RemoveHavokConstraints(Target, "NPC L Hand [LHnd]", Player, "NPC L Hand [LHnd]")
+                ; A separate corpse supplies a rigid body throughout this phase.
+                Anchor = Player.PlaceAtMe(Base, 1, false, false) as Actor
+                Anchor.MoveTo(Target, 40.0, 0.0, 0.0, false)
+                Anchor.EnableAI(false)
+                Anchor.Kill(Player)
+                Utility.Wait(0.5)
+                ResultConstraints = "anchor dead=" + Anchor.IsDead()
+                ResultConstraints += " standing=" + Game.AddHavokBallAndSocketConstraint(Target, "NPC L Hand [LHnd]", Anchor, "NPC L Hand [LHnd]", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+                Game.RemoveHavokConstraints(Target, "NPC L Hand [LHnd]", Anchor, "NPC L Hand [LHnd]")
                 Player.PushActorAway(Target, 10.0)
                 Utility.Wait(0.5)
-                ResultConstraints += " down=" + Game.AddHavokBallAndSocketConstraint(Target, "NPC L Hand [LHnd]", Player, "NPC L Hand [LHnd]", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+                ResultConstraints += " down=" + Game.AddHavokBallAndSocketConstraint(Target, "NPC L Hand [LHnd]", Anchor, "NPC L Hand [LHnd]", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
             ElseIf Phase == 15
                 Target.ForceAddRagdollToWorld()
             EndIf
@@ -239,7 +253,7 @@ Event OnUpdate()
         If Samples >= 80
             Watching = false
             If Phase == 14
-                ResultConstraints += " after=" + Game.RemoveHavokConstraints(Target, "NPC L Hand [LHnd]", Player, "NPC L Hand [LHnd]")
+                ResultConstraints += " after=" + Game.RemoveHavokConstraints(Target, "NPC L Hand [LHnd]", Anchor, "NPC L Hand [LHnd]")
             EndIf
             Debug.Notification("Ragdoll phase " + Phase + " watch timed out. Set VrmRagRun to the next phase; 20 saves.")
         EndIf
@@ -280,7 +294,7 @@ Event OnAnimationEvent(ObjectReference source, String eventName)
             Watching = false
             If Phase == 14
                 Utility.Wait(0.05)
-                ResultConstraints += " after=" + Game.RemoveHavokConstraints(Target, "NPC L Hand [LHnd]", Player, "NPC L Hand [LHnd]")
+                ResultConstraints += " after=" + Game.RemoveHavokConstraints(Target, "NPC L Hand [LHnd]", Anchor, "NPC L Hand [LHnd]")
             EndIf
         EndIf
         EventCount += 1
