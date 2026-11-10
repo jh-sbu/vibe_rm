@@ -1937,7 +1937,7 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
     `Magic_Equip_Out` to see which draw each case ends with.
   - Candidates for later batches: `plans/autotest-audit.md` sorts every
     open `known_ambiguities/` item by whether a strictly automatic test
-    could settle it (536 of 1055 could).
+    could settle it (710 of 1381 could; redone 2026-11-10).
 
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done).
    The bounded work of `plans/animation-unblocked.md` is complete within its
