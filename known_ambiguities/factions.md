@@ -95,6 +95,23 @@
   "feared" suggests (we do nothing), and whether faction allies are exempt or
   only teammates. The exceptions the page lists suggest allies are.
 
+## Who attacks the player by aggression
+
+- Ours (`hostile_to`, `src/ai/combat.rs`): an aggressive actor (aggression 1)
+  attacks its factions' enemies, and the player unless it keeps the law (a
+  faction tracking crime); very aggressive (2) and frenzied (3) attack
+  neutrals too; allies and friends are left alone below 3.
+- Skyrim SE (autotest22, autotest23, `research/autotest23.md`,
+  AttackOnSightAggression): an aggression 1 member of a plugin faction that
+  tracks no crime and lists no relation to the player detected the player
+  and didn't attack, before or after `SetAttackActorOnSight`. Ours would
+  attack it: differs. Aggression 2 and 3 NPCs of no faction attacked the
+  neutral player at once, as ours.
+- Open: what makes bandits (aggression 1, `BanditFaction`, which lists no
+  enemy relation to `PlayerFaction` and tracks no crime) attack the player
+  in the game, if not our rule. Kept until that is known; dropping the rule
+  would leave bandits peaceful.
+
 ## Actors attacked on sight (`SetAttackActorOnSight`)
 
 - `Actor.SetAttackActorOnSight(abAttackOnSight)` (vanilla `Actor.pex`; the
@@ -107,6 +124,10 @@
 - The meaning is read from the name and from the werewolf's "most will
   attack you on sight" (UESP Skyrim:Lycanthropy, revision 3637628). No
   public description of the native was found.
+- Skyrim SE (autotest22, autotest23): the marked player wasn't attacked by
+  an aggression 1 NPC that wasn't already hostile. That NPC doesn't keep the
+  law, so ours had it hostile before the mark (see above); the mark's effect
+  on law-keeping aggressive actors, as ours uses it, wasn't read.
 - Unconfirmed: whether unaggressive actors flee from a marked actor (we
   leave them alone), whether faction allies of the marked actor are exempt
   (we exempt them, matching the page's exceptions), and whether the mark

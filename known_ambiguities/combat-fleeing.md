@@ -83,6 +83,18 @@ and 18%, staying within 60 to 240 units in combat. Ours would likely have the
 second flee (its strength at 18% against a level 20 fighter's is well under
 `fConfidenceAverage`, 0.15): differs, unexplained.
 
+autotest23 (`research/autotest23.md`, Flee): an Average NPC with 3000 health
+set to 18% against a level 20 fighter fought on for 20 s, `IsFleeing` 0. A
+Coward the same way read `IsFleeing` 1 while its combat state stayed 1 (a
+fleeing actor is still in combat, as ours). The game's settings read there
+match ours (`fFleeIsSafeTimer` 30, `fCombatFleeDistanceInterior` 2048 /
+`Exterior` 4096, `fCombatConfidenceModifierMin` -0.25 / `Max` 1,
+`fCombatStrengthUpdateTime` 1, `fCombatThreatRatioUpdateTime` 5,
+`fCombatGroupCombatStrengthUpdateTime` 2,
+`fCombatLowFleeingTargetHitPercent` 0.25,
+`fCombatDetectionFleeingLostRemoveTime` 30). So Average confidence doesn't
+flee at 18% here, and ours still would: differs, the cause open.
+
 ## Unconfirmed
 
 1. **DPS estimate.** How Skyrim estimates DPS is undocumented: which weapon, skill

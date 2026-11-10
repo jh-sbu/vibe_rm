@@ -11,6 +11,14 @@
 - References from plugins are left as they are, and so are references made
   inside containers (the container's inventory counts the item; nothing
   ties the count to the reference).
+- Skyrim SE (autotest21; autotest23, `research/autotest23.md`, DeleteHeld):
+  a plugin barrel deleted by script read `IsDeleted` True at once, not
+  disabled, its 3D gone, and `Enable` didn't bring it back. Ours leaves
+  plugin references as they are: differs, open (whether the deletion lasts
+  in a save is unread). A created barrel deleted while a script held it:
+  `IsDeleted` True, unloaded, x 0; `MoveTo` moved it (x 100) without
+  loading it, and `AddItem` still added to it. Ours makes calls on it do
+  nothing: differs in those details.
 - Unconfirmed: the game's rule is said to be "flagged for delete, deleted
   once nothing holds it" (script variables and properties as well as
   aliases); no accessible source describes it. A script still holding a

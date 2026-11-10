@@ -5,6 +5,14 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- **autotest23 and autotest24's readings applied** (2026-11-10;
+  `research/autotest23.md` and `autotest24.md`, "Compared with ours"):
+  `IsGuard` as `IsGuardFaction` with a crime faction, `GetRelativeAngle`'s
+  sign, `GetXPForNextLevel` 0, relationship rank 2 an ally for helpers, no
+  school reduction on NPCs' staff and weapon charge, `OnHit` for a failing
+  fire-and-forget effect and only with a disarm, `GameTimeToString` from the
+  start date, no editor location for the player, `GetDisease` 0 and
+  `IsActorUsingATorch` 0 for NPCs.
 - **The rest of the PEX natives** (2026-11-09; 150 unhandled natives down to
   the 30 under Next, "Natives left"; research in `research/pex-natives/`
   batches 11–20, choices in `known_ambiguities/remaining-natives.md` and
@@ -1848,19 +1856,29 @@ game each piece unlocks.
   same Ignore External Damage gate; explosions are not done.
 
 ## Next
-**Test results to act on.** autotest21 and autotest22's differing
-readings are applied (see Done). autotest22 reran autotest21's faults.
+**Test results to act on.** autotest21 to autotest24's settled differing
+readings are applied (see Done; autotest23 and autotest24's on
+2026-11-10). What is left differs without a settled answer:
 
-- From autotest22 (`research/autotest22.md`):
+- From autotest22 to autotest24 (`research/autotest22.md` to `autotest24.md`;
+  compared 2026-11-10, each "Compared with ours"):
   - `GetTimeDead`'s unit: not game hours, which we still give.
   - The sun position's scale: lengths 324–368 with Y at 40, where ours is
     a unit vector.
-  - `SetAttackActorOnSight`: an aggressive non-enemy didn't attack the
-    marked player; ours would.
   - What `SetUnconscious` does to the actor. Only the flag is kept, and it
     isn't saved.
-  - Whether `GetCrimeGold` without a faction reads the hold the player
-    stands in.
+  - An aggression 1 NPC of a neutral faction that tracks no crime didn't
+    attack the player; ours does, and bandits need some rule
+    (`known_ambiguities/factions.md`).
+  - NPCs' staff and enchanted-blow charge per use (about 0.3 and 0.48 of
+    the cost, against ours' skill factor), and NPC staffs in the left hand
+    (`known_ambiguities/staffs.md`).
+  - The Vigilant not healing or warding, and the Average NPC not fleeing
+    at 18% (`npc-healing.md`, `wards.md`, `combat-fleeing.md`).
+  - `Delete` on plugin references (removed from the world) and on held
+    created ones (`created-refs.md`); created references' editor location
+    outdoors (`query-natives.md`); a disarmed NPC fighting on unarmed
+    (`disarm.md`).
 - From `test-mod regen`: whether a real blow or spell holds the player's health
   back (`fDamagedHealthRegenDelay` 0.5; its `Hit` cast never landed, and fire's
   taper would have hidden the answer: use untapered damage); and

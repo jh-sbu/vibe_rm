@@ -31,6 +31,21 @@ selection policy; it does not claim the original engine's combat scoring.
 No engine executable, library or binary data was examined. No game assets
 are included in the repository or tests.
 
+## Skyrim SE readings
+
+A Vigilant of Stendarr (`HealingLeftHand`, `OakfleshLeftHand`,
+`WardLesserLeftHand`) fighting a held target that didn't hurt it, its
+health set by script and `HealRate` 0: autotest22 (21–43 magicka) and
+autotest23 (300) at 70%, 45% and 20%, autotest24 (330, spells logged) at
+90%, 70%, 55%, 45% and 20%, 8 s each. It never cast its heal; it cast
+Oakflesh once at the start and then held Lesser Ward. The game's settings:
+`iAICombatRestoreHealthPercentage` 60, `fCombatRestoreHealthPercentMin` 0 /
+`Max` 0.5, `fCombatRestoreHealthRestrictTime` 15,
+`fCombatRestoreStopCastThreshold` 0.25, `fCombatItemRestoreTimer` 3
+(`research/autotest23.md`, `autotest24.md`). Ours heals below 50%:
+differs. Whether the game heals only while being hurt, or only past the
+restrict time, is open; the next probe has the Vigilant struck.
+
 ## Implemented choices and remaining questions
 
 - A living fighter that is neither fleeing nor bleeding out starts healing

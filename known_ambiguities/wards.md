@@ -76,6 +76,11 @@ ghosts, Thalmor, battlemages, Delphine, the College's teachers; the
 `...LeftHand` copies are equipped in the left). No public source says
 when the game raises them; here:
 
+- Skyrim SE (autotest22, autotest23, `research/autotest23.md`, Wards): a
+  Vigilant of Stendarr held 700 units from a held fire warlock casting
+  Firebolts at it never warded (`WardPower` 0 for 15 s), with 21–43
+  magicka and again with 300. autotest24 saw it equip
+  `WardLesserLeftHand` without casting it. Ours would ward: differs, open.
 - **When**: fighting, while a hostile spell is being cast at it: the
   player charging, holding or letting go a hostile non-self spell (or
   staff) while aiming within 30 degrees of its body and fighting it, or

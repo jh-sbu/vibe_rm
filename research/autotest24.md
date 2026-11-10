@@ -122,3 +122,14 @@ of allies only joins from rank 2. *Settled*.
 4. `GetDisease`: what makes it true.
 5. The Vigilant's heal when it is being hurt (a fighter that strikes it).
 6. Attack on Sight: a longer watch, and a guard in its own hold.
+
+## Compared with ours (2026-11-10)
+
+- **Changed to agree**: Disarm's `OnHit` only with a disarm (`disarm.md`);
+  relationship ranks for helpers (with autotest23); `GetDisease` 0.
+- **Agree already**: the view cone's edge (ours 95°); the level cap
+  (every disarm was within it).
+- **Differ, left open**: Disarm's misses within the cap (`disarm.md`); the
+  Vigilant's healing (`npc-healing.md`); Fear not making its target flee,
+  and script casts of Calm and Fury not landing (no change: the probe is at
+  fault until target-actor copies are tried).

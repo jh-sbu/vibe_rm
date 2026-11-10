@@ -307,3 +307,26 @@ or allies only. *Settled*: the faction alone brings help. Ours **agrees**.
 5. Disarm: what decides it beyond the level.
 6. `GetDisease`: what makes it true.
 7. What the Vigilant cast at 70%, and why it doesn't heal lower.
+
+## Compared with ours (2026-11-10)
+
+- **Changed to agree**: `IsGuard` (`IsGuardFaction` with a crime faction);
+  `GetRelativeAngle`'s sign; `GetXPForNextLevel` 0; relationship rank 2 as
+  an ally for helpers; NPCs' staffs without the school reduction;
+  `OnHit` and `OnMagicEffectApply` for a failing fire-and-forget effect;
+  `GameTimeToString` from the start date; the player's editor location
+  None; `GetDisease` 0; `IsActorUsingATorch` 0 for NPCs.
+- **Agree already**: Slow Time (apart from the easing); `KILL` not sent
+  for an essential actor; `HasParentRelationship(None)` and
+  `HasFamilyRelationship(None)`; Spells Learned; `GetCrimeGold` without a
+  faction (0 for the player); the game settings our code falls back to;
+  ethereal targets; a follower-faction member helping; the view cone.
+- **Differ, left open** (each recorded in its `known_ambiguities/` file):
+  NPCs' staff and weapon charge per use (`staffs.md`), NPC staffs in the
+  left hand (`staffs.md`), the Vigilant's healing (`npc-healing.md`) and
+  warding (`wards.md`), the Average NPC fleeing (`combat-fleeing.md`), an
+  aggression 1 NPC attacking the neutral player (`factions.md`), `Delete`
+  on plugin and held references (`created-refs.md`), a created
+  reference's editor location outdoors and items taken into an inventory
+  (`query-natives.md`), and a disarmed NPC taking up what it carries
+  (`disarm.md`).
