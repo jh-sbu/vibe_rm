@@ -10,6 +10,20 @@
 //! string variable and asks the game to save once done
 //! (`Game.RequestSave`); `vrm-tool test-results` then reads the reports
 //! from that save ([`results`]), so no one has to transcribe them.
+//!
+//! **Checkpoints and skipping a crashing test.** A batch built with
+//! `autotest21::Batch { checkpoints: true, .. }` (autotest23 on) announces
+//! each test as it starts (`vibe_rm autotest24 10/12: KillerObject`) and
+//! saves after each one. It also reads its global `<prefix>SkipTest`
+//! (`VrmAt24SkipTest`) before each test: a test whose number it holds is
+//! skipped and reported as "skipped by SkipTest". If the game crashes to
+//! desktop, the newest save holds every report so far, and the crash is the
+//! test after the last report (or the last notification seen). The script is
+//! suspended mid-run in that save, so loading it resumes the run. To step
+//! past the crash, load the save, open the console at once (the script waits
+//! about 3 s after each save, and paused time doesn't count) and enter `set
+//! VrmAt24SkipTest to <n>`. The run goes on and the reports are read as usual.
+//! A batch's run instructions should repeat this, with its own prefix.
 
 use anyhow::{Result, bail};
 use esp::{FormId, LoadOrder};

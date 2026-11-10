@@ -96,6 +96,13 @@ Skyrim SE and places the resulting saves in `tests/results/`; read them with
 `vrm-tool test-results tests/results`. Rebuild `vrm-tool`
 (`cargo build -p vrm-tools`) before generating a plugin.
 
+Long batches should use checkpoints (`checkpoints: true` in
+`autotest21::Batch`): each test is announced, the game saves after each, and
+the user can step past a test that crashes the game by loading the newest
+save and entering `set <prefix>SkipTest to <n>` in the console. The
+`test_mods` module documentation describes the procedure; give it in each
+batch's run instructions.
+
 # Commits
 
 Run `cargo fmt` before every commit; the tree must stay `cargo fmt --check` clean.
