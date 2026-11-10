@@ -3779,12 +3779,10 @@ impl Engine {
             let k = killer.map_or(papyrus::Value::None, |k| self.object_value(k));
             self.send_script_event(actor, "OnDying", vec![k.clone()]);
             self.send_script_event(actor, "OnDeath", vec![k]);
-            let crime = if killer == Some(PLAYER_REF) {
+            if killer == Some(PLAYER_REF) {
                 self.count_kill(actor);
-                self.player_kill(actor)
-            } else {
-                0
-            };
+            }
+            let crime = self.kill_crime_status(actor, killer);
             self.send_kill_event(actor, killer, crime, rank);
             self.boss_died(actor);
         }

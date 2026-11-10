@@ -349,3 +349,26 @@ fn faction_natives_reach_the_engine() {
     );
     assert_eq!((int(unseen), int(seen)), (30, 12));
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn an_npcs_kill_of_a_lawful_victim_is_an_unreported_murder() {
+    const KILLER: FormId = FormId(0x901);
+    const LAWFUL: FormId = FormId(0x902);
+    const OUTLAW: FormId = FormId(0x903);
+    let (_f, mut e) = fixture("kill-crime");
+    place(&mut e, KILLER, member(BANDITS, 1));
+    place(&mut e, LAWFUL, member(GUARDS, 0));
+    place(&mut e, OUTLAW, member(BANDITS, 0));
+    e.set_crime_faction(LAWFUL, Some(TOWN));
+    // autotest21: `Kill(Alpha)` on a victim with a crime faction sent
+    // `KILL` with crime 1; one without stays 0.
+    assert_eq!(e.kill_crime_status(LAWFUL, Some(KILLER)), 1);
+    assert_eq!(e.kill_crime_status(OUTLAW, Some(KILLER)), 0);
+    assert_eq!(e.kill_crime_status(LAWFUL, None), 0);
+    // The player's kill without an assault isn't murder.
+    assert_eq!(
+        e.kill_crime_status(LAWFUL, Some(crate::engine::PLAYER_REF)),
+        0
+    );
+}

@@ -703,6 +703,19 @@ impl Engine {
         }
     }
 
+    /// The kill event's crime status for `victim` killed by `killer`: the
+    /// player's kill as [`Self::player_kill`] gives it; an NPC's kill of a
+    /// victim with a crime faction is an unreported murder (1: autotest21's
+    /// `Kill(Alpha)` on such a victim, with no fight between them), since
+    /// only the player's crimes are reported; anything else 0.
+    pub(crate) fn kill_crime_status(&mut self, victim: FormId, killer: Option<FormId>) -> i32 {
+        match killer {
+            Some(PLAYER_REF) => self.player_kill(victim),
+            Some(_) if self.crime_faction(victim).is_some() => 1,
+            _ => 0,
+        }
+    }
+
     /// Whether the player is trespassing: in an interior that isn't a public
     /// area and is either off limits or private, someone else's home whose
     /// owner (or one of whose household) runs a package that locks the doors

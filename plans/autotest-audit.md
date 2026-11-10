@@ -19,15 +19,15 @@ probe that faulted (no reading) leaves its item open.
 
 | Code | Meaning | Items |
 | --- | --- | ---: |
-| A | Automatic with the record writers test mods already have | 550 |
+| A | Automatic with the record writers test mods already have | 551 |
 | A* | Automatic, but needs a new writer (PACK trees of a shape no vanilla package has, dialogue, PHZD, LVSP, WATR, REFR overrides, perk ranks, region weather, quest stage fragments) or a method still unproven | 160 |
 | U | Needs the player: a menu (barter, crafting, dialogue, sleep/wait, lockpicking, difficulty), input (attacks, aiming, casting by hand) or a new game | 203 |
 | R | Needs a save to be loaded again (persistence questions) | 39 |
 | V | Only visible or audible: rendering, UI layout, sound | 355 |
 | N | Not observable in the game (internal formats, engine-only policies) | 74 |
-| | **Total** | **1381** |
+| | **Total** | **1382** |
 
-**Strictly automatic: 710** (550 A, 160 A*).
+**Strictly automatic: 711** (551 A, 160 A*).
 
 Conditions count as automatic: a test ability whose effect carries the
 condition, read by the OneHanded gain it gives (autotest22 showed this
@@ -85,9 +85,6 @@ SE readings that the ambiguity files still contradict (the items are
 settled, so they aren't listed below; the files and the engine need
 correcting):
 
-- `story-manager.md`: NPCs' kills send `KILL` with crime 0. autotest21's
-  lawful NPC killed by another read crime 1 (`research/autotest21.md`,
-  StoryCombat, "Settled").
 - `protection.md`: invulnerability spares health from `DamageActorValue`.
   autotest21's invulnerable base lost 10 health and 10 stamina to it
   (Protection, "Settled").
@@ -329,7 +326,7 @@ Line numbers point into the file as of 2026-11-10.
 - N: 19th face slider: values outside −16..16 taken as unset
 - N: Game.PrecacheCharGen / PrecacheCharGenClear do nothing
 
-### `cleared.md` (1 A, 1 V, 1 R)
+### `cleared.md` (1 A, 1 R, 1 V)
 
 - A: boss clearing rule (all Boss refs dead, parents not) (2 min)
 - V: cleared banner text and music
@@ -1752,12 +1749,13 @@ Line numbers point into the file as of 2026-11-10.
 - U: when concentration casts send CAST (52-56)
 - U: whether staffs, scrolls, powers and shouts send CAST (57-60)
 
-### `story-manager.md` (10 A, 5 A*, 2 U)
+### `story-manager.md` (11 A, 5 A*, 2 U)
 
 - A: ADIA conversation cadence, chance and range (10 min) (108-111)
 - A: reset hours for quests started otherwise (2 min) (112-113)
 - A: quests' own event conditions, and whom they run on (2 min) (116, 178-179)
 - A: assault event members (2 min) (121-130)
+- A: an NPC's kill's crime status when it fights the victim, is its enemy or the player's teammate (2 min) (131-139)
 - A: finding bodies rule (3 min) (134-135)
 - A: OnStory event before the startup stage (1 min) (144-149)
 - A: skill and level increase event values (1 min) (144-149)

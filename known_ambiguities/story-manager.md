@@ -128,9 +128,15 @@ Script event nodes of ours under the game's script event root:
   first) are not in any public source found (CK wiki "Assault Actor
   Event" lists the victim, attacker and location; xEdit and CommonLibSSE
   name `ASSU` only); the first-blow rule is the one chosen.
-- Kills by NPCs: the kill event's crime status is 0. The crime system
-  tracks only the player's crimes (CK wiki "Crime"), so an NPC's murder
-  of anyone is not reported or counted; no source says otherwise.
+- Kills by NPCs: the kill event's crime status is 1 (an unreported
+  murder) when the victim has a crime faction, else 0. Skyrim SE
+  (`test-mod autotest21`, StoryCombat): `Kill(Alpha)` on an NPC given a
+  crime faction by `SetCrimeFaction`, with no fight between them, sent
+  `KILL` with crime 1 (more than 1.5 s late). The crime system tracks only
+  the player's crimes (CK wiki "Crime"), so it is never 2 (reported) here,
+  and nothing else is counted. Unobserved: whether a killer fighting the
+  victim (a bandit killing a guard), an enemy faction or a teammate of the
+  player's changes it.
 - Bodies: a living, calm humanoid within 1000 units with nothing between
   its eyes and the body (once a second), once for each finder and body.
 - Crime events' members beyond those: the other references R1, R2 in
