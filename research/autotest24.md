@@ -46,11 +46,27 @@ cast gave the effect event):
 | 30 | 20 | its own greatsword (the given sword wasn't drawn) | no |
 
 A disarm always came with `OnHit` and an unequip; a failure with neither.
-*Settled*: Disarm succeeds by chance, not by a plain level cap (level 10
-at magnitude 12 can be disarmed, level 1 can resist). Greatswords drop like
-swords. *Partial*: the chance's law is open. Eight casts can't say whether
-it depends on level against magnitude (autotest23: level 10 kept its sword,
-level 1 lost it). Ours (a level cap, always) **differs**.
+*Partial*. Every disarm was within the cap (level 1 and 10 at 12, level 10
+at 30), but casts within the cap failed too, at level 1 and level 10 alike.
+So something besides level sometimes stops it. Greatswords drop like
+swords. The level 20 case doesn't count: that NPC drew its own greatsword,
+not the sword it was given.
+
+What the sources say: UESP's *Skyrim:Disarm* (revision 3246655) gives a plain
+cap ("Disarms enemies up to level 12 / 20 / 30") and no chance. Its talk
+page (revision 1455046) has one unconfirmed claim of being disarmed above
+level 30. The only chance-based disarm UESP describes is the Block perk
+Disarming Bash (*Skyrim:Block*, revision 3648127: "Chance to disarm when
+power bashing"). CommonLibSSE-NG declares the archetype's effect class as
+`DisarmEffect : StaggerEffect`, with its own `Update` and `Start`. It gives
+no rules, but suggests that Disarm works like a stagger.
+
+Inference, not settled: the cap holds, and the misses depend on what the
+target was doing when the effect landed (a stagger the target's current
+action doesn't take, such as a swing). These casts landed on NPCs mid-fight
+at no particular moment. Ours (the cap, always) stays as UESP has it, until
+a probe separates the two: casts on NPCs drawn but idle against casts during
+attacks, and casts above the cap.
 
 **Disease**: Ataxia cast on the player the way the game's traps do
 (`TrapDiseaseAtaxia`), cast directly, and the trap spell cast by an NPC:
@@ -101,8 +117,8 @@ of allies only joins from rank 2. *Settled*.
    so the crash can be pinned on the probe (and skip it if so). Then
    `GetTimeDead` read twice around timescale 100.
 2. Calm, Fear and Fury as target-actor copies of their effects.
-3. The law of Disarm's chance: many casts at a few level and magnitude
-   pairs.
+3. Disarm: casts on NPCs drawn but not attacking (alerted, out of combat)
+   against casts during attacks, and casts above the cap, several each.
 4. `GetDisease`: what makes it true.
 5. The Vigilant's heal when it is being hurt (a fighter that strikes it).
 6. Attack on Sight: a longer watch, and a guard in its own hold.
