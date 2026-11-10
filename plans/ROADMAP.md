@@ -1931,10 +1931,16 @@ readings are applied (see Done). autotest22 reran autotest21's faults.
     (timescale 1000 crashed SE), the view cone's edge with the observer on
     the floor, Attack on Sight with an `IsGuard` guard, Calm and Fury from
     close by and Fear's flee, what decides Disarm, what makes `GetDisease`
-    true, and the Vigilant's healing. Those are `test-mod autotest24`
-    (built 2026-11-10, waiting for the user's run). In our engine its view
-    cone test read the observer about 1 unit from the player at every
-    spot (`GetDistance` after `MoveTo` with offsets, or a stale observer
+    true, and the Vigilant's healing. Those were `test-mod autotest24`
+    (run 2026-11-10, `research/autotest24.md`): the view cone's edge lies
+    between 90° and 100°, Disarm succeeds by chance, rank 1 to 4 bring
+    friends-and-allies helpers, and `IsKillerObject` run on a dead victim
+    likely crashes SE. Left for a follow-up (its "Faults and open items"):
+    `GetTimeDead`'s unit (the kill and the probe in separate tests), Calm,
+    Fear and Fury as target-actor copies, Disarm's chance, `GetDisease`,
+    the Vigilant's heal while being hurt, and Attack on Sight. In our
+    engine, the view cone test read the observer about 1 unit from the
+    player at every spot (`GetDistance` after `MoveTo`, or a stale observer
     position): unexplained, to look into.
   - Built and waiting for the user's run: `loadscreens`
     (`plans/loading-screen.md`), `crafting1` (`plans/crafting.md`) and

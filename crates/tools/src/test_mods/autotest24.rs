@@ -19,9 +19,13 @@
 //!   1000 crashed SE). Each is its own test, so a crash leaves the rest
 //!   saved.
 //!
+//! **Run 2026-11-10** (`research/autotest24.md`): test 10 (KillerObject)
+//! crashed SE and was skipped, which voided both TimeDead tests (Victim never
+//! died). The rest gave readings.
+//!
 //! Run as autotest23: load a throwaway save, wait for the "running"
-//! notification and leave the game alone until the "done" box (about 15
-//! minutes). Each test is announced and followed by a save; after a crash,
+//! notification and leave the game alone until the "done" box (12 tests,
+//! about 15 minutes). Each test is announced and followed by a save; after a crash,
 //! load the newest save, open the console at once and `set VrmAt24SkipTest
 //! to <n>` to step past test n. Read with `vrm-tool test-results`. The
 //! Disease test gives the player Ataxia and Sanguinare Vampiris for a few

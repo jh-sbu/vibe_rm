@@ -15,10 +15,10 @@ leaves it for when the results are applied.
 
 ## Crash and faults
 
-- **TimeDead** crashed the game every time. New in it: the kill and the
-  probes ran as in autotest22, then `TimeScale` was set to 1000 for 10 s,
-  which is the likely cause. `GetTimeDead`'s unit stays open. Next time,
-  raise the timescale less (100), or move `GameHour` on instead.
+- **TimeDead** crashed the game every time. autotest24 crashed on its first
+  part alone (the kill and `IsKillerObject` run on the dead victim; see
+  `research/autotest24.md`), so the likely cause is that probe, not the
+  timescale of 1000 that came after. `GetTimeDead`'s unit stays open.
 - **ViewCone**: most of the spots were off our cell's floor (it spans ±1536;
   the observer stood at (-1300, -1300)). The player fell, and the game put
   them back in the middle of the room, about 1840 units in front of the
