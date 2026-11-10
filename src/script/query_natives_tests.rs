@@ -1322,16 +1322,21 @@ fn batch07_form_value_deaths_and_info_owner() {
 #[test]
 #[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn batch08_movement_arrest_and_loaded_3d() {
-    let mut class = [0u8; 36];
-    class[35] = 1;
+    // A guard: in `IsGuardFaction` (rank 0) with a crime faction.
+    let mut snam = 0x86EEEu32.to_le_bytes().to_vec();
+    snam.extend_from_slice(&[0; 4]);
     let (_f, mut e) = fixture(vec![
         Node::top(
-            b"CLAS",
-            vec![RecordBuilder::new(b"CLAS", FormId(0x820)).field(b"DATA", &class)],
+            b"FACT",
+            vec![RecordBuilder::new(b"FACT", FormId(0x830)).u32(b"DATA", 0x40)],
         ),
         Node::top(
             b"NPC_",
-            vec![RecordBuilder::new(b"NPC_", FormId(0x810)).form(b"CNAM", FormId(0x820))],
+            vec![
+                RecordBuilder::new(b"NPC_", FormId(0x810))
+                    .field(b"SNAM", &snam)
+                    .form(b"CRIF", FormId(0x830)),
+            ],
         ),
         Node::top(
             b"ACHR",
