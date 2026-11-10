@@ -164,10 +164,12 @@ impl Engine {
             .and_then(|c| self.cell_location(c))
     }
 
-    /// The location a reference belongs to in the editor.
+    /// The location a reference belongs to in the editor: none for the
+    /// player (Skyrim SE, autotest21 and autotest23, in cells with a
+    /// location and without); a created reference's where it was made.
     pub fn editor_location(&self, r: FormId) -> Option<FormId> {
         if r == PLAYER_REF {
-            return self.current_location();
+            return None;
         }
         if let Some(c) = self.created(r) {
             return c.location;
