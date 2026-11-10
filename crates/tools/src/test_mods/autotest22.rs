@@ -57,6 +57,7 @@ const AUTOTEST22: Batch = Batch {
     sources: SOURCES,
     probes_on_skill: true,
     cell_location: None,
+    checkpoints: false,
 };
 
 pub fn build(lo: &LoadOrder) -> Result<TestMod> {

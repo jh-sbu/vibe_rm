@@ -41,6 +41,15 @@
 //! the last test sets small Whiterun and Rift bounties for a few seconds
 //! outdoors, so a guard nearby may come over (answer them if so). Read with
 //! `vrm-tool test-results`.
+//!
+//! Each test is announced as it starts (`vibe_rm autotest23 9/33: TimeDead`)
+//! and the game saves after each one ([`Batch::checkpoints`]). Run 1
+//! (2026-11-10) crashed to desktop between `XPNext`'s skill increase and the
+//! first save (after test 20), with no Papyrus log. After a crash, the
+//! newest save holds every result so far, and the test after the last one
+//! is the culprit. To go past it, load that save, open the console within a
+//! few seconds, `set VrmAt23SkipTest to <its number>`, and close it. The
+//! script resumes there and reports that test as skipped.
 
 use anyhow::Result;
 use esp::LoadOrder;
@@ -63,6 +72,7 @@ const AUTOTEST23: Batch = Batch {
     sources: SOURCES,
     probes_on_skill: true,
     cell_location: Some("WhiterunHoldLocation"),
+    checkpoints: true,
 };
 
 pub fn build(lo: &LoadOrder) -> Result<TestMod> {

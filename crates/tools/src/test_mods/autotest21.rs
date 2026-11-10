@@ -90,6 +90,11 @@ pub(super) struct Batch {
     /// Our test cell's location (`XLCN`, a vanilla location's editor id);
     /// autotest21 and autotest22's cell had none.
     pub cell_location: Option<&'static str>,
+    /// A notification naming each test as it starts, a save after each, and
+    /// the global `SkipTest` (`set VrmAt23SkipTest to <n>` in the console)
+    /// skipping test n: a crash then shows in the newest save, and a reload
+    /// can step past it. autotest21 and autotest22 saved every 20 tests.
+    pub checkpoints: bool,
 }
 
 pub(super) const AUTOTEST21: Batch = Batch {
@@ -98,6 +103,7 @@ pub(super) const AUTOTEST21: Batch = Batch {
     sources: SOURCES,
     probes_on_skill: false,
     cell_location: None,
+    checkpoints: false,
 };
 
 /// autotest21's test sources, in running order (base first: the helpers).
@@ -221,6 +227,7 @@ const DISARM_EFFECT: u32 = 0xA23;
 const DISARM_SPELL: u32 = 0xA24;
 const DISARM_STRONG_SPELL: u32 = 0xA25;
 const FAILING_FIRE_SPELL: u32 = 0xA26;
+const SKIP_TEST: u32 = 0xA27;
 /// The next free object id.
 const NEXT_OBJECT: u32 = 0xA30;
 
@@ -742,6 +749,7 @@ const OWN: &[(&str, &str, u32)] = &[
     ("SideQuest", "Quest", SIDE_QUEST),
     ("AliasQuest", "Quest", ALIAS_QUEST),
     ("ProbeValue", "GlobalVariable", PROBE_VALUE),
+    ("SkipTest", "GlobalVariable", SKIP_TEST),
     ("RedFaction", "Faction", RED),
     ("GreenFaction", "Faction", GREEN),
     ("TealFaction", "Faction", TEAL),
@@ -886,11 +894,21 @@ fn header(batch: &Batch) -> String {
     s += "    StartMarker = Player.PlaceAtMe(XMarker, 1, true, false)\n";
     s += "    GoCell()\n    Float t = 0.0\n";
     s += "    CellWeather = Weather.GetCurrentWeather()\n    CellSkyMode = Weather.GetSkyMode()\n";
+    let count = tests.len();
     for (i, t) in tests.iter().enumerate() {
+        let n = i + 1;
+        if batch.checkpoints {
+            s += &format!("    Debug.Notification(\"vibe_rm {name} {n}/{count}: {t}\")\n");
+            s += &format!("    If SkipTest.GetValue() as Int == {n}\n");
+            s += &format!("        Result{t} = \"skipped by SkipTest\\n\"\n    Else\n");
+        }
         s += &format!("    t = Now()\n    Result{t} = Test{t}()\n");
         s += &format!("    Result{t} += \"(took \" + Num(Now() - t) + \" s)\"\n");
+        if batch.checkpoints {
+            s += "    EndIf\n";
+        }
         s += &format!("    Debug.Trace(\"vibe_rm {name} {t}: \" + Result{t})\n");
-        if i % 20 == 19 {
+        if batch.checkpoints || i % 20 == 19 {
             s += "    Game.RequestSave()\n    Utility.Wait(3.0)\n";
         }
     }
@@ -2092,7 +2110,10 @@ fn build_records(lo: &LoadOrder, batch: &Batch) -> Result<TestMod> {
             }
         },
     )?];
-    let globals = vec![records::global(PROBE_VALUE, "VrmAt21ProbeValue", 0.0)];
+    let globals = vec![
+        records::global(PROBE_VALUE, "VrmAt21ProbeValue", 0.0),
+        records::global(SKIP_TEST, "VrmAt21SkipTest", 0.0),
+    ];
 
     // Our cell: nine floor pieces round the origin, lit.
     let floor = v.id("WRIntFloorSTMid01Large")?;
