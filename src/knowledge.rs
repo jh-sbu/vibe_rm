@@ -247,18 +247,19 @@ mod tests {
                 &[Value::Float(days)],
             )
         };
-        // Today's date, month and day from 0, and the time from the fraction
-        // (Skyrim SE, autotest21: `07/16/0201 00:00` and `07/16/0201 12:00`).
+        // The start date moved on by the whole days less one, month and day
+        // from 0, the time from the fraction, whatever today is (Skyrim SE,
+        // autotest21 and autotest23).
         assert_eq!(time(&mut e, 0.0), Value::str("07/16/0201 00:00"));
         assert_eq!(time(&mut e, 1.5), Value::str("07/16/0201 12:00"));
-        assert_eq!(time(&mut e, 14.75), Value::str("07/16/0201 18:00"));
+        assert_eq!(time(&mut e, 14.75), Value::str("07/29/0201 18:00"));
         e.day = 15;
-        assert_eq!(time(&mut e, 15.0), Value::str("08/00/0201 00:00"));
+        assert_eq!(time(&mut e, 16.0), Value::str("08/00/0201 00:00"));
         e.day = 365;
-        assert_eq!(time(&mut e, 365.0), Value::str("07/16/0202 00:00"));
-        // Nonsense is midnight.
-        assert_eq!(time(&mut e, f32::NAN), Value::str("07/16/0202 00:00"));
-        assert_eq!(time(&mut e, -3.0), Value::str("07/16/0202 00:00"));
+        assert_eq!(time(&mut e, 365.0), Value::str("07/15/0202 00:00"));
+        // Nonsense is the start date at midnight.
+        assert_eq!(time(&mut e, f32::NAN), Value::str("07/16/0201 00:00"));
+        assert_eq!(time(&mut e, -3.0), Value::str("07/16/0201 00:00"));
         let Value::String(far) = time(&mut e, 1.0e12) else {
             panic!("not a string")
         };

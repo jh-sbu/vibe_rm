@@ -533,7 +533,10 @@ impl Engine {
     /// month, month, year).
     pub fn calendar_on(&self, days: u32) -> (usize, u32, usize, u32) {
         let (mut day, mut month, mut year) = self.start_date();
-        for _ in 0..days {
+        // Every year has the same 365 days, so whole years only move the year.
+        let year_days: u32 = MONTHS.iter().map(|m| m.1).sum();
+        year += days / year_days;
+        for _ in 0..days % year_days {
             day += 1;
             if day > MONTHS[month as usize].1 {
                 day = 1;
