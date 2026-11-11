@@ -1970,11 +1970,10 @@ readings are applied (see Done; autotest23 and autotest24's on
     reads 113.7 against SE's 31.9 (`known_ambiguities/detection.md`, light
     level's scale). The observer also drifted 5 to 15 units in some runs:
     `SetDontMove` did nothing, so it sandboxed and its idles' root motion
-    moved it (fixed 2026-11-10, `known_ambiguities/dont-move.md`). The
-    test mods hold actors with `SetDontMove` throughout, so earlier
-    in-engine dry runs had them wander. `SetRestrained`, which they also
-    use, is still a no-op: what it holds (movement, turning, actions) is
-    to be found out.
+    moved it (fixed 2026-11-10, `known_ambiguities/actor-holds.md`). The
+    test mods hold actors with `SetDontMove` and `SetRestrained`
+    throughout, so earlier in-engine dry runs had them wander; both now
+    follow the CK wiki.
   - Built and waiting for the user's run: `loadscreens`
     (`plans/loading-screen.md`), `crafting1` (`plans/crafting.md`) and
     `spell-visuals` (`plans/spell-visuals.md`, Pending SE validation; its
