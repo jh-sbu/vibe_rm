@@ -939,6 +939,21 @@ impl ActorRuntime {
         }
     }
 
+    /// A package step for an actor held where it stands (`SetDontMove`): it
+    /// idles or uses what is at hand, but stands rather than set off, nor
+    /// turns to where it would have gone. Root motion is undone after
+    /// `animate`.
+    fn step_in_place(&mut self, dt: f32, w: &mut World) {
+        let (at, facing) = (self.exec.pos, self.exec.heading);
+        self.step(dt, w);
+        if self.is_walking() {
+            self.halt(0.5);
+            self.exec.heading = facing;
+            self.turn_request = None;
+        }
+        (self.exec.pos.x, self.exec.pos.y) = (at.x, at.y);
+    }
+
     fn turn_towards(&mut self, dir: Vec3, dt: f32) -> f32 {
         let d = angle_to(self.exec.heading, dir);
         let rate = self.turn_rate();
@@ -4284,6 +4299,7 @@ impl Engine {
                     continue;
                 }
                 let was = a.exec.pos;
+                let kept_in_place = self.world_state.dont_move.contains(&a.ref_id);
                 a.turn_request = None;
                 if a.exec.combat.is_none() {
                     a.sprinting = false;
@@ -4379,7 +4395,9 @@ impl Engine {
                     }
                 } else {
                     let before = a.exec.pos;
-                    if a.step(dt, &mut world) && a.is_walking() {
+                    if kept_in_place {
+                        a.step_in_place(dt, &mut world);
+                    } else if a.step(dt, &mut world) && a.is_walking() {
                         a.keep_clear(&bodies, &nav, dt, before);
                         // A horse doesn't steer round the cart hitched to it.
                         let others = clutter
@@ -4447,6 +4465,11 @@ impl Engine {
                 actor_timing.next("ai.actor.animation");
                 if let Some(pose) = a.animate(dt, &mut world.clips) {
                     inst.pose = pose;
+                }
+                if kept_in_place {
+                    // Neither its steps nor its animations' root motion move
+                    // it off the spot; it may still fall.
+                    (a.exec.pos.x, a.exec.pos.y) = (was.x, was.y);
                 }
                 actor_timing.next("ai.actor.events");
                 inst.transform = a.transform();

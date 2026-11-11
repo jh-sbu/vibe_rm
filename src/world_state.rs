@@ -40,6 +40,10 @@ pub struct WorldState {
     /// `SetHeadTracking(false)`: actors that don't turn their heads to look
     /// (not saved).
     pub no_head_tracking: std::collections::HashSet<FormId>,
+    /// `SetDontMove(true)`: actors held where they stand. They turn, idle
+    /// and fight in place, and scripts can still move them
+    /// (`known_ambiguities/dont-move.md`; not saved).
+    pub dont_move: std::collections::HashSet<FormId>,
     /// Actors in `StartDeferredKill`'s state: they don't die until
     /// `EndDeferredKill`; the value is who dealt a killing blow meanwhile
     /// (saved in `DFKL`).

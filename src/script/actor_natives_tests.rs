@@ -720,6 +720,11 @@ fn path_to_reference_waits_for_arrival_and_keep_offset_steers() {
     assert!(e.world_state.no_head_tracking.contains(&ACTOR));
     call(&mut e, "actor", "setheadtracking", ACTOR, &[]);
     assert!(e.world_state.no_head_tracking.is_empty());
+    // Held in place, then let go.
+    call(&mut e, "actor", "setdontmove", ACTOR, &[]);
+    assert!(e.world_state.dont_move.contains(&ACTOR));
+    call(&mut e, "actor", "setdontmove", ACTOR, &[Value::Bool(false)]);
+    assert!(e.world_state.dont_move.is_empty());
 }
 
 #[test]

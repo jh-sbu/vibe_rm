@@ -2455,7 +2455,17 @@ pub fn call(
             }
             none()
         }
-        ("actor", "setrestrained") | ("actor", "setdontmove") => none(),
+        ("actor", "setrestrained") => none(),
+        ("actor", "setdontmove") => {
+            if let Some(r) = me {
+                if args.first().is_none_or(|a| a.as_bool()) {
+                    e.world_state.dont_move.insert(r);
+                } else {
+                    e.world_state.dont_move.remove(&r);
+                }
+            }
+            none()
+        }
         // An essential actor bleeding out with this set doesn't get up until
         // it is cleared (CK wiki, `SetNoBleedoutRecovery`).
         ("actor", "setnobleedoutrecovery") => {

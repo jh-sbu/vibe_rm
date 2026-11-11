@@ -136,6 +136,26 @@ fn armor_slows_actual_package_steps_and_combat_chases() {
 }
 
 #[test]
+fn an_actor_held_in_place_stands_instead_of_walking_off() {
+    let mut a = actor();
+    a.exec.heading = 1.0;
+    a.state = State::Walk {
+        path: vec![Vec3::new(-1000.0, -1000.0, 0.0)],
+        next: 0,
+        budget: 10.0,
+        to_seat: false,
+    };
+    with_world(|w| {
+        for _ in 0..30 {
+            a.step_in_place(0.1, w);
+        }
+    });
+    assert_eq!(a.exec.pos, Vec3::ZERO);
+    assert_eq!(a.exec.heading, 1.0);
+    assert!(!a.is_walking());
+}
+
+#[test]
 fn scheduled_travel_heading_turns_at_movement_rate_and_cancels_on_halt() {
     let mut a = actor();
     let target = std::f32::consts::FRAC_PI_2;
