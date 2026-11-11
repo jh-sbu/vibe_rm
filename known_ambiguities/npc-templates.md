@@ -103,7 +103,8 @@ that a copied actor's leveled spell list yields nothing):
 - The copied-actor report above (nothing given) isn't followed: vanilla
   actors would lose their spells.
 
-An autotest is planned in `plans/autotest-survey.md` (tier 2).
+Each of these is listed for an automatic test in `plans/autotest-audit.md`
+(`npc-templates.md`); none has been run.
 
 ## Open questions
 

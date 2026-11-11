@@ -123,8 +123,8 @@ Limits and unresolved behavior:
 - Whether the native check uses 3D or horizontal distance, and whether an
   exterior "in cell" means the grid square, is unverified.
 
-An autotest for the start position, the distance and the radius's edge is
-planned in `plans/autotest-survey.md` (tier 2).
+An automatic test for the start position, the distance and the radius's edge
+is listed in `plans/autotest-audit.md` (`package-trees.md`); none has been run.
 
 ## Multi-location sandboxing
 
@@ -163,7 +163,8 @@ Choices not settled by public sources:
 - The sequential branch's Simultaneous nodes for locations 2 to 6 check
   Location 1's time, as authored; the interpreter follows those conditions.
 
-An autotest is planned in `plans/autotest-survey.md` (tier 3).
+Automatic tests for these are listed in `plans/autotest-audit.md`
+(`package-trees.md`); none has been run.
 
 ## Open questions
 
