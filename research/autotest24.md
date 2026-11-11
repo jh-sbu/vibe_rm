@@ -130,9 +130,10 @@ of allies only joins from rank 2. *Settled*.
 - **Agree already**: the view cone's edge (ours 95°); the level cap
   (every disarm was within it).
 - **ViewCone in ours** (run again after the player's `MoveTo` kept its
-  offsets): seen at 80° and 90°, not at 100° to 180°, ahead at 300 seen,
-  each 300 off, as in SE. Behind at 150: seen (SE: not). Light 113.7 (SE:
-  31.9).
+  offsets, and after `SetDontMove` held the observer): seen at 80° and
+  90°, not at 100° to 180°, ahead at 300 seen, each 300 off, as in SE.
+  Behind at 150: seen in 3 of 11 runs (SE: not), when the observer barked
+  and turned to the player. Light 113.7 (SE: 31.9).
 - **Differ, left open**: Disarm's misses within the cap (`disarm.md`); the
   Vigilant's healing (`npc-healing.md`); Fear not making its target flee,
   and script casts of Calm and Fury not landing (no change: the probe is at

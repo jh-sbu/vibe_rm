@@ -1973,7 +1973,13 @@ readings are applied (see Done; autotest23 and autotest24's on
     moved it (fixed 2026-11-10, `known_ambiguities/actor-holds.md`). The
     test mods hold actors with `SetDontMove` and `SetRestrained`
     throughout, so earlier in-engine dry runs had them wander; both now
-    follow the CK wiki.
+    follow the CK wiki. `research/stubbed-natives-audit.md` lists every
+    native a batch used while ours stubbed it. For a later batch: SE
+    readings taken on a held actor's own behaviour, to repeat with the
+    actor free: the Vigilant's wards (held in autotest22/23), the held
+    target of a hostile script cast searching (autotest21), the unalerted
+    NPC's 0.6 s sheathe after `DrawWeapon` (held in autotest21; autotest17's
+    held commoner didn't draw), and whether a restrained NPC fights.
   - Built and waiting for the user's run: `loadscreens`
     (`plans/loading-screen.md`), `crafting1` (`plans/crafting.md`) and
     `spell-visuals` (`plans/spell-visuals.md`, Pending SE validation; its

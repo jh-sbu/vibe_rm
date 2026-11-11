@@ -41,6 +41,10 @@ Choices the pages leave open:
   Whether package travel is stopped outright or only slowed is untested.
 - Whether `KeepOffsetFromActor` and other script movement move a
   `SetDontMove` actor (said only of restrained ones): ours holds it.
+- Whether a restrained actor fights: autotest4's restrained NPC told to
+  `StartCombat` an enemy 1500 units off, itself restrained, "neither
+  fought nor regenerated" (its `HealRate` was 0: autotest5), which can't
+  tell. Ours lets held actors fight in place.
 - Whether a held actor turns, sits or gives ground in combat; whether
   `IsMovementControlsEnabled` and `IsLookingControlsEnabled` read false
   for a held player (ours: they read only `DisablePlayerControls`);
