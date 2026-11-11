@@ -375,6 +375,8 @@ impl MaterialUniform {
 mod effect_shader_tests;
 
 #[cfg(test)]
+mod overlay_tests;
+#[cfg(test)]
 mod texture_loading_tests;
 
 #[cfg(test)]
@@ -2450,6 +2452,24 @@ impl Renderer {
     }
 
     pub fn render(&mut self, scene: &Scene, camera: &Camera, target: &wgpu::TextureView) {
+        self.draw_frame(scene, camera, target, false);
+    }
+
+    /// Draws `scene` over what `target` already holds (the inventory's item
+    /// over the world): with its own depth, and without the sky, shadows,
+    /// precipitation or the post pass. The world's frame caches (shadow
+    /// cascades, the precipitation map) and stats stay the world's.
+    pub fn render_over(&mut self, scene: &Scene, camera: &Camera, target: &wgpu::TextureView) {
+        self.draw_frame(scene, camera, target, true);
+    }
+
+    fn draw_frame(
+        &mut self,
+        scene: &Scene,
+        camera: &Camera,
+        target: &wgpu::TextureView,
+        over: bool,
+    ) {
         self.update_loading_materials(false);
         self.animate_materials();
         let aspect = self.width as f32 / self.height as f32;
@@ -2457,7 +2477,7 @@ impl Renderer {
         let frustum = Frustum::from_matrix(view_proj);
         let env = &scene.env;
         // The sun casts shadows outdoors.
-        let shadowed = env.sky && self.shadows_enabled && self.distances.shadows > 0.;
+        let shadowed = !over && env.sky && self.shadows_enabled && self.distances.shadows > 0.;
         let fresh = shadow::cascades(camera, aspect, env.sun_dir, self.distances.shadows);
         // Near cascades follow every frame, far ones every 2nd / 4th (their shadows
         // barely change); each is sampled with the view it was rendered with.
@@ -2475,7 +2495,7 @@ impl Renderer {
         if shadowed {
             self.shadow_cascades = Some(cascades);
             self.shadow_frame += 1;
-        } else {
+        } else if !over {
             self.shadow_cascades = None;
         }
         let (shadow_vp, shadow_splits, shadow_params) =
@@ -2483,7 +2503,9 @@ impl Renderer {
         // Rain and snow stay off what has a roof over it: while any falls under
         // the sky, a top-down depth map about the camera, redrawn as it moves
         // off-centre and now and then.
-        let reach = if env.sky && std::env::var_os("VRM_NO_PRECIP_OCCLUSION").is_none() {
+        let reach = if over {
+            0.0
+        } else if env.sky && std::env::var_os("VRM_NO_PRECIP_OCCLUSION").is_none() {
             self.precip.reach()
         } else {
             0.0
@@ -2504,7 +2526,7 @@ impl Renderer {
                     occlusion_fresh = true;
                 }
             }
-        } else {
+        } else if !over {
             self.precip_map = None;
         }
         self.precip.set_occlusion(
@@ -2994,7 +3016,7 @@ impl Renderer {
             self.shadow_passes(&mut enc, scene, &layers, update, &shadow_skin);
         }
         // With image space effects the frame goes through the post pass.
-        let pre_post = (!scene.post.is_neutral() || (self.gamma - 1.).abs() > 0.001)
+        let pre_post = (!over && (!scene.post.is_neutral() || (self.gamma - 1.).abs() > 0.001))
             .then(|| self.post.target(&self.device, self.width, self.height));
         {
             let c = env.clear_color;
@@ -3005,12 +3027,16 @@ impl Renderer {
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: c.x as f64,
-                            g: c.y as f64,
-                            b: c.z as f64,
-                            a: 1.0,
-                        }),
+                        load: if over {
+                            wgpu::LoadOp::Load
+                        } else {
+                            wgpu::LoadOp::Clear(wgpu::Color {
+                                r: c.x as f64,
+                                g: c.y as f64,
+                                b: c.z as f64,
+                                a: 1.0,
+                            })
+                        },
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -3207,7 +3233,9 @@ impl Renderer {
             drop(draw);
             stats.draws += skinned_draws + grass_draws;
             stats.instances += grass_instances;
-            self.precip.draw(&self.queue, &mut pass, self.time, env.sky);
+            if !over {
+                self.precip.draw(&self.queue, &mut pass, self.time, env.sky);
+            }
         }
         if scene.first_person.is_some() && (!first_skin.is_empty() || !first_draws.is_empty()) {
             let projection = camera.first_person_proj(self.width as f32 / self.height as f32);
@@ -3290,7 +3318,9 @@ impl Renderer {
                 .draw(&self.queue, &mut enc, target, &scene.post, self.gamma);
         }
         self.queue.submit([enc.finish()]);
-        self.stats = stats;
+        if !over {
+            self.stats = stats;
+        }
     }
 
     /// Render the shadow casters into each cascade: opaque objects and actors'
