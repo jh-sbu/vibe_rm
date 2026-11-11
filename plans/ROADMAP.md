@@ -1959,10 +1959,15 @@ readings are applied (see Done; autotest23 and autotest24's on
     engine, the view cone test first read the observer about 1 unit from
     the player at every spot: the player's `MoveTo` dropped its offsets
     (fixed 2026-11-10). Run again, ours reads 300 off and agrees on the
-    edge, but differs in two ways still to look into: the observer sees
-    the sneaking player behind it at 150 (SE didn't), and the player's
-    light reads 113.7 against SE's 31.9 (`known_ambiguities/detection.md`,
-    light level's scale).
+    edge, but differs in two ways still to look into. The observer sees
+    the sneaking player behind it at 150 in some runs (SE didn't): it
+    greets the player (`HELO`, within `GREETING_DISTANCE` 200, no source)
+    and a barking NPC turns to face the player, so the player is in its
+    cone. Ours greets an undetected player behind it; whether SE needs
+    detection to greet, and its greeting distance, are open (nothing in
+    Skyrim.esm sets one; `fAIGreetingTimer` and `fRandomizeHelloTimer`
+    are there). And the player's light reads 113.7 against SE's 31.9
+    (`known_ambiguities/detection.md`, light level's scale).
   - Built and waiting for the user's run: `loadscreens`
     (`plans/loading-screen.md`), `crafting1` (`plans/crafting.md`) and
     `spell-visuals` (`plans/spell-visuals.md`, Pending SE validation; its
