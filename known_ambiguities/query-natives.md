@@ -12,7 +12,7 @@ GetEditorLocation delegates to the existing location index. Skyrim SE (autotest2
 
 ## current
 
-GetCurrentLocation uses runtime cell, actor schedule, explicit moved or created place, then editor lookup. Public documentation mentions navmesh-dependent None results for airborne dragons; that state is not yet tracked. A created item taken into the player's inventory by `AddItem(ref)` kept both the current and editor locations it had on the floor (autotest23); ours: compare. `Location.IsLoaded` read True for the player's location and its hold, False for other cities and dungeons (autotest23).
+GetCurrentLocation uses runtime cell, actor schedule, explicit moved or created place, then editor lookup. Public documentation mentions navmesh-dependent None results for airborne dragons; that state is not yet tracked. A created item taken into the player's inventory by `AddItem(ref)` kept both the current and editor locations it had on the floor (autotest23); ours agrees, as taking a reference only disables it and leaves its place. `Location.IsLoaded` read True for the player's location and its hold, False for other cities and dungeons (autotest23).
 
 ## alive
 

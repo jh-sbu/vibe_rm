@@ -208,8 +208,11 @@ locations name it.
   (`mod_crime_gold`), so paying off a bounty leaves it (autotest21 agrees).
   `GetCrimeGold*` with no faction (and no crime faction on the subject) are
   0: in the game, the player owing 70 to one faction in a cell of no hold
-  didn't give 70 (`test-mod autotest22`). Whether it reads the hold the
-  player stands in is open, so we give 0.
+  didn't give 70 (`test-mod autotest22`). Nor does it read the hold the
+  player stands in: with bounties of 7 in Whiterun and 3 in the Rift it
+  read 0 in our test cell (location Whiterun Hold) and outdoors near
+  Riverwood (autotest23, `research/autotest23.md`, CellLocation and
+  Outdoors). Ours gives 0: agrees.
 - Unsupported, failing whatever they are compared with: `GetCrime` (122),
   `IsPCAMurderer` (176),
   `GetPCFactionMurder` (195), `GetPCFactionAttack` (199). Unconfirmed: what
@@ -287,6 +290,13 @@ locations name it.
   they unload.
 - Attack on Sight from a bounty of 1000 (`ATTACK_ON_SIGHT_GOLD`; UESP's
   murder entry). Guards of a faction without Arrest attack at any bounty.
+  Skyrim SE (autotest24, `research/autotest24.md`, AttackOnSightGuard): an
+  `IsGuard` guard of our own faction with Arrest and Attack on Sight stood
+  off at bounty 0, and at 999 and 1000 came to 180-240 units from the
+  player without turning hostile in 6 s (an arrest approach; it has no
+  voice, so it couldn't speak). Not settled: whether it attacks later, or
+  only in a hold of its own (our cell's location is Whiterun Hold, not its
+  faction's). The threshold is kept.
 - Resisting (the fragment, or the arrest conversation ending without the
   bounty settled and not on a goodbye line, so "never mind" lets the player
   go) makes the faction's guards attack until it is paid; only guards, not

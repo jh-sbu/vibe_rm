@@ -48,10 +48,16 @@ secret links.
   → Gerdur unread. `GerdurHod`'s `RELA` names Gerdur as its parent and Hod
   as its child, with the Spouse association. So it is true when the
   subject is the `RELA` parent end of a link with the actor given,
-  whatever the association; ours does this (2026-11-07). With no actor
-  given (the ghost quests' topics, `WIKill0GhostTopic`), ours applies the
-  same rule to anyone; unobserved. Frodnar killed, Gerdur's family and
-  parent relationship to him stayed True: dead relatives count.
+  whatever the association; ours does this (2026-11-07). Frodnar killed,
+  Gerdur's family and parent relationship to him stayed True: dead
+  relatives count. With no actor given, the Papyrus natives (autotest23,
+  `research/autotest23.md`, ParentNone): `HasParentRelationship(None)`
+  False for Gerdur, Frodnar, Hod and an NPC with no relationships;
+  `HasFamilyRelationship(None)` True for the three with family, False for
+  the other. Ours agrees. The condition with no actor (the ghost quests'
+  topics, `WIKill0GhostTopic`) wasn't read: ours applies the parent rule
+  to anyone there, which the native's False doesn't settle, since the
+  condition and the native may treat a missing actor differently.
 - Secret relationships: the flag layouts are known, but the consulted
   sources do not settle which social behaviors suppress knowledge of the
   relationship, or whether direct family/association/rank/extreme queries

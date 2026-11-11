@@ -30,8 +30,12 @@ Implemented in `src/condition/mod.rs` on the engine's state: `GetCombatState`
   bash also carries.
 - `IsShieldOut` is a shield in the left hand while weapons are drawn; a
   sheathed shield is put away. The UESP pages give the function's name only.
+  Skyrim SE read 1 for an NPC fighting with a shield drawn (autotest23,
+  `research/autotest23.md`, DrawnHands); sheathed is unread.
 - `IsTorchOut` is a torch held in the left hand, drawn or not. The engine has
   no separate lit state, so a torch counts whether or not it is lit.
+  Skyrim SE read 1 for an NPC's torch sheathed (autotest22) and drawn in
+  combat (autotest23, DrawnHands); ours agrees.
 
 ## Combat groups, lethal intent and assistance
 

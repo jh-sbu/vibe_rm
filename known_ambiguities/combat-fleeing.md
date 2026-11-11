@@ -161,8 +161,9 @@ flee at 18% here, and ours still would: differs, the cause open.
     [Skyrim-era settings list](https://pastebin.com/pKz1u9Fg)
     report `fCombatDialogueFleeMinElapsedTime` / `MaxElapsedTime` as 3 / 5 seconds.
     Reading the installed base plugins with `vrm-tool gmst <Data>
-    fCombatDialogueFlee` (2026-10-16) found no matching overrides. The 3 / 5
-    defaults therefore come from public lists, not a new runtime measurement.
+    fCombatDialogueFlee` (2026-10-16) found no matching overrides. Skyrim SE
+    read 3 / 5 and `fCombatDialogueFleeDistanceMult` 1 (autotest23,
+    `research/autotest23.md`, GameSettings), so the defaults hold.
 
     Those sources establish the timer and settings, but leave its scheduling
     unresolved: when it first expires, the distribution between minimum and
@@ -228,8 +229,11 @@ flee at 18% here, and ours still would: differs, the cause open.
     (`fCombatDetectionLostRemoveTime` 30, `...LostRemoveDistance` 4096,
     `...LostRemoveDistanceTime` 60, `...LostTimeLimit` 10,
     `fCombatDetectionLowPriorityDistance` 2048), without explanation; neither
-    setting is in the base plugins. Those establish names and
-    reported defaults, not a removal algorithm. They do not resolve whether
+    setting is in the base plugins. Skyrim SE read
+    `fCombatDetectionFleeingLostRemoveTime` and `fCombatDetectionLostRemoveTime`
+    30 and `fCombatLowFleeingTargetHitPercent` 0.25 (autotest23,
+    `research/autotest23.md`, GameSettings), so Ordinator's 45 is its own
+    change. Those establish names and defaults, not a removal algorithm. They do not resolve whether
     "fleeing" in the removal timer refers to the observer, the target, or a
     combat group's state; when the timer starts or resets; how renewed detection
     or hits affect it; or how it combines with the other lost-target timers.

@@ -47,14 +47,19 @@ unverified in Skyrim SE.
 - `GetTimeDead` unit: game hours since death (`Engine::game_hours_total`) is
   still what we return, though the game's isn't game hours (above); kept until
   a follow-up reading tells real minutes from tenths of a game hour. No
-  vanilla comparison settles it (see above). Living subjects, and those dead before the game (placed dead, or
+  vanilla comparison settles it (see above). autotest23 and autotest24
+  (`research/autotest23.md`, `autotest24.md`) both crashed SE before
+  reading it again, so the unit is still open. Living subjects, and those dead before the game (placed dead, or
   dead in a loaded save), have no value and fail the condition.
 - `IsKillerObject(FormList)`: the subject's killer is an actor whose
   reference or base the list names. In the game (`test-mod autotest22`,
   `research/autotest22.md`) it was false run on the killer with a list of
   the victim's base or reference, which rules out "the subject killed one of
   these". The reading as `IsKiller` (run on the victim) is inferred, not
-  observed.
+  observed: run on the dead victim with a list of the killer's base, then
+  of its reference, it crashed SE in autotest24 (`research/autotest24.md`;
+  autotest23's TimeDead, which began the same way, crashed too). The kill
+  and the probe ran in one test, so blaming the probe is inference.
 - `GetCauseofDeath`: unsupported; the meaning of its values is not in any source
   checked (no UESP page, no cause enum in CommonLibSSE).
 - `GetKillingBlowLimb`: unsupported; the body part of the killing blow isn't kept

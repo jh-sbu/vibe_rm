@@ -121,7 +121,12 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
   one.
 - **Effects end** on the dead (except No Death Dispel) and on actors
   unloaded; abilities come back when they load. Finished effects' scripts are
-  kept 30 real seconds for `OnEffectFinish`.
+  kept 30 real seconds for `OnEffectFinish`. Skyrim SE (autotest23,
+  `research/autotest23.md`, EffectsOnDead): an NPC's Invisibility read 0 a
+  second after its death, but `HasMagicEffectWithKeyword(MagicCloak)` was
+  still True 1 s and 4 s after it. The cloak may stay on the dead, or be
+  reported as `HasMagicEffect` reports effects whose conditions fail
+  (autotest21); unsettled.
 - **Constant enchantments** of what an actor wears apply while worn (a ring of
   Fortify Health +20). **Weapon enchantments** land with each blow (and a
   bow's with each shot) with no charge used; this hasn't been seen in a fight
@@ -133,7 +138,10 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
   known says "You already know Flames" (`sAlreadyKnown` and the name) and
   the tome stays. A tome in the world opens as a book when activated, as
   other books do. Spells Learned counts every spell (type 0) the player
-  gains, from tomes, scripts or the console.
+  gains, from tomes, scripts or the console. Skyrim SE (autotest23,
+  `research/autotest23.md`, SpellsLearned): a script's `AddSpell` counts
+  (0, 1, 2 for a vanilla and a plugin spell) and `RemoveSpell` doesn't take
+  it back; ours agrees. Tomes and the console weren't read.
 - **Calm, fear, frenzy, rally** (archetypes 6, 7, 8, 38; turn undead 24
   as fear) hold the effect's actor value (aggression, confidence) at a
   value of their own (above). Two such effects on one value stack as holds
@@ -145,7 +153,16 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
   Magnitude entries) and, for the hostile ones, after magic resistance, so
   a giant's resistance brings Fear's 9 down to 6. Whether resistance
   touches the cap in the game isn't published. A target too strong for it
-  is still struck by a hostile spell (it fights its caster).
+  is still struck by a hostile spell (it fights its caster). Skyrim SE
+  (autotest23 and autotest24, Holds): the vanilla Calm and Fury spells
+  cast by script from the player didn't land at 150 or 550 units (no
+  event, no change), and Fear landed (the effect event) on level 1 and
+  level 8 NPCs fighting a held target without lowering their confidence (3)
+  or making them flee in 8 s. Both were within the spell's cap (level 9:
+  UESP *Skyrim:Fear (spell)*, revision 1791327), so ours would make them
+  flee. Whether this is
+  the script cast or the effect isn't known: the next probe is target-actor
+  copies of the effects, as worked for Disarm (`plans/ROADMAP.md`).
 - **`IsUndead`** is the subject having the `ActorTypeUndead` keyword; the
   game caches its own reading (CommonLibSSE `CalculateCachedOwnerIsUndead`),
   whose rule isn't public. **`IsCommandedActor`**: a summoned actor.
@@ -199,14 +216,16 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
   Become Ethereal: no damage dealt or taken, falls and poison included;
   "fighting, opening containers, or talking" ends it; Unrelenting Force
   doesn't move them): blows and bashes to or from an ethereal actor
-  don't land at all (no `OnHit`, no impact, no poison dose), where the
-  game might send the hit with no damage; magic takes none of its health
+  don't land at all (no `OnHit`, no impact, no poison dose), as Skyrim SE
+  showed (autotest23, `research/autotest23.md`, Ethereal: a fighter's
+  blows on an ethereal NPC took no health and sent no `OnHit`; whether
+  impacts and poison are skipped too wasn't read); magic takes none of its health
   (other values still drop) and doesn't stagger it; scripts'
   `DamageActorValue` still hurts (UESP's exceptions are scripted). The
   player attacking, casting or activating anything ends it; shouts,
   powers and drinking potions don't (UESP: powers fail, "most potions
   don't work": neither is modelled). NPCs go on fighting an ethereal
-  player.
+  player, as in SE (autotest23: 130 to 255 units off, no health lost).
 
 ## Slow Time
 
@@ -217,28 +236,25 @@ multiplier; the records (`VoiceSlowTime1`-`3`: archetype 37, magnitude 0.3,
 0.2, 0.1, duration 8, 12, 16 s; the effect's script only applies the image
 space modifiers).
 
-- Unconfirmed: the magnitude is taken as the world's share of real speed,
-  the slowest of any active effect winning. Actors' and projectiles'
-  updates, physics, particles, triggers, hazards and animated objects run at
-  that share, and so does the game clock; the player (movement, attacks,
-  casting, shouting), the effects' own timers and durations and scripts'
-  waits stay in real time. The game may instead scale the effects' durations, the
-  waits, or the player's speed through a separate player multiplier (the
-  camera shot record has separate player, target and global time
-  multipliers). The change is immediate, not eased in or out.
-- Skyrim SE (autotest21, `research/autotest21.md`, SlowTime; word 1,
-  magnitude 0.3, cast by script on the player): a bowl falling from rest
-  covered 233.9 units a real second over 0.4 s before and 58.5 under Slow
-  Time, so the world ran at about 0.5 (a fall goes with t²).
-  `Utility.Wait(1.0)` took 1.04 real s and the effect lasted 7.7 real s
-  (its 8 s): waits and durations count real time, as ours. 54.1 game
-  seconds passed in those 7.7 s at timescale 20, about 0.35 of real time:
-  the game clock slows (ours since 2026-11-07, at the world's share). After
-  the effect ended the bowl still fell at 57.4, so the slowdown outlasted
-  `HasMagicEffect`. The readings don't agree on the share (0.5 from the
-  fall, 0.35 from the clock, 0.3 the magnitude); ours keeps the magnitude
-  and ends with the effect. To settle: the fall rate and the game clock
-  sampled each second through and after the effect, for each word.
+- The magnitude is the world's share of real speed, the slowest of any
+  active effect winning. Actors' and projectiles' updates, physics,
+  particles, triggers, hazards and animated objects run at that share, and
+  so does the game clock; the player (movement, attacks, casting,
+  shouting), the effects' own timers and durations and scripts' waits stay
+  in real time. Skyrim SE (autotest23, `research/autotest23.md`, SlowTime;
+  each word cast by script on the player): a falling bowl read the world at
+  0.315, 0.210 and 0.106 and the game clock at 0.298, 0.199 and 0.103 for
+  magnitudes 0.3, 0.2 and 0.1, for the effect's 8, 12 and 16 real seconds.
+  autotest21's 0.5 and 0.35, and its slowdown outlasting the effect, came
+  from samples straddling the start and the end. `Utility.Wait` and the
+  duration count real time (autotest21). Ours agrees.
+- Still a choice: the change is immediate, not eased in or out. SE's first
+  sample (from 0.05 s after the cast) read about a third of normal speed
+  for every word and the one straddling the end read in between, so the
+  change seems to take part of a second at either end; the sampling can't
+  give its shape. The player's own speed under it (a separate player
+  multiplier, as the camera shot record's player, target and global time
+  multipliers suggest) wasn't read.
 
 ## Drinking and eating sounds
 

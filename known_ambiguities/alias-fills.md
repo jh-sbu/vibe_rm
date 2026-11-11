@@ -94,7 +94,11 @@ deleted, its 3D still loaded, 2 s after each step.
   out on stop is our choice.
 - What `ALNT` other than 0 would mean, and how far "near" reaches.
 - The create level (`ALCL`) is ignored; whether it changes a leveled actor's
-  pick isn't known.
+  pick isn't known. Skyrim SE (autotest23, `research/autotest23.md`,
+  CreateLevel; player level 6, five picks of `LCharBanditMelee1H` each):
+  easy gave four level 1 and one level 5, very hard three level 5 and two
+  level 1. That leans to harder picks at very hard, but five picks are too
+  few to give a rule.
 - Which of several matching references the game takes without "Closest" (the
   first placed of two in the game; here the first persistent one in load
   order, else the first loaded), and whether it searches anything beyond

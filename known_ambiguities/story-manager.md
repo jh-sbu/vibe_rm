@@ -136,7 +136,11 @@ Script event nodes of ours under the game's script event root:
   the player's crimes (CK wiki "Crime"), so it is never 2 (reported) here,
   and nothing else is counted. Unobserved: whether a killer fighting the
   victim (a bandit killing a guard), an enemy faction or a teammate of the
-  player's changes it.
+  player's changes it. An essential actor's `Kill(None)` or
+  `Kill(player)` puts it in bleedout and sends no `KILL`; a plain NPC's
+  `Kill(None)` sends `KILL` with killer None (Skyrim SE, autotest23,
+  `research/autotest23.md`, EssentialKill; autotest22's lone `KILL` with no
+  killer came from something else). Ours agrees.
 - Bodies: a living, calm humanoid within 1000 units with nothing between
   its eyes and the body (once a second), once for each finder and body.
 - Crime events' members beyond those: the other references R1, R2 in

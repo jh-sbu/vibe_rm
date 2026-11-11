@@ -85,8 +85,16 @@ stealth points.
   point with nothing in between (the renderer's falloff), times 100, at most
   150. The game's scale, and what `iLightLevelInteriorMod` and
   `iLightLevelMax` do, are unknown.
-- **Sight**: a view cone of 190 degrees (invented) from 110 units above the
-  feet (as for finding bodies), with nothing in between. Sleepers (in a bed)
+- **Sight**: a view cone of 190 degrees (95 each side; first invented)
+  from 110 units above the feet (as for finding bodies), with nothing in
+  between. Skyrim SE (autotest24, `research/autotest24.md`, ViewCone: an
+  observer facing north, the player sneaking 300 units off, light 31.9,
+  Sneak 15 both) saw the player at 80° and 90° off its facing and not at
+  100° to 180°, so the edge lies between 90° and 100° for this case; ours
+  agrees. Whether the edge moves with distance, light or skill wasn't read.
+  In ours the observer also saw the player behind it at 150 in 3 of 11
+  runs (SE: not), when it greeted the player and turned to them; whether
+  SE's greeting needs detection is open (`plans/ROADMAP.md`). Sleepers (in a bed)
   see nothing; their skill is otherwise unchanged (`fSneakSleepBonus` is 0).
 - Defaults the plugins lack, from UESP / CK wiki:
   `fSneakEquippedWeightBase` 12, `fSneakEquippedWeightMult` 0.5,
@@ -119,8 +127,9 @@ stealth points.
 - **A lost target that fled**: a searcher that has lost its target, and has
   seen it fleeing at any time during the search, gives up (`LostToNormal`)
   once it hasn't detected it at all for
-  `fCombatDetectionFleeingLostRemoveTime` (30 s). The value comes from a
-  settings table on the UESP talk page
+  `fCombatDetectionFleeingLostRemoveTime` (30 s, as Skyrim SE read it:
+  autotest23, `research/autotest23.md`, GameSettings). The value was first
+  taken from a settings table on the UESP talk page
   [Skyrim talk:Sneak/Archive 2, revision 2224198](https://en.uesp.net/w/index.php?oldid=2224198)
   (discussion, not documentation); what the setting does is read from its
   name. Open: whether "fleeing" means the target is fleeing when lost or
