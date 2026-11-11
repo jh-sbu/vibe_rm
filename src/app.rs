@@ -833,6 +833,7 @@ impl ApplicationHandler for App {
             && s.grabbed
             && !s.menu_takes_mouse()
             && !s.engine.disabled_controls.looking
+            && !s.engine.player_held()
         {
             let sens = s.engine.settings.get("fMouseHeadingSensitivity") * 0.2;
             let invert = if s.engine.settings.enabled("bInvertYValues") {

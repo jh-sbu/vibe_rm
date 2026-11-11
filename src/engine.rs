@@ -3382,7 +3382,7 @@ impl Engine {
             input = self.test_walk_input;
         }
         let off = self.disabled_controls;
-        if off.movement {
+        if off.movement || self.player_held() {
             input = crate::player::MoveInput::default();
         }
         if off.fighting {

@@ -981,6 +981,8 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         // GetUnconscious: `SetUnconscious`'s flag, not bleeding out (test-mod
         // autotest22).
         242 => b(subject.is_some_and(|s| e.world_state.unconscious.contains(&s))),
+        // GetRestrained: `SetRestrained`'s flag.
+        244 => b(subject.is_some_and(|s| e.world_state.restrained.contains(&s))),
         // IsIntimidatedbyPlayer, IsBribedbyPlayer: `SetIntimidated` /
         // `SetBribed`'s flags.
         116 => b(subject.is_some_and(|s| e.world_state.intimidated.contains(&s))),

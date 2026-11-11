@@ -707,7 +707,20 @@ fn path_to_reference_waits_for_arrival_and_keep_offset_steers() {
     e.update_script_moves(0.016);
     let goal = e.actor_ref(ACTOR).unwrap().exec.goal.unwrap();
     assert!((goal.centre - glam::Vec3::new(1200.0, 0.0, 0.0)).length() < 1.0);
+    // Restrained, it is still moved by the offset (CK wiki), but held once
+    // that is cleared.
+    call(&mut e, "actor", "setrestrained", ACTOR, &[]);
+    assert!(!e.held_in_place(ACTOR));
     call(&mut e, "actor", "clearkeepoffsetfromactor", ACTOR, &[]);
+    assert!(e.held_in_place(ACTOR));
+    call(
+        &mut e,
+        "actor",
+        "setrestrained",
+        ACTOR,
+        &[Value::Bool(false)],
+    );
+    assert!(!e.held_in_place(ACTOR));
     assert!(e.script_moves.keep_offsets.is_empty());
     // Head tracking off, then on again.
     call(
@@ -725,6 +738,41 @@ fn path_to_reference_waits_for_arrival_and_keep_offset_steers() {
     assert!(e.world_state.dont_move.contains(&ACTOR));
     call(&mut e, "actor", "setdontmove", ACTOR, &[Value::Bool(false)]);
     assert!(e.world_state.dont_move.is_empty());
+    // Restrained and unconscious exclude each other (CK wiki).
+    call(&mut e, "actor", "setunconscious", ACTOR, &[]);
+    call(&mut e, "actor", "setrestrained", ACTOR, &[]);
+    assert!(e.world_state.restrained.contains(&ACTOR));
+    assert!(!e.world_state.unconscious.contains(&ACTOR));
+    call(&mut e, "actor", "setunconscious", ACTOR, &[]);
+    assert!(!e.world_state.restrained.contains(&ACTOR));
+    // The player held: no moving, camera switching or looking.
+    assert!(!e.player_held());
+    call(
+        &mut e,
+        "actor",
+        "setrestrained",
+        crate::engine::PLAYER_REF,
+        &[],
+    );
+    assert!(e.player_held());
+    let third = e.third_person;
+    e.toggle_player_view();
+    assert_eq!(e.third_person, third);
+    call(
+        &mut e,
+        "actor",
+        "setrestrained",
+        crate::engine::PLAYER_REF,
+        &[Value::Bool(false)],
+    );
+    call(
+        &mut e,
+        "actor",
+        "setdontmove",
+        crate::engine::PLAYER_REF,
+        &[],
+    );
+    assert!(e.player_held());
 }
 
 #[test]

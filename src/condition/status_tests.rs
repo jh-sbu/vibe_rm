@@ -860,4 +860,8 @@ fn is_running_follows_the_players_gait_and_unconscious_the_flag() {
     assert!(is(&e, HUMAN_REF, 242, 0, 0.0));
     e.world_state.unconscious.insert(HUMAN_REF);
     assert!(is(&e, HUMAN_REF, 242, 0, 1.0));
+    // GetRestrained: `SetRestrained`'s flag.
+    assert!(is(&e, HUMAN_REF, 244, 0, 0.0));
+    e.world_state.restrained.insert(HUMAN_REF);
+    assert!(is(&e, HUMAN_REF, 244, 0, 1.0));
 }

@@ -1702,7 +1702,9 @@ impl Engine {
 
     /// User POV input respects the independent script camera locks.
     pub fn toggle_player_view(&mut self) {
-        if !self.disabled_controls.camera_switch_disabled() && self.first_person_furniture.is_none()
+        if !self.disabled_controls.camera_switch_disabled()
+            && !self.player_held()
+            && self.first_person_furniture.is_none()
         {
             self.set_third_person(!self.third_person);
         }
@@ -1711,7 +1713,9 @@ impl Engine {
     /// Scroll through the closest third-person distance into first person,
     /// and out from first person to the closest third-person distance.
     pub fn zoom_third_person(&mut self, by: f32) {
-        if self.disabled_controls.camera_switch_disabled() || self.first_person_furniture.is_some()
+        if self.disabled_controls.camera_switch_disabled()
+            || self.player_held()
+            || self.first_person_furniture.is_some()
         {
             return;
         }

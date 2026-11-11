@@ -40,10 +40,16 @@ pub struct WorldState {
     /// `SetHeadTracking(false)`: actors that don't turn their heads to look
     /// (not saved).
     pub no_head_tracking: std::collections::HashSet<FormId>,
-    /// `SetDontMove(true)`: actors held where they stand. They turn, idle
-    /// and fight in place, and scripts can still move them
-    /// (`known_ambiguities/dont-move.md`; not saved).
+    /// `SetDontMove(true)`: actors held where they stand and not pushed
+    /// about (CK wiki). They turn, idle and fight in place, and scripts can
+    /// still move them (`known_ambiguities/actor-holds.md`; not saved).
     pub dont_move: std::collections::HashSet<FormId>,
+    /// `SetRestrained(true)` (`GetRestrained`): actors that don't move from
+    /// where they are but still pick packages, detect and talk; script
+    /// movement such as `KeepOffsetFromActor` still moves them, and the flag
+    /// clears `SetUnconscious`'s and the other way round (CK wiki; not
+    /// saved).
+    pub restrained: std::collections::HashSet<FormId>,
     /// Actors in `StartDeferredKill`'s state: they don't die until
     /// `EndDeferredKill`; the value is who dealt a killing blow meanwhile
     /// (saved in `DFKL`).
@@ -396,6 +402,22 @@ impl Engine {
             Place::Interior(c) => Place::Interior(c),
             Place::Exterior(w, _) => Place::Exterior(w, crate::engine::grid_of(pos.truncate())),
         }
+    }
+
+    /// Whether a loaded actor is held where it stands this frame:
+    /// `SetDontMove`, or `SetRestrained` unless a script's
+    /// `KeepOffsetFromActor` moves it (CK wiki).
+    pub(crate) fn held_in_place(&self, r: FormId) -> bool {
+        self.world_state.dont_move.contains(&r)
+            || (self.world_state.restrained.contains(&r)
+                && !self.script_moves.keep_offsets.contains_key(&r))
+    }
+
+    /// Whether the player is held by `SetDontMove` or `SetRestrained`: no
+    /// moving, switching camera or turning it, the HUD as it was (CK wiki).
+    pub(crate) fn player_held(&self) -> bool {
+        let p = crate::engine::PLAYER_REF;
+        self.world_state.dont_move.contains(&p) || self.world_state.restrained.contains(&p)
     }
 
     /// Move a reference (scripts' `MoveTo`, `SetPosition`, `SetAngle`): to `pos`

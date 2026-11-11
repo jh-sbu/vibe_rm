@@ -4158,6 +4158,15 @@ impl Engine {
             .values()
             .flat_map(|rt| rt.water.iter().copied())
             .collect();
+        // Held where they stand (`SetDontMove`, `SetRestrained`).
+        let held_in_place: std::collections::HashSet<FormId> = self
+            .world_state
+            .dont_move
+            .iter()
+            .chain(&self.world_state.restrained)
+            .copied()
+            .filter(|&r| self.held_in_place(r))
+            .collect();
         let nav = std::mem::take(&mut self.nav);
         let mut furniture = std::mem::take(&mut self.furniture);
         let (lo, vfs) = (&self.lo, &self.vfs);
@@ -4299,7 +4308,7 @@ impl Engine {
                     continue;
                 }
                 let was = a.exec.pos;
-                let kept_in_place = self.world_state.dont_move.contains(&a.ref_id);
+                let kept_in_place = held_in_place.contains(&a.ref_id);
                 a.turn_request = None;
                 if a.exec.combat.is_none() {
                     a.sprinting = false;

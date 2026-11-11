@@ -2290,6 +2290,7 @@ pub fn call(
             if let Some(r) = me {
                 if args.first().is_none_or(|a| a.as_bool()) {
                     e.world_state.unconscious.insert(r);
+                    e.world_state.restrained.remove(&r);
                 } else {
                     e.world_state.unconscious.remove(&r);
                 }
@@ -2455,7 +2456,17 @@ pub fn call(
             }
             none()
         }
-        ("actor", "setrestrained") => none(),
+        ("actor", "setrestrained") => {
+            if let Some(r) = me {
+                if args.first().is_none_or(|a| a.as_bool()) {
+                    e.world_state.restrained.insert(r);
+                    e.world_state.unconscious.remove(&r);
+                } else {
+                    e.world_state.restrained.remove(&r);
+                }
+            }
+            none()
+        }
         ("actor", "setdontmove") => {
             if let Some(r) = me {
                 if args.first().is_none_or(|a| a.as_bool()) {
