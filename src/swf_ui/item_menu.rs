@@ -253,6 +253,8 @@ pub(super) struct ItemMenu {
     to_tween: bool,
     /// Charging: the weapon, and the souls listed on the card (gem, soul).
     charging: Option<(FormId, Vec<(FormId, u8)>)>,
+    /// The viewport's size, for the 3D item's place.
+    pub size: (u32, u32),
 }
 
 pub(super) fn object(fields: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
@@ -404,6 +406,7 @@ impl ItemMenu {
             closing: false,
             to_tween: false,
             charging: None,
+            size,
         };
         m.update(engine);
         if m.shows == Shown::Inventory && !indices.is_empty() {
@@ -812,10 +815,24 @@ impl ItemMenu {
                 self.to_tween = true;
             }
             "CloseTweenMenu" => self.closing = true,
-            // The item's model (not shown yet), a disabled item, the
+            // The highlighted item's model beside the card, or none.
+            "UpdateItem3D" => {
+                let form = matches!(call.args.first(), Some(Value::Bool(true)))
+                    .then(|| self.selected())
+                    .flatten()
+                    .map(|r| r.item.item);
+                super::show_item_3d(
+                    engine,
+                    &self.menu,
+                    &format!("{M}.MouseRotationRect"),
+                    self.size,
+                    form,
+                );
+            }
+            // Turning and zooming the model (not yet), a disabled item, the
             // quantity slider: nothing to do.
-            "UpdateItem3D" | "StartMouseRotation" | "StopMouseRotation" | "ZoomItemModel"
-            | "DisabledItemSelect" | "QuantitySliderOpen" => {}
+            "StartMouseRotation" | "StopMouseRotation" | "ZoomItemModel" | "DisabledItemSelect"
+            | "QuantitySliderOpen" => {}
             _ => return false,
         }
         true

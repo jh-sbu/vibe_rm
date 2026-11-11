@@ -372,6 +372,48 @@ impl Menu {
             })
     }
 
+    /// A clip's rect (left, top, right, bottom) in viewport pixels: its
+    /// `_x`, `_y`, `_width` and `_height` through its parents' positions and
+    /// scales (not rotations) and the stage's transform. None when a value
+    /// along the path isn't a number.
+    pub fn pixel_rect(&self, path: &str) -> Option<(f64, f64, f64, f64)> {
+        let num = |p: String| match self.get(&p) {
+            Value::Number(n) if n.is_finite() => Some(n),
+            _ => None,
+        };
+        let (mut x, mut y) = (num(format!("{path}._x"))?, num(format!("{path}._y"))?);
+        let (mut w, mut h) = (
+            num(format!("{path}._width"))?,
+            num(format!("{path}._height"))?,
+        );
+        let parts: Vec<&str> = path.split('.').collect();
+        for i in (1..parts.len().saturating_sub(1)).rev() {
+            let parent = parts[..=i].join(".");
+            let sx = num(format!("{parent}._xscale"))? / 100.0;
+            let sy = num(format!("{parent}._yscale"))? / 100.0;
+            x = num(format!("{parent}._x"))? + x * sx;
+            y = num(format!("{parent}._y"))? + y * sy;
+            w *= sx;
+            h *= sy;
+        }
+        Some(
+            self.player
+                .lock()
+                .unwrap()
+                .mutate_with_update_context(|context| {
+                    let m = context.stage.view_matrix();
+                    let a = m * swf::Point::from_pixels(x, y);
+                    let b = m * swf::Point::from_pixels(x + w, y + h);
+                    (
+                        a.x.to_pixels(),
+                        a.y.to_pixels(),
+                        b.x.to_pixels(),
+                        b.y.to_pixels(),
+                    )
+                }),
+        )
+    }
+
     /// A variable's value; objects come back as null.
     pub fn get(&self, path: &str) -> Value {
         self.player.lock().unwrap().get_avm1_variable(path)

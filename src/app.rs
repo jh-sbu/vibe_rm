@@ -302,11 +302,12 @@ pub fn run(opts: Options) -> Result<()> {
                         },
                         engine.view_camera(),
                     );
+                    let item = &engine.item_view;
                     let pixels = engine.renderer.render_to_image(
                         scene,
                         &camera,
                         (opts.width, opts.height),
-                        |_, _| {},
+                        |r, view| draw_item(r, item, view),
                     );
                     let stem = path.with_extension("");
                     write_png(
@@ -479,11 +480,13 @@ pub fn run(opts: Options) -> Result<()> {
             },
             engine.view_camera(),
         );
+        let item = &engine.item_view;
         let pixels = engine.renderer.render_to_image(
             scene,
             &camera,
             (opts.width, opts.height),
             |r, view| {
+                draw_item(r, item, view);
                 if let Some(swf) = &mut swf {
                     swf.draw(view, hud_visible);
                 }
@@ -528,6 +531,17 @@ fn frame_parts<'a>(
         .or_else(|| crate::map_view::frame_parts(map, menu))
         .or_else(|| crate::stats_view::frame_parts(stats, menu))
         .unwrap_or((scene, camera))
+}
+
+/// The item menus' and crafting's 3D item over the frame, when one is shown.
+fn draw_item(
+    renderer: &mut crate::render::Renderer,
+    item: &Option<crate::item_view::ItemView>,
+    view: &wgpu::TextureView,
+) {
+    if let Some((scene, camera)) = crate::item_view::frame_parts(item) {
+        renderer.render_over(scene, &camera, view);
+    }
 }
 
 /// Nothing but black, behind the main menu (`known_ambiguities/main-menu.md`).
@@ -1043,6 +1057,7 @@ impl ApplicationHandler for App {
                     s.engine.view_camera(),
                 );
                 s.engine.renderer.render(scene, &camera, &view);
+                draw_item(&mut s.engine.renderer, &s.engine.item_view, &view);
                 timing.next("ui.draw");
                 if let Some(swf) = &mut s.swf {
                     swf.draw(&view, crate::swf_ui::SwfUi::visible(&s.engine));

@@ -239,6 +239,7 @@ impl SwfUi {
         }
         if let Some(items) = &mut self.items {
             items.menu.resize(width, height);
+            items.size = (width, height);
         }
         if let Some(journal) = &mut self.journal {
             journal.menu.resize(width, height);
@@ -301,6 +302,7 @@ impl SwfUi {
         self.training_menu(engine, dt);
         self.race_menu(engine, dt);
         self.crafting_menu(engine, dt);
+        self.item_3d(engine, dt);
         self.stats_menu(engine, dt);
         self.map_menu(engine, dt);
         self.dialogue_menu(engine, dt);
@@ -478,6 +480,21 @@ impl SwfUi {
             if !items.answer(engine, &call, &mut self.item_indices) {
                 answer(&items.menu, engine, &call);
             }
+        }
+    }
+
+    /// The 3D item: gone with the item and crafting menus, hidden while the
+    /// inventory fades out, posed for the frame.
+    fn item_3d(&mut self, engine: &mut Engine, dt: Duration) {
+        if self.items.is_none() && self.crafting.is_none() {
+            engine.close_item_3d();
+            return;
+        }
+        if self.items.as_ref().is_some_and(|i| i.closing) {
+            engine.show_item_3d(None);
+        }
+        if let Some(view) = &mut engine.item_view {
+            view.update(dt.as_secs_f32());
         }
     }
 
@@ -2448,6 +2465,32 @@ impl<M: HudMovie> Hud<M> {
 }
 
 /// A key by its winit name (`ArrowRight`, `KeyE`, `Escape`), for `--menu-key`.
+/// Shows `form` as the 3D item (None: nothing), where the movie's clip at
+/// `rect` (its `MouseRotationRect`) stands in a viewport of `size`.
+fn show_item_3d(
+    engine: &mut Engine,
+    menu: &Menu,
+    rect: &str,
+    size: (u32, u32),
+    form: Option<FormId>,
+) {
+    engine.show_item_3d(form);
+    let (w, h) = (size.0.max(1) as f32, size.1.max(1) as f32);
+    if let Some(view) = &mut engine.item_view
+        && let Some((left, top, right, bottom)) = menu.pixel_rect(rect)
+    {
+        view.set_rect(
+            crate::item_view::Rect {
+                left: left as f32 / w,
+                top: top as f32 / h,
+                right: right as f32 / w,
+                bottom: bottom as f32 / h,
+            },
+            w / h,
+        );
+    }
+}
+
 pub fn key_code(name: &str) -> Option<winit::keyboard::KeyCode> {
     use winit::keyboard::KeyCode as K;
     const KEYS: &[K] = &[
