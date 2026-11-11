@@ -1883,29 +1883,6 @@ readings are applied (see Done; autotest23 and autotest24's on
   back (`fDamagedHealthRegenDelay` 0.5; its `Hit` cast never landed, and fire's
   taper would have hidden the answer: use untapered damage); and
   whether NPCs' `HealRateMult` and `StaminaRateMult` count, which ours ignores.
-- Compared (2026-11-07; `research/autotest21.md` and `autotest22.md`,
-  "Compared with ours"). Each was probed by `test-mod autotest23` (run
-  2026-11-10, `research/autotest23.md`; its readings are still to be
-  compared with ours and applied):
-  - Slow Time's share (the fall read 0.5, the clock 0.35) and when time
-    comes back after the effect.
-  - NPCs' enchanted blows' charge (1.92 an enchanted blow in SE, about 3.6
-    ours) and staffs' (sparks about 5.8 a second, ours 14.8), with known
-    skills and the charge read after each hit or second.
-  - NPCs fighting with a staff in the left hand, as SE's did (ours only the
-    right; the cast's hand needs carrying to the graph and effects).
-  - The Vigilant not healing at 45% and 20% with the magicka for it, and
-    not warding; an Average NPC not fleeing at 18% (ours would).
-  - `KILL` for an essential actor's `Kill(None)` (bleedout), which SE seems
-    to send and ours doesn't.
-  - `IsGuard`: what besides the faction or class the hold guards have
-    (their crime faction?).
-  - `GetEditorLocation` of a created reference and the player in a cell
-    with a location.
-  - `GameTimeToString` on a save past its first days: today's date or the
-    start date, and whether the whole days move it.
-  - `HasParentRelationship` with no actor given; relationship ranks 1, 2
-    and 4 bringing help, and a helper helping only allies.
 - Test plugins:
   - Procedure trees (`plans/ai-depth.md`, step 1): probe Simultaneous first/all
     completion, Random repeats and cadence-based Stacked switches, including
@@ -1937,11 +1914,8 @@ readings are applied (see Done; autotest23 and autotest24's on
     Hover/perch completion, flight/landing permissions, CSFL phases, FlightGrab
     release/damage and Shout word/timing (`dragon-flight.md`).
   - `test-mod autotest23`: run 2026-11-10 (`research/autotest23.md`).
-    Its readings are to be compared with ours and applied: `IsGuard`
-    (faction plus crime faction), `GetRelativeAngle`'s sign,
-    `GetXPForNextLevel` reading 0, relationship rank 2 as an ally, staff
-    charge (skill, not `DestructionMod`), 1.919 per enchanted blow, Slow
-    Time, Delete, locations, game settings and the rest. Left for a
+    Its readings were compared with ours and applied on 2026-11-10 (see
+    Done; what still differs is listed above). Left for a
     follow-up batch (its "Faults and open items"): `GetTimeDead`'s unit
     (timescale 1000 crashed SE), the view cone's edge with the observer on
     the floor, Attack on Sight with an `IsGuard` guard, Calm and Fury from
