@@ -829,10 +829,15 @@ impl ItemMenu {
                     form,
                 );
             }
-            // Turning and zooming the model (not yet), a disabled item, the
-            // quantity slider: nothing to do.
-            "StartMouseRotation" | "StopMouseRotation" | "ZoomItemModel" | "DisabledItemSelect"
-            | "QuantitySliderOpen" => {}
+            // The mouse holding the model to turn it, and letting go.
+            "StartMouseRotation" | "StopMouseRotation" => {
+                if let Some(view) = &mut engine.item_view {
+                    view.rotating = call.name == "StartMouseRotation";
+                }
+            }
+            // Zooming the model (not yet), a disabled item, the quantity
+            // slider: nothing to do.
+            "ZoomItemModel" | "DisabledItemSelect" | "QuantitySliderOpen" => {}
             _ => return false,
         }
         true

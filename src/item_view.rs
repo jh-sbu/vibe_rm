@@ -93,6 +93,9 @@ pub struct ItemView {
     aspect: f32,
     /// The player's turn of it about the vertical, radians.
     pub turn: f32,
+    /// The mouse holds it to turn (`StartMouseRotation` to
+    /// `StopMouseRotation`).
+    pub rotating: bool,
 }
 
 /// The camera the item is seen with: at the origin, looking along +Y.
@@ -191,6 +194,7 @@ impl ItemView {
             rect: Rect::DEFAULT,
             aspect: 16.0 / 9.0,
             turn: 0.0,
+            rotating: false,
         }
     }
 
@@ -224,6 +228,15 @@ impl ItemView {
         self.scene
             .dynamic
             .push(Instance::new(s.model.clone(), transform));
+    }
+
+    /// The mouse moved `fraction` of the viewport's width across: while it
+    /// holds the item, a drag across the whole width turns it once round,
+    /// rightward to the right (counterclockwise seen from above).
+    pub fn drag(&mut self, fraction: f32) {
+        if self.rotating {
+            self.turn = (self.turn + fraction * std::f32::consts::TAU) % std::f32::consts::TAU;
+        }
     }
 
     pub fn update(&mut self, _dt: f32) {
@@ -423,6 +436,19 @@ mod tests {
         let blade = marker.rotation * Vec3::Y;
         assert!(blade.y.abs() < 2e-3, "{blade}");
         assert!((blade.x.abs() - blade.z.abs()).abs() < 2e-3, "{blade}");
+    }
+
+    #[test]
+    fn the_mouse_turns_the_item_only_while_it_holds_it() {
+        let mut view = ItemView::new();
+        view.drag(0.25);
+        assert_eq!(view.turn, 0.0);
+        view.rotating = true;
+        view.drag(0.25);
+        assert!((view.turn - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
+        view.rotating = false;
+        view.drag(0.25);
+        assert!((view.turn - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
     }
 
     #[test]

@@ -102,6 +102,9 @@ pub struct SwfUi {
     /// The keyboard's modifiers and the cursor, for the menus' input.
     modifiers: winit::keyboard::ModifiersState,
     pointer: cursor_menu::Pointer,
+    /// The cursor's horizontal motion since the last update, pixels: it
+    /// turns the 3D item while the mouse holds it.
+    turn_dx: f64,
 }
 
 impl SwfUi {
@@ -174,6 +177,7 @@ impl SwfUi {
             size,
             modifiers: Default::default(),
             pointer: Default::default(),
+            turn_dx: 0.0,
         })
     }
 
@@ -493,7 +497,9 @@ impl SwfUi {
         if self.items.as_ref().is_some_and(|i| i.closing) {
             engine.show_item_3d(None);
         }
+        let dx = std::mem::take(&mut self.turn_dx);
         if let Some(view) = &mut engine.item_view {
+            view.drag((dx / self.size.0.max(1) as f64) as f32);
             view.update(dt.as_secs_f32());
         }
     }
@@ -1527,7 +1533,13 @@ impl SwfUi {
     /// Track the pointer even while the console handles input, so closing it
     /// restores the menu cursor at its current position.
     pub fn observe_pointer(&mut self, event: &winit::event::WindowEvent) {
+        let before = self.pointer.visible_position(true, true);
         self.pointer.observe(event);
+        if let (winit::event::WindowEvent::CursorMoved { .. }, Some((x0, _)), Some((x1, _))) =
+            (event, before, self.pointer.visible_position(true, true))
+        {
+            self.turn_dx += x1 - x0;
+        }
     }
 
     /// Draws the cursor after the other UI. True when its texture was submitted,
