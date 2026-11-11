@@ -835,9 +835,14 @@ impl ItemMenu {
                     view.rotating = call.name == "StartMouseRotation";
                 }
             }
-            // Zooming the model (not yet), a disabled item, the quantity
-            // slider: nothing to do.
-            "ZoomItemModel" | "DisabledItemSelect" | "QuantitySliderOpen" => {}
+            // The wheel over the model: up zooms in, down out.
+            "ZoomItemModel" => {
+                if let Some(delta) = number(0).filter(|d| *d != 0.0) {
+                    self.zoom(engine, delta > 0.0);
+                }
+            }
+            // A disabled item, the quantity slider: nothing to do.
+            "DisabledItemSelect" | "QuantitySliderOpen" => {}
             _ => return false,
         }
         true
@@ -924,6 +929,18 @@ impl ItemMenu {
         }
         self.menu
             .callback("AttemptEquip", &[num(slot), Value::Bool(true)]);
+    }
+
+    /// Zooms the 3D item in (or out): the menu fades out while it is in
+    /// (`ToggleMenuFade`, which also stops the lists' input).
+    pub fn zoom(&self, engine: &mut Engine, zoom_in: bool) {
+        if let Some(view) = &mut engine.item_view
+            && view.form().is_some()
+            && view.zoomed != zoom_in
+        {
+            view.zoomed = zoom_in;
+            self.menu.callback("ToggleMenuFade", &[]);
+        }
     }
 
     /// Esc: the inventory fades out as on Tab; the others close on Tab.

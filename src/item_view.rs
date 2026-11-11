@@ -16,6 +16,8 @@ use crate::render::{Camera, Environment, GpuModel, Instance, Projection, Scene};
 
 /// The camera's vertical field of view, degrees.
 const FOV: f32 = 30.0;
+/// How long zooming in or out takes, seconds.
+const ZOOM_SECONDS: f32 = 0.25;
 /// How far ahead of the camera the item's centre stands.
 const DISTANCE: f32 = 300.0;
 /// The item's bounding sphere's diameter, as a share of the rect's width
@@ -41,6 +43,24 @@ impl Rect {
         right: 0.94,
         bottom: 0.55,
     };
+
+    /// Zoomed in: the middle of the frame.
+    pub const ZOOMED: Rect = Rect {
+        left: 0.15,
+        top: 0.0,
+        right: 0.85,
+        bottom: 1.0,
+    };
+
+    fn lerp(&self, to: &Rect, t: f32) -> Rect {
+        let l = |a: f32, b: f32| a + (b - a) * t;
+        Rect {
+            left: l(self.left, to.left),
+            top: l(self.top, to.top),
+            right: l(self.right, to.right),
+            bottom: l(self.bottom, to.bottom),
+        }
+    }
 
     fn centre(&self) -> (f32, f32) {
         (
@@ -96,6 +116,10 @@ pub struct ItemView {
     /// The mouse holds it to turn (`StartMouseRotation` to
     /// `StopMouseRotation`).
     pub rotating: bool,
+    /// Zoomed in (`ZoomItemModel`, the Item Zoom key), and how far in it is
+    /// (0 to 1: CommonLibSSE's `zoomProgress`).
+    pub zoomed: bool,
+    zoom: f32,
 }
 
 /// The camera the item is seen with: at the origin, looking along +Y.
@@ -195,6 +219,8 @@ impl ItemView {
             aspect: 16.0 / 9.0,
             turn: 0.0,
             rotating: false,
+            zoomed: false,
+            zoom: 0.0,
         }
     }
 
@@ -217,12 +243,14 @@ impl ItemView {
         let Some(s) = &self.shown else {
             return;
         };
+        // Eased in and out.
+        let t = self.zoom * self.zoom * (3.0 - 2.0 * self.zoom);
         let transform = placement(
             s.model.bound_center,
             s.model.bound_radius,
             &s.marker,
             self.turn,
-            &self.rect,
+            &self.rect.lerp(&Rect::ZOOMED, t),
             self.aspect,
         );
         self.scene
@@ -239,7 +267,13 @@ impl ItemView {
         }
     }
 
-    pub fn update(&mut self, _dt: f32) {
+    pub fn update(&mut self, dt: f32) {
+        let step = dt / ZOOM_SECONDS;
+        self.zoom = if self.zoomed {
+            (self.zoom + step).min(1.0)
+        } else {
+            (self.zoom - step).max(0.0)
+        };
         self.pose();
     }
 }
@@ -261,6 +295,10 @@ impl Engine {
         }
         view.turn = 0.0;
         view.shown = None;
+        if form.is_none() {
+            view.zoomed = false;
+            view.zoom = 0.0;
+        }
         if let Some(form) = form {
             let female = self.npc_is_female(crate::player_body::PLAYER_NPC);
             if let Some(path) = item_model(&self.lo, form, female) {
@@ -449,6 +487,21 @@ mod tests {
         view.rotating = false;
         view.drag(0.25);
         assert!((view.turn - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
+    }
+
+    #[test]
+    fn zooming_eases_the_item_to_the_middle_and_back() {
+        let mut view = ItemView::new();
+        view.zoomed = true;
+        view.update(ZOOM_SECONDS * 0.5);
+        assert_eq!(view.zoom, 0.5);
+        view.update(ZOOM_SECONDS);
+        assert_eq!(view.zoom, 1.0);
+        view.zoomed = false;
+        view.update(ZOOM_SECONDS * 2.0);
+        assert_eq!(view.zoom, 0.0);
+        let half = Rect::DEFAULT.lerp(&Rect::ZOOMED, 0.5);
+        assert!((half.left - (Rect::DEFAULT.left + Rect::ZOOMED.left) * 0.5).abs() < 1e-6);
     }
 
     #[test]

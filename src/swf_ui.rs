@@ -79,6 +79,8 @@ pub struct SwfUi {
     crafting: Option<crafting_menu::CraftingMenu>,
     /// The skills menu, while open.
     stats: Option<stats_menu::StatsMenu>,
+    /// The Item Zoom key pressed in an item menu, for its next update.
+    zoom_key: bool,
     /// A click or wheel turn in the skills menu, for its next update.
     stats_act: Option<stats_menu::Act>,
     /// The map, while open.
@@ -178,6 +180,7 @@ impl SwfUi {
             modifiers: Default::default(),
             pointer: Default::default(),
             turn_dx: 0.0,
+            zoom_key: false,
         })
     }
 
@@ -477,6 +480,10 @@ impl SwfUi {
         }
         if let Some(slot) = self.equip.take() {
             items.equip_button(slot);
+        }
+        if std::mem::take(&mut self.zoom_key) {
+            let zoomed = engine.item_view.as_ref().is_some_and(|v| v.zoomed);
+            items.zoom(engine, !zoomed);
         }
         items.update(engine);
         items.menu.advance(dt);
@@ -1420,6 +1427,8 @@ impl SwfUi {
         } else if scan.is_some() && scan == self.buttons.key("Toggle POV") {
             // Needs the engine: done with the next update.
             self.favorite = true;
+        } else if scan.is_some() && scan == self.buttons.context_key("Item Zoom") {
+            self.zoom_key = true;
         } else {
             return false;
         }
@@ -1810,6 +1819,21 @@ impl Buttons {
     fn key(&self, event: &str) -> Option<u32> {
         if let Some(map) = &self.map {
             return map.read().unwrap().first(event, 0);
+        }
+        self.codes.get(event).and_then(|c| c.0)
+    }
+
+    /// An event's keyboard key from the first context naming it (the Item
+    /// Menus context's `Item Zoom`, which Main Gameplay doesn't bind).
+    fn context_key(&self, event: &str) -> Option<u32> {
+        if let Some(map) = &self.map {
+            return map
+                .read()
+                .unwrap()
+                .bindings_of(event, 0)
+                .first()?
+                .last()
+                .copied();
         }
         self.codes.get(event).and_then(|c| c.0)
     }
