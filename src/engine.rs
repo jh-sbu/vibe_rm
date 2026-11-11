@@ -406,6 +406,8 @@ pub struct Engine {
     /// The world map, while it is open.
     pub map_view: Option<crate::map_view::MapView>,
     pub stats_view: Option<crate::stats_view::StatsView>,
+    /// The item menus' and crafting's 3D item, while one of them is up.
+    pub item_view: Option<crate::item_view::ItemView>,
     /// The player's custom destination ("Custom Destination"), if set.
     pub player_marker: Option<crate::map_markers::PlayerMarker>,
     /// The heading, degrees, the next opening of the map starts at: north
@@ -692,6 +694,7 @@ impl Engine {
             map_markers: Default::default(),
             map_view: None,
             stats_view: None,
+            item_view: None,
             player_marker: None,
             map_heading: 0.0,
             map_focus: None,

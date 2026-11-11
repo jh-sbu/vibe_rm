@@ -42,6 +42,7 @@ mod impacts;
 mod input_map;
 mod invisibility;
 mod item_copies;
+mod item_view;
 mod items;
 mod journal;
 mod knock;
