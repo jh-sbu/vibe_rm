@@ -782,7 +782,7 @@ mod tests {
         // at the reference, facing its way.
         e.location = Location::Nowhere;
         assert_eq!(
-            e.player_move_load(FormId(0x931)),
+            e.player_move_load(FormId(0x931), None),
             Some(LoadTarget::Exterior {
                 world,
                 feet: glam::Vec3::new(6000.0, 7000.0, 80.0),
@@ -792,21 +792,53 @@ mod tests {
         // From an interior, too; inside the worldspace, a placement.
         e.location = Location::Interior(interior);
         assert!(matches!(
-            e.player_move_load(FormId(0x931)),
+            e.player_move_load(FormId(0x931), None),
             Some(LoadTarget::Exterior { world: w, .. }) if w == world
         ));
         e.location = Location::Exterior {
             world,
             center: (0, 0),
         };
-        assert_eq!(e.player_move_load(FormId(0x931)), None);
+        assert_eq!(e.player_move_load(FormId(0x931), None), None);
         // An interior reference: that interior, unless the player is in it.
         assert!(matches!(
-            e.player_move_load(FormId(0x937)),
+            e.player_move_load(FormId(0x937), None),
             Some(LoadTarget::Interior { cell, .. }) if cell == interior
         ));
         e.location = Location::Interior(interior);
-        assert_eq!(e.player_move_load(FormId(0x937)), None);
+        assert_eq!(e.player_move_load(FormId(0x937), None), None);
+        // `MoveTo` with offsets, then `SetAngle`: the player goes to the
+        // offset spot and turns (autotest24's view cone had the player on
+        // the target, its offsets lost).
+        let at = e.ref_position(FormId(0x937)).unwrap() + glam::Vec3::new(300.0, -150.0, 0.0);
+        e.move_ref(
+            crate::engine::PLAYER_REF,
+            FormId(0x937),
+            at,
+            glam::Vec3::new(0.0, 0.0, 0.5),
+        );
+        e.update_scripts(0.0);
+        assert!(e.player_feet().truncate().distance(at.truncate()) < 1.0);
+        assert!((e.camera.yaw - 0.5).abs() < 1e-6);
+        let feet = e.ref_position(crate::engine::PLAYER_REF).unwrap();
+        e.move_ref(
+            crate::engine::PLAYER_REF,
+            crate::engine::PLAYER_REF,
+            feet,
+            glam::Vec3::new(0.0, 0.0, 1.0),
+        );
+        e.update_scripts(0.0);
+        assert!(e.player_feet().truncate().distance(at.truncate()) < 1.0);
+        assert!((e.camera.yaw - 1.0).abs() < 1e-6);
+        // Into another space, the load's spawn is the offset spot.
+        e.location = Location::Nowhere;
+        assert_eq!(
+            e.player_move_load(FormId(0x937), Some((at, 0.5))),
+            Some(LoadTarget::Interior {
+                cell: interior,
+                spawn: Some((at, 0.5)),
+            })
+        );
         std::fs::remove_dir_all(dir).unwrap();
     }
 

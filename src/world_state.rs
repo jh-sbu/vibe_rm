@@ -399,7 +399,7 @@ impl Engine {
     /// itself). Remembered across cell loads.
     pub fn move_ref(&mut self, r: FormId, near: FormId, pos: Vec3, rot: Vec3) -> bool {
         if r == crate::engine::PLAYER_REF {
-            self.queue_player_moveto(near);
+            self.queue_player_move(near, pos, rot.z);
             return true;
         }
         let Some((like, _)) = self

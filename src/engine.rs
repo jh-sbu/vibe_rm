@@ -157,7 +157,9 @@ pub struct Engine {
     pub(crate) rng: u64,
     /// Rolls for `GetRandomPercent` (conditions are evaluated through `&Engine`).
     pub(crate) cond_rng: std::cell::Cell<u64>,
-    pending_moveto: Option<FormId>,
+    /// A script's move of the player: the reference moved to (its space), and
+    /// the feet and yaw to place the player at (None: the reference's own).
+    pending_moveto: Option<(FormId, Option<(Vec3, f32)>)>,
     pub audio: Option<crate::audio::Audio>,
     pub(crate) audio_settings: crate::audio::settings::Settings,
     pub(crate) audio_preferences: crate::audio::settings::Runtime,
@@ -4527,13 +4529,25 @@ impl Engine {
     }
 
     pub fn queue_player_moveto(&mut self, target: FormId) {
-        self.pending_moveto = Some(target);
+        self.pending_moveto = Some((target, None));
+    }
+
+    /// A script's move of the player to `feet` facing `yaw`, in the space of
+    /// `target` (`MoveTo` with offsets, `SetPosition`, `SetAngle`).
+    pub fn queue_player_move(&mut self, target: FormId, feet: Vec3, yaw: f32) {
+        self.pending_moveto = Some((target, Some((feet, yaw))));
     }
 
     /// The load a script move of the player to `target` needs: none in the
-    /// space the player is in, else that interior or worldspace.
-    pub(crate) fn player_move_load(&self, target: FormId) -> Option<crate::loading::LoadTarget> {
+    /// space the player is in, else that interior or worldspace. The player
+    /// goes to `at` (feet, yaw) if given, else onto the target.
+    pub(crate) fn player_move_load(
+        &self,
+        target: FormId,
+        at: Option<(Vec3, f32)>,
+    ) -> Option<crate::loading::LoadTarget> {
         let (place, feet) = self.current_place_of(target)?;
+        let (feet, yaw) = at.unwrap_or((feet, self.ref_rotation(target).z));
         match (place, self.location) {
             (crate::ai::schedule::Place::Interior(c), Location::Interior(here)) if c == here => {
                 None
@@ -4541,7 +4555,7 @@ impl Engine {
             (crate::ai::schedule::Place::Interior(cell), _) => {
                 Some(crate::loading::LoadTarget::Interior {
                     cell,
-                    spawn: Some((feet, 0.0)),
+                    spawn: Some((feet, if at.is_some() { yaw } else { 0.0 })),
                 })
             }
             (crate::ai::schedule::Place::Exterior(w, _), Location::Exterior { world, .. })
@@ -4550,28 +4564,27 @@ impl Engine {
                 None
             }
             (crate::ai::schedule::Place::Exterior(world, _), _) => {
-                Some(crate::loading::LoadTarget::Exterior {
-                    world,
-                    feet,
-                    yaw: self.ref_rotation(target).z,
-                })
+                Some(crate::loading::LoadTarget::Exterior { world, feet, yaw })
             }
         }
     }
 
     /// A script's move of the player to `target`: placed there in the same
     /// space, else loaded into the target's interior or worldspace.
-    fn move_player_to(&mut self, target: FormId) {
-        match self.player_move_load(target) {
+    fn move_player_to(&mut self, target: FormId, at: Option<(Vec3, f32)>) {
+        match self.player_move_load(target, at) {
             Some(load) => self.request_load(crate::loading::LoadRequest::new(
                 load,
                 crate::loading::LoadCause::Script,
             )),
-            None => {
-                if let Some(p) = self.ref_position(target) {
-                    self.place_player(p, self.camera.yaw);
+            None => match at {
+                Some((feet, yaw)) => self.place_player(feet, yaw),
+                None => {
+                    if let Some(p) = self.ref_position(target) {
+                        self.place_player(p, self.camera.yaw);
+                    }
                 }
-            }
+            },
         }
     }
 
@@ -4867,8 +4880,8 @@ impl Engine {
             self.vm
                 .signal_with(crate::world::animated::open_state_key(r), state);
         }
-        if let Some(t) = self.pending_moveto.take() {
-            self.move_player_to(t);
+        if let Some((t, at)) = self.pending_moveto.take() {
+            self.move_player_to(t, at);
         }
         // MESG notifications keep their authored display time.
         self.scripts.notifications.retain(|n| n.is_active(now));
