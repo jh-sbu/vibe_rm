@@ -26,7 +26,7 @@ What this plan leaves out, and why:
 - **The item's 3D model beside the card** (`ShowItem3D`,
   `StartMouseRotation` / `StopMouseRotation`). It shares the inventory's
   `UpdateItem3D` work (ROADMAP item 6). Logged and answered as a no-op until
-  that lands.
+  that lands. Done since (2026-11-11) by `plans/item-3d.md`.
 - **NPCs crafting.** NPCs only play the stations' idles (done, see ROADMAP
   Done). Nothing in vanilla has an NPC make an item.
 - **Survival's and Creations' recipes.** They are Creation Club plugins, not
@@ -69,7 +69,7 @@ a single list (`MT_SINGLE_PANEL`), or `InventoryLists`, categories and items
 | `AuxButtonPress()` | the Aux button (F on PC: rename while enchanting) |
 | `CloseMenu()` | Tab / Exit |
 | `CanFadeItemInfo()` → `SetCanFadeItemInfo(bool)` | whether the card may fade when nothing is selected |
-| `ShowItem3D(bool)`, `StartMouseRotation()`, `StopMouseRotation()` | the 3D item (out of scope) |
+| `ShowItem3D(bool)`, `StartMouseRotation()`, `StopMouseRotation()` | the 3D item (`plans/item-3d.md`) |
 | `EndItemRename(useNewName, newName)` | the rename text field closed |
 | `CalculateCharge(sliderValue)` → `SetChargeValues(...)` | the enchanting slider moved |
 | `SliderClose(accepted, value)` | the slider's sub-menu closed |
@@ -550,5 +550,6 @@ Skyrim SE. All comparisons reported here run this project's engine.
   is in ROADMAP.
 
 The remaining original-game questions and the working decisions are separated
-between this plan and known_ambiguities/crafting.md. Station use animations,
-3D previews and Creation Club behavior remain outside this plan's scope.
+between this plan and known_ambiguities/crafting.md. Station use animations
+and Creation Club behavior remain outside this plan's scope; the 3D previews
+are `plans/item-3d.md`'s.

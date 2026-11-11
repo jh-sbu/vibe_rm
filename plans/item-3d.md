@@ -1,6 +1,7 @@
 # Plan: the item's 3D model in the item menus and crafting
 
-**Status: in progress** (drafted 2026-11-11). ROADMAP item 6 (UI), "The
+**Status: done** (2026-11-11; steps 1–8, with a follow-up fix to step 3's
+rotation order). The open questions below wait on SE screenshots. ROADMAP item 6 (UI), "The
 inventory's rest": the item's model beside the card (`UpdateItem3D`, turning
 and zooming it), including crafting previews (`plans/crafting.md` left
 `ShowItem3D` out for this).
@@ -60,7 +61,8 @@ Each numbered step is one commit, in this order.
    the movie's `MouseRotationRect`, its radius scaled to a share of the
    rect's width times the marker's zoom, turned by the marker's rotations,
    lit by a light of its own. A camera of its own at yaw 0. Tests for the
-   model choice and the transform.
+   model choice and the transform. (The rotation order was first Rz·Ry·Rx;
+   captures showed Rx·Ry·Rz is the marker's, fixed in its own commit.)
 4. **The item menus show it**: `UpdateItem3D(true/false)` shows the
    highlighted row's item or hides it; closing clears it; the frame draws
    it over the world (windowed and screenshot runs). `ui_swf::Menu` reads a
@@ -96,7 +98,8 @@ Each numbered step is one commit, in this order.
 Not settled by any source; screenshots of SE's inventory would settle them:
 
 - The item's size and place in the rect, the camera's field of view.
-- The rotations' order (the marker gives X, Y and Z angles, not an order).
+- The rotations' order: chosen from the meshes (the draugr sword and the
+  bows), not stated anywhere (`known_ambiguities/item-3d.md`).
 - The light on the item.
 - Whether a sword shows its scabbard.
 - The zoom's size, place and transition time; the mouse's turning speed.

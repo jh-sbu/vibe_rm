@@ -5,6 +5,14 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- **The item's 3D model** (2026-11-11; `plans/item-3d.md`): the item menus
+  (inventory, containers, barter, gifts) and the crafting menus show the
+  highlighted item's model in the movie's `MouseRotationRect`: its world
+  model (an armor's ground model for the player's sex, a book's inventory
+  art), brought to one size and turned and zoomed by its `BSInvMarker`.
+  The mouse turns it, the wheel or C zooms it to the middle of the frame
+  with the menu faded out. Crafting shows what the card shows. Choices in
+  `known_ambiguities/item-3d.md`.
 - **autotest23 and autotest24's readings applied** (2026-11-10;
   `research/autotest23.md` and `autotest24.md`, "Compared with ours"):
   `IsGuard` as `IsGuardFaction` with a crime faction, `GetRelativeAngle`'s
@@ -2410,8 +2418,11 @@ readings are applied (see Done; autotest23 and autotest24's on
      when toggled from an interior, and the explored radius indoors and out).
      Show on Map's precise vanilla opening zoom remains
      an open observation (`known_ambiguities/journal.md` records the current choice).
-   - The inventory's rest: the item's model beside the card (`UpdateItem3D`,
-     rotating and zooming it), including crafting previews; independent per-hand
+   - The inventory's rest: the magic menu's models (`UpdateMagic3D`: spells',
+     effects' and shouts' `MDOB` menu display objects, in the item menus' 3D
+     view), the gamepad's Rotate and Item Zoom for the 3D item, and its size,
+     light and zoom against SE screenshots (`known_ambiguities/item-3d.md`);
+     independent per-hand
      selection for two differently modified copies of the same weapon base;
      equipping torches in a hand (the player's body doesn't show a carried
      light), the survival warmth rating

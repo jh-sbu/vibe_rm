@@ -22,7 +22,7 @@ a single list (`MT_SINGLE_PANEL`), or `InventoryLists`, categories and items
 | `AuxButtonPress()` | the Aux button (F on PC: rename while enchanting) |
 | `CloseMenu()` | Tab / Exit |
 | `CanFadeItemInfo()` → `SetCanFadeItemInfo(bool)` | whether the card may fade when nothing is selected |
-| `ShowItem3D(bool)`, `StartMouseRotation()`, `StopMouseRotation()` | the 3D item (out of scope) |
+| `ShowItem3D(bool)`, `StartMouseRotation()`, `StopMouseRotation()` | the 3D item (`plans/item-3d.md`) |
 | `EndItemRename(useNewName, newName)` | the rename text field closed |
 | `CalculateCharge(sliderValue)` → `SetChargeValues(...)` | the enchanting slider moved |
 | `SliderClose(accepted, value)` | the slider's sub-menu closed |
