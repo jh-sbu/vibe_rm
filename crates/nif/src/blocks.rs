@@ -341,9 +341,31 @@ pub enum ExtraData {
         dimensions: Vec3,
     },
     Furniture(Vec<FurnitureMarker>),
+    /// How the inventory shows the model (`BSInvMarker`, named `INV`).
+    InvMarker(InvMarker),
     Other {
         name: String,
     },
+}
+
+/// The inventory's view of a model (`BSInvMarker`): rotations about X, Y
+/// and Z in thousandths of a radian (niftools' nif.xml: "4712" reads as
+/// 4.712), and a zoom factor.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct InvMarker {
+    pub rotation: [u16; 3],
+    pub zoom: f32,
+}
+
+impl InvMarker {
+    /// The rotations about X, Y and Z, radians.
+    pub fn radians(&self) -> Vec3 {
+        Vec3::new(
+            self.rotation[0] as f32 / 1000.0,
+            self.rotation[1] as f32 / 1000.0,
+            self.rotation[2] as f32 / 1000.0,
+        )
+    }
 }
 
 /// One furniture marker position (`BSFurnitureMarker`), in the model's space.
@@ -1044,6 +1066,12 @@ pub(crate) fn parse_block(ty: &str, r: &mut Reader) -> Result<Option<Block>> {
             crate::anim::default_av_object_palette(r)?;
             Block::Unknown(ty.into())
         }
+        "BSInvMarker" => {
+            r.string_value()?;
+            let rotation = [r.u16()?, r.u16()?, r.u16()?];
+            let zoom = r.f32()?;
+            Block::ExtraData(ExtraData::InvMarker(InvMarker { rotation, zoom }))
+        }
         "BSBound" => {
             r.string_value()?;
             let center = r.vec3()?;
@@ -1101,4 +1129,33 @@ pub(crate) fn parse_block(ty: &str, r: &mut Reader) -> Result<Option<Block>> {
         }
     };
     Ok(Some(b))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::reader::Reader;
+
+    #[test]
+    fn inventory_marker_reads_rotations_in_milliradians_and_zoom() {
+        // An iron shield's: the name `INV`, 4712 about X, zoom 1.
+        let mut bytes = 0u32.to_le_bytes().to_vec();
+        for r in [4712u16, 0, 3141] {
+            bytes.extend(r.to_le_bytes());
+        }
+        bytes.extend(1.25f32.to_le_bytes());
+        let strings = vec!["INV".to_owned()];
+        let mut r = Reader::new(&bytes);
+        r.bs_version = 100;
+        r.strings = &strings;
+        let Some(Block::ExtraData(ExtraData::InvMarker(m))) =
+            parse_block("BSInvMarker", &mut r).unwrap()
+        else {
+            panic!("not an inventory marker");
+        };
+        assert_eq!(m.rotation, [4712, 0, 3141]);
+        assert_eq!(m.zoom, 1.25);
+        assert!((m.radians() - Vec3::new(4.712, 0.0, 3.141)).length() < 1e-6);
+        assert_eq!(r.remaining(), 0);
+    }
 }

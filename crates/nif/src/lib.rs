@@ -90,6 +90,14 @@ impl Nif {
         })
     }
 
+    /// How the inventory shows the model (`BSInvMarker`), if it says.
+    pub fn inv_marker(&self) -> Option<InvMarker> {
+        self.blocks.iter().find_map(|b| match b {
+            Block::ExtraData(ExtraData::InvMarker(m)) => Some(*m),
+            _ => None,
+        })
+    }
+
     /// Whether the model's behaviour graph controls its base skeleton.
     pub fn controls_base_skeleton(&self) -> bool {
         self.blocks.iter().any(|b| {
