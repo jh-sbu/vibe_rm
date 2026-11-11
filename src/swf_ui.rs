@@ -268,6 +268,7 @@ impl SwfUi {
         }
         if let Some(crafting) = &mut self.crafting {
             crafting.menu.resize(width, height);
+            crafting.size = (width, height);
         }
         if let Some(training) = &mut self.training {
             training.menu.resize(width, height);

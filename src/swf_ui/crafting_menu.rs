@@ -31,6 +31,8 @@ pub(super) struct CraftingMenu {
     slider_active: std::cell::Cell<bool>,
     slider_original: std::cell::Cell<f32>,
     last_revision: u64,
+    /// The viewport's size, for the 3D item's place.
+    pub size: (u32, u32),
 }
 impl CraftingMenu {
     pub fn open(
@@ -144,6 +146,7 @@ impl CraftingMenu {
             slider_active: std::cell::Cell::new(false),
             slider_original: std::cell::Cell::new(1.),
             last_revision: e.crafting.revision,
+            size,
         };
         result.rebuild(e);
         Ok(result)
@@ -678,6 +681,34 @@ impl CraftingMenu {
             .invoke(&format!("{M}.UpdateItemList"), &[Value::Bool(false)]);
         self.menu.invoke(&format!("{M}.UpdateItemDisplay"), &[]);
     }
+    /// The item the 3D view shows, as the card does: the recipe's output
+    /// (forge), the item improved (grindstone, workbench), the item chosen
+    /// to enchant once the card previews it, else the highlighted item, gem
+    /// or item to disenchant (none for an enchantment), the highlighted
+    /// ingredient (alchemy).
+    fn preview_item(&self, e: &Engine) -> Option<FormId> {
+        let selected = self.selected?;
+        match self.kind {
+            1 => self.recipes.get(selected).map(|r| r.output),
+            2 | 7 => self.improvements.get(selected).map(|r| r.row.item),
+            3 => {
+                if let Some(item) = &self.enchant.item
+                    && e.enchant_preview(&self.enchant).is_some()
+                {
+                    return Some(item.item);
+                }
+                match self.enchant_rows.get(selected)? {
+                    EnchantRow::Disenchant(r) | EnchantRow::Item(r) | EnchantRow::Gem(r, _) => {
+                        Some(r.item)
+                    }
+                    EnchantRow::Effect(_) => None,
+                }
+            }
+            5 => self.ingredients.get(selected).map(|r| r.item),
+            _ => None,
+        }
+    }
+
     fn display(&self, e: &Engine) {
         if self.kind == 3 {
             if let Some(row) = self.selected.and_then(|i| self.enchant_rows.get(i)) {
@@ -1063,8 +1094,22 @@ impl CraftingMenu {
                 self.menu
                     .callback("SetCanFadeItemInfo", &[Value::Bool(true)]);
             }
-            "ShowItem3D" | "StartMouseRotation" | "StopMouseRotation" => {
-                log::debug!("crafting preview {}: {:?}", c.name, c.args)
+            "ShowItem3D" => {
+                let form = matches!(c.args.first(), Some(Value::Bool(true)))
+                    .then(|| self.preview_item(e))
+                    .flatten();
+                super::show_item_3d(
+                    e,
+                    &self.menu,
+                    &format!("{M}.MouseRotationRect"),
+                    self.size,
+                    form,
+                );
+            }
+            "StartMouseRotation" | "StopMouseRotation" => {
+                if let Some(view) = &mut e.item_view {
+                    view.rotating = c.name == "StartMouseRotation";
+                }
             }
             "ChooseItem" | "CraftSelectedItem" | "CraftButtonPress"
                 if matches!(self.kind, 2 | 7) =>
