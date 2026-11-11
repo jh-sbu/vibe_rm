@@ -1956,9 +1956,13 @@ readings are applied (see Done; autotest23 and autotest24's on
     Fear and Fury as target-actor copies, Disarm idle against mid-attack
     and above the cap, `GetDisease`,
     the Vigilant's heal while being hurt, and Attack on Sight. In our
-    engine, the view cone test read the observer about 1 unit from the
-    player at every spot (`GetDistance` after `MoveTo`, or a stale observer
-    position): unexplained, to look into.
+    engine, the view cone test first read the observer about 1 unit from
+    the player at every spot: the player's `MoveTo` dropped its offsets
+    (fixed 2026-11-10). Run again, ours reads 300 off and agrees on the
+    edge, but differs in two ways still to look into: the observer sees
+    the sneaking player behind it at 150 (SE didn't), and the player's
+    light reads 113.7 against SE's 31.9 (`known_ambiguities/detection.md`,
+    light level's scale).
   - Built and waiting for the user's run: `loadscreens`
     (`plans/loading-screen.md`), `crafting1` (`plans/crafting.md`) and
     `spell-visuals` (`plans/spell-visuals.md`, Pending SE validation; its
