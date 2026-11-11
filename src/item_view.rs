@@ -50,8 +50,10 @@ impl Rect {
     }
 }
 
-/// How the inventory shows a model: its marker's turn (about X, then Y,
-/// then Z) and zoom; none turns it nowhere and leaves its size.
+/// How the inventory shows a model: its marker's turn, Rx·Ry·Rz (about its
+/// own Z first, then Y, then X: the draugr sword's 135° about Z and zoom 1.74
+/// lay it across the rect's diagonal; the other order stands it up and off
+/// the screen), and zoom; none turns it nowhere and leaves its size.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Marker {
     pub rotation: Quat,
@@ -71,7 +73,7 @@ impl From<nif::InvMarker> for Marker {
     fn from(m: nif::InvMarker) -> Self {
         let r = m.radians();
         Marker {
-            rotation: Quat::from_euler(glam::EulerRot::ZYX, r.z, r.y, r.x),
+            rotation: Quat::from_euler(glam::EulerRot::XYZ, r.x, r.y, r.z),
             zoom: if m.zoom > 0.0 { m.zoom } else { 1.0 },
         }
     }
@@ -407,6 +409,20 @@ mod tests {
         });
         let front = marker.rotation * Vec3::Z;
         assert!((front - Vec3::NEG_Y).length() < 1e-3, "{front}");
+    }
+
+    #[test]
+    fn a_markers_z_turn_lays_a_blade_across_the_screen() {
+        // A blade lying along +Y, stood up by X and turned 45° by Z: Z
+        // first, in the model's frame, so it lies diagonally in the screen's
+        // plane (X and Z), not turned about the vertical.
+        let marker = Marker::from(nif::InvMarker {
+            rotation: [1570, 0, 785],
+            zoom: 1.0,
+        });
+        let blade = marker.rotation * Vec3::Y;
+        assert!(blade.y.abs() < 2e-3, "{blade}");
+        assert!((blade.x.abs() - blade.z.abs()).abs() < 2e-3, "{blade}");
     }
 
     #[test]
