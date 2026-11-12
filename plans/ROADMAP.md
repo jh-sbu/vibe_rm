@@ -2458,7 +2458,8 @@ readings are applied (see Done; autotest23 and autotest24's on
    loading-menu pause reporting and kill-move
    sound category activation (waits on killmoves). Completed work and remaining
    listening questions: `plans/audio-unblocked.md`.
-8. **Rendering**: point light and interior shadows, static shadow caching (per-cell
+8. **Rendering** (plan for shadows, HDR, depth of field, water, wind and the
+   particle leftovers: `plans/rendering.md`): point light and interior shadows, static shadow caching (per-cell
    caster batches), water-surface ripples and underwater rendering (for diving),
    HDR: eye adaptation, bloom, tone mapping and the image
    spaces' HDR values (sunlight / sky scale), depth of field; the modifiers'
