@@ -1590,6 +1590,10 @@ impl Engine {
         let paths: Vec<String> = objects.iter().map(|o| o.model.clone()).collect();
         self.models.load_all(&mut self.renderer, &self.vfs, &paths);
         timing.next("objects.instances_collision");
+        // Both or neither: taking one alone would drop it.
+        if !self.scene.cells.contains_key(&key) || !self.cells.contains_key(&key) {
+            return;
+        }
         let (Some(mut rc), Some(mut rt)) = (self.scene.cells.remove(&key), self.cells.remove(&key))
         else {
             return;
