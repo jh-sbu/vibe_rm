@@ -25,6 +25,7 @@ mod disarm;
 mod encumbrance;
 mod engine;
 mod ethereal;
+mod explosions;
 mod factions;
 mod falling;
 mod fast_travel;
