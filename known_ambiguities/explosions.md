@@ -79,3 +79,14 @@ Choices made to get explosions working where the sources
 - **Sounds 1 and 2** both play at the centre.
 - **The impact data set** lands once, on the surface it went off on, along
   the way what set it off was going (straight down for a placed one).
+- **Explosion references.** Every explosion has a reference while it lasts
+  (the model's length, at least 0.5 s), then it is deleted. `PlaceAtMe` of
+  an `EXPL` returns it; others get one made in the place of their source
+  (or owner, or the player). A `PlaceAtMe` explosion spares nobody (the
+  reference it is placed at is often the actor it is meant for:
+  `magicPlaceExplosionScript` places it on the effect's target) and is
+  blamed on that reference's actor cause only, never on the reference
+  itself. One placed initially disabled doesn't go off.
+- **The placed object** goes where the explosion went off: a hazard as an
+  impact's would (`spawn_hazard`), an explosion going off next frame (blamed
+  on the same owner), anything else created at the explosion's reference.

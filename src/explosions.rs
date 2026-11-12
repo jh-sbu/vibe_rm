@@ -142,6 +142,8 @@ pub(crate) struct Detonation {
     /// The weapon and projectile behind it (`OnHit`).
     pub weapon: Option<FormId>,
     pub projectile: Option<FormId>,
+    /// Its reference in the world (`PlaceAtMe`'s); one is made if none.
+    pub reference: Option<FormId>,
 }
 
 impl Detonation {
@@ -155,6 +157,7 @@ impl Detonation {
             spell: None,
             weapon: None,
             projectile: None,
+            reference: None,
         }
     }
 }
@@ -165,6 +168,8 @@ pub struct Explosions {
     queue: Vec<Detonation>,
     going_off: bool,
     lights: Vec<Flash>,
+    /// Explosions' references, and the seconds each has left.
+    refs: Vec<(FormId, f32)>,
 }
 
 /// An explosion's light: fading out over its life.
@@ -204,6 +209,18 @@ impl Engine {
             f.age += dt;
             f.age < f.life
         });
+        let mut over = Vec::new();
+        self.explosions.refs.retain_mut(|(r, left)| {
+            *left -= dt;
+            let keep = *left > 0.0;
+            if !keep {
+                over.push(*r);
+            }
+            keep
+        });
+        for r in over {
+            self.delete_created(r);
+        }
         let mut queue = std::mem::take(&mut self.explosions.queue);
         let later = queue.split_off(queue.len().min(MAX_PER_FRAME));
         self.explosions.queue = later;
@@ -249,7 +266,12 @@ impl Engine {
             }
         }
         self.explosion_force(&x, d, &actors);
-        self.show_explosion(&x, d, owner);
+        let life = self.show_explosion(&x, d, owner);
+        let reference = d.reference.or_else(|| self.make_explosion_ref(d));
+        if let Some(r) = reference {
+            self.explosions.refs.push((r, life));
+            self.place_explosion_object(&x, d, owner, r);
+        }
         if let Some(o) = owner
             && let Some(level) = self.sound_level(x.sound_level)
         {
@@ -317,7 +339,8 @@ impl Engine {
     /// way with "Always Uses World Orientation"), its light for as long,
     /// its two sounds, its image space modifier for the player within its IS
     /// radius, and its impact on the surface it went off on.
-    fn show_explosion(&mut self, x: &ExplosionData, d: &Detonation, owner: Option<FormId>) {
+    /// Returns how long it lasts.
+    fn show_explosion(&mut self, x: &ExplosionData, d: &Detonation, owner: Option<FormId>) -> f32 {
         let rot = if x.has(flag::WORLD_ORIENTATION) {
             glam::Quat::IDENTITY
         } else {
@@ -364,6 +387,49 @@ impl Engine {
         }
         if !x.impacts.is_null() {
             self.impact_at(x.impacts, owner, None, d.at, d.dir.normalize_or(-Vec3::Z));
+        }
+        life
+    }
+
+    /// A reference for an explosion with none, where it goes off: in the
+    /// place of its source (or owner, or the player).
+    fn make_explosion_ref(&mut self, d: &Detonation) -> Option<FormId> {
+        let anchor = d.source.or(d.owner).unwrap_or(PLAYER_REF);
+        let (place, _) = self.current_place_of(anchor)?;
+        let place = match place {
+            crate::ai::schedule::Place::Exterior(world, _) => {
+                crate::ai::schedule::Place::Exterior(world, crate::engine::grid_of(d.at.truncate()))
+            }
+            interior => interior,
+        };
+        Some(self.create_object_at(d.explosion, place, d.at, Vec3::ZERO, 1))
+    }
+
+    /// What an explosion leaves where it went off (`DATA` placed object):
+    /// a hazard, an explosion going off in turn, or a reference of anything
+    /// else made at its reference.
+    fn place_explosion_object(
+        &mut self,
+        x: &ExplosionData,
+        d: &Detonation,
+        owner: Option<FormId>,
+        reference: FormId,
+    ) {
+        let Some(tag) = self.lo.tag_of(x.placed).map(|t| t.0) else {
+            return;
+        };
+        match &tag {
+            b"HAZD" => self.spawn_hazard(x.placed, d.at),
+            b"EXPL" => {
+                let mut next = Detonation::new(x.placed, d.at);
+                next.dir = d.dir;
+                next.owner = owner;
+                self.explode(next);
+            }
+            _ => {
+                let made = self.create_ref(x.placed, reference, false);
+                log::debug!("explosion {} leaves {made:?} ({})", d.explosion, x.placed);
+            }
         }
     }
 

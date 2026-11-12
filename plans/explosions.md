@@ -68,11 +68,10 @@ Each numbered step is one commit, in this order.
    the image space modifier within the IS radius, the impact data set on
    the surface beneath. An offscreen capture of one.
 5. **What it leaves:** its placed object (hazards through `spawn_hazard`,
-   explosions going off in turn, other forms created there), its spawned
-   projectile (flown at the nearest other actor in its radius), and
-   explosion references: `PlaceAtMe` of an `EXPL` sets it off at the
-   reference and returns a temporary reference of it, removed once it is
-   over. Tests.
+   explosions going off in turn, other forms created there), and explosion
+   references: `PlaceAtMe` of an `EXPL` sets it off at the reference and
+   returns a temporary reference of it, removed once it is over (others get
+   one too, for what they place). Tests.
 6. **Setting them off:** spell projectiles and arrows landing (the
    projectile's explosion, the `DUAL` one when dual cast), spells landing
    with an effect's explosion (when their projectile has none), destruction
@@ -91,8 +90,10 @@ Each numbered step is one commit, in this order.
 ## Left out
 
 - Chain Lightning's leaps ("Chain", bit 7): nothing public says how the next
-  target is chosen or how often it leaps; the spawn projectile of step 5 is
-  the only chain the records spell out.
+  target is chosen or how often it leaps.
+- The spawn projectile: one record has one (`ChainLightningMassExplosion` →
+  `ShockBoltAimChain`, flags Chain), and nothing uses that record; what the
+  projectile would carry and where it would fly is unknown.
 - Exploding and severed limbs (`BPTD` explodable / severable explosions):
   with killmoves and dismemberment.
 - Water splashes (`fExplosionSplashRadius`, `fExplosionWaterRadiusRatio`,

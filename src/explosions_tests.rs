@@ -347,3 +347,45 @@ fn a_blasts_light_fades_and_its_image_space_reaches_the_player_within_its_radius
     e.explode(Detonation::new(FLASH, Vec3::new(0.0, 4500.0, 0.0)));
     assert!(modified(&e));
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn place_at_me_sets_an_explosion_off_and_its_reference_goes_once_it_is_over() {
+    const CHAIN: FormId = FormId(0x814);
+    let mut d = expl_data(0.0, 20.0, 300.0, 0x11);
+    d[16..20].copy_from_slice(&GAS.0.to_le_bytes());
+    let extra = vec![Node::top(
+        b"EXPL",
+        vec![RecordBuilder::new(b"EXPL", CHAIN).field(b"DATA", &d)],
+    )];
+    let (_f, mut e) = fixture("placeatme", extra);
+    let at = e.object_value(NEAR);
+    let chain = e.object_value(CHAIN);
+    let made = match crate::script::natives::call(
+        &mut e,
+        "objectreference",
+        "placeatme",
+        Some(&at),
+        &[chain],
+    ) {
+        papyrus::NativeResult::Value(v) => v,
+        _ => panic!("PlaceAtMe gave no value"),
+    };
+    let r = FormId(made.as_form().expect("a reference"));
+    assert_eq!(e.base_of(r), Some(CHAIN));
+    // Placed at the actor: it takes the blast (no reference is spared).
+    assert_eq!(health(&e, NEAR), 30.0);
+    // The gas it leaves goes off next frame.
+    let poisoned = |e: &Engine| {
+        e.magic
+            .effects
+            .iter()
+            .any(|x| x.target == NEAR && x.item == POISON)
+    };
+    assert!(!poisoned(&e));
+    e.update_explosions(0.01);
+    assert!(poisoned(&e));
+    assert!(e.created(r).is_some());
+    e.update_explosions(MIN_FLASH);
+    assert!(e.created(r).is_none());
+}
