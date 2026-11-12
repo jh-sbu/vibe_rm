@@ -313,9 +313,8 @@ impl Engine {
                 if self.is_dead(r.what) {
                     continue;
                 }
-                let max = self.av_max(r.what, av::HEALTH);
-                let left = self.actor_value(r.what, av::HEALTH);
-                if knocks_down(x.flags, left, max, threshold) {
+                let left = self.actor_value_fraction(r.what, av::HEALTH);
+                if knocks_down(x.flags, left, 1.0, threshold) {
                     let feet = self.ref_position(r.what).unwrap_or(r.at);
                     let push = crate::knock::push_velocity(d.at, feet, force.max(1.0));
                     self.knock_down(r.what, push, crate::knock::KnockCause::Area);
