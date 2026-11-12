@@ -5,6 +5,7 @@ mod audio_formats;
 mod audio_survey;
 mod control_tags;
 mod crafting_survey;
+mod explosion_census;
 mod facegen_check;
 mod first_person;
 #[path = "../../../src/condition/functions.rs"]
@@ -66,6 +67,9 @@ fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("ragdoll-census") => ragdoll_census::run(&args[1])?,
+        Some("explosion-census") => {
+            explosion_census::run(&args[1], args.get(2).map(String::as_str))?
+        }
         Some("first-person") => first_person::run(&args[1])?,
         Some("hkb-masks") => mask_survey::run(&args[1], args.get(2).map(String::as_str))?,
         Some("crafting-survey") => crafting_survey::run(&args[1])?,
