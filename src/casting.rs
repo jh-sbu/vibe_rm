@@ -1721,6 +1721,11 @@ impl Engine {
         let Some(item) = self.magic_item(spell) else {
             return;
         };
+        // A spell flying or reaching to where it lands sets off the runes
+        // there (UESP's Rune (effect)).
+        if matches!(item.delivery, delivery::AIMED | delivery::TARGET_LOCATION) {
+            self.spell_sets_off_runes(at);
+        }
         let object = target.filter(|&t| !self.is_actor_ref(t));
         let target = target.filter(|_| object.is_none());
         if target != Some(caster)

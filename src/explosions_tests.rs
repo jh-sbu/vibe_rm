@@ -101,7 +101,12 @@ pub(super) fn fixture(name: &str, extra: Vec<Node>) -> (Fixture, Engine) {
             b"ENCH",
             vec![
                 RecordBuilder::new(b"ENCH", POISON)
-                    .field(b"ENIT", &[0u8; 36])
+                    // Fire and forget.
+                    .field(b"ENIT", &{
+                        let mut d = [0u8; 36];
+                        d[8] = 1;
+                        d
+                    })
                     .u32(b"EFID", POISON_EFFECT.0)
                     .field(b"EFIT", &efit),
             ],
@@ -441,4 +446,59 @@ fn a_spells_effect_explosion_goes_off_where_it_lands_sparing_a_self_caster() {
     assert_eq!(health(&e, SOURCE), 50.0);
     // The spell's own OnHits stand for the explosion's.
     assert!(hits_on(&e, NEAR).is_empty());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn a_rune_waits_for_an_enemy_of_its_caster_and_one_rune_at_a_time() {
+    const RUNE: FormId = FormId(0x880);
+    const RUNE_EFFECT: FormId = FormId(0x881);
+    const RUNE_PROJ: FormId = FormId(0x882);
+    let mut proj = vec![0u8; 92];
+    proj[0..2].copy_from_slice(&0x6u16.to_le_bytes());
+    proj[2..4].copy_from_slice(&0x2u16.to_le_bytes());
+    proj[0x1C..0x20].copy_from_slice(&150.0f32.to_le_bytes());
+    proj[0x24..0x28].copy_from_slice(&BLAST.0.to_le_bytes());
+    let mut data = health_effect(0);
+    data[0x48..0x4C].copy_from_slice(&RUNE_PROJ.0.to_le_bytes());
+    let extra = vec![
+        Node::top(
+            b"PROJ",
+            vec![RecordBuilder::new(b"PROJ", RUNE_PROJ).field(b"DATA", &proj)],
+        ),
+        Node::top(
+            b"MGEF",
+            vec![RecordBuilder::new(b"MGEF", RUNE_EFFECT).field(b"DATA", &data)],
+        ),
+        Node::top(
+            b"SPEL",
+            vec![
+                RecordBuilder::new(b"SPEL", RUNE)
+                    .u32(b"EFID", RUNE_EFFECT.0)
+                    .field(b"EFIT", &[0u8; 12]),
+            ],
+        ),
+    ];
+    let (_f, mut e) = fixture("rune", extra);
+    e.location = crate::engine::Location::Interior(CELL);
+    assert_eq!(alt_trigger(&e.lo, RUNE_PROJ), Some((150.0, 0.0)));
+    assert!(e.lay_rune(SOURCE, RUNE, Vec3::ZERO, -Vec3::Z, false));
+    // Laid again: the first goes.
+    assert!(e.lay_rune(SOURCE, RUNE, Vec3::new(0.0, 10.0, 0.0), -Vec3::Z, false));
+    assert_eq!(e.explosions.runes.len(), 1);
+    // The actor 100 away is no enemy of the caster's.
+    e.update_explosions(0.1);
+    assert_eq!(e.explosions.runes.len(), 1);
+    assert_eq!(health(&e, NEAR), 50.0);
+    // Fighting the caster, it sets it off.
+    e.start_combat(NEAR, SOURCE);
+    e.update_explosions(0.1);
+    assert!(e.explosions.runes.is_empty());
+    // Its blast's 20, then the gas of the urn it destroyed: 7.
+    assert_eq!(health(&e, NEAR), 23.0);
+    // A spell landing near one sets it off too.
+    assert!(e.lay_rune(SOURCE, RUNE, Vec3::new(1100.0, 0.0, 0.0), -Vec3::Z, false));
+    e.spell_sets_off_runes(Vec3::new(1200.0, 0.0, 0.0));
+    assert!(e.explosions.runes.is_empty());
+    assert_eq!(health(&e, FAR), 30.0);
 }

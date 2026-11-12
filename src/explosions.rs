@@ -170,6 +170,26 @@ pub struct Explosions {
     lights: Vec<Flash>,
     /// Explosions' references, and the seconds each has left.
     refs: Vec<(FormId, f32)>,
+    /// Spells waiting where they landed to go off (runes).
+    pub(crate) runes: Vec<Rune>,
+}
+
+/// A spell whose projectile has an alternate trigger (`PROJ` flag 0x4: the
+/// runes), lying where it landed until an enemy of its caster comes within
+/// its proximity, its timer runs out or another spell lands near it.
+pub(crate) struct Rune {
+    pub caster: FormId,
+    pub spell: FormId,
+    pub dual: bool,
+    pub at: Vec3,
+    pub dir: Vec3,
+    /// Reach of its trigger (`PROJ` `DATA` 0x1C).
+    pub proximity: f32,
+    /// Seconds until it goes off by itself (`DATA` 0x20; none for 0).
+    pub timer: Option<f32>,
+    place: Option<crate::ai::schedule::Place>,
+    /// Its projectile's effect, kept playing while it waits.
+    pub fx: Option<crate::spell_fx::effect::EffectInstance>,
 }
 
 /// An explosion's light: fading out over its life.
@@ -221,6 +241,7 @@ impl Engine {
         for r in over {
             self.delete_created(r);
         }
+        self.update_runes(dt);
         let mut queue = std::mem::take(&mut self.explosions.queue);
         let later = queue.split_off(queue.len().min(MAX_PER_FRAME));
         self.explosions.queue = later;
@@ -401,14 +422,190 @@ impl Engine {
     /// place of its source (or owner, or the player).
     fn make_explosion_ref(&mut self, d: &Detonation) -> Option<FormId> {
         let anchor = d.source.or(d.owner).unwrap_or(PLAYER_REF);
+        let place = self.place_near(anchor, d.at)?;
+        Some(self.create_object_at(d.explosion, place, d.at, Vec3::ZERO, 1))
+    }
+
+    /// The place a point is in: `anchor`'s interior, or the exterior cell
+    /// of `anchor`'s worldspace the point lies in.
+    fn place_near(&self, anchor: FormId, at: Vec3) -> Option<crate::ai::schedule::Place> {
         let (place, _) = self.current_place_of(anchor)?;
-        let place = match place {
+        Some(match place {
             crate::ai::schedule::Place::Exterior(world, _) => {
-                crate::ai::schedule::Place::Exterior(world, crate::engine::grid_of(d.at.truncate()))
+                crate::ai::schedule::Place::Exterior(world, crate::engine::grid_of(at.truncate()))
             }
             interior => interior,
+        })
+    }
+
+    /// A spell's projectile landed: if it has an alternate trigger (a rune),
+    /// it lies there, the caster's last rune going away, and true.
+    pub(crate) fn lay_rune(
+        &mut self,
+        caster: FormId,
+        spell: FormId,
+        at: Vec3,
+        dir: Vec3,
+        dual: bool,
+    ) -> bool {
+        let Some(proj) = self
+            .magic_item(spell)
+            .and_then(|item| self.item_projectile(&item))
+        else {
+            return false;
         };
-        Some(self.create_object_at(d.explosion, place, d.at, Vec3::ZERO, 1))
+        let Some((proximity, timer)) = alt_trigger(&self.lo, proj) else {
+            return false;
+        };
+        let old: Vec<Rune> = self
+            .explosions
+            .runes
+            .extract_if(.., |r| r.caster == caster)
+            .collect();
+        for r in old {
+            self.rune_ends(r);
+        }
+        log::info!("{caster}'s rune {spell} lies at {at:.0} (proximity {proximity})");
+        let place = self.place_near(caster, at);
+        self.explosions.runes.push(Rune {
+            caster,
+            spell,
+            dual,
+            at,
+            dir,
+            proximity,
+            timer: (timer > 0.0).then_some(timer),
+            place,
+            fx: None,
+        });
+        true
+    }
+
+    /// A rune gone without going off: its effect stops.
+    fn rune_ends(&mut self, r: Rune) {
+        if let Some(mut fx) = r.fx {
+            fx.stop();
+            self.spell_fx.tails.push(fx);
+        }
+    }
+
+    /// Whether `who` sets off `caster`'s rune: an actor they fight or that
+    /// would attack them on sight (or they it); never the caster.
+    fn sets_off_rune(&mut self, caster: FormId, who: FormId) -> bool {
+        if who == caster {
+            return false;
+        }
+        let fighting = |e: &Engine, a: FormId, b: FormId| {
+            e.actor_ref(a)
+                .and_then(|x| x.exec.combat.as_ref())
+                .is_some_and(|c| c.target == b)
+        };
+        fighting(self, who, caster)
+            || fighting(self, caster, who)
+            || who != PLAYER_REF && self.would_attack(who, caster)
+            || caster != PLAYER_REF && self.would_attack(caster, who)
+    }
+
+    /// Runes wait: those whose timer runs out, or an enemy of whose caster
+    /// stands within their proximity, go off; those whose cell is gone go.
+    fn update_runes(&mut self, dt: f32) {
+        if self.explosions.runes.is_empty() {
+            return;
+        }
+        let mut bodies: Vec<(FormId, Vec3)> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| !a.dead)
+            .map(|a| (a.ref_id, a.exec.pos))
+            .collect();
+        if !self.player_dead()
+            && let Some(p) = self.ref_position(PLAYER_REF)
+        {
+            bodies.push((PLAYER_REF, p));
+        }
+        // What becomes of each: kept, gone off, or gone.
+        let mut fates = Vec::with_capacity(self.explosions.runes.len());
+        for i in 0..self.explosions.runes.len() {
+            let (caster, at, proximity, place) = {
+                let r = &mut self.explosions.runes[i];
+                if let Some(t) = r.timer.as_mut() {
+                    *t -= dt;
+                }
+                (r.caster, r.at, r.proximity, r.place)
+            };
+            if place.is_some_and(|p| self.key_of_place(p).is_none()) {
+                fates.push(Some(false));
+                continue;
+            }
+            let due = self.explosions.runes[i].timer.is_some_and(|t| t <= 0.0);
+            let near: Vec<FormId> = bodies
+                .iter()
+                .filter(|(_, p)| p.distance(at) <= proximity)
+                .map(|&(who, _)| who)
+                .collect();
+            let fires = due || near.into_iter().any(|who| self.sets_off_rune(caster, who));
+            fates.push(fires.then_some(true));
+        }
+        let runes = std::mem::take(&mut self.explosions.runes);
+        let mut taken = Vec::new();
+        for (r, fate) in runes.into_iter().zip(fates) {
+            match fate {
+                None => self.explosions.runes.push(r),
+                Some(goes_off) => taken.push((r, goes_off)),
+            }
+        }
+        for (r, goes_off) in taken {
+            if goes_off {
+                self.rune_goes_off(r);
+            } else {
+                self.rune_ends(r);
+            }
+        }
+    }
+
+    fn rune_goes_off(&mut self, r: Rune) {
+        log::info!("{}'s rune {} goes off at {:.0}", r.caster, r.spell, r.at);
+        let (caster, spell, at, dir, dual) = (r.caster, r.spell, r.at, r.dir, r.dual);
+        self.rune_ends(r);
+        self.spell_lands(caster, spell, None, at, dir, dual);
+    }
+
+    /// A spell landing at `at` sets off the runes it lands within reach of.
+    pub(crate) fn spell_sets_off_runes(&mut self, at: Vec3) {
+        let hit: Vec<Rune> = self
+            .explosions
+            .runes
+            .extract_if(.., |r| r.at.distance(at) <= r.proximity.max(1.0))
+            .collect();
+        for r in hit {
+            self.rune_goes_off(r);
+        }
+    }
+
+    /// Draw the runes' effects.
+    pub(crate) fn draw_runes(&mut self, dt: f32) {
+        for r in &mut self.explosions.runes {
+            if let Some(fx) = r.fx.as_mut() {
+                fx.advance(dt);
+                fx.draw(&mut self.scene);
+            }
+        }
+    }
+
+    /// Run the runes' effects' particles.
+    pub(crate) fn step_runes(
+        &mut self,
+        dt: f32,
+        right: Vec3,
+        up: Vec3,
+        batches: &mut Vec<crate::render::particles::ParticleBatch>,
+    ) {
+        for r in &mut self.explosions.runes {
+            if let Some(fx) = r.fx.as_mut() {
+                fx.step(dt, right, up, batches);
+            }
+        }
     }
 
     /// What an explosion leaves where it went off (`DATA` placed object):
@@ -593,6 +790,15 @@ impl Engine {
         out.sort_by(|a, b| a.distance.total_cmp(&b.distance));
         out
     }
+}
+
+/// A projectile's alternate trigger (`PROJ` `DATA` flag 0x4 "Alt.
+/// Trigger"): its proximity (0x1C) and timer (0x20).
+pub(crate) fn alt_trigger(lo: &LoadOrder, proj: FormId) -> Option<(f32, f32)> {
+    let rec = lo.get(proj).filter(|r| r.tag().0 == *b"PROJ")?;
+    let d = rec.get(b"DATA").filter(|d| d.len() >= 0x24)?;
+    let f = |o: usize| f32::from_le_bytes(d[o..o + 4].try_into().unwrap());
+    (u16::from_le_bytes([d[0], d[1]]) & 0x4 != 0).then(|| (f(0x1C).max(0.0), f(0x20).max(0.0)))
 }
 
 /// The explosion a projectile (`PROJ`) sets off where it lands (`DATA` 0x24).

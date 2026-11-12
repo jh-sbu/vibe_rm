@@ -626,6 +626,7 @@ impl Engine {
         self.spell_fx
             .tails
             .retain(|e| e.age - e.duration < e.fade_duration || e.live_particles());
+        self.draw_runes(dt);
     }
     pub(crate) fn spell_light(&self, form: FormId, at: Vec3) -> Option<crate::render::GpuLight> {
         let rec = self.lo.get(form).filter(|r| r.tag().0 == *b"LIGH")?;
@@ -724,6 +725,7 @@ impl Engine {
         for effect in &mut self.spell_fx.tails {
             effect.step(dt, right, up, batches);
         }
+        self.step_runes(dt, right, up, batches);
     }
 }
 

@@ -899,7 +899,12 @@ impl Engine {
             self.strike(what, shooter, vel * ARROW_MASS, false, damage);
         }
         for (caster, spell, target, at, dir, dual) in landed {
-            self.spell_lands(caster, spell, target, at, dir, dual);
+            // A rune lies where it landed, unless it struck someone.
+            if target.is_some_and(|t| self.is_actor_ref(t))
+                || !self.lay_rune(caster, spell, at, dir, dual)
+            {
+                self.spell_lands(caster, spell, target, at, dir, dual);
+            }
         }
         for (shooter, projectile, explosion, at, dir) in bursts {
             let mut d = crate::explosions::Detonation::new(explosion, at);
@@ -923,6 +928,23 @@ impl Engine {
             );
         }
         for p in &mut self.projectiles {
+            // A rune's effect plays on while it lies there.
+            if p.stuck.is_some()
+                && p.fx.is_some()
+                && let Some(spell) = p.spell
+                && let Some(rune) = self.explosions.runes.iter_mut().find(|r| {
+                    r.fx.is_none() && r.caster == p.shooter && r.spell == spell && r.at == p.pos
+                })
+            {
+                let mut fx = p.fx.take().unwrap();
+                fx.transform = Mat4::from_scale_rotation_translation(
+                    Vec3::splat(fx.scale),
+                    Quat::from_rotation_arc(Vec3::Y, p.dir.normalize_or(Vec3::Y)),
+                    p.pos,
+                );
+                rune.fx = Some(fx);
+                continue;
+            }
             if p.stuck.is_some()
                 && let Some(mut fx) = p.fx.take()
             {

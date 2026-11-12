@@ -105,3 +105,18 @@ Choices made to get explosions working where the sources
   explosion of the stage entered (only that one, if a blow crosses
   several), at the object's moving centre or its position, blamed on its
   actor cause, sparing the object.
+- **Runes** (UESP *Skyrim:Rune (effect)*, revision 3157529: enemies
+  within melee range of the circle set it off; the caster, their followers
+  and summons don't; one rune at a time; any projectile spell sets it
+  off). A spell whose projectile has "Alt. Trigger" (`PROJ` flag 0x4: the
+  runes, proximity 150, timer 0) lies where its projectile stops, unless it
+  struck an actor (then it lands at once, as a rune cast under an enemy's
+  feet does). It goes off, as the spell landing there, when a living actor
+  within the proximity (its feet) fights the caster, is fought by them, or
+  either would attack the other on sight; when its timer, if any, runs out;
+  or when an aimed or target location spell lands within the proximity.
+  "One rune at a time" is read as one for each caster, whatever the
+  spell: a new one ends the last. A rune whose cell unloads is gone. The
+  Light Foot perk, the hidden caster's crime rule and the re-targeting the
+  page describes are left out; the rune's decal isn't drawn (only its
+  projectile's model, if it has one).
