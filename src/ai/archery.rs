@@ -788,6 +788,8 @@ impl Engine {
         let mut struck: Vec<(FormId, FormId, Vec3, f32)> = Vec::new();
         // Spells landing (caster, spell, the reference struck, where, flying).
         let mut landed: Vec<(FormId, FormId, Option<FormId>, Vec3, Vec3, bool)> = Vec::new();
+        // Arrows' explosions (shooter, projectile, explosion, where, flying).
+        let mut bursts: Vec<(FormId, FormId, FormId, Vec3, Vec3)> = Vec::new();
         let player = self.player.position;
         let (pr, ph) = (self.physics.player_radius, self.physics.player_half_height);
         // Placed actors, and those made while playing.
@@ -872,14 +874,22 @@ impl Engine {
                             // A loose object is knocked away; the arrow falls.
                             if owner.is_some_and(|o| self.physics.is_dynamic_owner(o)) {
                                 p.stuck = Some(0.0);
-                                continue;
+                            } else {
+                                stuck.push((p.shooter, p.pos, p.age, owner, dir));
+                                p.stuck = Some(STUCK_TIME);
                             }
-                            stuck.push((p.shooter, p.pos, p.age, owner, dir));
-                            p.stuck = Some(STUCK_TIME);
                         }
                     }
                 }
                 _ => p.pos += step,
+            }
+            // An arrow or bolt with an explosion sets it off where it stops.
+            if p.spell.is_none()
+                && p.stuck.is_some()
+                && let Some(x) =
+                    crate::explosions::projectile_explosion(&self.lo, p.arrow.projectile)
+            {
+                bursts.push((p.shooter, p.arrow.projectile, x, p.pos, dir));
             }
             if p.age > p.lifetime && p.stuck.is_none() {
                 p.stuck = Some(0.0);
@@ -890,6 +900,15 @@ impl Engine {
         }
         for (caster, spell, target, at, dir, dual) in landed {
             self.spell_lands(caster, spell, target, at, dir, dual);
+        }
+        for (shooter, projectile, explosion, at, dir) in bursts {
+            let mut d = crate::explosions::Detonation::new(explosion, at);
+            d.dir = dir;
+            d.owner = Some(shooter);
+            d.source = (!self.is_actor_ref(shooter)).then_some(shooter);
+            d.weapon = self.weapon_of(shooter);
+            d.projectile = Some(projectile);
+            self.explode(d);
         }
         for &(shooter, at, _, _, dir) in &stuck {
             self.arrow_impact(shooter, None, at, dir);

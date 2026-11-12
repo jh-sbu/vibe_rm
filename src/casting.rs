@@ -1732,6 +1732,19 @@ impl Engine {
         {
             self.impact_at(ipds, Some(caster), target, at, dir);
         }
+        // Its explosion goes off where it lands; a spell on the caster
+        // (Fire Storm, Battle Cry) spares them.
+        if let Some(x) = self.spell_explosion(&item, dual) {
+            let mut d = crate::explosions::Detonation::new(x, at);
+            d.dir = dir;
+            d.owner = Some(caster);
+            d.spell = Some(spell);
+            d.projectile = self.item_projectile(&item);
+            if item.delivery == delivery::SELF {
+                d.source = Some(caster);
+            }
+            self.explode(d);
+        }
         // Summons are the caster's effects, bringing their actor where the
         // spell lands.
         if item.effects.iter().any(|e| {

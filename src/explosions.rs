@@ -326,9 +326,15 @@ impl Engine {
             let mut dir = (at - d.at).normalize_or(Vec3::Z);
             dir.z += x.vertical_offset_mult.max(0.0);
             let dir = dir.normalize_or(Vec3::Z);
-            // The force as a Havok impulse (kg m/s), no faster than
-            // `MAX_PUSH_SPEED` for light things.
-            let impulse = (force * crate::physics::METRE).min(mass.max(0.1) * MAX_PUSH_SPEED);
+            // The force as a Havok impulse (kg m/s), falling off to nothing at
+            // the radius, no faster than `MAX_PUSH_SPEED` for light things.
+            let falloff = if source_only {
+                1.0
+            } else {
+                (1.0 - at.distance(d.at) / x.radius).clamp(0.0, 1.0)
+            };
+            let impulse =
+                (force * falloff * crate::physics::METRE).min(mass.max(0.1) * MAX_PUSH_SPEED);
             self.disturb(owner);
             self.physics.apply_impulse(owner, dir * impulse);
         }
@@ -586,6 +592,45 @@ impl Engine {
             .collect();
         out.sort_by(|a, b| a.distance.total_cmp(&b.distance));
         out
+    }
+}
+
+/// The explosion a projectile (`PROJ`) sets off where it lands (`DATA` 0x24).
+pub(crate) fn projectile_explosion(lo: &LoadOrder, proj: FormId) -> Option<FormId> {
+    let rec = lo.get(proj).filter(|r| r.tag().0 == *b"PROJ")?;
+    let d = rec.get(b"DATA")?;
+    let v = u32::from_le_bytes(d.get(0x24..0x28)?.try_into().ok()?);
+    (v != 0).then(|| rec.fid(FormId(v)))
+}
+
+impl Engine {
+    /// What goes off where a spell lands: a dual cast's `DUAL` explosion,
+    /// else its projectile's, else the first of its effects' that names one.
+    pub(crate) fn spell_explosion(
+        &self,
+        item: &crate::magic::MagicItem,
+        dual: bool,
+    ) -> Option<FormId> {
+        let effects: Vec<_> = item
+            .effects
+            .iter()
+            .filter_map(|e| self.magic_effect(e.effect))
+            .collect();
+        let dual_cast = dual
+            .then(|| {
+                effects.iter().find_map(|m| {
+                    crate::spell_fx::records::DualCastData::load(&self.lo, m.dual_cast.0)
+                        .map(|d| d.explosion)
+                        .filter(|x| !x.is_null())
+                })
+            })
+            .flatten();
+        dual_cast
+            .or_else(|| {
+                self.item_projectile(item)
+                    .and_then(|p| projectile_explosion(&self.lo, p))
+            })
+            .or_else(|| effects.iter().map(|m| m.explosion).find(|x| !x.is_null()))
     }
 }
 

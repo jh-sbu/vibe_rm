@@ -75,6 +75,8 @@ pub(super) fn fixture(name: &str, extra: Vec<Node>) -> (Fixture, Engine) {
     dstd[1] = 0;
     dstd[2] = 1;
     dstd[3] = 0x04;
+    // Destroyed, it sets the gas off.
+    dstd[8..12].copy_from_slice(&GAS.0.to_le_bytes());
     let mut records = vec![
         Node::top(
             b"NPC_",
@@ -249,6 +251,11 @@ fn blasts_set_off_by_a_blast_wait_for_the_next_frame() {
     e.explosions.going_off = false;
     e.update_explosions(0.1);
     assert_eq!(health(&e, NEAR), 30.0);
+    // It destroyed the urn, whose gas waits in turn.
+    assert_eq!(e.explosions.queue.len(), 1);
+    assert_eq!(e.explosions.queue[0].explosion, GAS);
+    assert_eq!(e.explosions.queue[0].source, Some(URN_REF));
+    e.update_explosions(0.1);
     assert!(e.explosions.queue.is_empty());
 }
 
@@ -388,4 +395,50 @@ fn place_at_me_sets_an_explosion_off_and_its_reference_goes_once_it_is_over() {
     assert!(e.created(r).is_some());
     e.update_explosions(MIN_FLASH);
     assert!(e.created(r).is_none());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn a_destroyed_objects_stage_sets_its_explosion_off() {
+    let (_f, mut e) = fixture("stage", vec![]);
+    e.damage_object(URN_REF, 20.0);
+    assert!(e.is_destroyed(URN_REF));
+    // The urn at 150, the gas's 300 reach: the actor at 100 breathes it.
+    assert!(
+        e.magic
+            .effects
+            .iter()
+            .any(|x| x.target == NEAR && x.item == POISON)
+    );
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn a_spells_effect_explosion_goes_off_where_it_lands_sparing_a_self_caster() {
+    const CALM: FormId = FormId(0x870);
+    const CALM_EFFECT: FormId = FormId(0x871);
+    let mut data = health_effect(0);
+    data[0x4C..0x50].copy_from_slice(&BLAST.0.to_le_bytes());
+    let extra = vec![
+        Node::top(
+            b"MGEF",
+            vec![RecordBuilder::new(b"MGEF", CALM_EFFECT).field(b"DATA", &data)],
+        ),
+        Node::top(
+            b"SPEL",
+            vec![
+                RecordBuilder::new(b"SPEL", CALM)
+                    .u32(b"EFID", CALM_EFFECT.0)
+                    .field(b"EFIT", &[0u8; 12]),
+            ],
+        ),
+    ];
+    let (_f, mut e) = fixture("spell", extra);
+    let item = e.magic_item(CALM).unwrap();
+    assert_eq!(e.spell_explosion(&item, false), Some(BLAST));
+    e.spell_lands(SOURCE, CALM, None, Vec3::ZERO, -Vec3::Z, false);
+    assert_eq!(health(&e, NEAR), 30.0);
+    assert_eq!(health(&e, SOURCE), 50.0);
+    // The spell's own OnHits stand for the explosion's.
+    assert!(hits_on(&e, NEAR).is_empty());
 }

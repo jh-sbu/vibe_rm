@@ -163,6 +163,25 @@ impl Engine {
                         papyrus::Value::Int(script_stage(&data, next.stage)),
                     ],
                 );
+                // The stage entered sets off its explosion at the object,
+                // blamed on its actor cause.
+                let explosion = data
+                    .stages
+                    .iter()
+                    .find(|s| s.index as i32 == next.stage)
+                    .map(|s| s.explosion)
+                    .filter(|x| !x.is_null());
+                if let Some(x) = explosion
+                    && let Some(at) = self
+                        .physics
+                        .owner_center(reference)
+                        .or_else(|| self.ref_position(reference))
+                {
+                    let mut d = crate::explosions::Detonation::new(x, at);
+                    d.owner = self.world_state.actor_causes.get(&reference).copied();
+                    d.source = Some(reference);
+                    self.explode(d);
+                }
             }
         }
     }

@@ -53,11 +53,13 @@ Choices made to get explosions working where the sources
   push is `crate::knock`'s (as `PushActorAway`'s) with the explosion's
   force. Explosions without either flag don't move living actors or make
   them stagger.
-- **Pushing what moves.** Dynamic bodies (loose objects, corpses' and the
-  knocked down's ragdolls) whose centre of mass is within the radius and in
+- **Pushing what moves.** Dynamic bodies (loose objects, corpses' ragdolls;
+  living actors only through knockdowns) whose centre of mass is within the radius and in
   sight get an impulse away from the centre: the force times
-  `fExplosionForceMultLinear` read as a Havok impulse (kg m/s), the same at
-  any distance, but never more than sends the body off at 700 units a
+  `fExplosionForceMultLinear` read as a Havok impulse (kg m/s), falling off
+  linearly to nothing at the radius (the mass illusion spells' explosions
+  reach 5333 units with force 6: at full strength they would scatter every
+  cup around the caster), but never more than sends the body off at 700 units a
   second (10 m/s; no source: the catapult's 240 would throw a 1 kg cup at
   240 m/s). The vertical offset mult is added to the push's upward part
   (values 0 to 500 in the records; read as a lift, so 500 is straight up).
@@ -90,3 +92,16 @@ Choices made to get explosions working where the sources
 - **The placed object** goes where the explosion went off: a hazard as an
   impact's would (`spawn_hazard`), an explosion going off next frame (blamed
   on the same owner), anything else created at the explosion's reference.
+- **What sets them off.** Where a spell lands (each landing: a
+  concentration spell's every 0.25 s tick too, as its impacts): a dual
+  cast's `DUAL` explosion, else its projectile's (`PROJ` `DATA` 0x24), else
+  the first of its effects' (`MGEF` `DATA` 0x4C). One explosion, not one for
+  each. A self-delivered spell's spares its caster; an aimed one's doesn't
+  (UESP's Flaming Familiar: "the explosion does damage to ... the caster").
+  Arrows and bolts with one set it off where they stop (in an actor, the
+  world or a loose object; not when they run out of time), blamed on the
+  shooter, sparing a shooter that isn't an actor (traps), with the
+  shooter's weapon as the `OnHit` source. Destruction stages set off the
+  explosion of the stage entered (only that one, if a blow crosses
+  several), at the object's moving centre or its position, blamed on its
+  actor cause, sparing the object.

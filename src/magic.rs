@@ -156,6 +156,8 @@ pub struct MagicEffect {
     pub second_weight: f32,
     /// What it flies as when aimed (`PROJ`), and its impact data set.
     pub projectile: FormId,
+    /// Where it lands, this goes off (`DATA` 0x4C, `EXPL`).
+    pub explosion: FormId,
     pub impacts: FormId,
     pub casting_light: FormId,
     pub hit_shader: FormId,
@@ -210,6 +212,7 @@ impl MagicEffect {
             secondary: av(0x58),
             second_weight: f(0x3C),
             projectile: fid(u(0x48)),
+            explosion: fid(u(0x4C)),
             impacts: fid(u(0x64)),
             casting_light: fid(u(0x18)),
             hit_shader: fid(u(0x20)),
@@ -1148,7 +1151,9 @@ impl Engine {
         // spell of ours with only its fire damage) sent two alike 0.1 s apart
         // in the game (`test-mod autotest4`), its projectile exploding
         // (`PROJ` `DATA` 0x24); the second taken as the explosion's.
-        if projectile.is_some_and(|p| projectile_explodes(&self.lo, p)) {
+        if projectile
+            .is_some_and(|p| crate::explosions::projectile_explosion(&self.lo, p).is_some())
+        {
             self.send_script_event(target, "OnHit", args.clone());
         }
         self.send_script_event(target, "OnHit", args);
@@ -2078,17 +2083,6 @@ fn consume_sound(enit: &[u8]) -> Option<FormId> {
 /// slowest, from the least a tick can step to normal speed.
 fn slow_time_speed(magnitudes: impl Iterator<Item = f32>) -> f32 {
     magnitudes.fold(1.0, |speed, m| speed.min(m.clamp(0.01, 1.0)))
-}
-
-/// Whether a projectile (`PROJ`) has an explosion (`DATA` 0x24).
-fn projectile_explodes(lo: &esp::LoadOrder, proj: FormId) -> bool {
-    lo.get(proj)
-        .and_then(|r| {
-            r.get(b"DATA")
-                .and_then(|d| d.get(0x24..0x28))
-                .map(|b| u32::from_le_bytes(b.try_into().unwrap()) != 0)
-        })
-        .unwrap_or(false)
 }
 
 #[cfg(test)]
