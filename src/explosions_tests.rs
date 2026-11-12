@@ -502,3 +502,30 @@ fn a_rune_waits_for_an_enemy_of_its_caster_and_one_rune_at_a_time() {
     assert!(e.explosions.runes.is_empty());
     assert_eq!(health(&e, FAR), 30.0);
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn an_actor_in_the_way_shades_another_from_a_blast() {
+    const SIGHTED: FormId = FormId(0x815);
+    let extra = vec![Node::top(
+        b"EXPL",
+        vec![
+            RecordBuilder::new(b"EXPL", SIGHTED).field(b"DATA", &expl_data(0.0, 20.0, 300.0, 0x1)),
+        ],
+    )];
+    let (_f, mut e) = fixture("shade", extra);
+    // FAR moved straight behind NEAR, both with their capsules.
+    e.actor_mut(FAR).unwrap().exec.pos = Vec3::new(250.0, 0.0, 0.0);
+    for (r, at) in [
+        (NEAR, Vec3::new(100.0, 0.0, 0.0)),
+        (FAR, Vec3::new(250.0, 0.0, 0.0)),
+    ] {
+        let c = e.physics.add_actor_capsule(at, 1.0, r);
+        e.actor_mut(r).unwrap().capsule = Some(c);
+    }
+    // Scene queries see new colliders once the world has stepped.
+    e.physics.step(1.0 / 60.0);
+    e.explode(Detonation::new(SIGHTED, Vec3::ZERO));
+    assert_eq!(health(&e, NEAR), 30.0);
+    assert_eq!(health(&e, FAR), 50.0);
+}

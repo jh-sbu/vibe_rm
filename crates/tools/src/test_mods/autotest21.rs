@@ -620,10 +620,21 @@ const PROBE_LIST: &[Probe] = &[
         )
     },
     probe("Fleeing", "IsFleeing", P::None, P::None, EQ, ONE),
+    // Added for test-mod explosions: knocked down (or getting up).
+    probe("Knocked", "GetKnockedStateEnum", P::None, P::None, GE, ONE),
 ];
 
 /// Vanilla forms the scripts name: property, type, editor id.
 const VANILLA: &[(&str, &str, &str)] = &[
+    // Added for test-mod explosions.
+    ("ExplBallista", "Explosion", "TrapBallistaBoltExplosion01"),
+    (
+        "ExplThrall",
+        "Explosion",
+        "dunHighGateFlamingThrallFireBallExp01",
+    ),
+    ("ExplAlways", "Explosion", "fakeForceBallLite1024"),
+    ("ExplByFormula", "Explosion", "fakeForceBall1024ByFormula"),
     ("XMarker", "Static", "XMarker"),
     ("IronSword", "Weapon", "IronSword"),
     ("SteelSword", "Weapon", "SteelSword"),

@@ -55,6 +55,7 @@ mod autotest9;
 mod controltags;
 mod crafting1;
 mod dualcast;
+mod explosions;
 mod firstperson;
 mod loadscreens;
 mod pex;
@@ -93,6 +94,7 @@ pub const NAMES: &[&str] = &[
     "autotest22",
     "autotest23",
     "autotest24",
+    "explosions",
     "dualcast",
     "crafting1",
     "controltags",
@@ -151,6 +153,7 @@ pub fn build(name: &str, lo: &LoadOrder) -> Result<TestMod> {
         "autotest22" => autotest22::build(lo),
         "autotest23" => autotest23::build(lo),
         "autotest24" => autotest24::build(lo),
+        "explosions" => explosions::build(lo),
         "dualcast" => dualcast::build(lo),
         "loadscreens" => Ok(TestMod {
             plugin: loadscreens::build(lo)?,

@@ -28,6 +28,13 @@ Event OnHit(ObjectReference akAggressor, Form akSource, Projectile akProjectile,
     If abHitBlocked
         s += "+blocked"
     EndIf
+    ; Added for test-mod explosions: the source's and aggressor's ids.
+    If akSource != None
+        s += "#" + akSource.GetFormID()
+    EndIf
+    If akAggressor != None
+        s += "<" + akAggressor.GetFormID()
+    EndIf
     Add(s)
 EndEvent
 
