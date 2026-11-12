@@ -207,6 +207,9 @@ pub(crate) struct Reached {
     pub what: FormId,
     pub at: Vec3,
     pub distance: f32,
+    /// Nothing solid between (or the explosion ignores line of sight): it
+    /// takes the blast; otherwise it only hears it (`OnHit`).
+    pub in_sight: bool,
 }
 
 impl Engine {
@@ -276,17 +279,18 @@ impl Engine {
             .magic_item(x.enchantment)
             .is_some_and(|m| self.item_hostile(&m));
         for r in &actors {
-            self.explosion_strikes_actor(&x, d, owner, hostile_enchantment, r.what);
+            self.explosion_strikes_actor(&x, d, owner, hostile_enchantment, r);
         }
         for r in &objects {
-            if x.damage > 0.0 && self.destructible_data(r.what).is_some() {
-                self.damage_object_by_blow(r.what, x.damage);
+            if r.in_sight && x.damage > 0.0 && self.destructible_data(r.what).is_some() {
+                self.damage_object_by_blow(r.what, x.damage * falloff(r.distance, x.radius));
             }
             if d.spell.is_none() {
-                self.send_explosion_hit(d, owner, r.what);
+                self.send_explosion_hit(d, owner, r.what, false);
             }
         }
-        self.explosion_force(&x, d, &actors);
+        let in_sight: Vec<Reached> = actors.iter().copied().filter(|r| r.in_sight).collect();
+        self.explosion_force(&x, d, &in_sight);
         let life = self.show_explosion(&x, d, owner);
         let reference = d.reference.or_else(|| self.make_explosion_ref(d));
         if let Some(r) = reference {
@@ -647,21 +651,33 @@ impl Engine {
         })
     }
 
-    /// An actor in the blast: its damage, its enchantment, and (if not a
-    /// spell's) `OnHit` and the fight a blow starts.
+    /// An actor in the blast. In its sight: its damage, falling off with
+    /// the square of the distance and through armor as a blow's (Skyrim SE,
+    /// `test-mod explosions`), and its enchantment. Out of sight, only its
+    /// `OnHit`. Then (if not a spell's) `OnHit`: the `Unarmed` weapon's
+    /// first when it did damage, then the explosion's.
     fn explosion_strikes_actor(
         &mut self,
         x: &ExplosionData,
         d: &Detonation,
         owner: Option<FormId>,
         hostile_enchantment: bool,
-        target: FormId,
+        r: &Reached,
     ) {
+        let target = r.what;
         if self.is_ethereal(target) {
             return;
         }
-        if x.damage > 0.0 {
-            let amount = x.damage * self.difficulty_multiplier(target, false);
+        if !r.in_sight {
+            if d.spell.is_none() {
+                self.send_explosion_hit(d, owner, target, false);
+            }
+            return;
+        }
+        let damage = x.damage * falloff(r.distance, x.radius);
+        if damage > 0.0 {
+            let amount =
+                self.after_armor(target, damage, 1.0) * self.difficulty_multiplier(target, false);
             // Its owner's blow: a fight and an assault, as any.
             self.damage_unscaled(target, amount, owner, 0.0);
         }
@@ -680,14 +696,32 @@ impl Engine {
             }
         }
         if d.spell.is_none() {
-            self.send_explosion_hit(d, owner, target);
+            self.send_explosion_hit(d, owner, target, damage > 0.0);
         }
     }
 
     /// `OnHit` from an explosion: its owner the aggressor, the weapon behind
     /// it (or the explosion) the source, the projectile behind it.
-    fn send_explosion_hit(&mut self, d: &Detonation, owner: Option<FormId>, target: FormId) {
+    fn send_explosion_hit(
+        &mut self,
+        d: &Detonation,
+        owner: Option<FormId>,
+        target: FormId,
+        hurt: bool,
+    ) {
         let value = |e: &Engine, f: Option<FormId>| f.map_or(Value::None, |f| e.object_value(f));
+        if hurt {
+            let unarmed = vec![
+                value(self, owner),
+                value(self, Some(crate::ai::combat::UNARMED)),
+                Value::None,
+                Value::Bool(false),
+                Value::Bool(false),
+                Value::Bool(false),
+                Value::Bool(false),
+            ];
+            self.send_script_event(target, "OnHit", unarmed);
+        }
         let args = vec![
             value(self, owner),
             value(self, Some(d.weapon.unwrap_or(d.explosion))),
@@ -739,15 +773,29 @@ impl Engine {
             .values()
             .flat_map(|rt| &rt.actors)
             .filter(|a| !a.dead)
-            .map(|a| (a.ref_id, a.exec.pos + Vec3::Z * BODY_CENTRE * a.scale));
-        let player = (!self.player_dead()).then_some((PLAYER_REF, self.player.position));
+            .map(|a| {
+                let feet = a.exec.pos;
+                (a.ref_id, feet, feet + Vec3::Z * BODY_CENTRE * a.scale)
+            });
+        let player = (!self.player_dead())
+            .then(|| {
+                self.ref_position(PLAYER_REF)
+                    .map(|f| (PLAYER_REF, f, self.player.position))
+            })
+            .flatten();
+        // Reached by the distance to its feet (SE's falloff fits that, not
+        // the body's middle); seen at the middle of its body.
         let mut out: Vec<Reached> = near
             .chain(player)
-            .filter(|&(id, _)| Some(id) != d.source)
-            .filter_map(|(what, at)| {
-                let distance = at.distance(d.at);
-                (distance <= x.radius && self.blast_reaches(x, d, from, at, what))
-                    .then_some(Reached { what, at, distance })
+            .filter(|&(id, _, _)| Some(id) != d.source)
+            .filter_map(|(what, feet, at)| {
+                let distance = feet.distance(d.at);
+                (distance <= x.radius).then(|| Reached {
+                    what,
+                    at,
+                    distance,
+                    in_sight: self.blast_reaches(x, d, from, at, what),
+                })
             })
             .collect();
         out.sort_by(|a, b| a.distance.total_cmp(&b.distance));
@@ -775,15 +823,17 @@ impl Engine {
                     what: r,
                     at,
                     distance,
+                    in_sight: false,
                 })
             })
             .filter(|r| {
                 self.destructible_data(r.what).is_some()
                     || self.vm.handles(papyrus::ObjectId::Form(r.what.0), "OnHit")
             })
-            .filter(|r| {
+            .map(|mut r| {
                 let at = self.physics.owner_center(r.what).unwrap_or(r.at);
-                self.blast_reaches(x, d, from, at, r.what)
+                r.in_sight = self.blast_reaches(x, d, from, at, r.what);
+                r
             })
             .collect();
         out.sort_by(|a, b| a.distance.total_cmp(&b.distance));
@@ -837,6 +887,17 @@ impl Engine {
             })
             .or_else(|| effects.iter().map(|m| m.explosion).find(|x| !x.is_null()))
     }
+}
+
+/// What share of its damage an explosion deals `distance` from its centre:
+/// 1 − (d / radius)², Skyrim SE's readings to the hundredth (`test-mod
+/// explosions`: 80 damage, radius 320 gave 78.75, 68.75, 48.75 and 18.75
+/// at 40, 120, 200 and 280).
+fn falloff(distance: f32, radius: f32) -> f32 {
+    if radius <= 0.0 {
+        return 0.0;
+    }
+    (1.0 - (distance / radius).powi(2)).clamp(0.0, 1.0)
 }
 
 /// Whether an explosion of these flags knocks down an actor left with

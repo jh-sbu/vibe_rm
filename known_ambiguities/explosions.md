@@ -12,29 +12,38 @@ Choices made to get explosions working where the sources
   `fakeForceBall1024` (used by two projectiles and a script) and
   `fakeForceBallTiny` (fireflies' and bees' death push) therefore push
   nothing.
-- **Who it reaches.** Living actors whose body's middle (60 units above
-  the feet, by scale; the player's capsule centre) is within the radius,
-  and loaded references other than actors whose position (a moving body's
-  centre) is: destructible ones and those with a script handling `OnHit`.
+- **Who it reaches.** Living actors whose feet are within the radius
+  (Skyrim SE's falloff fits the distance to the feet: `test-mod
+  explosions`, `research/test-mod-explosions.md`), and loaded references
+  other than actors whose position is: destructible ones and those with a
+  script handling `OnHit`.
   Not the reference that went off or set it off. The radius is the record's
   as it is, not scaled by anything.
 - **Line of sight** (UESP's Elemental Burst: shaded targets take nothing):
-  a ray from 8 units above the centre to what it reaches, passing through
-  the source (or the owner); the target's own body ending the ray counts as
-  reached. "Ignore LOS Check" skips the ray.
-- **Damage.** The `DATA` damage, the same at any distance within the
-  radius, taken as health damage as from a blow by the owner (a fight and an
-  assault), scaled by difficulty but not reduced by armor, resistances or
-  perks. Destructible references within take it as a blow (stages that
-  ignore external damage take none).
+  a ray from 8 units above the centre to the middle of an actor's body (60
+  above its feet, by scale; the player's capsule centre) or an object's
+  moving centre, passing through the source (or the owner); the target's
+  own body ending the ray counts as reached. "Ignore LOS Check" skips the
+  ray. What is out of sight takes nothing but still hears `OnHit` (SE: an
+  explosion on the floor hurt nobody yet all three NPCs heard it). How SE
+  tests sight is open: from a point on the floor it seems to fail even in
+  the open; ours lifts it 8 units.
+- **Damage.** The `DATA` damage times 1 − (d / radius)² and through armor
+  as a blow's (both Skyrim SE's readings), taken as health damage as from a
+  blow by the owner (a fight and an assault), scaled by difficulty; not
+  changed by resistances or perks (no reading). Destructible references
+  within take the same falloff as a blow (stages that ignore external
+  damage take none).
 - **The enchantment** lands on every actor reached, cast by the owner (no
   caster without one), quietly as far as the magic goes: the explosion's
   own `OnHit` stands for it, and a hostile enchantment with an owner starts
   the fight a hostile spell would.
-- **`OnHit`**: to each actor and reference reached, the owner the
-  aggressor (`None` without one), the weapon behind it, else the explosion,
-  the source, the projectile behind it the projectile, all four flags
-  false. An explosion set off by a spell landing sends none: the spell's own
+- **`OnHit`**: to each actor and reference within the radius, the owner
+  the aggressor (`None` without one), the weapon behind it, else the
+  explosion, the source, the projectile behind it the projectile, all four
+  flags false. One it hurt first hears the `Unarmed` weapon (`000001F4`,
+  no projectile) as SE sends (about 0.03 s before, here at once). The
+  owner of a placed explosion is none, as SE gave. An explosion set off by a spell landing sends none: the spell's own
   two `OnHit`s (`test-mod autotest4`) stand for it.
 - **The owner** is the actor it is blamed on, through their actor cause
   (`SetActorCause`). An explosion with no actor owner hurts without

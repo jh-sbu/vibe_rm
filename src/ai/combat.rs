@@ -3190,7 +3190,7 @@ impl Engine {
 
     /// Physical damage after the target's armor, `penetration` of what it
     /// takes away still taken.
-    fn after_armor(&self, target: FormId, damage: f32, penetration: f32) -> f32 {
+    pub(crate) fn after_armor(&self, target: FormId, damage: f32, penetration: f32) -> f32 {
         let mut p = self.protection(target);
         p.reduction *= penetration.max(0.0);
         if p.reduction > 0.0 {

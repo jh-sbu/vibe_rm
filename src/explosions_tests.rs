@@ -180,6 +180,16 @@ pub(super) fn place(e: &mut Engine, r: FormId, at: Vec3) {
     e.cells.entry(key).or_default().actors.push(a);
 }
 
+/// An actor of 50 health after `BLAST` (20 damage, radius 300) went off
+/// `d` from its feet.
+fn after_blast(d: f32) -> f32 {
+    50.0 - 20.0 * (1.0 - (d / 300.0).powi(2))
+}
+
+fn close(a: f32, b: f32) -> bool {
+    (a - b).abs() < 1e-3
+}
+
 pub(super) fn health(e: &Engine, r: FormId) -> f32 {
     e.actor_ref(r).unwrap().exec.health
 }
@@ -200,14 +210,21 @@ fn a_blast_hurts_and_hits_what_is_within_its_radius_but_its_source() {
     let mut d = Detonation::new(BLAST, Vec3::ZERO);
     d.source = Some(SOURCE);
     e.explode(d);
-    assert_eq!(health(&e, NEAR), 30.0);
+    // 100 from it: 1 − (100 / 300)² of its 20.
+    assert!(
+        close(health(&e, NEAR), after_blast(100.0)),
+        "{}",
+        health(&e, NEAR)
+    );
     assert_eq!(health(&e, FAR), 50.0);
     assert_eq!(health(&e, SOURCE), 50.0);
     let hits = hits_on(&e, NEAR);
-    assert_eq!(hits.len(), 1);
-    // No owner: nobody's the aggressor; the explosion is the source.
+    assert_eq!(hits.len(), 2);
+    // No owner: nobody's the aggressor. Hurt, it hears the Unarmed weapon,
+    // then the explosion.
     assert!(matches!(hits[0][0], Value::None));
-    assert_eq!(hits[0][1], e.object_value(BLAST));
+    assert_eq!(hits[0][1], e.object_value(crate::ai::combat::UNARMED));
+    assert_eq!(hits[1][1], e.object_value(BLAST));
     assert!(hits_on(&e, FAR).is_empty());
     // The urn 150 away takes the damage and is destroyed.
     assert!(e.is_destroyed(URN_REF));
@@ -255,7 +272,11 @@ fn blasts_set_off_by_a_blast_wait_for_the_next_frame() {
     assert_eq!(health(&e, NEAR), 50.0);
     e.explosions.going_off = false;
     e.update_explosions(0.1);
-    assert_eq!(health(&e, NEAR), 30.0);
+    assert!(
+        close(health(&e, NEAR), after_blast(100.0)),
+        "{}",
+        health(&e, NEAR)
+    );
     // It destroyed the urn, whose gas waits in turn.
     assert_eq!(e.explosions.queue.len(), 1);
     assert_eq!(e.explosions.queue[0].explosion, GAS);
@@ -385,7 +406,7 @@ fn place_at_me_sets_an_explosion_off_and_its_reference_goes_once_it_is_over() {
     };
     let r = FormId(made.as_form().expect("a reference"));
     assert_eq!(e.base_of(r), Some(CHAIN));
-    // Placed at the actor: it takes the blast (no reference is spared).
+    // Placed at the actor: it takes the whole blast (no reference is spared).
     assert_eq!(health(&e, NEAR), 30.0);
     // The gas it leaves goes off next frame.
     let poisoned = |e: &Engine| {
@@ -442,7 +463,11 @@ fn a_spells_effect_explosion_goes_off_where_it_lands_sparing_a_self_caster() {
     let item = e.magic_item(CALM).unwrap();
     assert_eq!(e.spell_explosion(&item, false), Some(BLAST));
     e.spell_lands(SOURCE, CALM, None, Vec3::ZERO, -Vec3::Z, false);
-    assert_eq!(health(&e, NEAR), 30.0);
+    assert!(
+        close(health(&e, NEAR), after_blast(100.0)),
+        "{}",
+        health(&e, NEAR)
+    );
     assert_eq!(health(&e, SOURCE), 50.0);
     // The spell's own OnHits stand for the explosion's.
     assert!(hits_on(&e, NEAR).is_empty());
@@ -494,13 +519,18 @@ fn a_rune_waits_for_an_enemy_of_its_caster_and_one_rune_at_a_time() {
     e.start_combat(NEAR, SOURCE);
     e.update_explosions(0.1);
     assert!(e.explosions.runes.is_empty());
-    // Its blast's 20, then the gas of the urn it destroyed: 7.
-    assert_eq!(health(&e, NEAR), 23.0);
+    // Its blast from 100.5 off, then the gas of the urn it destroyed: 7.
+    let expected = after_blast(100.0f32.hypot(10.0)) - 7.0;
+    assert!(close(health(&e, NEAR), expected), "{}", health(&e, NEAR));
     // A spell landing near one sets it off too.
     assert!(e.lay_rune(SOURCE, RUNE, Vec3::new(1100.0, 0.0, 0.0), -Vec3::Z, false));
     e.spell_sets_off_runes(Vec3::new(1200.0, 0.0, 0.0));
     assert!(e.explosions.runes.is_empty());
-    assert_eq!(health(&e, FAR), 30.0);
+    assert!(
+        close(health(&e, FAR), after_blast(100.0)),
+        "{}",
+        health(&e, FAR)
+    );
 }
 
 #[test]
@@ -526,6 +556,14 @@ fn an_actor_in_the_way_shades_another_from_a_blast() {
     // Scene queries see new colliders once the world has stepped.
     e.physics.step(1.0 / 60.0);
     e.explode(Detonation::new(SIGHTED, Vec3::ZERO));
-    assert_eq!(health(&e, NEAR), 30.0);
+    assert!(
+        close(health(&e, NEAR), after_blast(100.0)),
+        "{}",
+        health(&e, NEAR)
+    );
     assert_eq!(health(&e, FAR), 50.0);
+    // Shaded, it still hears the explosion (and only it: it wasn't hurt).
+    let hits = hits_on(&e, FAR);
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0][1], e.object_value(SIGHTED));
 }
