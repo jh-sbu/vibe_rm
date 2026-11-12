@@ -328,12 +328,14 @@ fn a_blast_pushes_what_moves_away_from_it_and_lifts_it_by_its_offset() {
 }
 
 #[test]
-fn knockdowns_always_or_by_the_health_left() {
+fn knockdowns_always_or_by_the_share_of_health_taken() {
     use flag::{KNOCK_DOWN_ALWAYS as ALWAYS, KNOCK_DOWN_BY_FORMULA as FORMULA};
-    assert!(knocks_down(ALWAYS, 50.0, 50.0, 0.5));
+    assert!(knocks_down(ALWAYS, 0.0, 50.0, 0.5));
+    // SE: no damage, no knockdown, whatever the health left.
+    assert!(!knocks_down(FORMULA, 0.0, 10.0, 0.5));
     assert!(knocks_down(FORMULA, 25.0, 50.0, 0.5));
-    assert!(!knocks_down(FORMULA, 26.0, 50.0, 0.5));
-    assert!(!knocks_down(0, 0.0, 50.0, 0.5));
+    assert!(!knocks_down(FORMULA, 24.0, 50.0, 0.5));
+    assert!(!knocks_down(0, 50.0, 50.0, 0.5));
 }
 
 #[test]
@@ -535,7 +537,8 @@ fn a_rune_waits_for_an_enemy_of_its_caster_and_one_rune_at_a_time() {
 
 #[test]
 #[ignore = "needs a headless GPU adapter; synthetic records only"]
-fn an_actor_in_the_way_shades_another_from_a_blast() {
+fn a_wall_shades_from_a_blast_but_an_actor_in_the_way_doesnt() {
+    use rapier3d::prelude::*;
     const SIGHTED: FormId = FormId(0x815);
     let extra = vec![Node::top(
         b"EXPL",
@@ -544,7 +547,8 @@ fn an_actor_in_the_way_shades_another_from_a_blast() {
         ],
     )];
     let (_f, mut e) = fixture("shade", extra);
-    // FAR moved straight behind NEAR, both with their capsules.
+    // FAR straight behind NEAR, both with their capsules; SOURCE behind a
+    // wall to the west.
     e.actor_mut(FAR).unwrap().exec.pos = Vec3::new(250.0, 0.0, 0.0);
     for (r, at) in [
         (NEAR, Vec3::new(100.0, 0.0, 0.0)),
@@ -553,6 +557,12 @@ fn an_actor_in_the_way_shades_another_from_a_blast() {
         let c = e.physics.add_actor_capsule(at, 1.0, r);
         e.actor_mut(r).unwrap().capsule = Some(c);
     }
+    e.physics.world.insert_collider(
+        ColliderBuilder::cuboid(5.0, 200.0, 200.0)
+            .translation(Vec3::new(-25.0, 0.0, 0.0))
+            .build(),
+        None,
+    );
     // Scene queries see new colliders once the world has stepped.
     e.physics.step(1.0 / 60.0);
     e.explode(Detonation::new(SIGHTED, Vec3::ZERO));
@@ -561,9 +571,15 @@ fn an_actor_in_the_way_shades_another_from_a_blast() {
         "{}",
         health(&e, NEAR)
     );
-    assert_eq!(health(&e, FAR), 50.0);
+    // SE: one standing behind another took the blast too.
+    assert!(
+        close(health(&e, FAR), after_blast(250.0)),
+        "{}",
+        health(&e, FAR)
+    );
+    assert_eq!(health(&e, SOURCE), 50.0);
     // Shaded, it still hears the explosion (and only it: it wasn't hurt).
-    let hits = hits_on(&e, FAR);
+    let hits = hits_on(&e, SOURCE);
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0][1], e.object_value(SIGHTED));
 }

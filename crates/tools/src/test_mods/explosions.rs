@@ -29,6 +29,13 @@
 //! | ShadeLifted | at every height: 90: about 60 × 0.92 and the fire; behind: nothing, only `OnHit`; open: about 60 × 0.61 and the fire |
 //! | FreeKnockdowns | ballista: no; Always: yes; By Formula: no at 100% and 60%, yes at 45% and 20% |
 //!
+//! **Round 2, run 2026-11-12** (`research/test-mod-explosions.md`):
+//! damage from 60 and 120 up matched ours to the thousandth; at 0 up nobody
+//! was hurt again. The NPC behind another was hurt as the one in the open:
+//! actors don't shade (applied). "Always" knocked a free NPC down; "By
+//! Formula" without damage knocked nobody down at any health (applied: the
+//! share of health taken).
+//!
 //! Round 2's dry run in our engine (2026-11-12): nothing shaded (whether
 //! created actors' capsules follow a script's `MoveTo` is open, as after
 //! round 1's), and the probe's 2 s read By Formula at 45%

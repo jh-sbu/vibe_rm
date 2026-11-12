@@ -278,6 +278,11 @@ impl Engine {
         let hostile_enchantment = self
             .magic_item(x.enchantment)
             .is_some_and(|m| self.item_hostile(&m));
+        // Health before the blast, for "By Formula" knockdowns.
+        let before: Vec<f32> = actors
+            .iter()
+            .map(|r| self.actor_value(r.what, av::HEALTH))
+            .collect();
         for r in &actors {
             self.explosion_strikes_actor(&x, d, owner, hostile_enchantment, r);
         }
@@ -289,7 +294,12 @@ impl Engine {
                 self.send_explosion_hit(d, owner, r.what, false);
             }
         }
-        let in_sight: Vec<Reached> = actors.iter().copied().filter(|r| r.in_sight).collect();
+        let in_sight: Vec<(Reached, f32, f32)> = actors
+            .iter()
+            .zip(before)
+            .filter(|(r, _)| r.in_sight)
+            .map(|(r, b)| (*r, b - self.actor_value(r.what, av::HEALTH), b))
+            .collect();
         self.explosion_force(&x, d, &in_sight);
         let life = self.show_explosion(&x, d, owner);
         let reference = d.reference.or_else(|| self.make_explosion_ref(d));
@@ -305,20 +315,25 @@ impl Engine {
     }
 
     /// The blast's push: actors it knocks down ("Knock Down - Always", or
-    /// "By Formula" those left at or below `fKnockdownCurrentHealthThreshold`
-    /// percent of their health), and what moves within its radius (corpses
+    /// "By Formula" those it took at least `fKnockdownCurrentHealthThreshold`
+    /// percent of their health from), and what moves within its radius (corpses
     /// too) pushed away from it, only its source with "Push Explosion Source
     /// Ref Only" (by `fExplosionSourceRefMult`).
-    fn explosion_force(&mut self, x: &ExplosionData, d: &Detonation, actors: &[Reached]) {
+    /// `actors`: those in sight, with the health each lost and had before.
+    fn explosion_force(
+        &mut self,
+        x: &ExplosionData,
+        d: &Detonation,
+        actors: &[(Reached, f32, f32)],
+    ) {
         let force = x.force * gmst_f32(&self.lo, "fExplosionForceMultLinear", 1.0);
         if x.has(flag::KNOCK_DOWN_ALWAYS | flag::KNOCK_DOWN_BY_FORMULA) {
             let threshold = gmst_f32(&self.lo, "fKnockdownCurrentHealthThreshold", 50.0) / 100.0;
-            for r in actors {
+            for (r, taken, before) in actors {
                 if self.is_dead(r.what) {
                     continue;
                 }
-                let left = self.actor_value_fraction(r.what, av::HEALTH);
-                if knocks_down(x.flags, left, 1.0, threshold) {
+                if knocks_down(x.flags, *taken, *before, threshold) {
                     let feet = self.ref_position(r.what).unwrap_or(r.at);
                     let push = crate::knock::push_velocity(d.at, feet, force.max(1.0));
                     self.knock_down(r.what, push, crate::knock::KnockCause::Area);
@@ -751,10 +766,12 @@ impl Engine {
         if dist < 1.0 {
             return true;
         }
+        // Actors (living or ragdolled) don't shade others: Skyrim SE
+        // (`test-mod explosions` round 2) hurt one standing behind another.
         let exclude = d.source.or(d.owner).unwrap_or(FormId::NULL);
         match self
             .physics
-            .raycast_excluding(from, (to - from) / dist, dist, exclude)
+            .raycast_past_actors(from, (to - from) / dist, dist, exclude)
         {
             Some((_, hit)) => hit == Some(what),
             None => true,
@@ -900,12 +917,17 @@ fn falloff(distance: f32, radius: f32) -> f32 {
     (1.0 - (distance / radius).powi(2)).clamp(0.0, 1.0)
 }
 
-/// Whether an explosion of these flags knocks down an actor left with
-/// `left` of `max` health: always, or by formula at or below `threshold`
-/// of it (`fKnockdownCurrentHealthThreshold`, a percentage, as a fraction).
-fn knocks_down(flags: u32, left: f32, max: f32, threshold: f32) -> bool {
+/// Whether an explosion of these flags knocks down an actor it dealt
+/// `taken` damage to, which had `before` health: always, or by formula when
+/// that is at least `threshold` of it (`fKnockdownCurrentHealthThreshold`,
+/// a percentage, as a fraction). Skyrim SE (`test-mod explosions` round 2):
+/// "By Formula" without damage knocked nobody down, from full health to 20%.
+fn knocks_down(flags: u32, taken: f32, before: f32, threshold: f32) -> bool {
     flags & flag::KNOCK_DOWN_ALWAYS != 0
-        || flags & flag::KNOCK_DOWN_BY_FORMULA != 0 && max > 0.0 && left / max <= threshold
+        || flags & flag::KNOCK_DOWN_BY_FORMULA != 0
+            && taken > 0.0
+            && before > 0.0
+            && taken / before >= threshold
 }
 
 #[cfg(test)]

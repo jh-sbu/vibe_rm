@@ -1978,13 +1978,14 @@ readings are applied (see Done; autotest23 and autotest24's on
     target of a hostile script cast searching (autotest21), the unalerted
     NPC's 0.6 s sheathe after `DrawWeapon` (held in autotest21; autotest17's
     held commoner didn't draw), and whether a restrained NPC fights.
-  - Built and waiting for the user's run: `explosions` round 2 (round 1
-    applied 2026-11-12, `research/test-mod-explosions.md`; round 2 asks
-    about shading with the explosion above the floor and knockdowns of free
-    NPCs, `plans/explosions.md`; its dry runs left two open questions in our
-    engine: created actors don't get their base's scripts, so its actor
-    logs read nothing, and whether a held actor's capsule follows a
-    script's `MoveTo`, since nothing was shaded), `loadscreens`
+  - `test-mod explosions`, rounds 1 and 2 applied (2026-11-12,
+    `research/test-mod-explosions.md`). Left open: the floor-level
+    explosion that reached nobody, "By Formula"'s rule with damage, the hit
+    reaction of a blast without knockdown flags, and `SetDontMove` keeping
+    an actor from knockdowns (`known_ambiguities/explosions.md`). Its dry
+    runs found that created actors don't get their base's scripts in our
+    engine (its actor logs read nothing).
+  - Built and waiting for the user's run: `loadscreens`
     (`plans/loading-screen.md`), `crafting1` (`plans/crafting.md`) and
     `spell-visuals` (`plans/spell-visuals.md`, Pending SE validation; its
     steps are now `set VrmFxRun to <n>`, as vanilla SE has no `cqf`).

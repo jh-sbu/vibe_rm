@@ -24,10 +24,14 @@ Choices made to get explosions working where the sources
   above its feet, by scale; the player's capsule centre) or an object's
   moving centre, passing through the source (or the owner); the target's
   own body ending the ray counts as reached. "Ignore LOS Check" skips the
-  ray. What is out of sight takes nothing but still hears `OnHit` (SE: an
-  explosion on the floor hurt nobody yet all three NPCs heard it). How SE
-  tests sight is open: from a point on the floor it seems to fail even in
-  the open; ours lifts it 8 units.
+  ray. Actors don't shade others: the ray passes through capsules and
+  ragdolls (SE, round 2: an NPC behind another took the full blast,
+  against UESP's Elemental Burst page). What is out of sight takes nothing
+  but still hears `OnHit`. SE's explosions set off exactly on the floor
+  (a marker at floor height) hurt nobody, even in the open, while 60 up they
+  hurt everyone; ours looks from 8 units up, so it doesn't reproduce that.
+  Whether projectiles' explosions on the floor are placed off the surface
+  in SE is unknown; they do hurt there (UESP's advice to aim at feet).
 - **Damage.** The `DATA` damage times 1 − (d / radius)² and through armor
   as a blow's (both Skyrim SE's readings), taken as health damage as from a
   blow by the owner (a fight and an assault), scaled by difficulty; not
@@ -56,12 +60,17 @@ Choices made to get explosions working where the sources
   for the next frame (at most 32 a frame), so chains of destructible
   objects can't recurse.
 - **Knockdowns.** "Knock Down - Always" knocks down every living actor
-  reached; "By Formula" those left at or below
-  `fKnockdownCurrentHealthThreshold` (50) percent of their health once its
-  damage is taken. The setting's name is the only lead to the formula. The
-  push is `crate::knock`'s (as `PushActorAway`'s) with the explosion's
-  force. Explosions without either flag don't move living actors or make
-  them stagger.
+  in sight (SE: a free NPC, thrown 28 sideways and 57 up). "By Formula"
+  knocks down those it took at least `fKnockdownCurrentHealthThreshold`
+  (50) percent of their health from (its damage and its enchantment's, as
+  it lands). SE's only reading: a "By Formula" explosion without damage
+  knocked nobody down at 100%, 60%, 45% or 20% health, which rules out a
+  rule on the health left; the share of health taken is the setting's name
+  read literally, unconfirmed. The push is `crate::knock`'s (as
+  `PushActorAway`'s) with the explosion's force. Explosions without either
+  flag don't move living actors: SE's ballista explosion (no flag, damage
+  80) moved a free NPC 20 units in 0.3 s without knocking it down, perhaps a
+  hit reaction; ours has none.
 - **Pushing what moves.** Dynamic bodies (loose objects, corpses' ragdolls;
   living actors only through knockdowns) whose centre of mass is within the radius and in
   sight get an impulse away from the centre: the force times

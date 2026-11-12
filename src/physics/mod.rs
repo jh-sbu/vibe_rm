@@ -1361,6 +1361,26 @@ impl Physics {
         Some((toi, self.owners.get(&h).copied()))
     }
 
+    /// [`Self::raycast_excluding`], passing through actors' capsules and
+    /// ragdolls too (what explosions see past: Skyrim SE, `test-mod
+    /// explosions`).
+    pub fn raycast_past_actors(
+        &self,
+        origin: Vec3,
+        dir: Vec3,
+        max: f32,
+        owner: esp::FormId,
+    ) -> Option<(f32, Option<esp::FormId>)> {
+        let ray = Ray::new(origin, dir);
+        let pass = |h: ColliderHandle, c: &Collider| {
+            self.owners.get(&h) != Some(&owner) && !self.capsules.contains(&h) && c.user_data == 0
+        };
+        let (h, toi) =
+            self.world
+                .cast_ray(&ray, max, true, QueryFilter::default().predicate(&pass))?;
+        Some((toi, self.owners.get(&h).copied()))
+    }
+
     /// Diagnostics: every collider a ray passes through, tested one by one rather
     /// than through the broad phase, nearest first. Each hit says whether scene
     /// queries (the broad phase) also see it, and whether it is enabled.

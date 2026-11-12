@@ -50,3 +50,35 @@ NPCs held with `SetDontMove`, given 1000 more health.
   should use NPCs left free.
 - **3D loaded**: SE reports the explosion's reference's 3D loaded; ours
   says not.
+
+## Round 2
+
+Run 2026-11-12. The thrall's fireball at a marker 0, 60 and 120 above the
+floor; knockdowns of NPCs left free (no `SetDontMove`), the explosion 50
+west of each, 30 up.
+
+- **ShadeLifted**: at 0 up, nobody hurt and each heard only the
+  explosion's `OnHit`, as in round 1. At 60 up: 90 north lost 63.795, 200
+  north behind it 45.103, 200 east in the open 45.103. At 120 up: 57.466,
+  38.775, 38.775. Each hurt one heard the `Unarmed` hit, the explosion's and
+  `OnMagicEffectApply` (the fire), within 0.06 s, in no fixed order. These
+  are ours to the thousandth: 60 × (1 − (d / 320)²) with d the 3D distance
+  to the feet (90 north from 60 up: d 108.2, 53.14), plus 10.65 from the
+  fire enchantment in every case.
+- **FreeKnockdowns**, `GetKnockedStateEnum` through the probe and the
+  distance moved in 0.3 s: the ballista explosion (no flag, damage 80):
+  not knocked, moved 20.2 level. "Always" (`fakeForceBallLite1024`): knocked,
+  moved 27.8 and 57.5 up. "By Formula" (`fakeForceBall1024ByFormula`, no
+  damage) at 100%, 60%, 45% and 20%: not knocked, moved 4.7 each.
+
+## What round 2 settles
+
+- Actors don't shade others from an explosion. An explosion set off at a
+  point on the floor reaches nobody (the floor itself blocking its sight,
+  presumably).
+- "By Formula" isn't the health left: without damage it never knocks
+  down. Ours now uses the share of health the explosion took
+  (`known_ambiguities/explosions.md`).
+- "Always" knocks a free NPC down. Round 1's NPCs, held by `SetDontMove`,
+  weren't, so the hold probably keeps an actor from knockdowns (not tested
+  directly).
