@@ -5,6 +5,21 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- **Explosions** (2026-11-11; `plans/explosions.md`, research in
+  `research/explosions.md`, choices in `known_ambiguities/explosions.md`):
+  `EXPL` records (`src/explosions.rs`) go off where spell projectiles,
+  arrows and bolts land (a dual cast's `DUAL` explosion, else the
+  projectile's, else the effect's), where self-area spells and shouts land,
+  at destruction stages entered and at `PlaceAtMe` of an explosion (a
+  temporary reference). Each reaches living actors and destructible or
+  `OnHit`-scripted references within its radius and in sight: its damage as
+  its owner's blow, its enchantment, `OnHit`, knockdowns (Always, By
+  Formula), pushes for what moves (falling off with distance), its owner's
+  noise; its model, light, sounds, image space modifier and impact; its
+  placed hazard, explosion or object. Runes (projectiles with an alternate
+  trigger) lie where they land until an enemy of their caster comes near,
+  their timer runs out or a projectile spell lands by them. Console:
+  `explode <EXPL> [reach]`; `vrm-tool explosion-census`.
 - **The item's 3D model** (2026-11-11; `plans/item-3d.md`): the item menus
   (inventory, containers, barter, gifts) and the crafting menus show the
   highlighted item's model in the movie's `MouseRotationRect`: its world
@@ -1861,7 +1876,8 @@ game each piece unlocks.
 - Hostile spells that damage health take their magnitude off destructible
   references they land on (touch on destructibles, projectile, beam and location spells) or
   whose area reaches them (`spell_lands` -> `damage_object_by_blow`), under the
-  same Ignore External Damage gate; explosions are not done.
+  same Ignore External Damage gate; explosions damage them too (see
+  Explosions above).
 
 ## Next
 **Test results to act on.** autotest21 to autotest24's settled differing
@@ -1962,7 +1978,11 @@ readings are applied (see Done; autotest23 and autotest24's on
     target of a hostile script cast searching (autotest21), the unalerted
     NPC's 0.6 s sheathe after `DrawWeapon` (held in autotest21; autotest17's
     held commoner didn't draw), and whether a restrained NPC fights.
-  - Built and waiting for the user's run: `loadscreens`
+  - Built and waiting for the user's run: `explosions`
+    (`plans/explosions.md`; its dry run left two open questions in our
+    engine: created actors don't get their base's scripts, so its actor
+    logs read nothing, and whether a held actor's capsule follows a
+    script's `MoveTo`, since nothing was shaded), `loadscreens`
     (`plans/loading-screen.md`), `crafting1` (`plans/crafting.md`) and
     `spell-visuals` (`plans/spell-visuals.md`, Pending SE validation; its
     steps are now `set VrmFxRun to <n>`, as vanilla SE has no `cqf`).
@@ -2046,7 +2066,7 @@ readings are applied (see Done; autotest23 and autotest24's on
      and shouts as action sounds (the formula's slots for them are in
      `crate::detection`)
    - Noises still to make: spells' casting sound levels (MGEF) and shouts
-     (with Quiet Casting, above), explosions' (`EXPL`, with explosions);
+     (with Quiet Casting, above) (explosions' are done: see Done);
      whether a projectile's own `VNAM` counts, and when; how long a noise
      counts and whether one owned by nobody does anything (choices in
      `known_ambiguities/detection.md`, "Noises"); an SE probe could read
@@ -2200,7 +2220,7 @@ readings are applied (see Done; autotest23 and autotest24's on
 5. **Game logic**: combat (crossbows and bolts, arrows in hand while drawing and
    stuck in actors, sneak shots, killmoves and the decapitations they end in, the player's own weapon and
    animations), magic (see Done; next: native healing thresholds and timing, spells chosen by their
-   scores, NPCs raising wards against spells already in flight and arrows (`known_ambiguities/wards.md`), summons and buffs in combat, runes, magic sounds, the other archetypes (Illusion's calm, fear, frenzy
+   scores, NPCs raising wards against spells already in flight and arrows (`known_ambiguities/wards.md`), summons and buffs in combat, runes' decals, Light Foot and Chain Lightning's leaps (`plans/explosions.md`, Left out), magic sounds, the other archetypes (Illusion's calm, fear, frenzy
    and rally, summons, bound weapons done: see Done): NPCs summoning, reanimation,
    bound weapons in the casting
    hand, light, paralysis,
@@ -2252,10 +2272,10 @@ readings are applied (see Done; autotest23 and autotest24's on
      `known_ambiguities/traps.md`), arrows knocking down beehives, NPCs' blows and spells pushing them
      (ragdolled falls now use `fJumpFall*NPC` via `crate::falling`; ordinary
      NPC falls still need airborne movement and a landing:
-     `ActorRuntime::stand_on_ground` only follows navmesh height). Explosion
-     knockdowns should call `Engine::knock_down` once explosions exist; the
-     EXPL "By Formula" rule and ATKD knockdown trigger rule still need SE
-     evidence (`plans/living-ragdolls.md`)
+     `ActorRuntime::stand_on_ground` only follows navmesh height). Explosions
+     knock down through `Engine::knock_down` (see Done); their "By Formula"
+     rule awaits `test-mod explosions`, and the ATKD knockdown trigger rule
+     still needs SE evidence (`plans/living-ragdolls.md`)
    - Scenes: the player's own lines (skipped for now; see `known_ambiguities/scenes.md`);
      priority between scenes
    - Physics, more: arrows sticking in loose objects; opened display-case lids
@@ -2265,10 +2285,10 @@ readings are applied (see Done; autotest23 and autotest24's on
    - Destructible object damage and lifecycle (`DEST` definitions, initial
      stage queries and scripted `DamageObject` health/stage progression are
      done; see Done): cobwebs blocking dungeon paths, barricades, bee hives,
-     trap oil pools and gas. Explosions (`EXPL` damage within their radius)
-     and self damage; the
+     trap oil pools and gas. Self damage; the
      stage's model (`BSDamageStage` children or a replacement model with its
-     collision, freeing navmesh obstacles), explosion and debris;
+     collision, freeing navmesh obstacles) and debris (stages' explosions are
+     done: see Done);
      destruction visuals/effects and flags.
      `ClearDestruction` now resets runtime state (see
      Done), but game effect restoration remains unresolved. Choices:

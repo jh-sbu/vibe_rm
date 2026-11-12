@@ -1,6 +1,8 @@
 # Plan: explosions
 
-**Status: drafted** (2026-11-11). ROADMAP item 5 (Game logic),
+**Status: done** (2026-11-11; steps 0–9, with follow-up fixes to step 3's
+knockdown rule and to `add_objects`); `test-mod explosions` awaits the
+user's run in SE. See "Outcome" at the end. ROADMAP item 5 (Game logic),
 "Destructible object damage and lifecycle: ... Explosions (`EXPL` damage
 within their radius) and self damage; the stage's ... explosion", and the
 call sites other plans left for them: explosion knockdowns through
@@ -102,3 +104,17 @@ Each numbered step is one commit, in this order.
   known.
 - NPCs avoiding explosions and runes (`fCombatThreatProximityExplosionAvoidTime`,
   the combat style's threat avoidance: `plans/ai-depth.md`, blocked).
+
+## Outcome
+
+All steps are implemented, except step 5's spawn projectile (moved to Left
+out: its one record is unused). Also found and fixed on the way:
+`add_objects` dropped a cell's runtime when the scene had no render cell
+for it; explosion models name their one sequence for its use, so the first
+plays when there's no `Idle`. Left for the SE batch (`test-mod
+explosions`, see its module doc for the readings our engine predicts):
+damage by distance and armor, shading, `OnHit`'s source and aggressor, the
+"By Formula" rule, the `PlaceAtMe` reference's life. Its dry run in our
+engine found two open questions outside explosions (ROADMAP, Test
+plugins). Also left out: the rune's decal (`PROJ` `DATA` 0x54), the Light
+Foot perk, and runes' crime and re-targeting rules (UESP's Rune (effect)).
