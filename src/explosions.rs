@@ -119,6 +119,8 @@ const SIGHT_LIFT: f32 = 8.0;
 /// Explosions set off while others go off, waiting for the next frame; the
 /// most gone off in one frame.
 const MAX_PER_FRAME: usize = 32;
+/// The shortest an explosion's light lasts (seconds; no source).
+const MIN_FLASH: f32 = 0.5;
 /// The fastest a blast sends what it pushes (units a second; no source).
 const MAX_PUSH_SPEED: f32 = 700.0;
 
@@ -157,11 +159,20 @@ impl Detonation {
     }
 }
 
-/// Explosions waiting to go off.
+/// Explosions waiting to go off, and the lights of those going off.
 #[derive(Default)]
 pub struct Explosions {
     queue: Vec<Detonation>,
     going_off: bool,
+    lights: Vec<Flash>,
+}
+
+/// An explosion's light: fading out over its life.
+#[derive(Clone)]
+struct Flash {
+    light: crate::render::GpuLight,
+    age: f32,
+    life: f32,
 }
 
 /// What an explosion reached: an actor or a reference, where it was struck,
@@ -187,8 +198,12 @@ impl Engine {
         self.explosions.going_off = false;
     }
 
-    /// The explosions waiting from last frame go off.
-    pub(crate) fn update_explosions(&mut self, _dt: f32) {
+    /// The explosions waiting from last frame go off; lights fade.
+    pub(crate) fn update_explosions(&mut self, dt: f32) {
+        self.explosions.lights.retain_mut(|f| {
+            f.age += dt;
+            f.age < f.life
+        });
         let mut queue = std::mem::take(&mut self.explosions.queue);
         let later = queue.split_off(queue.len().min(MAX_PER_FRAME));
         self.explosions.queue = later;
@@ -234,6 +249,7 @@ impl Engine {
             }
         }
         self.explosion_force(&x, d, &actors);
+        self.show_explosion(&x, d, owner);
         if let Some(o) = owner
             && let Some(level) = self.sound_level(x.sound_level)
         {
@@ -294,6 +310,73 @@ impl Engine {
             self.disturb(owner);
             self.physics.apply_impulse(owner, dir * impulse);
         }
+    }
+
+    /// What a blast shows and sounds like: its model played once where it
+    /// goes off (facing back the way what set it off came, or the world's
+    /// way with "Always Uses World Orientation"), its light for as long,
+    /// its two sounds, its image space modifier for the player within its IS
+    /// radius, and its impact on the surface it went off on.
+    fn show_explosion(&mut self, x: &ExplosionData, d: &Detonation, owner: Option<FormId>) {
+        let rot = if x.has(flag::WORLD_ORIENTATION) {
+            glam::Quat::IDENTITY
+        } else {
+            glam::Quat::from_rotation_arc(Vec3::Z, (-d.dir).normalize_or(Vec3::Z))
+        };
+        let transform = glam::Mat4::from_rotation_translation(rot, d.at);
+        let mut life = MIN_FLASH;
+        if let Some(model) = &x.model
+            && let Some(mut fx) = self.load_spell_model(model, transform)
+        {
+            // Explosion models name their one sequence for its use
+            // (`SpecialIdle_AreaEffect`...): played when there's no `Idle`.
+            if fx.graph.is_none() && !fx.is_playing() {
+                let first = fx
+                    .anim
+                    .as_ref()
+                    .and_then(|a| a.sequences.first())
+                    .map(|s| s.name.clone());
+                if let Some(name) = first {
+                    fx.play(&name);
+                }
+            }
+            fx.duration = fx.one_shot_duration();
+            fx.fade_duration = 0.0;
+            log::debug!("explosion model {model} for {:.2}s", fx.duration);
+            life = life.max(fx.duration);
+            self.spell_fx.tails.push(fx);
+        }
+        if let Some(light) = self.spell_light(x.light, d.at + Vec3::Z * SIGHT_LIFT) {
+            self.explosions.lights.push(Flash {
+                light,
+                age: 0.0,
+                life,
+            });
+        }
+        for s in x.sounds.into_iter().filter(|s| !s.is_null()) {
+            self.play_sound(s, d.at);
+        }
+        if !x.image_space.is_null()
+            && !self.player_dead()
+            && self.player.position.distance(d.at) <= x.image_space_radius
+        {
+            self.apply_imod(x.image_space, 1.0);
+        }
+        if !x.impacts.is_null() {
+            self.impact_at(x.impacts, owner, None, d.at, d.dir.normalize_or(-Vec3::Z));
+        }
+    }
+
+    /// The lights of the explosions going off, fading over their life.
+    pub(crate) fn explosion_lights(&self) -> impl Iterator<Item = crate::render::GpuLight> + '_ {
+        self.explosions.lights.iter().map(|f| {
+            let fade = (1.0 - f.age / f.life.max(1e-3)).clamp(0.0, 1.0);
+            let mut light = f.light;
+            for c in &mut light.color[..3] {
+                *c *= fade;
+            }
+            light
+        })
     }
 
     /// An actor in the blast: its damage, its enchantment, and (if not a

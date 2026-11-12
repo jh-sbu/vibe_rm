@@ -215,6 +215,11 @@ impl EffectInstance {
         Self::from_parts(transform, root, anim, parts, f32::INFINITY)
     }
 
+    /// Whether a sequence is playing (one `play` found).
+    pub fn is_playing(&self) -> bool {
+        self.playing.is_some()
+    }
+
     pub fn play(&mut self, name: &str) -> bool {
         let Some((index, seq)) = self.anim.as_ref().and_then(|a| {
             a.sequences
@@ -239,7 +244,7 @@ impl EffectInstance {
             graph.set_variable(name, value);
         }
     }
-    pub(super) fn one_shot_duration(&self) -> f32 {
+    pub(crate) fn one_shot_duration(&self) -> f32 {
         let anim = self.anim.as_ref();
         if let Some(anim) = anim.filter(|a| !a.sequences.is_empty()) {
             return anim

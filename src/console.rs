@@ -725,6 +725,22 @@ pub fn execute(engine: &mut Engine, line: &str) -> Vec<String> {
             let reach = args.get(1).and_then(|d| d.parse().ok()).unwrap_or(512.0);
             vec![engine.test_impact(ipct, reach)]
         }
+        "explode" => {
+            // explode <EXPL> [distance]: an explosion where the view meets
+            // the world (within the distance, default 512), set off by nobody.
+            let Some(x) = args.first().and_then(|a| engine.resolve_form(a)) else {
+                return vec!["usage: explode <explosion> [distance]".into()];
+            };
+            let reach = args.get(1).and_then(|d| d.parse().ok()).unwrap_or(512.0);
+            let (from, dir) = engine.player_aim();
+            let Some((t, _)) = engine.physics.ground_ray(from, dir, reach) else {
+                return vec![format!("nothing within {reach} units ahead")];
+            };
+            let mut d = crate::explosions::Detonation::new(x, from + dir * t);
+            d.dir = dir;
+            engine.explode(d);
+            vec![format!("{x} at {:.0}", from + dir * t)]
+        }
         "pcast" => {
             // pcast <right|left|power|voice> [off]: a hand's attack button
             // down (up with off), the power readied used, or the voice key.

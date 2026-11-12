@@ -452,11 +452,13 @@ impl Engine {
                 })
             })
             .collect();
-        if held.is_empty() && self.spell_fx.lights.is_empty() && !had {
+        let flashes: Vec<crate::render::GpuLight> = self.explosion_lights().collect();
+        if held.is_empty() && self.spell_fx.lights.is_empty() && flashes.is_empty() && !had {
             return;
         }
         self.scene.lights.extend(held);
         self.scene.lights.extend_from_slice(&self.spell_fx.lights);
+        self.scene.lights.extend(flashes);
         self.scene.assign_moving_lights(first);
     }
 }

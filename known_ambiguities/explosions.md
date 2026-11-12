@@ -64,3 +64,18 @@ Choices made to get explosions working where the sources
   `fExplosionForceMultAngular` (1) and any spin are left out.
 - **"Push Explosion Source Ref Only"** pushes only its source, with the
   force times `fExplosionSourceRefMult` (3), with no line of sight test.
+- **The model** plays once where it goes off, for its sequence's length
+  (`CWCatapultExplosion.nif`: `SpecialIdle_AreaEffect`, text keys `start`,
+  `Hit` at 0.033 s, `end` at 3.5 s). Explosion models name their one
+  sequence for its use, so the first is played when there's no `Idle`.
+  Its +Z faces back the way what set it off came (a placed one's points
+  up); "Always Uses World Orientation" keeps the world's axes. The `Hit`
+  key isn't waited for (see When).
+- **The light** (`DATA` light) is at the centre, 8 units up, fading
+  linearly to nothing over the model's length (at least 0.5 s).
+- **The image space modifier** is applied at full strength when the player
+  is within the IS radius as it goes off; nothing scales it by distance.
+  "Ignore Image Space Swap" and `fExplosionImageSpaceSwapPower` are unused.
+- **Sounds 1 and 2** both play at the centre.
+- **The impact data set** lands once, on the surface it went off on, along
+  the way what set it off was going (straight down for a placed one).

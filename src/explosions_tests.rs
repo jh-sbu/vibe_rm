@@ -302,3 +302,48 @@ fn knockdowns_always_or_by_the_health_left() {
     assert!(!knocks_down(FORMULA, 26.0, 50.0, 0.5));
     assert!(!knocks_down(0, 0.0, 50.0, 0.5));
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn a_blasts_light_fades_and_its_image_space_reaches_the_player_within_its_radius() {
+    const FLASH: FormId = FormId(0x813);
+    const LIGHT: FormId = FormId(0x860);
+    const IMOD: FormId = FormId(0x861);
+    let mut light = vec![0u8; 24];
+    light[4..8].copy_from_slice(&256u32.to_le_bytes());
+    light[8..11].copy_from_slice(&[255, 128, 0]);
+    let mut d = expl_data(0.0, 0.0, 100.0, 0x1);
+    d[0..4].copy_from_slice(&LIGHT.0.to_le_bytes());
+    d[36..40].copy_from_slice(&1024.0f32.to_le_bytes());
+    let extra = vec![
+        Node::top(
+            b"LIGH",
+            vec![RecordBuilder::new(b"LIGH", LIGHT).field(b"DATA", &light)],
+        ),
+        Node::top(b"IMAD", vec![RecordBuilder::new(b"IMAD", IMOD)]),
+        Node::top(
+            b"EXPL",
+            vec![
+                RecordBuilder::new(b"EXPL", FLASH)
+                    .u32(b"MNAM", IMOD.0)
+                    .field(b"DATA", &d),
+            ],
+        ),
+    ];
+    let (_f, mut e) = fixture("show", extra);
+    let modified = |e: &Engine| e.imagespace.active.iter().any(|a| a.imad == IMOD);
+    // The player 5000 away: outside its IS radius.
+    e.explode(Detonation::new(FLASH, Vec3::ZERO));
+    assert!(!modified(&e));
+    let lights: Vec<_> = e.explosion_lights().collect();
+    assert_eq!(lights.len(), 1);
+    assert_eq!(lights[0].pos_radius[3], 256.0);
+    e.update_explosions(MIN_FLASH / 2.0);
+    let half = e.explosion_lights().next().unwrap().color[0];
+    assert!((half - lights[0].color[0] / 2.0).abs() < 1e-3, "{half}");
+    e.update_explosions(MIN_FLASH);
+    assert_eq!(e.explosion_lights().count(), 0);
+    // Within it.
+    e.explode(Detonation::new(FLASH, Vec3::new(0.0, 4500.0, 0.0)));
+    assert!(modified(&e));
+}
