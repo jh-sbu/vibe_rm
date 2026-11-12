@@ -46,3 +46,21 @@ Choices made to get explosions working where the sources
   model's hit key time. An explosion set off while another goes off waits
   for the next frame (at most 32 a frame), so chains of destructible
   objects can't recurse.
+- **Knockdowns.** "Knock Down - Always" knocks down every living actor
+  reached; "By Formula" those left at or below
+  `fKnockdownCurrentHealthThreshold` (50) percent of their health once its
+  damage is taken. The setting's name is the only lead to the formula. The
+  push is `crate::knock`'s (as `PushActorAway`'s) with the explosion's
+  force. Explosions without either flag don't move living actors or make
+  them stagger.
+- **Pushing what moves.** Dynamic bodies (loose objects, corpses' and the
+  knocked down's ragdolls) whose centre of mass is within the radius and in
+  sight get an impulse away from the centre: the force times
+  `fExplosionForceMultLinear` read as a Havok impulse (kg m/s), the same at
+  any distance, but never more than sends the body off at 700 units a
+  second (10 m/s; no source: the catapult's 240 would throw a 1 kg cup at
+  240 m/s). The vertical offset mult is added to the push's upward part
+  (values 0 to 500 in the records; read as a lift, so 500 is straight up).
+  `fExplosionForceMultAngular` (1) and any spin are left out.
+- **"Push Explosion Source Ref Only"** pushes only its source, with the
+  force times `fExplosionSourceRefMult` (3), with no line of sight test.

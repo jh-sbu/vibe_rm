@@ -13,6 +13,9 @@ use esp::{FormId, LoadOrder};
 use glam::Vec3;
 use papyrus::Value;
 
+use esp::actor_value as av;
+
+use crate::ai::combat::gmst_f32;
 use crate::engine::{Engine, PLAYER_REF};
 
 /// `DATA` flags.
@@ -116,6 +119,8 @@ const SIGHT_LIFT: f32 = 8.0;
 /// Explosions set off while others go off, waiting for the next frame; the
 /// most gone off in one frame.
 const MAX_PER_FRAME: usize = 32;
+/// The fastest a blast sends what it pushes (units a second; no source).
+const MAX_PUSH_SPEED: f32 = 700.0;
 
 /// An explosion to set off.
 #[derive(Debug, Clone, PartialEq)]
@@ -228,10 +233,66 @@ impl Engine {
                 self.send_explosion_hit(d, owner, r.what);
             }
         }
+        self.explosion_force(&x, d, &actors);
         if let Some(o) = owner
             && let Some(level) = self.sound_level(x.sound_level)
         {
             self.make_noise(o, level, Some(d.at));
+        }
+    }
+
+    /// The blast's push: actors it knocks down ("Knock Down - Always", or
+    /// "By Formula" those left at or below `fKnockdownCurrentHealthThreshold`
+    /// percent of their health), and what moves within its radius (corpses
+    /// too) pushed away from it, only its source with "Push Explosion Source
+    /// Ref Only" (by `fExplosionSourceRefMult`).
+    fn explosion_force(&mut self, x: &ExplosionData, d: &Detonation, actors: &[Reached]) {
+        let force = x.force * gmst_f32(&self.lo, "fExplosionForceMultLinear", 1.0);
+        if x.has(flag::KNOCK_DOWN_ALWAYS | flag::KNOCK_DOWN_BY_FORMULA) {
+            let threshold = gmst_f32(&self.lo, "fKnockdownCurrentHealthThreshold", 50.0) / 100.0;
+            for r in actors {
+                if self.is_dead(r.what) {
+                    continue;
+                }
+                let max = self.av_max(r.what, av::HEALTH);
+                let left = self.actor_value(r.what, av::HEALTH);
+                if knocks_down(x.flags, left, max, threshold) {
+                    let feet = self.ref_position(r.what).unwrap_or(r.at);
+                    let push = crate::knock::push_velocity(d.at, feet, force.max(1.0));
+                    self.knock_down(r.what, push, crate::knock::KnockCause::Area);
+                }
+            }
+        }
+        if force <= 0.0 || x.radius <= 0.0 {
+            return;
+        }
+        let source_only = x.has(flag::PUSH_SOURCE_ONLY);
+        let force = if source_only {
+            force * gmst_f32(&self.lo, "fExplosionSourceRefMult", 3.0)
+        } else {
+            force
+        };
+        let from = d.at + Vec3::Z * SIGHT_LIFT;
+        let bodies = self.physics.dynamic_owners_within(d.at, x.radius);
+        for (owner, at, mass) in bodies {
+            if source_only && Some(owner) != d.source {
+                continue;
+            }
+            // Living actors are knocked down or stand; corpses fly.
+            if self.is_actor_ref(owner) && !self.is_dead(owner) {
+                continue;
+            }
+            if !source_only && !self.blast_reaches(x, d, from, at, owner) {
+                continue;
+            }
+            let mut dir = (at - d.at).normalize_or(Vec3::Z);
+            dir.z += x.vertical_offset_mult.max(0.0);
+            let dir = dir.normalize_or(Vec3::Z);
+            // The force as a Havok impulse (kg m/s), no faster than
+            // `MAX_PUSH_SPEED` for light things.
+            let impulse = (force * crate::physics::METRE).min(mass.max(0.1) * MAX_PUSH_SPEED);
+            self.disturb(owner);
+            self.physics.apply_impulse(owner, dir * impulse);
         }
     }
 
@@ -377,6 +438,14 @@ impl Engine {
         out.sort_by(|a, b| a.distance.total_cmp(&b.distance));
         out
     }
+}
+
+/// Whether an explosion of these flags knocks down an actor left with
+/// `left` of `max` health: always, or by formula at or below `threshold`
+/// of it (`fKnockdownCurrentHealthThreshold`, a percentage, as a fraction).
+fn knocks_down(flags: u32, left: f32, max: f32, threshold: f32) -> bool {
+    flags & flag::KNOCK_DOWN_ALWAYS != 0
+        || flags & flag::KNOCK_DOWN_BY_FORMULA != 0 && max > 0.0 && left / max <= threshold
 }
 
 #[cfg(test)]

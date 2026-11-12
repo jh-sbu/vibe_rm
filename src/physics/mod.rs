@@ -522,6 +522,40 @@ impl Physics {
         (!at.is_empty()).then(|| at.iter().sum::<Vec3>() / at.len() as f32)
     }
 
+    /// What moves (dynamic bodies' owners) with a body's centre of mass
+    /// within `radius` of `centre`: (owner, that centre, the body's mass),
+    /// one entry for each owner, its nearest body.
+    pub fn dynamic_owners_within(
+        &self,
+        centre: Vec3,
+        radius: f32,
+    ) -> Vec<(esp::FormId, Vec3, f32)> {
+        let mut out: HashMap<esp::FormId, (Vec3, f32)> = HashMap::new();
+        for (h, owner) in &self.owners {
+            let Some(b) = self
+                .world
+                .colliders
+                .get(*h)
+                .and_then(|c| c.parent())
+                .and_then(|p| self.world.bodies.get(p))
+                .filter(|b| b.is_dynamic())
+            else {
+                continue;
+            };
+            let at = b.center_of_mass();
+            if at.distance(centre) > radius {
+                continue;
+            }
+            let e = out.entry(*owner).or_insert((at, b.mass()));
+            if at.distance(centre) < e.0.distance(centre) {
+                *e = (at, b.mass());
+            }
+        }
+        let mut v: Vec<_> = out.into_iter().map(|(o, (at, m))| (o, at, m)).collect();
+        v.sort_by_key(|(o, _, _)| o.0);
+        v
+    }
+
     /// Whether what `owner` owns is a simulated (dynamic) body.
     pub fn is_dynamic_owner(&self, owner: esp::FormId) -> bool {
         self.owner_bodies(owner)

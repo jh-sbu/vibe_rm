@@ -981,7 +981,7 @@ impl Engine {
 
 /// Provisional force scale and lift; isolated for correction by the SE probe.
 /// A negative force pulls toward the source, still lifting the body.
-fn push_velocity(from: Vec3, to: Vec3, force: f32) -> Vec3 {
+pub(crate) fn push_velocity(from: Vec3, to: Vec3, force: f32) -> Vec3 {
     let direction = (to - from).with_z(0.0).normalize_or(Vec3::Y);
     let force = force.clamp(-128.0, 128.0);
     (direction * force + Vec3::Z * 0.35 * force.abs()) * 35.0

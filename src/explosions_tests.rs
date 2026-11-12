@@ -251,3 +251,54 @@ fn blasts_set_off_by_a_blast_wait_for_the_next_frame() {
     assert_eq!(health(&e, NEAR), 30.0);
     assert!(e.explosions.queue.is_empty());
 }
+
+/// A free ball of `mass` kg owned by `owner` at `at`.
+fn ball(e: &mut Engine, owner: FormId, at: Vec3, mass: f32) -> rapier3d::prelude::RigidBodyHandle {
+    use rapier3d::prelude::*;
+    let h = e
+        .physics
+        .world
+        .insert_body(RigidBodyBuilder::dynamic().translation(at));
+    let c = e
+        .physics
+        .world
+        .insert_collider(ColliderBuilder::ball(5.0).mass(mass).build(), Some(h));
+    e.physics.owners.insert(c, owner);
+    h
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn a_blast_pushes_what_moves_away_from_it_and_lifts_it_by_its_offset() {
+    let extra = vec![Node::top(
+        b"EXPL",
+        vec![RecordBuilder::new(b"EXPL", FormId(0x812)).field(b"DATA", &{
+            let mut d = expl_data(5.0, 0.0, 300.0, 0x11);
+            d[40..44].copy_from_slice(&0.5f32.to_le_bytes());
+            d
+        })],
+    )];
+    let (_f, mut e) = fixture("force", extra);
+    let near = ball(&mut e, FormId(0x850), Vec3::new(0.0, 100.0, 0.0), 2.0);
+    let far = ball(&mut e, FormId(0x851), Vec3::new(0.0, 400.0, 0.0), 2.0);
+    e.explode(Detonation::new(FormId(0x812), Vec3::ZERO));
+    let v = |e: &Engine, h| e.physics.world.bodies.get(h).unwrap().linvel();
+    let pushed = v(&e, near);
+    // Away along +Y, lifted by the vertical offset mult, no faster than the cap.
+    assert!(
+        pushed.y > 0.0 && pushed.z > 0.0 && pushed.x.abs() < 1e-3,
+        "{pushed:?}"
+    );
+    assert!((pushed.z / pushed.y - 0.5).abs() < 1e-3, "{pushed:?}");
+    assert!(pushed.length() <= MAX_PUSH_SPEED + 1e-2, "{pushed:?}");
+    assert_eq!(v(&e, far), Vec3::ZERO);
+}
+
+#[test]
+fn knockdowns_always_or_by_the_health_left() {
+    use flag::{KNOCK_DOWN_ALWAYS as ALWAYS, KNOCK_DOWN_BY_FORMULA as FORMULA};
+    assert!(knocks_down(ALWAYS, 50.0, 50.0, 0.5));
+    assert!(knocks_down(FORMULA, 25.0, 50.0, 0.5));
+    assert!(!knocks_down(FORMULA, 26.0, 50.0, 0.5));
+    assert!(!knocks_down(0, 0.0, 50.0, 0.5));
+}
