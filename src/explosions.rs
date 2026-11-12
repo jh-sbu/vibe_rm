@@ -10,6 +10,10 @@
 //! `known_ambiguities/explosions.md` holds the choices.
 
 use esp::{FormId, LoadOrder};
+use glam::Vec3;
+use papyrus::Value;
+
+use crate::engine::{Engine, PLAYER_REF};
 
 /// `DATA` flags.
 pub mod flag {
@@ -103,6 +107,281 @@ impl ExplosionData {
         self.flags & flag != 0
     }
 }
+
+/// The middle of an actor's body at scale 1: what an explosion must reach.
+const BODY_CENTRE: f32 = 60.0;
+/// How far above where it went off an explosion looks from, so the
+/// surface it landed on doesn't hide what stands on it.
+const SIGHT_LIFT: f32 = 8.0;
+/// Explosions set off while others go off, waiting for the next frame; the
+/// most gone off in one frame.
+const MAX_PER_FRAME: usize = 32;
+
+/// An explosion to set off.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Detonation {
+    pub explosion: FormId,
+    pub at: Vec3,
+    /// Which way what set it off was going (down for one placed).
+    pub dir: Vec3,
+    /// Who it is blamed on (their actor cause, if they have one).
+    pub owner: Option<FormId>,
+    /// The reference that went off or set it off (a destructible object, a
+    /// script's reference, a caster): spared by it, and not in its way.
+    pub source: Option<FormId>,
+    /// The spell landing that set it off: its effects and `OnHit`s are the
+    /// spell's own (`Engine::spell_lands`).
+    pub spell: Option<FormId>,
+    /// The weapon and projectile behind it (`OnHit`).
+    pub weapon: Option<FormId>,
+    pub projectile: Option<FormId>,
+}
+
+impl Detonation {
+    pub(crate) fn new(explosion: FormId, at: Vec3) -> Self {
+        Detonation {
+            explosion,
+            at,
+            dir: -Vec3::Z,
+            owner: None,
+            source: None,
+            spell: None,
+            weapon: None,
+            projectile: None,
+        }
+    }
+}
+
+/// Explosions waiting to go off.
+#[derive(Default)]
+pub struct Explosions {
+    queue: Vec<Detonation>,
+    going_off: bool,
+}
+
+/// What an explosion reached: an actor or a reference, where it was struck,
+/// and how far from the centre.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Reached {
+    pub what: FormId,
+    pub at: Vec3,
+    pub distance: f32,
+}
+
+impl Engine {
+    /// Set an explosion off. One set off while another is going off (a
+    /// destructible object its damage destroys exploding in turn) goes off
+    /// next frame.
+    pub(crate) fn explode(&mut self, d: Detonation) {
+        if self.explosions.going_off {
+            self.explosions.queue.push(d);
+            return;
+        }
+        self.explosions.going_off = true;
+        self.go_off(&d);
+        self.explosions.going_off = false;
+    }
+
+    /// The explosions waiting from last frame go off.
+    pub(crate) fn update_explosions(&mut self, _dt: f32) {
+        let mut queue = std::mem::take(&mut self.explosions.queue);
+        let later = queue.split_off(queue.len().min(MAX_PER_FRAME));
+        self.explosions.queue = later;
+        for d in queue {
+            self.explode(d);
+        }
+    }
+
+    fn go_off(&mut self, d: &Detonation) {
+        let Some(x) = ExplosionData::load(&self.lo, d.explosion) else {
+            return;
+        };
+        let owner = d
+            .owner
+            .map(|o| self.actor_cause_of(o))
+            .filter(|&o| self.is_actor_ref(o));
+        log::info!(
+            "explosion {} ({}) at {:.0} by {owner:?}: radius {}, damage {}, force {}",
+            self.lo
+                .get(d.explosion)
+                .and_then(|r| r.editor_id())
+                .unwrap_or_default(),
+            d.explosion,
+            d.at,
+            x.radius,
+            x.damage,
+            x.force
+        );
+        let actors = self.explosion_actors(&x, d);
+        let objects = self.explosion_objects(&x, d);
+        let hostile_enchantment = self
+            .magic_item(x.enchantment)
+            .is_some_and(|m| self.item_hostile(&m));
+        for r in &actors {
+            self.explosion_strikes_actor(&x, d, owner, hostile_enchantment, r.what);
+        }
+        for r in &objects {
+            if x.damage > 0.0 && self.destructible_data(r.what).is_some() {
+                self.damage_object_by_blow(r.what, x.damage);
+            }
+            if d.spell.is_none() {
+                self.send_explosion_hit(d, owner, r.what);
+            }
+        }
+        if let Some(o) = owner
+            && let Some(level) = self.sound_level(x.sound_level)
+        {
+            self.make_noise(o, level, Some(d.at));
+        }
+    }
+
+    /// An actor in the blast: its damage, its enchantment, and (if not a
+    /// spell's) `OnHit` and the fight a blow starts.
+    fn explosion_strikes_actor(
+        &mut self,
+        x: &ExplosionData,
+        d: &Detonation,
+        owner: Option<FormId>,
+        hostile_enchantment: bool,
+        target: FormId,
+    ) {
+        if self.is_ethereal(target) {
+            return;
+        }
+        if x.damage > 0.0 {
+            let amount = x.damage * self.difficulty_multiplier(target, false);
+            // Its owner's blow: a fight and an assault, as any.
+            self.damage_unscaled(target, amount, owner, 0.0);
+        }
+        if !x.enchantment.is_null() {
+            match owner {
+                // Its `OnHit` is the explosion's, below.
+                Some(o) => {
+                    self.apply_item_quietly(x.enchantment, o, target);
+                    if hostile_enchantment && o != target && d.spell.is_none() {
+                        self.hostile_magic_landed(target, o, x.enchantment, false);
+                    }
+                }
+                None => {
+                    self.apply_item(x.enchantment, None, target);
+                }
+            }
+        }
+        if d.spell.is_none() {
+            self.send_explosion_hit(d, owner, target);
+        }
+    }
+
+    /// `OnHit` from an explosion: its owner the aggressor, the weapon behind
+    /// it (or the explosion) the source, the projectile behind it.
+    fn send_explosion_hit(&mut self, d: &Detonation, owner: Option<FormId>, target: FormId) {
+        let value = |e: &Engine, f: Option<FormId>| f.map_or(Value::None, |f| e.object_value(f));
+        let args = vec![
+            value(self, owner),
+            value(self, Some(d.weapon.unwrap_or(d.explosion))),
+            value(self, d.projectile),
+            Value::Bool(false),
+            Value::Bool(false),
+            Value::Bool(false),
+            Value::Bool(false),
+        ];
+        self.send_script_event(target, "OnHit", args);
+    }
+
+    /// Whether the blast at `from` reaches `to` (on `what`): nothing solid
+    /// between but `what` itself, unless it ignores line of sight.
+    fn blast_reaches(
+        &self,
+        x: &ExplosionData,
+        d: &Detonation,
+        from: Vec3,
+        to: Vec3,
+        what: FormId,
+    ) -> bool {
+        if x.has(flag::IGNORE_LOS) {
+            return true;
+        }
+        let dist = to.distance(from);
+        if dist < 1.0 {
+            return true;
+        }
+        let exclude = d.source.or(d.owner).unwrap_or(FormId::NULL);
+        match self
+            .physics
+            .raycast_excluding(from, (to - from) / dist, dist, exclude)
+        {
+            Some((_, hit)) => hit == Some(what),
+            None => true,
+        }
+    }
+
+    /// The living actors (the player too) whose body's middle is within the
+    /// explosion's radius and in its sight; not its source.
+    pub(crate) fn explosion_actors(&self, x: &ExplosionData, d: &Detonation) -> Vec<Reached> {
+        if x.radius <= 0.0 {
+            return Vec::new();
+        }
+        let from = d.at + Vec3::Z * SIGHT_LIFT;
+        let near = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| !a.dead)
+            .map(|a| (a.ref_id, a.exec.pos + Vec3::Z * BODY_CENTRE * a.scale));
+        let player = (!self.player_dead()).then_some((PLAYER_REF, self.player.position));
+        let mut out: Vec<Reached> = near
+            .chain(player)
+            .filter(|&(id, _)| Some(id) != d.source)
+            .filter_map(|(what, at)| {
+                let distance = at.distance(d.at);
+                (distance <= x.radius && self.blast_reaches(x, d, from, at, what))
+                    .then_some(Reached { what, at, distance })
+            })
+            .collect();
+        out.sort_by(|a, b| a.distance.total_cmp(&b.distance));
+        out
+    }
+
+    /// The loaded references other than actors within the radius and in
+    /// sight that it can affect: destructible ones, and those whose scripts
+    /// hear `OnHit`; not its source.
+    pub(crate) fn explosion_objects(&self, x: &ExplosionData, d: &Detonation) -> Vec<Reached> {
+        if x.radius <= 0.0 {
+            return Vec::new();
+        }
+        let from = d.at + Vec3::Z * SIGHT_LIFT;
+        let mut out: Vec<Reached> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.refs)
+            .copied()
+            .filter(|&r| Some(r) != d.source && !self.is_actor_ref(r))
+            .filter_map(|r| {
+                let at = self.ref_position(r)?;
+                let distance = at.distance(d.at);
+                (distance <= x.radius).then_some(Reached {
+                    what: r,
+                    at,
+                    distance,
+                })
+            })
+            .filter(|r| {
+                self.destructible_data(r.what).is_some()
+                    || self.vm.handles(papyrus::ObjectId::Form(r.what.0), "OnHit")
+            })
+            .filter(|r| {
+                let at = self.physics.owner_center(r.what).unwrap_or(r.at);
+                self.blast_reaches(x, d, from, at, r.what)
+            })
+            .collect();
+        out.sort_by(|a, b| a.distance.total_cmp(&b.distance));
+        out
+    }
+}
+
+#[cfg(test)]
+#[path = "explosions_tests.rs"]
+mod tests;
 
 #[cfg(test)]
 mod record_tests {

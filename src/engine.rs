@@ -101,6 +101,7 @@ pub struct Engine {
     pub pending_decals: Vec<(CellKey, Vec<FormId>)>,
     /// Impacts loaded, their effects running and the decals they left.
     pub(crate) impacts: crate::impacts::ImpactState,
+    pub(crate) explosions: crate::explosions::Explosions,
     pub(crate) spell_fx: crate::spell_fx::SpellFx,
     pub scene: Scene,
     pub camera: Camera,
@@ -605,6 +606,7 @@ impl Engine {
             decal_materials: Default::default(),
             pending_decals: Vec::new(),
             impacts: Default::default(),
+            explosions: Default::default(),
             spell_fx: Default::default(),
             scene: Scene::default(),
             camera: Camera {
@@ -3460,6 +3462,7 @@ impl Engine {
         self.update_quest_targets(dt);
         self.update_harvests();
         self.update_projectiles(world_dt);
+        self.update_explosions(world_dt);
         self.update_skills(dt);
         self.update_magic(dt);
         self.update_breath(world_dt);
