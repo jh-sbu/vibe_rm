@@ -130,23 +130,10 @@ impl WaterPipeline {
 }
 
 impl super::Renderer {
-    /// A square water plane covering `[x0, x0+size] x [y0, y0+size]` at height `z`.
-    pub fn build_water(
-        &self,
-        x0: f32,
-        y0: f32,
-        size: f32,
-        z: f32,
-        params: &WaterParams,
-    ) -> WaterPlane {
-        let v: [[f32; 3]; 6] = [
-            [x0, y0, z],
-            [x0 + size, y0, z],
-            [x0 + size, y0 + size, z],
-            [x0, y0, z],
-            [x0 + size, y0 + size, z],
-            [x0, y0 + size, z],
-        ];
+    /// A water plane over the quad `corners` (counter-clockwise from above).
+    pub fn build_water(&self, corners: [Vec3; 4], params: &WaterParams) -> WaterPlane {
+        let [a, b, c, d] = corners.map(|p| p.to_array());
+        let v: [[f32; 3]; 6] = [a, b, c, a, c, d];
         let vbuf = self
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -190,11 +177,16 @@ impl super::Renderer {
                 },
             ],
         });
+        let center = corners.iter().copied().sum::<Vec3>() / 4.0;
+        let radius = corners
+            .iter()
+            .map(|p| p.distance(center))
+            .fold(0.0, f32::max);
         WaterPlane {
             vbuf,
             bind_group,
-            center: Vec3::new(x0 + size * 0.5, y0 + size * 0.5, z),
-            radius: size * 0.75,
+            center,
+            radius,
         }
     }
 }

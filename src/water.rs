@@ -4,16 +4,72 @@
 //! see `known_ambiguities/water.md` for contact and processing limitations.
 
 use esp::FormId;
-use glam::{Vec2, Vec3};
+use glam::{Affine3A, Mat4, Vec2, Vec3};
 
 use crate::engine::Engine;
 
+/// A body of water: a cell's water level over its square, or a placed water
+/// (an activator with a water type, `WNAM`) over its bounds, reaching down
+/// without limit (autotest25's placed water was swum in at 300 deep).
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct WaterSurface {
-    pub corner: Vec2,
-    pub size: f32,
+    /// World to the water's own frame: a cell's corner, or the placed
+    /// water's reference, at the origin.
+    pub to_local: Affine3A,
+    /// Its extent in that frame (x and y; half-open).
+    pub min: Vec2,
+    pub max: Vec2,
     pub height: f32,
     pub water_type: FormId,
+    /// The current carrying swimmers (units a second; zero for still water).
+    pub current: Vec3,
+}
+
+impl WaterSurface {
+    /// A cell's water over `[corner, corner + size)`.
+    pub(crate) fn square(corner: Vec2, size: f32, height: f32, water_type: FormId) -> Self {
+        WaterSurface {
+            to_local: Affine3A::from_translation(-corner.extend(0.0)),
+            min: Vec2::ZERO,
+            max: Vec2::splat(size),
+            height,
+            water_type,
+            current: Vec3::ZERO,
+        }
+    }
+
+    /// A placed water: its reference's `transform` and its base's bounds.
+    pub(crate) fn placed(transform: Mat4, min: Vec3, max: Vec3, water_type: FormId) -> Self {
+        let height = transform
+            .transform_point3(Vec3::new(0.0, 0.0, (min.z + max.z) * 0.5))
+            .z;
+        WaterSurface {
+            to_local: Affine3A::from_mat4(transform.inverse()),
+            min: min.truncate(),
+            max: max.truncate(),
+            height,
+            water_type,
+            current: Vec3::ZERO,
+        }
+    }
+
+    /// Whether `at` lies over (or under) this water.
+    pub(crate) fn covers(&self, at: Vec3) -> bool {
+        let p = self.to_local.transform_point3(at);
+        (self.min.x..self.max.x).contains(&p.x) && (self.min.y..self.max.y).contains(&p.y)
+    }
+
+    /// Its corners in the world, at its height, counter-clockwise.
+    pub(crate) fn corners(&self) -> [Vec3; 4] {
+        let world = self.to_local.inverse();
+        [
+            Vec2::new(self.min.x, self.min.y),
+            Vec2::new(self.max.x, self.min.y),
+            Vec2::new(self.max.x, self.max.y),
+            Vec2::new(self.min.x, self.max.y),
+        ]
+        .map(|c| world.transform_point3(c.extend(0.0)).with_z(self.height))
+    }
 }
 
 /// Half-open bounds give the cell to the east/north its own boundary, as
@@ -24,10 +80,7 @@ pub(crate) fn surface_at<'a>(
 ) -> Option<&'a WaterSurface> {
     surfaces
         .into_iter()
-        .filter(|w| {
-            let d = at.truncate() - w.corner;
-            (0.0..w.size).contains(&d.x) && (0.0..w.size).contains(&d.y)
-        })
+        .filter(|w| w.covers(at))
         .max_by(|a, b| a.height.total_cmp(&b.height))
 }
 
@@ -84,6 +137,49 @@ impl Breath {
 }
 
 impl Engine {
+    /// The placed waters among `refs`: references of activators with a water
+    /// type (`WNAM`), over their bounds (`OBND`) as placed. A water enabled or
+    /// moved later isn't followed.
+    pub(crate) fn placed_water(&self, refs: &[FormId]) -> Vec<WaterSurface> {
+        let mut out = Vec::new();
+        for &r in refs {
+            if self.is_disabled(r) {
+                continue;
+            }
+            let Some(rec) = self.lo.get(r) else { continue };
+            let rf = crate::world::records::reference(&rec);
+            if rf.deleted() {
+                continue;
+            }
+            let Some(base) = self.lo.get(rf.base).filter(|b| b.tag().0 == *b"ACTI") else {
+                continue;
+            };
+            let Some(water_type) = base
+                .get(b"WNAM")
+                .filter(|d| d.len() >= 4)
+                .map(|d| base.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))))
+                .filter(|w| !w.is_null())
+            else {
+                continue;
+            };
+            let Some(b) = base.get(b"OBND").filter(|d| d.len() >= 12) else {
+                continue;
+            };
+            let v = |i: usize| i16::from_le_bytes([b[2 * i], b[2 * i + 1]]) as f32;
+            let (min, max) = (Vec3::new(v(0), v(1), v(2)), Vec3::new(v(3), v(4), v(5)));
+            if max.x <= min.x || max.y <= min.y {
+                continue;
+            }
+            let transform = Mat4::from_scale_rotation_translation(
+                Vec3::splat(rf.scale),
+                crate::world::records::rotation_from_euler(rf.rotation),
+                rf.position,
+            );
+            out.push(WaterSurface::placed(transform, min, max, water_type));
+        }
+        out
+    }
+
     /// Exclude only swim-only races (e.g. slaughterfish), which must keep their
     /// underwater Z. Swims is not a capability gate: horses swim without it.
     fn surface_swimmer(&self, actor: FormId) -> bool {
@@ -204,11 +300,33 @@ mod tests {
     use super::*;
 
     fn surface(x: f32, height: f32, water_type: u32) -> WaterSurface {
-        WaterSurface {
-            corner: Vec2::new(x, 0.0),
-            size: 4096.0,
-            height,
-            water_type: FormId(water_type),
+        WaterSurface::square(Vec2::new(x, 0.0), 4096.0, height, FormId(water_type))
+    }
+
+    #[test]
+    fn placed_water_covers_its_turned_scaled_bounds_at_its_height() {
+        // A 2048-square water (bounds ±1024) at (1000, 0, 50), turned 90°
+        // and scaled by a half: 1024 square about its spot.
+        let transform = Mat4::from_scale_rotation_translation(
+            Vec3::splat(0.5),
+            crate::world::records::rotation_from_euler(Vec3::new(0.0, 0.0, 90f32.to_radians())),
+            Vec3::new(1000.0, 0.0, 50.0),
+        );
+        let w = WaterSurface::placed(
+            transform,
+            Vec3::new(-1024.0, -1024.0, 0.0),
+            Vec3::new(1024.0, 1024.0, 0.0),
+            FormId(1),
+        );
+        assert!((w.height - 50.0).abs() < 1e-3);
+        assert!(w.covers(Vec3::new(1000.0, 0.0, -300.0)));
+        assert!(w.covers(Vec3::new(1500.0, 500.0, 0.0)));
+        assert!(!w.covers(Vec3::new(1520.0, 0.0, 0.0)));
+        assert!(!w.covers(Vec3::new(1000.0, -520.0, 0.0)));
+        for c in w.corners() {
+            assert!((c.z - 50.0).abs() < 1e-3);
+            assert!(((c.x - 1000.0).abs() - 512.0).abs() < 1e-2);
+            assert!((c.y.abs() - 512.0).abs() < 1e-2);
         }
     }
 

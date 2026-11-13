@@ -2852,6 +2852,10 @@ impl Engine {
         attached.extend(self.attach_cell_scripts(&made_ids));
         self.send_cell_load(&attached);
         self.start_cell_sounds(key, &refs);
+        let placed = self.placed_water(&refs);
+        if !placed.is_empty() {
+            self.add_water(key, placed);
+        }
         // No water from an interior's own water level (`XCLW`): SE made none
         // in autotest25's cell flagged as having water at level 0
         // (`known_ambiguities/water.md`). Interiors' water is placed.
@@ -3109,6 +3113,10 @@ impl Engine {
         attached.extend(self.attach_cell_scripts(&made_ids));
         self.send_cell_load(&attached);
         self.start_cell_sounds(key, &refs);
+        let placed = self.placed_water(&refs);
+        if !placed.is_empty() {
+            self.add_water(key, placed);
+        }
 
         timing.next("cell.terrain");
         // Landscape
@@ -3177,7 +3185,12 @@ impl Engine {
                 };
                 self.add_water(
                     key,
-                    vec![(x as f32 * CELL_SIZE, y as f32 * CELL_SIZE, CELL_SIZE, h, wt)],
+                    vec![crate::water::WaterSurface::square(
+                        glam::Vec2::new(x as f32 * CELL_SIZE, y as f32 * CELL_SIZE),
+                        CELL_SIZE,
+                        h,
+                        wt,
+                    )],
                 );
             }
         }
@@ -3216,34 +3229,26 @@ impl Engine {
         }
     }
 
-    fn add_water(&mut self, key: CellKey, planes: Vec<(f32, f32, f32, f32, FormId)>) {
+    fn add_water(&mut self, key: CellKey, surfaces: Vec<crate::water::WaterSurface>) {
         let mut params = Vec::new();
-        if let Some(rt) = self.cells.get_mut(&key) {
-            rt.water
-                .extend(planes.iter().map(|&(x, y, size, height, water_type)| {
-                    crate::water::WaterSurface {
-                        corner: glam::Vec2::new(x, y),
-                        size,
-                        height,
-                        water_type,
-                    }
-                }));
-        }
-        for (x, y, size, h, wt) in planes {
-            if let Some(p) = records::water_params(&self.lo, wt) {
-                params.push((x, y, size, h, p));
+        for w in &surfaces {
+            if let Some(p) = records::water_params(&self.lo, w.water_type) {
+                params.push((w.corners(), p));
             }
+        }
+        if let Some(rt) = self.cells.get_mut(&key) {
+            rt.water.extend(surfaces);
         }
         let tex: Vec<String> = params
             .iter()
-            .map(|p| p.4.noise_texture.clone())
+            .map(|p| p.1.noise_texture.clone())
             .filter(|t| !self.renderer.textures.contains(t))
             .collect::<HashSet<_>>()
             .into_iter()
             .collect();
         loader::load_textures(&mut self.renderer, &self.vfs, tex);
-        for (x, y, size, h, p) in params {
-            let plane = self.renderer.build_water(x, y, size, h, &p);
+        for (corners, p) in params {
+            let plane = self.renderer.build_water(corners, &p);
             if let Some(rc) = self.scene.cells.get_mut(&key) {
                 rc.water.push(plane);
             }

@@ -147,6 +147,22 @@ placed water (`BronzeWaterCave`, `RiftenRatway01`, `AnisesCabin01`,
 example with another water type, wasn't checked. Before this change ours
 gave them a water plane at that level.
 
+## Placed water
+
+Vanilla places much of its water as activators with a water type (`WNAM`):
+62 kinds in Skyrim.esm, in 128 interiors and along outdoor rivers. In SE
+(`research/autotest25.md`) six `Water2048DefaultIntWaistStill` gave a
+swimmable body at their height, down to a floor 300 under. Chosen: each
+such reference is water over its base's bounds (`OBND` x and y, as
+placed: position, rotation about all axes, scale), at the height of the
+bounds' middle, reaching down without limit, of its water type.
+Uncertain: how deep a placed water really reaches (only 300 was tried),
+whether its mesh's own shape matters where it isn't a rectangle
+(`MrkWaterSystemWarrens01`), and placed water that is enabled, disabled or
+moved after its cell loads (`TG08RisingWaterScript` translates one): ours
+keeps what was there at load. Its surface is drawn as a flat rectangle of
+its water type, like cell water.
+
 ## Breath and drowning
 
 The local UESP [Waterbreathing revision 3380569](https://en.uesp.net/w/index.php?oldid=3380569)
