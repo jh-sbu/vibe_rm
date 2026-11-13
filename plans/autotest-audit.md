@@ -38,7 +38,8 @@ trees included, and patch their inputs (`records::copy`, as autotest13 and
 autotest16 do), so a question a vanilla template can show is A. A tree
 shape that no vanilla package has is A*. Vanilla Papyrus has no
 difficulty setter and no `UsePower`. The two autotest20 items (swim
-depth, NPC charging) are included but stay deferred by the user.
+depth, NPC charging) are included; `test-mod autotest20` (built
+2026-11-13) covers them.
 
 ## Time estimate
 
@@ -1954,7 +1955,7 @@ Line numbers point into the file as of 2026-11-10.
 ### `water.md` (8 A, 1 A*, 2 V, 2 N)
 
 - A: immersion threshold, unloaded/dead actors (3 min)
-- A: swim entry depth (chosen: over 100) and whether Waterbreathing changes swimming (autotest20, deferred by user) (4 min)
+- A: swim entry depth (chosen: over 100) and whether Waterbreathing changes swimming (autotest20, built 2026-11-13) (4 min)
 - A: Swims/Walks race flags and swimming (3 min)
 - A: breath capacity and drowning damage (4 min)
 - A: creature breath / float heights (4 min)

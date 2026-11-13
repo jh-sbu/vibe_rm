@@ -2004,7 +2004,10 @@ readings are applied (see Done; autotest23 and autotest24's on
   - `controltags` (`research/ui/control-tags.md`): rounds 1 and 2 observed
     (2026-11-03). Still to see: a hint shown after binding Activate to a key
     without art (NumPad Enter, NumLock or Apps).
-  - autotest20 stays deferred by the user.
+  - `autotest20` (swim depth by the effect-event detector, in and out,
+    with Waterbreathing and an NPC; a charge that starts detected at 1500
+    and 2500): built 2026-11-13, waiting for the user's run
+    (`crates/tools/src/test_mods/autotest20.rs`).
   - Drawing spells (`known_ambiguities/player-body.md`, "Drawing spells"):
     put off by the user (2026-11-04). In SE, check which draw event is used
     for mixed hands (sword + spell, staff + spell). Also check what happens
@@ -2017,7 +2020,7 @@ readings are applied (see Done; autotest23 and autotest24's on
 
 1. **Animation: behaviour graphs at runtime** (humanoids run their graphs; see Done).
    The bounded work of `plans/animation-unblocked.md` is complete within its
-   researched scope; autotest20 is deferred by the user.
+   researched scope; autotest20 is built and waiting for the user's run.
    - Pose modifiers: twist chains, non-additive modes and branch blending
      (`known_ambiguities/twist-modifier.md`), keyframe bones; foot IK's authored
      knee-angle-difference settings (nonzero on several creatures; formula open).

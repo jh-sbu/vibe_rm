@@ -17,8 +17,8 @@ sub-step as marked.
 ## Completion record
 
 Implemented in the scheduled commits below. Autotest19 was already run before
-this pass; **autotest20 remains explicitly deferred by the user**. No autotest20
-code/plugin was written, generated or run. Swim entry depth and charge initiation
+this pass; autotest20 was deferred by the user then, and built on 2026-11-13
+(`test-mod autotest20`, waiting for the user's run). Swim entry depth and charge initiation
 retain the plan's placeholders, with evidence and uncertainty in
 `known_ambiguities/water.md` and `combat-movement.md`.
 
@@ -210,7 +210,7 @@ What it showed (slaughterfish attacked the player during the swimming pages):
   bands match the player body's (0.25 right, 0.75 left: a left strafe turned
   both headings clockwise). One run each: these give magnitudes, not rates.
 
-**Follow-up probe** (`autotest20`, user-deferred; do not generate in this pass): `IsSwimming` read through a
+**Follow-up probe** (`autotest20`, built 2026-11-13; `crates/tools/src/test_mods/autotest20.rs`): `IsSwimming` read through a
 magic effect's script (`OnEffectStart` / `OnEffectFinish` fire as the
 condition changes) instead of `HasMagicEffect`, with a dry-land control, on
 the same markers (plus 90 and 95). Run it in Survival Mode off, or after

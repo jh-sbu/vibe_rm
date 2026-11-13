@@ -73,7 +73,7 @@ The earlier sandboxed attempt could only access software OpenGL, whose
 These hardware checks validate this engine's integration; they do not
 confirm the original game's immersion threshold.
 
-## Swimming depth (autotest20 deferred)
+## Swimming depth (autotest20 pending)
 
 Autotest19 observed feet on the bed at depth 80 and floating at depths
 100–140, about 92 units below the surface. Its HasMagicEffect swim detector
@@ -83,7 +83,7 @@ of exit hysteresis measured against the bed, so floating at the observed
 also leaves the state. The bed comes from static-world ground rays.
 Scale/race-dependent depth and Waterbreathing's influence on state remain
 unmeasured; use the same threshold for land-capable swimmers for now.
-Autotest20 is deferred by the user.
+Autotest20 (built 2026-11-13) awaits the user's run.
 
 The local UESP [RACE revision 3650080](https://en.uesp.net/w/index.php?oldid=3650080)
 documents Swims (0x40) and Walks (0x100). Chosen scope guard: exclude only
@@ -140,7 +140,7 @@ per second. Only the portion of an update after exhaustion does damage.
 Surfacing or gaining WaterBreathing resets elapsed time. No stamina term is
 introduced. The hundred-unit capacity scale, recovery/reset policy and max
 health basis need an original-game probe; keep these as follow-up questions
-in the animation plan, without generating autotest20 now.
+in the animation plan; autotest20 doesn't measure them.
 
 Humanoid NPC head immersion uses 90% of scaled skeleton height; player immersion
 uses the eye. Chosen interim scope: breath damage only runs for loaded humanoid
