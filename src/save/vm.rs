@@ -30,6 +30,9 @@ pub struct VmSnapshot {
     /// (runtime wait key, sender, canonical event). `ANMW` encodes these as
     /// semantic descriptors tied to the filtered VM thread order.
     pub animation_waits: Vec<(u64, FormId, String)>,
+    /// `PathToReference` waits (`PTHW`, tied to the filtered thread order).
+    /// Read back with fresh keys, to set off again once their actors load.
+    pub path_waits: Vec<crate::ai::script_moves::PathWait>,
     /// Effects whose scripts are kept (those `AEFF` saves); not encoded.
     pub kept_effects: std::collections::HashSet<u64>,
 }
@@ -285,7 +288,12 @@ impl VmSnapshot {
                 }
                 put_opt_arg(&mut w, &f.ret, &mut arrays);
             }
-            w.f64(t.wake_in);
+            // `GetOpenState` is answered at the end of the frame it was asked
+            // in, with the value taken then: after a load, at once.
+            let open_state = t.waiting_for.is_some_and(|k| {
+                k >> 32 == crate::world::animated::open_state_key(FormId::NULL) >> 32
+            });
+            w.f64(if open_state { 0.0 } else { t.wake_in });
             w.bool(t.menu_clock);
             put_opt_arg(&mut w, &t.wait_dest, &mut arrays);
         }
@@ -490,6 +498,26 @@ impl VmSnapshot {
                 Some((thread, *sender, event))
             })
             .collect();
+        let path_waits: Vec<_> = threads
+            .iter()
+            .enumerate()
+            .filter_map(|(thread, t)| {
+                let key = t.waiting_for?;
+                let p = self.path_waits.iter().find(|p| p.key == key)?;
+                Some((thread, p))
+            })
+            .collect();
+        if !path_waits.is_empty() {
+            let mut w = Writer::default();
+            w.len(path_waits.len());
+            for (thread, p) in path_waits {
+                w.u32(thread as u32);
+                w.form(p.actor);
+                w.form(p.target);
+                w.f32(p.share);
+            }
+            file.add(b"PTHW", w.0);
+        }
         if !animation_waits.is_empty() {
             let mut a = Writer::default();
             a.len(animation_waits.len());
@@ -852,6 +880,35 @@ impl VmSnapshot {
             }
             r.finish()?;
         }
+        if file.sections.iter().filter(|(t, _)| t == b"PTHW").count() > 1 {
+            return Err(Corrupt("duplicate PTHW".into()));
+        }
+        if let Some(mut r) = file.section(b"PTHW").map(Reader::new) {
+            for i in 0..r.count(16)? {
+                let thread = r.u32()? as usize;
+                let actor = r.form()?;
+                let target = r.form()?;
+                let share = r.f32()?;
+                if thread >= s.vm.threads.len()
+                    || s.vm.threads[thread].waiting_for.is_some()
+                    || message_threads.contains(&thread)
+                    || actor.is_null()
+                    || target.is_null()
+                    || !share.is_finite()
+                {
+                    return Err(Corrupt("invalid path-wait thread link".into()));
+                }
+                let key = crate::ai::script_moves::PATH_KEY | (i as u64 + 1);
+                s.vm.threads[thread].waiting_for = Some(key);
+                s.path_waits.push(crate::ai::script_moves::PathWait {
+                    actor,
+                    target,
+                    key,
+                    share,
+                });
+            }
+            r.finish()?;
+        }
         Ok(s)
     }
 }
@@ -1204,6 +1261,58 @@ mod tests {
         let back = VmSnapshot::read(&file).unwrap();
         assert_eq!(back.vm.threads[0].waiting_for, None);
         assert_eq!(back.vm.threads[0].wake_in, 1.25);
+    }
+
+    #[test]
+    fn get_open_state_waits_wake_at_once_after_loading() {
+        let (mut s, _) = sample();
+        s.vm.threads[0].wake_in = 0.75;
+        s.vm.threads[0].waiting_for = Some(crate::world::animated::open_state_key(FormId(0x99)));
+        let mut file = SaveFile::default();
+        s.write(&mut file);
+        let back = VmSnapshot::read(&file).unwrap();
+        assert_eq!(back.vm.threads[0].waiting_for, None);
+        assert_eq!(back.vm.threads[0].wake_in, 0.0);
+    }
+
+    #[test]
+    fn path_waits_round_trip_with_fresh_keys_and_bad_links_are_refused() {
+        use crate::ai::script_moves::{PATH_KEY, PathWait};
+        let (mut s, _) = sample();
+        let wait = PathWait {
+            actor: FormId(0x44),
+            target: FormId(0x45),
+            key: PATH_KEY | 77,
+            share: 0.5,
+        };
+        s.vm.threads[0].waiting_for = Some(wait.key);
+        s.path_waits = vec![wait];
+        let mut file = SaveFile::default();
+        s.write(&mut file);
+        let back = VmSnapshot::read(&file).unwrap();
+        let fresh = PathWait {
+            key: PATH_KEY | 1,
+            ..wait
+        };
+        assert_eq!(back.path_waits, vec![fresh]);
+        assert_eq!(back.vm.threads[0].waiting_for, Some(fresh.key));
+        let payload = file.section(b"PTHW").unwrap().to_vec();
+        for patch in [
+            |b: &mut Vec<u8>| b[4..8].copy_from_slice(&99u32.to_le_bytes()),
+            |b: &mut Vec<u8>| b[8..12].copy_from_slice(&0u32.to_le_bytes()),
+            |b: &mut Vec<u8>| b[16..20].copy_from_slice(&f32::NAN.to_le_bytes()),
+            |b: &mut Vec<u8>| b.push(0),
+        ] {
+            let mut bytes = payload.clone();
+            patch(&mut bytes);
+            let mut bad = file.clone();
+            bad.sections.retain(|(tag, _)| tag != b"PTHW");
+            bad.add(b"PTHW", bytes);
+            assert!(VmSnapshot::read(&bad).is_err());
+        }
+        let mut duplicate = file.clone();
+        duplicate.add(b"PTHW", payload);
+        assert!(VmSnapshot::read(&duplicate).is_err());
     }
 
     #[test]

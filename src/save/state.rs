@@ -661,6 +661,14 @@ impl Snapshot {
                 message_boxes: e.messages.boxes.clone(),
                 message_next_key: e.messages.next_key,
                 animation_waits: e.anim_events.waiting(),
+                path_waits: e
+                    .script_moves
+                    .paths
+                    .iter()
+                    .chain(e.script_moves.pending.iter().map(|(p, _)| p))
+                    .filter(|p| !p.actor.is_null())
+                    .copied()
+                    .collect(),
                 kept_effects: e.saved_active_effects().0.iter().map(|x| x.id).collect(),
             },
         }
@@ -2607,6 +2615,20 @@ impl Snapshot {
             .collect();
         e.anim_events
             .restore(self.vm.anim_registrations, animation_waits);
+        // Scripted moves are replaced: paths set off again once their actors
+        // load; keep-offsets come with the continuity sections (`KOFF`).
+        let deadline = e.scripts.real_time + crate::ai::script_moves::RESTORED_PATH_WAIT;
+        e.script_moves = crate::engine::ScriptMoves {
+            next_key: self.vm.path_waits.len() as u64,
+            pending: self
+                .vm
+                .path_waits
+                .iter()
+                .filter(|p| e.vm.is_waiting_for(p.key))
+                .map(|&p| (p, deadline))
+                .collect(),
+            ..Default::default()
+        };
         if dropped > 0 {
             log::warn!("{dropped} saved script threads can't be resumed");
         }

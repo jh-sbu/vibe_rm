@@ -49,7 +49,7 @@ Skyrim SE's `.ess` stores the same state.
    match), weapons drawn. Paths, swings, blocks, casts and other moment to
    moment state start afresh, as they do after a stagger. Fights of actors
    whose cells didn't load are dropped, as on unloading.
-4. **Scripted moves and the rest of the signal waits** (`SMOV`).
+4. **Scripted moves and the rest of the signal waits** (`PTHW`, `KOFF`).
    `PathToReference` waits (actor, target, the waiting thread) and
    `KeepOffsetFromActor` settings. Once actors attach, each path is
    started again toward its target and its thread waits on the new path;

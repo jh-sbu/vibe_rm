@@ -11,15 +11,25 @@ const ARRIVED: f32 = 96.0;
 pub(crate) const PATH_WAIT_LIMIT: f32 = 300.0;
 
 /// A `PathToReference` the calling script waits on.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct PathWait {
     pub actor: FormId,
     pub target: FormId,
     pub key: u64,
+    /// The walk / run share asked for (`afWalkRunPercent`).
+    pub share: f32,
 }
 
+/// The `Vm::signal` key prefix of `PathToReference` waits.
+pub(crate) const PATH_KEY: u64 = 0x5041_5448_0000_0000;
+
+/// Real seconds a path restored from a save waits for its actor's cell to
+/// load before giving the script False (no source: loading's cells come in
+/// within a few frames).
+pub(crate) const RESTORED_PATH_WAIT: f64 = 10.0;
+
 /// `KeepOffsetFromActor`'s settings for one actor.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct KeepOffset {
     pub target: FormId,
     /// In the target's frame: x to its right, y ahead, z up.
@@ -56,7 +66,7 @@ impl Engine {
             return None;
         }
         self.script_moves.next_key += 1;
-        let key = 0x5041_5448_0000_0000 | self.script_moves.next_key;
+        let key = PATH_KEY | self.script_moves.next_key;
         // A later request for the same actor interrupts the earlier one: it
         // fails at the next update (the VM is busy with this call now).
         for p in self
@@ -67,10 +77,40 @@ impl Engine {
         {
             p.actor = FormId::NULL;
         }
-        self.script_moves
-            .paths
-            .push(PathWait { actor, target, key });
+        self.script_moves.paths.push(PathWait {
+            actor,
+            target,
+            key,
+            share,
+        });
         Some(key)
+    }
+
+    /// Paths a loaded save restored (their scripts still waiting): each
+    /// sets off again once its actor has loaded, or gives False if it can't,
+    /// or if its actor hasn't loaded within [`RESTORED_PATH_WAIT`].
+    fn start_restored_paths(&mut self) {
+        let now = self.scripts.real_time;
+        for (p, deadline) in std::mem::take(&mut self.script_moves.pending) {
+            if !self.vm.is_waiting_for(p.key) {
+                continue;
+            }
+            let loaded = self.actor_ref(p.actor).is_some();
+            if !loaded && now < deadline {
+                self.script_moves.pending.push((p, deadline));
+                continue;
+            }
+            let started = loaded
+                && !self.is_dead(p.actor)
+                && self
+                    .ref_position(p.target)
+                    .is_some_and(|to| self.travel_to(p.actor, to, gait_for(p.share), false));
+            if started {
+                self.script_moves.paths.push(p);
+            } else {
+                self.vm.signal_with(p.key, papyrus::Value::Bool(false));
+            }
+        }
     }
 
     /// Release an actor's pinned goal to its packages.
@@ -99,6 +139,7 @@ impl Engine {
     /// Paths arriving or failing, and actors keeping their offsets (every
     /// frame).
     pub(crate) fn update_script_moves(&mut self, dt: f32) {
+        self.start_restored_paths();
         for p in std::mem::take(&mut self.script_moves.paths) {
             let pos = self.actor_ref(p.actor).map(|a| (a.exec.pos, a.exec.pinned));
             let to = self.ref_position(p.target);

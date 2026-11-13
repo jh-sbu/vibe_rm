@@ -177,6 +177,24 @@ the game hours until the next roll. Older native saves load with no weather,
 so the place picks one as it does for a new game. The regional list isn't
 saved: it is taken again from the place the save loads into.
 
+`PathToReference` waits use optional `PTHW`, linking saved VM threads (in
+the filtered order `VM` was written in) to the actor, the target and the
+walk / run share. Loading gives each a fresh wait key and holds it until its
+actor's cell loads; the actor then sets off again toward the target (where
+the target is then), and the script hears True on arrival or False if it
+can't go, as at runtime. A path whose actor hasn't loaded within 10 real
+seconds of the load gives False (no source: the save's cells load within a
+few frames). Optional `KOFF` keeps `KeepOffsetFromActor` settings by actor
+(target, offset, angle, catch-up and follow distances); loading replaces
+them, and legacy saves have none. Before these sections, loading kept the
+previous session's scripted moves; it now always replaces them.
+
+`GetOpenState` waits (answered at the end of the frame they were asked in,
+with the value taken then) wake at once after loading. `Sound.PlayAndWait`
+keeps the timed fallback below: the sound doesn't play on after a load,
+and the wait ends when it would have (its length and half a second, or the
+cap for a loop).
+
 Signal waits whose host state isn't saved load as timed waits that finish
 when their timeout runs out, with the default result. A thread whose function
 no longer resolves (other scripts) is dropped with a warning. Scripts on

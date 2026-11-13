@@ -73,6 +73,9 @@ pub(crate) struct ScriptMoves {
     pub paths: Vec<crate::ai::script_moves::PathWait>,
     pub keep_offsets: HashMap<FormId, crate::ai::script_moves::KeepOffset>,
     pub next_key: u64,
+    /// Paths a loaded save restored, waiting for their actors to load, with
+    /// the real time they give up at.
+    pub pending: Vec<(crate::ai::script_moves::PathWait, f64)>,
 }
 
 /// `Game.ShowTitleSequenceMenu` / `StartTitleSequence` /

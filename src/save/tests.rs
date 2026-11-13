@@ -832,6 +832,42 @@ fn engine(name: &str) -> (Fixture, Engine) {
         papyrus::pex::write(&animation_script.build().unwrap()).unwrap(),
     )
     .unwrap();
+    std::fs::write(
+        f.0.join("scripts/Actor.pex"),
+        papyrus::build::native_class(
+            "Actor",
+            "ObjectReference",
+            &[(
+                "PathToReference",
+                "Bool",
+                &[
+                    ("aTarget", "ObjectReference"),
+                    ("afWalkRunPercent", "Float"),
+                ],
+                false,
+            )],
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let mut path_script = papyrus::build::ScriptBuilder::new("VrmPathWaitTest", "Actor");
+    let arrived = path_script.variable("arrived", "Bool", papyrus::build::Arg::None);
+    let done = path_script.variable("done", "Bool", papyrus::build::Arg::None);
+    let mut on_init = papyrus::build::FunctionBuilder::new("None");
+    on_init.call_method(
+        papyrus::build::id("self"),
+        "PathToReference",
+        arrived,
+        [papyrus::build::id("self"), papyrus::build::Arg::Float(0.5)],
+    );
+    on_init.assign(done, true.into());
+    on_init.ret(papyrus::build::Arg::None);
+    path_script.function("OnInit", on_init);
+    std::fs::write(
+        f.0.join("scripts/VrmPathWaitTest.pex"),
+        papyrus::pex::write(&path_script.build().unwrap()).unwrap(),
+    )
+    .unwrap();
     // An effect script counting its starts and noting its finish.
     let mut effect_script =
         papyrus::build::ScriptBuilder::new("VrmEffectSaveTest", "ActiveMagicEffect");
@@ -7412,4 +7448,103 @@ fn fights_carry_on_after_loading_without_combat_events() {
     legacy.sections.retain(|(tag, _)| tag != b"FGHT");
     Snapshot::read(&legacy).unwrap().apply(&mut c).unwrap();
     assert!(c.world_state.pending_fights.is_empty());
+}
+
+fn run_path_wait_vm(e: &mut Engine, start: bool) {
+    let mut vm = std::mem::take(&mut e.vm);
+    {
+        let now = e.scripts.real_time;
+        let mut host = crate::script::EngineHost { engine: e };
+        let obj = papyrus::ObjectId::Form(SCENE_ACTOR.0);
+        if start {
+            assert!(vm.attach(&mut host, obj, "VrmPathWaitTest", &[]));
+            assert!(vm.send_event(&mut host, obj, "OnInit", vec![]) > 0);
+        }
+        vm.run(&mut host, now, 10_000);
+    }
+    e.vm = vm;
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records and PEX only"]
+fn path_waits_set_off_again_once_their_actors_load() {
+    let obj = papyrus::ObjectId::Form(SCENE_ACTOR.0);
+    let (_a, mut a) = engine("path-wait-a");
+    attach_scene_test_actor(&mut a);
+    run_path_wait_vm(&mut a, true);
+    assert_eq!(a.script_moves.paths.len(), 1);
+    assert_eq!(a.vm.get_var(obj, "done"), Some(papyrus::Value::Bool(false)));
+    let file = Snapshot::capture(&a).write();
+    assert!(file.section(b"PTHW").is_some());
+
+    let (_b, mut b) = engine("path-wait-b");
+    Snapshot::read(&file).unwrap().apply(&mut b).unwrap();
+    assert_eq!(b.script_moves.pending.len(), 1);
+    // Its actor isn't loaded yet: it waits, and is saved again meanwhile.
+    b.update_script_moves(0.0);
+    assert_eq!(b.script_moves.pending.len(), 1);
+    assert!(Snapshot::capture(&b).write().section(b"PTHW").is_some());
+    attach_scene_test_actor(&mut b);
+    // It sets off, already where it was sent: it arrives in the same update,
+    // and the script goes on with True.
+    b.update_script_moves(0.0);
+    assert!(b.script_moves.pending.is_empty());
+    assert!(b.script_moves.paths.is_empty());
+    run_path_wait_vm(&mut b, false);
+    assert_eq!(b.vm.get_var(obj, "done"), Some(papyrus::Value::Bool(true)));
+    assert_eq!(
+        b.vm.get_var(obj, "arrived"),
+        Some(papyrus::Value::Bool(true))
+    );
+
+    // An actor that never loads gives up with False.
+    let (_c, mut c) = engine("path-wait-c");
+    Snapshot::read(&file).unwrap().apply(&mut c).unwrap();
+    c.scripts.real_time += crate::ai::script_moves::RESTORED_PATH_WAIT + 1.0;
+    c.update_script_moves(0.0);
+    run_path_wait_vm(&mut c, false);
+    assert_eq!(c.vm.get_var(obj, "done"), Some(papyrus::Value::Bool(true)));
+    assert_eq!(
+        c.vm.get_var(obj, "arrived"),
+        Some(papyrus::Value::Bool(false))
+    );
+}
+
+#[test]
+fn keep_offsets_payload() {
+    use crate::ai::script_moves::KeepOffset;
+    let keep = KeepOffset {
+        target: PLAYER_REF,
+        offset: Vec3::new(1.0, -2.0, 3.0),
+        angle: 0.5,
+        catch_up: 20.0,
+        follow: 5.0,
+    };
+    let mut s = Snapshot::default();
+    s.continuity
+        .keep_offsets
+        .extend([(ACTOR, keep), (SCENE_ACTOR, keep)]);
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(restored.continuity.keep_offsets, s.continuity.keep_offsets);
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"KOFF");
+    for bad in [
+        KeepOffset {
+            target: ACTOR,
+            ..keep
+        },
+        KeepOffset {
+            target: FormId::NULL,
+            ..keep
+        },
+        KeepOffset {
+            follow: f32::INFINITY,
+            ..keep
+        },
+    ] {
+        let mut s = Snapshot::default();
+        s.continuity.keep_offsets.insert(ACTOR, bad);
+        assert!(Snapshot::read(&s.write()).is_err(), "{bad:?}");
+    }
 }

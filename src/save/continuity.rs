@@ -54,6 +54,8 @@ pub(crate) struct Continuity {
     pub tapers: Vec<(crate::magic::ActiveEffect, f32, f32)>,
     /// Objects' open states from their behaviour graphs' events.
     pub graph_open: HashMap<FormId, crate::world::animated::OpenState>,
+    /// `KeepOffsetFromActor` settings by actor (`KOFF`).
+    pub keep_offsets: HashMap<FormId, crate::ai::script_moves::KeepOffset>,
     /// Objects' behaviour graphs as they ran (`GRPH`), loaded and parked.
     pub object_graphs: HashMap<FormId, crate::world::behavior::SavedGraph>,
     /// Factions' reactions towards others changed by scripts.
@@ -612,6 +614,7 @@ impl Continuity {
             tapers: e.saved_tapers(),
             graph_open: e.world_state.graph_open.clone(),
             object_graphs: e.saved_object_graphs(),
+            keep_offsets: e.script_moves.keep_offsets.clone(),
             faction_reactions: e.factions.reactions.clone(),
             faction_player_flags: e.factions.player_flags.clone(),
             attacked_on_sight: e.factions.attacked_on_sight.clone(),
@@ -945,6 +948,19 @@ impl Continuity {
             w.u8(*s as u8);
         }
         file.add(b"GOPN", w.0);
+        if !self.keep_offsets.is_empty() {
+            let mut w = Writer::default();
+            w.len(self.keep_offsets.len());
+            for (actor, k) in sorted(&self.keep_offsets) {
+                w.form(actor);
+                w.form(k.target);
+                w.vec3(k.offset);
+                w.f32(k.angle);
+                w.f32(k.catch_up);
+                w.f32(k.follow);
+            }
+            file.add(b"KOFF", w.0);
+        }
         if !self.object_graphs.is_empty() {
             let mut w = Writer::default();
             w.len(self.object_graphs.len());
@@ -1507,6 +1523,22 @@ impl Continuity {
             }
             r.finish()?;
         }
+        if let Some(mut r) = optional(file, b"KOFF")? {
+            let mut previous = None;
+            for _ in 0..r.count(32)? {
+                let actor = r.form()?;
+                ordered(&mut previous, actor)?;
+                let keep = crate::ai::script_moves::KeepOffset {
+                    target: r.form()?,
+                    offset: r.vec3()?,
+                    angle: r.f32()?,
+                    catch_up: r.f32()?,
+                    follow: r.f32()?,
+                };
+                s.keep_offsets.insert(actor, keep);
+            }
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"GRPH")? {
             let mut previous = None;
             for _ in 0..r.count(16)? {
@@ -2040,6 +2072,17 @@ impl Continuity {
         for &id in self.graph_open.keys() {
             nonnull(id)?;
         }
+        for (&actor, k) in &self.keep_offsets {
+            nonnull(actor)?;
+            nonnull(k.target)?;
+            let finite = k.offset.is_finite()
+                && [k.angle, k.catch_up, k.follow]
+                    .iter()
+                    .all(|v| v.is_finite());
+            if actor == crate::engine::PLAYER_REF || k.target == actor || !finite {
+                return Err(Corrupt("invalid keep-offset".into()));
+            }
+        }
         // The graphs themselves are checked against their projects when their
         // objects load; one that doesn't fit falls back to `GOPN`.
         for (&id, g) in &self.object_graphs {
@@ -2447,6 +2490,7 @@ impl Continuity {
         // Before the save's cells load: graphs built afresh replay these.
         e.world_state.graph_open = self.graph_open;
         e.world_state.saved_graphs = self.object_graphs;
+        e.script_moves.keep_offsets = self.keep_offsets;
         e.restore_faction_reactions(self.faction_reactions);
         e.restore_faction_player_flags(self.faction_player_flags);
         e.restore_attacked_on_sight(self.attacked_on_sight);
