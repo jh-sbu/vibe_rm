@@ -5,6 +5,18 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- **Swimming reconciled, placed water and currents** (2026-11-13;
+  `research/autotest25.md`, `autotest26.md`; choices in
+  `known_ambiguities/water.md`): swimming starts with the feet past 90
+  under and, moving out, lasts until 60 under; a `MoveTo` judges afresh and
+  a translation carries the state (a translated player is carried, not
+  placed afresh each frame); swimmers keep their depth, rising no higher
+  than 92 under. Interiors get no water from their water level. Placed
+  water (activators with a water type) is water over its bounds as placed,
+  drawn as a rectangle. A cell with a water current marker carries
+  swimmers along its heading at 71 units a second, stopped by what stands
+  in the way. NPCs moved by anything but their own walking (a current)
+  update their recorded position and capsule.
 - **Explosions** (2026-11-11; `plans/explosions.md`, research in
   `research/explosions.md`, choices in `known_ambiguities/explosions.md`):
   `EXPL` records (`src/explosions.rs`) go off where spell projectiles,
@@ -2004,48 +2016,22 @@ readings are applied (see Done; autotest23 and autotest24's on
   - `controltags` (`research/ui/control-tags.md`): rounds 1 and 2 observed
     (2026-11-03). Still to see: a hint shown after binding Activate to a key
     without art (NumPad Enter, NumLock or Apps).
-  - `test-mod autotest20`: run 2026-11-13 (`research/autotest20.md`).
-    Swimming begins between bed depths 100.4 and 105.1 for the player, an
-    NPC and with Waterbreathing; ours (feet over 100) swims at 100.4 and
-    leaves only below 96. A swimmer placed deeper than 120 stays deeper,
-    where ours floats every swimmer at 92. Not yet compared and applied.
-    Left for a follow-up (its "Faults and open items"): the charge (the
-    fighter never engaged a held target that didn't fight back), leaving
-    the water without a teleport (hysteresis), and the wading feet held
-    24 to 37 above that lake's terrain.
-  - Water currents (`research/autotest20.md`, "Water currents"): SE's lake
-    current carried autotest20's swimming NPC 200 units; ours has none.
-    Update.esm's `CellWaterCurrentMarker` references (position and heading
-    only) lie near every lake; what sets a current's strength, direction
-    and reach is unpublished. Measured by `test-mod autotest26` (below).
-  - `test-mod autotest25`: run 2026-11-13 (`research/autotest25.md`).
-    SE makes no water from an interior cell's `XCLW` (ours does, so 19
-    vanilla interiors with a level and no placed water get water in ours).
-    In placed water swimming begins with the feet about 90 under (ours:
-    100); moving out continuously it lasts until 55 to 68 under (ours: the
-    bed under 96); `MoveTo` judges afresh; a still swimmer placed deep stays
-    deep (ours floats every swimmer at 92). Not yet applied. Its current
-    tests were faults (`MoveTo` to the lake markers from an interior did
-    nothing).
-  - `test-mod autotest26`: run 2026-11-13 (`research/autotest26.md`), with
-    `bBorderRegionsEnabled=0`, since the lake lies outside
-    `BorderRegionSkyrim` (with borders on, SE refused every script
-    `MoveTo` there). The current carries a still swimmer along its
-    marker's heading at about 71 units a second, the same for the player
-    and NPCs, at every free point within 1024 and at any depth. Open: where
-    the speed comes from (no `DNAM` value near it), other flowing waters'
-    speeds, and flowing cells without a marker. 558 of `RiverWaterFlow`'s
-    613 cells have one.
-  - Ours: script `MoveTo` to a spot outside the border region isn't
-    refused, where SE's is (with border regions enabled).
-  - autotest20's charge waits for a later batch, with both NPCs fighting.
-  - Ours, from autotest25/26's dry runs: `GetParentCell` gives none for
-    exterior references; a swimmer moved by `TranslateTo` leaves the swim
-    state at once; no `OnEffectStart` as an ability is added.
-  - Placed water: ours reads only cell and worldspace water levels, so
-    interiors whose water is placed (`ACTI` with a water type, `WNAM`: 62
-    in Skyrim.esm, in 128 interiors) have none, and outdoor rivers placed so
-    neither.
+  - Swimming and currents, from autotest20, 25 and 26
+    (`research/autotest20.md`, `autotest25.md`, `autotest26.md`): applied
+    2026-11-13 (see Done). Left open:
+    - The charge (autotest20's fighter never engaged a held target that
+      didn't fight back): a later batch, with both NPCs fighting.
+    - Current speeds at other markers (one site measured; nothing in the
+      data gives 71), the reach beyond the marker's cell, flowing water
+      types without a marker, placed rivers, and wading actors.
+    - The player's 10-unit rise after a move into deep water (SE; NPCs
+      don't), and whether the feet or the bed end swimming moving out.
+    - The 19 vanilla interiors with a water level and no placed water:
+      whether SE shows any water in them (ours now gives them none).
+    - Ours, from the dry runs: script `MoveTo` outside the border region
+      isn't refused, where SE's is (with border regions enabled);
+      `GetParentCell` gives none for exterior references; no
+      `OnEffectStart` as an ability is added.
   - Drawing spells (`known_ambiguities/player-body.md`, "Drawing spells"):
     put off by the user (2026-11-04). In SE, check which draw event is used
     for mixed hands (sword + spell, staff + spell). Also check what happens
@@ -2350,7 +2336,7 @@ readings are applied (see Done; autotest23 and autotest24's on
      Done), but game effect restoration remains unresolved. Choices:
      `known_ambiguities/destruction.md`
    - Water (surface swimming, IsSwimming and dangerous-water queries: see Done):
-     autotest20 depth/Waterbreathing-state validation, race/scale float heights,
+     race/scale swim depths and float heights,
      creature breath (disabled until float/head heights are resolved),
      breath-timing validation, diving controls after underwater rendering;
      unloaded actors' contact, contact spells (`XNAM`);
