@@ -173,6 +173,7 @@ impl Engine {
         ws.broken_joints.remove(&r);
         ws.graph_open.remove(&r);
         ws.object_graphs.remove(&r);
+        ws.saved_graphs.remove(&r);
         ws.open_doors.remove(&r);
         ws.actor_open_doors.remove(&r);
         ws.item_charges.remove(&r);

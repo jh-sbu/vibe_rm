@@ -99,6 +99,11 @@ pub struct ProjectRuntime {
 }
 
 impl ProjectRuntime {
+    /// What names the project in saves (`meshes/actors/canine/dogproject`).
+    pub fn identity(&self) -> String {
+        format!("{}/{}", self.dir, self.name)
+    }
+
     /// The humanoid project (`meshes/actors/character`): clips under
     /// `animations/male` and `animations/female`.
     pub fn humanoid(&self) -> bool {
@@ -200,6 +205,16 @@ pub struct Frame {
     pub character_turn: f32,
     /// Events the graph raised (`AnimObjDraw`, `IdleFurnitureExit`...).
     pub raised: Vec<Raised>,
+}
+
+/// A behaviour graph's state as saved: its project (`ProjectRuntime::identity`),
+/// the running instance (`Instance::snapshot`) and the variables scripts
+/// pinned, with the engine's value before each.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SavedGraph {
+    pub project: String,
+    pub instance: Vec<u8>,
+    pub pins: Vec<(String, f32)>,
 }
 
 /// One actor's running behaviour graph.
@@ -729,6 +744,34 @@ impl GraphAnim {
 
     pub fn project(&self) -> &Arc<ProjectRuntime> {
         &self.project
+    }
+
+    /// The graph's running state (`Instance::snapshot`) and the variables
+    /// scripts pinned, for saves.
+    pub fn saved(&self) -> SavedGraph {
+        SavedGraph {
+            project: self.project.identity(),
+            instance: self.inst.snapshot(),
+            pins: self.pinned.0.clone(),
+        }
+    }
+
+    /// Put back a saved state of the same project; false (and nothing
+    /// changed) when it doesn't fit.
+    pub fn restore(&mut self, saved: &SavedGraph) -> bool {
+        if saved.project != self.project.identity() {
+            return false;
+        }
+        match self.inst.restore(&saved.instance) {
+            Ok(()) => {
+                self.pinned = ScriptPins(saved.pins.clone());
+                true
+            }
+            Err(e) => {
+                log::warn!("{}: {e}", self.label);
+                false
+            }
+        }
     }
 
     pub fn variable(&self, name: &str) -> Option<f32> {

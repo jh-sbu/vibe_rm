@@ -36,9 +36,10 @@
 //! their procedure cursors and start positions, where they are and their clocks, for actors away and
 //! loaded alike; their wounds stay in `WRLD`), mounted relationships (`MOUN`),
 //! carriage passengers/hitches (`VEHI`/`TETH`) and dragon flight state (`FLGT`).
+//! Objects' behaviour graphs are in `GRPH` (with the open states of `GOPN`).
 //! Not yet saved: actors' goals set by hand, fights, searches and greetings,
-//! the rest of AI progress (animation, procedures' loaded-only state) and
-//! objects' behaviour graphs; see `plans/ROADMAP.md`.
+//! and the rest of AI progress (actors' graphs, procedures' loaded-only
+//! state); see `plans/ROADMAP.md`.
 //!
 //! Form ids are saved as loaded (their top byte is the load-order index), so a
 //! save only loads with the same plugins in the same order: `HEAD` lists them
@@ -2641,6 +2642,7 @@ impl Snapshot {
         ws.broken_joints = self.broken_joints;
         ws.destruction = self.destruction;
         ws.object_graphs.clear();
+        ws.saved_graphs.clear();
         ws.graph_open.clear();
         ws.learned_effects = self.learned_effects;
         e.detection.restore_stealth_points(self.stealth_points);

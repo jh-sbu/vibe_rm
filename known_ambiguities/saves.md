@@ -166,8 +166,9 @@ outside this section until their host state is saved.
 to the sender reference and case-insensitive event name. Loading recomputes the
 runtime signal key and replaces stale wait descriptors; legacy saves without
 `ANMW` keep the existing timed fallback. This resumes a wait for a subsequent
-matching event, but does not save or restore the sender's behavior graph pose,
-timeline, or already-raised events.
+matching event. An object sender's graph is saved in `GRPH` (below), so the
+clip it was playing goes on and raises the event when it gets there; an
+actor sender's graph starts afresh.
 
 The weather (optional `WTHR`): the current and outgoing weathers, how far the
 transition has come, whether an override holds, the weather it replaced, and
@@ -413,10 +414,36 @@ Native policies (not SE claims):
   dropped, as before. A save whose `VM` names an effect `AEFF` doesn't keep
   is refused before anything changes. Legacy saves had no effect objects.
 
+## Objects' behaviour graphs (`GRPH`)
+
+Optional `GRPH` keeps every object's behaviour graph as it ran: those in
+loaded cells, those parked with cells that unloaded, and those a loaded save
+still holds for cells that haven't loaded since. Each entry is the reference,
+its project (`meshes/<dir>/<project>`), the running instance and the
+variables scripts pinned (`SetAnimationVariable*`) with the engine's value
+before each. The instance (`havok::behavior::runtime::Instance::snapshot`)
+holds the active tree: state machines' states, clocks, cross-fades and
+pending transitions, clips' times, blends, selectors and bone switches,
+modifiers' timers and counters; the variables; queued and raised events; the
+random state. Ragdoll poses aren't kept (objects have none).
+
+Loading holds the entries until each object's cell attaches; the graph built
+then takes the saved state in place of `GOPN`'s replayed event. The instance
+is checked against the project only then: a snapshot that doesn't fit (other
+graph files since the save, a damaged entry) is logged and the object falls
+back to `GOPN`. So a lever pulled, a portcullis half raised or a rockfall
+come down when saved is in the same place, at the same moment of its clip,
+after loading. Restored graphs raise no events on load. Legacy saves have no
+`GRPH` and use `GOPN` alone. Actors' graphs are not saved: an actor attaches
+standing where it was, and its graph starts from its equipment and stance.
+
+Native policy, not an SE claim (UESP's "Anim Objects" global section, below,
+is undocumented).
+
 ## Behaviour graph open states (`GOPN`)
 
-Objects' behaviour graphs themselves (states, clocks, variables) are not
-saved; loading clears the parked graphs as before. Optional `GOPN` keeps the
+Before `GRPH`, objects' behaviour graphs themselves (states, clocks,
+variables) were not saved. Optional `GOPN` keeps the
 open state each graph object reached through its `Open` / `Close` /
 `Opened` / `Closed` events and raised `Opening` / `Closing` (what
 `GetOpenState` reads). After a load, a graph built afresh is sent one event

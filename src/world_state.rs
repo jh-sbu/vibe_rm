@@ -100,10 +100,13 @@ pub struct WorldState {
     /// Objects' behaviour graphs as their cells unloaded (a lever pulled, a
     /// portcullis raised, a rockfall come down), to run on from there.
     pub object_graphs: HashMap<FormId, crate::world::behavior::GraphAnim>,
+    /// Objects' graphs from a loaded save (`GRPH`) whose cells haven't loaded
+    /// since: restored into the graph built when they do.
+    pub saved_graphs: HashMap<FormId, crate::world::behavior::SavedGraph>,
     /// Where objects' graphs stand opening and closing (`GetOpenState`), from
     /// the `Open` / `Close` events sent them and the `Opening` / `Closing`
-    /// they raise. Saved (`GOPN`) when `object_graphs` isn't: graphs built
-    /// afresh after a load replay them.
+    /// they raise. Saved (`GOPN`): a graph built afresh after a load without
+    /// a fitting `GRPH` entry replays it.
     pub graph_open: HashMap<FormId, crate::world::animated::OpenState>,
     /// The player's learned ingredient effects: (ingredient, index in its list).
     pub learned_effects: std::collections::HashSet<(FormId, usize)>,

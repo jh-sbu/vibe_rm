@@ -7141,3 +7141,147 @@ fn flight_payload_keeps_phases_and_rejects_bad_clocks_modes_and_self_grabs() {
         assert!(Snapshot::read(&s.write()).is_err());
     }
 }
+
+/// A graph object `object` in `CELL` whose machine goes from `Idle` to a
+/// single-play `Lower` clip on `Pull`.
+fn install_lever_graph(e: &mut Engine, object: FormId) {
+    use crate::world::behavior::GraphAnim;
+    let graph = GraphAnim::new(lever_project(), "synthetic", false, &Default::default(), 1);
+    e.cells
+        .entry(crate::render::CellKey::Interior(CELL))
+        .or_default()
+        .animated
+        .push(crate::world::animated::test_graph_object(object, graph));
+}
+
+fn lever_project() -> std::sync::Arc<crate::world::behavior::ProjectRuntime> {
+    use havok::behavior::runtime::Shared;
+    use havok::behavior::{BehaviorGraph, ClipMode, Generator, Project, State, Transition};
+    let clip = |name: &str, mode| Generator::Clip {
+        name: name.into(),
+        animation: name.into(),
+        mode,
+        speed: 1.0,
+        enforced_duration: 0.0,
+        user_fraction: 0.0,
+        triggers: vec![],
+        crop_start: 0.0,
+        crop_end: 0.0,
+        start_time: 0.0,
+    };
+    let state = |id, generator, transitions| State {
+        id,
+        name: format!("s{id}"),
+        generator: Some(generator),
+        transitions,
+        enter_events: vec![],
+        exit_events: vec![],
+    };
+    let graph = BehaviorGraph::new(
+        "SyntheticLever",
+        Some(0),
+        vec![
+            Generator::StateMachine {
+                name: "Lever".into(),
+                start: 0,
+                start_variable: None,
+                start_mode: Default::default(),
+                sync_variable: None,
+                change_event: None,
+                states: vec![
+                    state(0, 1, vec![Transition::new(0, 1, None)]),
+                    state(1, 2, vec![]),
+                ],
+                wildcards: vec![],
+            },
+            clip("Idle", ClipMode::Looping),
+            clip("Lower", ClipMode::SinglePlay),
+        ],
+        vec!["Pull".into()],
+    );
+    std::sync::Arc::new(crate::world::behavior::ProjectRuntime {
+        shared: Shared::new(std::sync::Arc::new(Project {
+            graphs: vec![("SyntheticLever".into(), graph)],
+            character: None,
+        })),
+        dir: "synthetic".into(),
+        name: "lever".into(),
+        files: vec![],
+    })
+}
+
+#[test]
+fn object_graphs_payload() {
+    use crate::world::behavior::SavedGraph;
+    let mut s = Snapshot::default();
+    s.continuity.object_graphs.extend([
+        (
+            ACTOR,
+            SavedGraph {
+                project: "meshes/dungeons/lever".into(),
+                instance: vec![1, 2, 3],
+                pins: vec![("bopen".into(), 0.0)],
+            },
+        ),
+        (
+            CELL,
+            SavedGraph {
+                project: "meshes/traps/rockfall".into(),
+                instance: vec![],
+                pins: vec![],
+            },
+        ),
+    ]);
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(
+        restored.continuity.object_graphs,
+        s.continuity.object_graphs
+    );
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"GRPH");
+    let mut nan = s;
+    nan.continuity.object_graphs.get_mut(&ACTOR).unwrap().pins[0].1 = f32::NAN;
+    assert!(Snapshot::read(&nan.write()).is_err());
+    let mut null = Snapshot::default();
+    null.continuity.object_graphs.insert(
+        FormId::NULL,
+        restored.continuity.object_graphs[&CELL].clone(),
+    );
+    assert!(Snapshot::read(&null.write()).is_err());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn object_graphs_run_on_from_where_they_were_saved() {
+    use crate::world::behavior::GraphAnim;
+    let (_a, mut a) = engine("object-graphs-a");
+    install_lever_graph(&mut a, ACTOR);
+    let vfs = a.vfs.clone();
+    let mut anims = std::mem::take(&mut a.anims);
+    let g = a.object_graph_mut(ACTOR).unwrap();
+    assert!(g.handle_event("Pull", &vfs, &mut anims, &Default::default()));
+    let states = |g: &GraphAnim| g.active_states();
+    assert!(states(g).iter().any(|s| s == "s1"), "{:?}", states(g));
+    let file = Snapshot::capture(&a).write();
+    assert!(file.section(b"GRPH").is_some());
+
+    let (_b, mut b) = engine("object-graphs-b");
+    Snapshot::read(&file).unwrap().apply(&mut b).unwrap();
+    let saved = b.world_state.saved_graphs[&ACTOR].clone();
+    // Kept while its cell hasn't loaded: saved again as it was.
+    let again = Snapshot::capture(&b).continuity.object_graphs;
+    assert_eq!(again[&ACTOR], saved);
+    let mut fresh = GraphAnim::new(lever_project(), "synthetic", false, &Default::default(), 1);
+    assert!(fresh.restore(&saved));
+    assert_eq!(states(&fresh), states(a.object_graph(ACTOR).unwrap()));
+    // Another project's graph doesn't take it.
+    let mut other = saved;
+    other.project = "synthetic/other".into();
+    assert!(!fresh.restore(&other));
+    // Legacy saves keep none.
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"GRPH");
+    Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
+    assert!(b.world_state.saved_graphs.is_empty());
+}

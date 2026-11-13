@@ -54,6 +54,8 @@ pub(crate) struct Continuity {
     pub tapers: Vec<(crate::magic::ActiveEffect, f32, f32)>,
     /// Objects' open states from their behaviour graphs' events.
     pub graph_open: HashMap<FormId, crate::world::animated::OpenState>,
+    /// Objects' behaviour graphs as they ran (`GRPH`), loaded and parked.
+    pub object_graphs: HashMap<FormId, crate::world::behavior::SavedGraph>,
     /// Factions' reactions towards others changed by scripts.
     pub faction_reactions: HashMap<(FormId, FormId), crate::factions::Reaction>,
     /// Factions' player flags changed by scripts.
@@ -609,6 +611,7 @@ impl Continuity {
             active_effects: e.saved_active_effects(),
             tapers: e.saved_tapers(),
             graph_open: e.world_state.graph_open.clone(),
+            object_graphs: e.saved_object_graphs(),
             faction_reactions: e.factions.reactions.clone(),
             faction_player_flags: e.factions.player_flags.clone(),
             attacked_on_sight: e.factions.attacked_on_sight.clone(),
@@ -942,6 +945,21 @@ impl Continuity {
             w.u8(*s as u8);
         }
         file.add(b"GOPN", w.0);
+        if !self.object_graphs.is_empty() {
+            let mut w = Writer::default();
+            w.len(self.object_graphs.len());
+            for (id, g) in sorted(&self.object_graphs) {
+                w.form(id);
+                w.str(&g.project);
+                w.bytes(&g.instance);
+                w.len(g.pins.len());
+                for (name, before) in &g.pins {
+                    w.str(name);
+                    w.f32(*before);
+                }
+            }
+            file.add(b"GRPH", w.0);
+        }
         let mut w = Writer::default();
         w.len(self.faction_reactions.len());
         for ((from, to), r) in sorted(&self.faction_reactions) {
@@ -1489,6 +1507,27 @@ impl Continuity {
             }
             r.finish()?;
         }
+        if let Some(mut r) = optional(file, b"GRPH")? {
+            let mut previous = None;
+            for _ in 0..r.count(16)? {
+                let id = r.form()?;
+                ordered(&mut previous, id)?;
+                let project = r.str()?;
+                let instance = r.bytes()?.to_vec();
+                let pins = (0..r.count(8)?)
+                    .map(|_| Ok((r.str()?, r.f32()?)))
+                    .collect::<Result<Vec<_>>>()?;
+                s.object_graphs.insert(
+                    id,
+                    crate::world::behavior::SavedGraph {
+                        project,
+                        instance,
+                        pins,
+                    },
+                );
+            }
+            r.finish()?;
+        }
         if let Some(mut r) = optional(file, b"FRCT")? {
             let mut previous = None;
             for _ in 0..r.count(16)? {
@@ -2001,6 +2040,14 @@ impl Continuity {
         for &id in self.graph_open.keys() {
             nonnull(id)?;
         }
+        // The graphs themselves are checked against their projects when their
+        // objects load; one that doesn't fit falls back to `GOPN`.
+        for (&id, g) in &self.object_graphs {
+            nonnull(id)?;
+            if g.project.is_empty() || g.pins.iter().any(|(_, v)| !v.is_finite()) {
+                return Err(Corrupt("invalid saved behaviour graph".into()));
+            }
+        }
         for (&(from, to), r) in &self.faction_reactions {
             nonnull(from)?;
             nonnull(to)?;
@@ -2399,6 +2446,7 @@ impl Continuity {
         e.restore_tapers(self.tapers);
         // Before the save's cells load: graphs built afresh replay these.
         e.world_state.graph_open = self.graph_open;
+        e.world_state.saved_graphs = self.object_graphs;
         e.restore_faction_reactions(self.faction_reactions);
         e.restore_faction_player_flags(self.faction_player_flags);
         e.restore_attacked_on_sight(self.attacked_on_sight);

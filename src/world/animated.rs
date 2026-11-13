@@ -787,9 +787,18 @@ impl Engine {
                     &skeleton,
                     self.rng ^ obj.ref_id.0 as u64,
                 );
-                // A graph whose state wasn't kept (a loaded save) goes back
-                // to the open state it had.
-                if let Some(ev) = self
+                g.label = obj.ref_id.to_string();
+                // A loaded save's graph runs on from where it was saved;
+                // one that wasn't kept, or no longer fits, goes back to the
+                // open state it had.
+                let restored = self
+                    .world_state
+                    .saved_graphs
+                    .remove(&obj.ref_id)
+                    .is_some_and(|saved| g.restore(&saved));
+                if restored {
+                    log::debug!("{}: graph restored in {:?}", obj.ref_id, g.active_states());
+                } else if let Some(ev) = self
                     .world_state
                     .graph_open
                     .get(&obj.ref_id)
@@ -838,6 +847,24 @@ impl Engine {
             moved,
             dt: 0.0,
         });
+    }
+
+    /// Every object's behaviour graph as saved (`GRPH`): those running in
+    /// loaded cells, those parked with unloaded ones, and those a loaded save
+    /// holds for cells that haven't loaded since.
+    pub(crate) fn saved_object_graphs(
+        &self,
+    ) -> std::collections::HashMap<FormId, crate::world::behavior::SavedGraph> {
+        let mut out = self.world_state.saved_graphs.clone();
+        for (&r, g) in &self.world_state.object_graphs {
+            out.insert(r, g.saved());
+        }
+        for obj in self.cells.values().flat_map(|rt| &rt.animated) {
+            if let Some(g) = &obj.graph {
+                out.insert(obj.ref_id, g.anim.saved());
+            }
+        }
+        out
     }
 
     /// Keep the behaviour graphs of `key`'s objects as they are, for when it
