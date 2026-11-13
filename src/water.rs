@@ -107,6 +107,13 @@ pub(crate) const SWIM_EXIT_DEPTH: f32 = 60.0;
 /// to 25: 92 to 94 under), and one deeper keeps its depth (autotest25).
 pub(crate) const FLOAT_DEPTH: f32 = 92.0;
 
+/// How fast a current carries a still swimmer (autotest26: 70.7 and 70.8
+/// units a second, player and NPC, at one marker; chosen for all).
+pub(crate) const CURRENT_SPEED: f32 = 71.0;
+/// `CellWaterCurrentMarker`: the static whose references set a cell's
+/// current's heading.
+const CURRENT_MARKER: FormId = FormId(0x61);
+
 /// Whether an actor whose feet are at `feet` swims, having swum before
 /// (`was`) or not. A move (`MoveTo`) judges afresh, as `was` false.
 fn swim_state(surface: Option<f32>, feet: f32, was: bool) -> bool {
@@ -180,6 +187,27 @@ impl Engine {
         out
     }
 
+    /// A cell's current: along the heading of its water current marker among
+    /// `refs`, at [`CURRENT_SPEED`]; none without one. The water's type
+    /// doesn't matter: autotest20 and 26's lakes ran as `DefaultWater` (their
+    /// plugins' cell overrides dropped Update.esm's `RiverWaterFlow`) and
+    /// flowed (`known_ambiguities/water.md`, Currents).
+    pub(crate) fn cell_current(&self, refs: &[FormId]) -> Vec3 {
+        refs.iter()
+            .filter_map(|&r| self.lo.get(r))
+            .map(|rec| crate::world::records::reference(&rec))
+            .find(|rf| rf.base == CURRENT_MARKER && !rf.deleted())
+            .map_or(Vec3::ZERO, |rf| {
+                let h = rf.rotation.z;
+                Vec3::new(h.sin(), h.cos(), 0.0) * CURRENT_SPEED
+            })
+    }
+
+    /// The water at a point in the currently loaded space.
+    pub(crate) fn water_at(&self, at: Vec3) -> Option<&WaterSurface> {
+        surface_at(self.cells.values().flat_map(|c| &c.water), at)
+    }
+
     /// Exclude only swim-only races (e.g. slaughterfish), which must keep their
     /// underwater Z. Swims is not a capability gate: horses swim without it.
     fn surface_swimmer(&self, actor: FormId) -> bool {
@@ -221,10 +249,14 @@ impl Engine {
             }
         }
         let feet = self.player_feet();
-        let surface = self.water_level(feet);
+        let water = self.water_at(feet).copied();
+        let surface = water.map(|w| w.height);
         self.player.swimming =
             !self.player.noclip && swim_state(surface, feet.z, self.player.swimming);
         self.player.swim_surface = surface;
+        self.player.swim_current = water
+            .filter(|_| self.player.swimming)
+            .map_or(Vec3::ZERO, |w| w.current);
     }
 
     pub(crate) fn update_breath(&mut self, dt: f32) {
@@ -553,6 +585,48 @@ mod tests {
         // Humanoid drowning damage remains active while actually submerged.
         // This fixture has no rendered instance to turn into a corpse.
         assert_eq!(e.actor_health(FormId(0x822)), Some((0.0, 50.0)));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter; synthetic records only"]
+    fn a_current_flows_along_its_cells_marker() {
+        use esp::writer::{Node, RecordBuilder, write_plugin};
+        let dir = std::env::temp_dir().join(format!("vrm-water-current-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let data = |pos: [f32; 3], rot_z: f32| -> Vec<u8> {
+            [pos[0], pos[1], pos[2], 0.0, 0.0, rot_z]
+                .iter()
+                .flat_map(|v| v.to_le_bytes())
+                .collect()
+        };
+        // A current marker (the vanilla static 0x61) heading east, and a
+        // reference of something else.
+        let refs = vec![
+            RecordBuilder::new(b"REFR", FormId(0x900))
+                .form(b"NAME", FormId(0x61))
+                .field(b"DATA", &data([0.0; 3], std::f32::consts::FRAC_PI_2)),
+            RecordBuilder::new(b"REFR", FormId(0x901))
+                .form(b"NAME", FormId(0x62))
+                .field(b"DATA", &data([0.0; 3], 0.0)),
+        ];
+        std::fs::write(
+            dir.join("Current.esp"),
+            write_plugin(
+                0,
+                &[],
+                "test",
+                "water currents",
+                0x910,
+                &[Node::top(b"REFR", refs)],
+            ),
+        )
+        .unwrap();
+        let e = crate::stats::action_tests::headless_engine(&dir, "Current.esp");
+        let marker = [FormId(0x901), FormId(0x900)];
+        let east = e.cell_current(&marker);
+        assert!((east - Vec3::X * CURRENT_SPEED).length() < 1e-3, "{east:?}");
+        assert_eq!(e.cell_current(&[FormId(0x901)]), Vec3::ZERO);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

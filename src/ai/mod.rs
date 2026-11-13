@@ -679,6 +679,30 @@ impl ActorRuntime {
     /// lies above or below it: the highest one within a step of the navmesh
     /// height, as far as the character's foot IK rays reach (40 up, 32 down for
     /// humanoids; 100 / 128 for giants). Furniture places the actor itself.
+    /// Carried by the water's `current` for `dt`, unless something stands in
+    /// the way at its waist or the bed ahead rises above its feet (autotest26:
+    /// swimmers stopped at rocks and washed up on a higher strip of bed).
+    fn drift(&mut self, physics: &crate::physics::Physics, current: Vec3, dt: f32) {
+        let step = current * dt;
+        let length = step.length();
+        if length <= 0.0 || self.in_furniture() || self.flight_controlled {
+            return;
+        }
+        let dir = step / length;
+        let reach = length + 20.0;
+        let waist = self.exec.pos + Vec3::Z * 40.0;
+        if physics.ground_ray(waist, dir, reach).is_some() {
+            return;
+        }
+        let ahead = self.exec.pos + dir * reach;
+        let bed = physics
+            .ground_ray(ahead + Vec3::Z * 40.0, -Vec3::Z, 40.0)
+            .is_some();
+        if !bed {
+            self.exec.pos += step;
+        }
+    }
+
     fn stand_on_ground(&mut self, physics: &crate::physics::Physics, dt: f32) {
         if self.in_furniture() || self.swimming {
             self.lift = 0.0;
@@ -4467,6 +4491,7 @@ impl Engine {
                 {
                     a.exec.pos.z = a.exec.pos.z.min(surface.height - crate::water::FLOAT_DEPTH);
                     a.lift = 0.0;
+                    a.drift(&self.physics, surface.current, dt);
                 }
                 actor_timing.next("ai.actor.ground");
                 if !a.flight_controlled && !self.passengers.contains_key(&a.ref_id) {
@@ -4530,6 +4555,8 @@ impl Engine {
                     }));
                 }
                 a.footsteps.clear();
+                // Moved this frame by anything (a current carries a swimmer
+                // that isn't walking): its position and capsule follow.
                 if a.flight_controlled
                     || a.is_walking()
                     || matches!(
@@ -4537,6 +4564,7 @@ impl Engine {
                         State::Approach(_) | State::Enter(_) | State::Exit(_) | State::Use(_)
                     )
                     || talking == Some(a.ref_id)
+                    || a.exec.pos != was
                 {
                     moved.push((a.ref_id, a.feet(), a.capsule));
                 }

@@ -3183,15 +3183,14 @@ impl Engine {
                 } else {
                     info.water_type
                 };
-                self.add_water(
-                    key,
-                    vec![crate::water::WaterSurface::square(
-                        glam::Vec2::new(x as f32 * CELL_SIZE, y as f32 * CELL_SIZE),
-                        CELL_SIZE,
-                        h,
-                        wt,
-                    )],
+                let mut water = crate::water::WaterSurface::square(
+                    glam::Vec2::new(x as f32 * CELL_SIZE, y as f32 * CELL_SIZE),
+                    CELL_SIZE,
+                    h,
+                    wt,
                 );
+                water.current = self.cell_current(&refs);
+                self.add_water(key, vec![water]);
             }
         }
     }

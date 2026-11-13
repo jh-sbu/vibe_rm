@@ -70,10 +70,24 @@ than the lake around it, where the feet rose 1 to 3.
   unknown.
 - The data's pattern: `RiverWaterFlow` is the water of 613 cells, 558 of
   them with a current marker; `DefaultWaterFlowBlend` of 14, 13 with one.
-  A flow-mapped water type with a marker per cell giving the direction
-  fits, but this one site doesn't show what a flowing cell without a
-  marker does, or a marker in still water.
+- *Settled* (found 2026-11-13, after the run): **the current didn't need
+  a flowing water type**. The water type `RiverWaterFlow` is Update.esm's,
+  set by its override of the cell (`XCWT`). Skyrim.esm's own record of
+  the cell has none, so the cell takes Tamriel's `DefaultWater` (`NAM2`
+  `00000018`, no flow map). autotest26's plugin overrides the cell
+  (`places::worlds`, built from Skyrim.esm alone), so in this run the lake
+  was `DefaultWater`, and the current flowed all the same. autotest20's
+  lake (-5, -14) was the same (Update.esm's `RiverWaterFlow`, overridden
+  away), and its current was plain to see. A marker in a cell of still
+  water makes a current. Whether a flowing type without a marker does
+  isn't known.
 
 ## Compared with ours (2026-11-13)
 
-Ours has no currents: its dry run read no drift anywhere.
+Ours had no currents: its dry run read no drift anywhere. Since then ours
+has a cell's current along its marker's heading at 71 units a second
+(`known_ambiguities/water.md`, Currents). Run again, ours carried the
+player and the NPC 70.9 a second along the heading at every point. At
+1024 along, the player was turned off its line at about 7 s as in SE and
+the NPC stopped. At 512 right the NPC stopped on the higher strip as in
+SE, while the player climbed it and went on.

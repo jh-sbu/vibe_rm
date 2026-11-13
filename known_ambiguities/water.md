@@ -163,6 +163,30 @@ moved after its cell loads (`TG08RisingWaterScript` translates one): ours
 keeps what was there at load. Its surface is drawn as a flat rectangle of
 its water type, like cell water.
 
+## Currents
+
+Measured in SE at one marker (`research/autotest26.md`): Update.esm's
+`CellWaterCurrentMarker` `01002B8A` in a mountain lake, in a cell whose
+water was `DefaultWater` while the test plugin overrode it. Still swimmers,
+player and NPC alike, drifted along the marker's heading at about 71 units
+a second. The speed was the same at every free point to 1024 along and 512
+across, and at 92 and 122 under. Rocks turned them off their line, and a
+higher strip of bed stopped them. The marker holds only a position and a
+heading, and nothing published gives a speed or a reach.
+
+Chosen: a cell whose water level is its own (exterior cell water) and
+which holds a current marker flows along the marker's heading at 71 units
+a second (`CURRENT_SPEED`), over the whole cell, whatever its water type.
+Without a marker there is no current. Only swimmers are carried. A
+swimmer's drift stops where something stands in the way at its waist or
+the bed ahead rises to its feet (NPCs; the player's own collision handles
+its drift). Uncertain: the speed elsewhere (one site; Update.esm's flowing
+water types carry no value near 71), whether the reach is the cell (every
+point measured lay in the marker's cell), cells with several markers (the
+first is taken), wading actors, and placed water: no interior has a
+marker, and placed rivers (`Water1024RiverFlowSE`, ...) get no current
+here.
+
 ## Breath and drowning
 
 The local UESP [Waterbreathing revision 3380569](https://en.uesp.net/w/index.php?oldid=3380569)
