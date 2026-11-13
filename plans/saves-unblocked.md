@@ -1,6 +1,6 @@
 # Saves: the unblocked items
 
-**Status: drafted** (2026-11-12). Covers what ROADMAP item 9 (Saves) leaves
+**Status: done** (2026-11-12; steps 1–6). Covers what ROADMAP item 9 (Saves) leaves
 open that can be built now. Each numbered step is one commit, in order;
 each updates `known_ambiguities/saves.md` (and the section list in
 `src/save/state.rs`'s module documentation) with what it adds.

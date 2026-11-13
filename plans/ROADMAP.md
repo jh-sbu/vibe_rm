@@ -983,6 +983,16 @@ game each piece unlocks.
   override and roll timer; optional `WTHR`). `Game.RequestSave` /
   `RequestAutoSave` (written on the next update), console `save`, `load`,
   `saves`.
+- Saves, the unblocked items (`plans/saves-unblocked.md`, 2026-11-12;
+  `known_ambiguities/saves.md`): objects' behaviour graphs as they ran
+  (`GRPH`: levers, gates and traps mid-clip, script-pinned variables;
+  `GOPN` replay as the fallback), loaded actors' fights and searches
+  (`FGHT`, set again as their cells load without barks or combat events),
+  `PathToReference` waits and `KeepOffsetFromActor` (`PTHW`, `KOFF`),
+  `GetOpenState` waits waking at once, and the player's conversation
+  (`CONV`, opened again on the line being said). Scene state and LOS /
+  tracked-stats registrations were already saved; spells held ready are
+  discarded on load by policy (`MREG`)
 - Saves retain Story Manager cooldowns, do-all-before-repeating rounds,
   social deadlines, location and body-discovery memory, and changed
   relationship ranks. Optional `STOR` / `RELA` sections preserve older native
@@ -2509,17 +2519,21 @@ readings are applied (see Done; autotest23 and autotest24's on
    `NiAlphaProperty` test functions other than the lower bound,
    speed-to-aspect runtime fidelity, subtexture
    loops, bombs, inherited velocity and addon nodes' caps, flags and keyframes
-9. **Saves** (the container, the engine's state and the Papyrus VM are done:
-   see Done): scene state,
-   AI progress (procedures' loaded-only state, animation, combat and NPC
-   casting; actors' executions are saved in `AEXC`), objects' behaviour graphs (also for `PlayAnimationAndWait`
-   senders), detection (searches, combat targets), live player
-   conversations, the player's spells held ready, script signal waits other
-   than animation events (now timed waits on load) and registrations not
-   built yet (LOS gain / lost, tracked stats events); reading the
-   original's `.ess` saves later;
-   load orders that changed since the save, and the original's refusals to
-   save (combat, menus, scripted). Runtime form collection is deferred: all
+9. **Saves** (the container, the engine's state, the Papyrus VM, scenes,
+   objects' behaviour graphs, fights and searches, scripted moves and the
+   player's conversation are done: see Done, and `plans/saves-unblocked.md`):
+   AI progress still restarts on load for actors' behaviour graphs (an actor
+   attaches standing, its graph from its equipment and stance), NPC casts
+   and swings in progress, procedures' loaded-only state, and NPCs'
+   greetings; script sounds don't play on after a load (`Sound.PlayAndWait`
+   waits out the sound's length). Load orders that changed since the save:
+   form ids are written as loaded, many sections check their keys are
+   sorted (remapping on read would break those checks) and `FORM`'s records
+   carry form ids inside their bytes, so it needs a remapping pass over the
+   read snapshot and a policy for missing plugins. The original's refusals
+   to save (combat, menus, scripted): no public source found says when
+   Skyrim SE refuses (only `sCantSaveNow`). Reading the original's `.ess`
+   saves later. Runtime form collection is deferred: all
    created ALCH/ENCH records currently persist. Track both saved and runtime-only
    roots (including projectile poison) before reclaiming forms; saving must
    preserve live plugin/cache state. Original collection timing is still an open
