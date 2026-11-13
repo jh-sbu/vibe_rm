@@ -75,20 +75,28 @@ confirm the original game's immersion threshold.
 
 ## Swimming depth
 
-Autotest19 observed feet on the bed at depth 80 and floating at depths
-100–140, about 92 units below the surface. Its HasMagicEffect swim detector
-was inconclusive. Chosen entry depth is strictly over 100, with four units
-of exit hysteresis measured against the bed, so floating at the observed
-92 does not toggle the state. A swimmer lifted clear of that float band
-also leaves the state. The bed comes from static-world ground rays.
-Scale/race-dependent depth and Waterbreathing's influence on state remain
-unmeasured; use the same threshold for land-capable swimmers for now.
-autotest20 (2026-11-13, `research/autotest20.md`) put SE's entry between bed
-depths 100.4 and 105.1, the same for an NPC and with Waterbreathing.
-autotest25 (`research/autotest25.md`), in an authored cell with exact
-floors, supersedes the lake's depths: entry with the feet about 90 under,
-exit when moving out at 55 to 68 under, no rise to a float height from
-deeper. The choices here aren't yet revised to it.
+Measured in SE (`research/autotest25.md`, an authored cell of placed still
+water with floors of exact depth): swimming begins with the feet about 90
+under the surface, the same for the player and an NPC (dry at 89.7,
+swimming at 90.2 and 94.7). Moving out continuously, swimming lasted
+until the feet were between 55 and 68 under (swimming at 67.7, dry by
+about 55, the detector's lag allowed for). Moved by `MoveTo`, the state
+is judged afresh. A still swimmer placed deeper than about 92 kept its
+depth for 20 s. Placed shallower it came up to 92 to 94 under.
+autotest19 and autotest20's lake readings (entry between bed depths 100.4
+and 105.1) are superseded: the feet there stood 24 to 37 above the
+terrain's heights.
+
+Chosen: start past 90 under (`SWIM_DEPTH`), and stay swimming while the
+feet are 60 or more under (`SWIM_EXIT_DEPTH`, inside the measured 55 to
+68). The feet decide, not the bed: on autotest25's ramp feet and bed were
+3 apart, so the two weren't told apart. A `MoveTo` of an NPC clears its
+state (the player is placed afresh anyway). A translation carries it
+over. Swimmers keep their depth but rise no higher than 92 under
+(`FLOAT_DEPTH`). The player's slight rise after a move (about 10 in
+autotest25; NPCs none) isn't modelled. Waterbreathing doesn't change the
+state, and NPCs share the player's depth (autotest20, autotest25).
+Scale- and race-dependent depths remain unmeasured.
 
 The local UESP [RACE revision 3650080](https://en.uesp.net/w/index.php?oldid=3650080)
 documents Swims (0x40) and Walks (0x100). Chosen scope guard: exclude only
@@ -105,8 +113,8 @@ Absence of Swims is not treated as proof that a race cannot surface-swim.
 The precise meaning of that flag across races remains uncertain.
 
 NPC swim locomotion selects graph-named swim MOVT states and uses water
-navmesh paths. Swimmers float at the observed surface-minus-92 feet height;
-land collision standing is suspended. No diving or race-specific float height
+navmesh paths. Swimmers keep their depth, no higher than surface-minus-92
+(see Swimming depth); land collision standing is suspended. No diving or race-specific float height
 is inferred. Swimming fighters pursue without attempting attacks or drawing.
 ActionDraw's vanilla tree, contrary to the planning sketch, has no general
 IsSwimming condition: avoiding a draw while swimming is an engine policy here.
@@ -118,7 +126,7 @@ constant is a mounted subgraph's). Humanoids therefore use NPCSwimming's
 speeds while retaining their default iState; creatures use their own authored
 swim constants. This avoids accidentally selecting mounted swim speeds.
 
-Player movement holds the same floating feet height using collision movement,
+Player movement keeps the same depth rule using collision movement,
 with no swim gravity or dive controls. The capsule's 64-unit half-extent and
 56-unit eye offset leave the eye 28 above the surface at that height. Swim
 speed uses NPCSwimming walk/run, scaled by the existing armor movement rule.

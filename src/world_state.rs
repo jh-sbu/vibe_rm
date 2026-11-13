@@ -575,6 +575,8 @@ impl Engine {
                     a.turn_after_arrival = None;
                     a.exec.pos = pos;
                     a.exec.heading = rot.z;
+                    // Moved, its swimming is judged afresh (autotest25).
+                    a.swimming = false;
                     a.halt(0.5);
                 }
                 self.moved_refs.insert(r, pos);

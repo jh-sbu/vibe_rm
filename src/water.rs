@@ -43,20 +43,26 @@ fn dangerous_water_at(lo: &esp::LoadOrder, surfaces: &[WaterSurface], feet: Vec3
         .is_some_and(|flags| flags & 1 != 0)
 }
 
-/// Provisional feet depth until autotest20; the float height is observed in SE.
-pub(crate) const SWIM_DEPTH: f32 = 100.0;
+/// The feet's depth under the surface past which an actor starts swimming
+/// (autotest25: dry at 89.7, swimming at 90.2, player and NPC alike).
+pub(crate) const SWIM_DEPTH: f32 = 90.0;
+/// The feet's depth under which a swimmer stays swimming as it moves out
+/// (autotest25: swimming at 67.7, dry by about 55; chosen between, see
+/// `known_ambiguities/water.md`).
+pub(crate) const SWIM_EXIT_DEPTH: f32 = 60.0;
+/// The shallowest a swimmer's feet go: swimmers rise no higher (autotest19
+/// to 25: 92 to 94 under), and one deeper keeps its depth (autotest25).
 pub(crate) const FLOAT_DEPTH: f32 = 92.0;
-const SWIM_HYSTERESIS: f32 = 4.0;
 
-fn swim_state(surface: Option<f32>, feet: f32, bed: Option<f32>, was: bool) -> bool {
+/// Whether an actor whose feet are at `feet` swims, having swum before
+/// (`was`) or not. A move (`MoveTo`) judges afresh, as `was` false.
+fn swim_state(surface: Option<f32>, feet: f32, was: bool) -> bool {
     let Some(surface) = surface else { return false };
+    let depth = surface - feet;
     if was {
-        // Floating feet are shallower than the entry threshold. The bed, not
-        // the floated pose, determines leaving the swim state at the shore.
-        surface - feet >= FLOAT_DEPTH - SWIM_HYSTERESIS
-            && bed.is_none_or(|z| surface - z >= SWIM_DEPTH - SWIM_HYSTERESIS)
+        depth >= SWIM_EXIT_DEPTH
     } else {
-        surface - feet > SWIM_DEPTH
+        depth > SWIM_DEPTH
     }
 }
 
@@ -110,12 +116,7 @@ impl Engine {
                 }
                 let feet = a.feet();
                 let surface = self.water_level(feet);
-                let bed = surface.and_then(|h| {
-                    self.physics
-                        .ground_ray(feet.with_z(h + 1.0), -Vec3::Z, 8192.0)
-                        .map(|(t, _)| h + 1.0 - t)
-                });
-                (a.ref_id, swim_state(surface, feet.z, bed, a.swimming))
+                (a.ref_id, swim_state(surface, feet.z, a.swimming))
             })
             .collect();
         for (actor, swimming) in states {
@@ -125,13 +126,8 @@ impl Engine {
         }
         let feet = self.player_feet();
         let surface = self.water_level(feet);
-        let bed = surface.and_then(|h| {
-            self.physics
-                .ground_ray(feet.with_z(h + 1.0), -Vec3::Z, 8192.0)
-                .map(|(t, _)| h + 1.0 - t)
-        });
         self.player.swimming =
-            !self.player.noclip && swim_state(surface, feet.z, bed, self.player.swimming);
+            !self.player.noclip && swim_state(surface, feet.z, self.player.swimming);
         self.player.swim_surface = surface;
     }
 
@@ -443,15 +439,18 @@ mod tests {
     }
 
     #[test]
-    fn swim_depth_has_hysteresis_and_uses_the_bed_while_floating() {
-        assert!(!swim_state(Some(200.0), 120.0, Some(120.0), false));
-        assert!(!swim_state(Some(200.0), 100.0, Some(100.0), false));
-        assert!(swim_state(Some(200.0), 99.0, Some(99.0), false));
-        assert!(swim_state(Some(200.0), 108.0, Some(20.0), true));
-        assert!(swim_state(Some(200.0), 108.0, Some(103.0), true));
-        assert!(!swim_state(Some(200.0), 108.0, Some(105.0), true));
-        assert!(!swim_state(None, 0.0, None, true));
-        assert!(!swim_state(Some(200.0), 300.0, Some(0.0), false));
+    fn swimming_starts_past_90_and_lasts_to_60_under() {
+        // autotest25: dry with the feet 89.7 under, swimming at 90.2.
+        assert!(!swim_state(Some(200.0), 110.3, false));
+        assert!(swim_state(Some(200.0), 109.8, false));
+        // Moving out it lasts (swimming at 67.7 under), until 60.
+        assert!(swim_state(Some(200.0), 132.3, true));
+        assert!(swim_state(Some(200.0), 140.0, true));
+        assert!(!swim_state(Some(200.0), 140.1, true));
+        // A move judges afresh: 70 under, not swimming before, is dry.
+        assert!(!swim_state(Some(200.0), 130.0, false));
+        assert!(!swim_state(None, 0.0, true));
+        assert!(!swim_state(Some(200.0), 300.0, false));
     }
     #[test]
     fn breath_damage_counts_only_time_after_exhaustion_and_resets_on_protection() {

@@ -4460,10 +4460,12 @@ impl Engine {
                 if self.world_state.no_head_tracking.contains(&a.ref_id) {
                     a.look_at = None;
                 }
+                // A swimmer keeps its depth, rising no higher than the
+                // floating height (autotest25).
                 if a.swimming
                     && let Some(surface) = crate::water::surface_at(&water, a.exec.pos)
                 {
-                    a.exec.pos.z = surface.height - crate::water::FLOAT_DEPTH;
+                    a.exec.pos.z = a.exec.pos.z.min(surface.height - crate::water::FLOAT_DEPTH);
                     a.lift = 0.0;
                 }
                 actor_timing.next("ai.actor.ground");

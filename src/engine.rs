@@ -3633,7 +3633,12 @@ impl Engine {
         }
         // Riding in a cart, the cart carries them (`sync_passengers`): no
         // falling into its floor, pushing it about.
-        if !self.passengers.contains_key(&PLAYER_REF) && self.player_knock.is_none() {
+        // A translation carries the player (`translate_player`) as SE's
+        // keyframed move does: no walking or falling of its own meanwhile.
+        if !self.passengers.contains_key(&PLAYER_REF)
+            && self.player_knock.is_none()
+            && !self.world_state.translations.contains_key(&PLAYER_REF)
+        {
             self.player
                 .update(&mut self.physics, &cam, input, sneak_speed, armor_speed, dt);
         }

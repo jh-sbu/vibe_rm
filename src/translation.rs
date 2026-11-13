@@ -185,7 +185,17 @@ impl Engine {
                 tr.almost_sent = true;
             }
             let done = tr.progress() >= 1.0 && tr.turned();
-            self.move_ref(r, r, pos, rot);
+            if r == crate::engine::PLAYER_REF {
+                self.translate_player(pos, rot.z);
+            } else {
+                // Carried along, not moved: its swimming goes on (a
+                // `MoveTo` judges it afresh).
+                let swimming = self.actor_ref(r).map(|a| a.swimming);
+                self.move_ref(r, r, pos, rot);
+                if let (Some(s), Some(a)) = (swimming, self.actor_mut(r)) {
+                    a.swimming = s;
+                }
+            }
             if almost {
                 self.send_script_event(r, "OnTranslationAlmostComplete", Vec::new());
             }
@@ -194,6 +204,17 @@ impl Engine {
                 self.send_script_event(r, "OnTranslationComplete", Vec::new());
             }
         }
+    }
+
+    /// The player carried along by a translation, its feet at `feet`: moved
+    /// directly, keeping its state (swimming, crouch), unlike a script's
+    /// `MoveTo`, which places it afresh.
+    fn translate_player(&mut self, feet: Vec3, yaw: f32) {
+        self.player.position =
+            feet + Vec3::Z * (self.physics.player_half_height + self.physics.player_radius);
+        self.player.vertical_velocity = 0.0;
+        self.player.last = self.player.position;
+        self.camera.yaw = yaw;
     }
 
     /// In a loaded cell, drawn or not (markers and water planes move too:

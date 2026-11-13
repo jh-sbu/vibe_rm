@@ -267,7 +267,7 @@ mod control_tests {
 mod swimming_tests {
     use super::*;
     #[test]
-    fn surface_swimming_uses_its_speed_holds_height_and_cancels_falling() {
+    fn surface_swimming_uses_its_speed_keeps_depth_and_cancels_falling() {
         let mut physics = Physics::new();
         let camera = Camera {
             position: Vec3::ZERO,
@@ -298,10 +298,18 @@ mod swimming_tests {
             );
             assert!(!player.jumped && !player.grounded);
             assert_eq!(player.vertical_velocity, 0.0);
-            assert!((player.position.z - (200.0 - crate::water::FLOAT_DEPTH + 64.0)).abs() < 0.01);
-            assert!(player.eye().z > 200.0);
+            // Deeper than the floating height: it stays there.
+            assert!((player.position.z - start.z).abs() < 0.01);
         }
         assert!((player.position.y - start.y - 40.0).abs() < 0.01);
+        // Above the floating height it is held at it; a current carries it.
+        player.position.z = 190.0;
+        player.swim_current = Vec3::new(71.0, 0.0, 0.0);
+        let x = player.position.x;
+        player.update(&mut physics, &camera, MoveInput::default(), 0.1, 0.5, 1.0);
+        assert!((player.position.z - (200.0 - crate::water::FLOAT_DEPTH + 64.0)).abs() < 0.01);
+        assert!(player.eye().z > 200.0);
+        assert!((player.position.x - x - 71.0).abs() < 0.01);
     }
 }
 
@@ -332,13 +340,15 @@ pub struct Player {
     pub sprinting: bool,
     pub swimming: bool,
     pub(crate) swim_surface: Option<f32>,
+    /// The current of the water swum in (units a second), if any.
+    pub(crate) swim_current: Vec3,
     pub(crate) swim_speed: f32,
     /// The highest the capsule has been since it left the ground.
     fall_top: Option<f32>,
     /// How far it came down, if it landed this update.
     pub landed_from: Option<f32>,
     /// Where the last update left it (a jump from there is a teleport).
-    last: Vec3,
+    pub(crate) last: Vec3,
     /// Carrying more than they can (`crate::encumbrance`).
     pub overencumbered: bool,
 }
@@ -372,6 +382,7 @@ impl Player {
             sprinting: false,
             swimming: false,
             swim_surface: None,
+            swim_current: Vec3::ZERO,
             swim_speed: WALK_SPEED,
             fall_top: None,
             landed_from: None,
@@ -446,10 +457,17 @@ impl Player {
         if self.swimming {
             self.vertical_velocity = 0.0;
             self.fall_top = None;
+            // A swimmer keeps its depth, but rises no higher than the
+            // floating height (autotest25); the water's current carries it.
             let desired_z = self.swim_surface.map_or(self.position.z, |h| {
-                h - crate::water::FLOAT_DEPTH + physics.player_half_height + physics.player_radius
+                self.position.z.min(
+                    h - crate::water::FLOAT_DEPTH
+                        + physics.player_half_height
+                        + physics.player_radius,
+                )
             });
-            let desired = horizontal * dt + Vec3::Z * (desired_z - self.position.z);
+            let desired =
+                (horizontal + self.swim_current) * dt + Vec3::Z * (desired_z - self.position.z);
             self.position = physics.move_player(self.position, desired, dt).0;
             self.grounded = false;
             self.last = self.position;
