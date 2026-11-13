@@ -885,6 +885,65 @@ impl Engine {
         self.refresh_options();
     }
 
+    /// A saved conversation (`CONV`) opened again: on its INFO, without
+    /// its begin fragment, from the response being said when it was saved.
+    /// Dropped if its speaker is dead or knocked down, or its records no
+    /// longer hold that INFO in that topic.
+    pub(crate) fn resume_conversation(
+        &mut self,
+        saved: &crate::save::conversation::SavedConversation,
+    ) {
+        let npc_ref = saved.speaker;
+        if self.conversation.is_some()
+            || self.is_dead(npc_ref)
+            || self.is_knocked(npc_ref)
+            || self.player_knock.is_some()
+        {
+            return;
+        }
+        let Some(npc) = self.base_of(npc_ref) else {
+            return;
+        };
+        let said = match saved.said {
+            Some((t, i)) => {
+                let found = topic(&self.lo, t)
+                    .filter(|_| self.lo.topic_infos(t).contains(&i))
+                    .zip(info(&self.lo, i))
+                    .filter(|(_, i)| saved.resume as usize <= i.responses.len());
+                if found.is_none() {
+                    log::warn!("{npc_ref}: saved conversation's INFO {i} doesn't fit; dropped");
+                    return;
+                }
+                found
+            }
+            None => None,
+        };
+        let voice_type = self.actor_voice_type(npc_ref).unwrap_or_default();
+        let name = self.form_name(npc_ref);
+        let queue = said
+            .as_ref()
+            .map(|(_, i)| i.responses[saved.resume as usize..].to_vec())
+            .unwrap_or_default();
+        let speaking = !queue.is_empty();
+        self.conversation = Some(Conversation {
+            npc_ref,
+            npc,
+            name,
+            voice_type,
+            options: Vec::new(),
+            queue,
+            current: None,
+            info: said,
+            ending: saved.ending,
+            said_once: Default::default(),
+        });
+        log::info!("{npc_ref}: conversation resumed");
+        if speaking {
+            self.next_line();
+        }
+        self.refresh_options();
+    }
+
     fn refresh_options(&mut self) {
         let Some(c) = &self.conversation else { return };
         let npc_ref = c.npc_ref;

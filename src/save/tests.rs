@@ -2968,7 +2968,8 @@ fn scene_force_greet_load_discards_conversation_and_preserves_completion() {
     assert!(e.scene_owns_force_greet_package(SCENE_ACTOR));
 
     // A force-greet marker is set when the scene-owned greet conversation
-    // starts. The conversation itself is intentionally not in the save.
+    // starts. The conversation is saved too (`CONV`), and opens again once
+    // its speaker loads.
     e.update_force_greets(0.0);
     assert!(e.scenes.force_greeted.contains(&SCENE_ACTOR));
     assert!(e.conversation.is_some());
@@ -2989,7 +2990,14 @@ fn scene_force_greet_load_discards_conversation_and_preserves_completion() {
         .unwrap()
         .apply(&mut e)
         .unwrap();
-    assert!(e.conversation.is_none(), "transient dialogue was resumed");
+    assert!(
+        e.conversation.is_none(),
+        "dialogue resumed before its speaker loaded"
+    );
+    assert_eq!(
+        e.world_state.pending_conversation.map(|c| c.speaker),
+        Some(SCENE_ACTOR)
+    );
     assert!(e.scenes.force_greeted.contains(&SCENE_ACTOR));
 
     // Missing marker data replaces stale completion state on legacy loads.
@@ -7547,4 +7555,98 @@ fn keep_offsets_payload() {
         s.continuity.keep_offsets.insert(ACTOR, bad);
         assert!(Snapshot::read(&s.write()).is_err(), "{bad:?}");
     }
+}
+
+#[test]
+fn conversation_payload() {
+    use super::conversation::SavedConversation;
+    let mut s = Snapshot::default();
+    s.conversation = Some(SavedConversation {
+        speaker: SCENE_ACTOR,
+        said: Some((SCENE_TOPIC, SCENE_INFO)),
+        resume: 1,
+        ending: true,
+    });
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(restored.conversation, s.conversation);
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"CONV");
+    for bad in [
+        SavedConversation {
+            speaker: PLAYER_REF,
+            ..s.conversation.unwrap()
+        },
+        SavedConversation {
+            said: None,
+            ..s.conversation.unwrap()
+        },
+        SavedConversation {
+            said: Some((FormId::NULL, SCENE_INFO)),
+            ..s.conversation.unwrap()
+        },
+    ] {
+        let mut s = Snapshot::default();
+        s.conversation = Some(bad);
+        assert!(Snapshot::read(&s.write()).is_err(), "{bad:?}");
+    }
+    assert!(Snapshot::default().write().section(b"CONV").is_none());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn a_conversation_opens_again_on_the_line_being_said() {
+    let said = || {
+        Some((
+            crate::dialogue::topic(&engine("conv-records").1.lo, SCENE_TOPIC).unwrap(),
+            crate::dialogue::info(&engine("conv-records").1.lo, SCENE_INFO).unwrap(),
+        ))
+    };
+    let (_a, mut a) = engine("conv-a");
+    attach_scene_test_actor(&mut a);
+    a.open_conversation(SCENE_ACTOR, said());
+    a.skip_line();
+    let line = |e: &Engine| {
+        e.conversation
+            .as_ref()
+            .and_then(|c| c.current.as_ref())
+            .map(|l| l.text.clone())
+    };
+    assert_eq!(line(&a).as_deref(), Some("The queued line."));
+    let file = Snapshot::capture(&a).write();
+    assert_eq!(
+        Snapshot::read(&file).unwrap().conversation.unwrap().resume,
+        1
+    );
+
+    let (_b, mut b) = engine("conv-b");
+    Snapshot::read(&file).unwrap().apply(&mut b).unwrap();
+    assert!(b.conversation.is_none());
+    assert!(b.world_state.pending_conversation.is_some());
+    attach_scene_test_actor(&mut b);
+    let pending = b.world_state.pending_conversation.take();
+    b.restore_saved_conversation(pending);
+    assert_eq!(line(&b).as_deref(), Some("The queued line."));
+    assert_eq!(b.conversation.as_ref().unwrap().npc_ref, SCENE_ACTOR);
+
+    // An INFO that isn't the topic's any more is dropped.
+    let mut other = Snapshot::read(&file).unwrap();
+    other.conversation.as_mut().unwrap().said = Some((SCENE_TOPIC, OTHER_INFO));
+    let (_c, mut c) = engine("conv-c");
+    Snapshot::read(&other.write())
+        .unwrap()
+        .apply(&mut c)
+        .unwrap();
+    attach_scene_test_actor(&mut c);
+    let pending = c.world_state.pending_conversation.take();
+    c.restore_saved_conversation(pending);
+    assert!(c.conversation.is_none());
+
+    // Arrests aren't saved; legacy saves have no conversation.
+    a.crime.arrests.arresting = Some((SCENE_ACTOR, FormId::NULL));
+    assert!(Snapshot::capture(&a).conversation.is_none());
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"CONV");
+    Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
+    assert!(b.conversation.is_none() && b.world_state.pending_conversation.is_none());
 }

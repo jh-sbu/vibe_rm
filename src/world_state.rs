@@ -20,6 +20,8 @@ pub struct WorldState {
     pub(crate) pending_knocks: HashMap<FormId, crate::save::knock::SavedKnock>,
     /// Saved fights and searches waiting for their actors' cells to load.
     pub(crate) pending_fights: HashMap<FormId, crate::save::fights::SavedEngagement>,
+    /// A saved conversation waiting for its speaker's cell to load.
+    pub(crate) pending_conversation: Option<crate::save::conversation::SavedConversation>,
     /// Explicit Papyrus `SetAlert` flags, independent of loaded actor runtimes.
     /// Automatic detection-state changes are not mapped to this flag yet.
     pub alerted: std::collections::HashSet<FormId>,

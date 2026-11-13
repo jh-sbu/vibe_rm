@@ -1451,6 +1451,7 @@ impl Engine {
         // their cells do too.
         self.world_state.pending_knocks.clear();
         self.world_state.pending_fights.clear();
+        self.world_state.pending_conversation = None;
         self.tree_lod = None;
         self.scene.tree_lod.clear();
         if let Some(a) = self.audio.as_mut() {
@@ -2402,6 +2403,14 @@ impl Engine {
             .filter(|f| living.contains(&f.actor))
             .collect();
         self.restore_saved_fights(fights);
+        if let Some(c) = self
+            .world_state
+            .pending_conversation
+            .filter(|c| living.contains(&c.speaker))
+        {
+            self.world_state.pending_conversation = None;
+            self.resume_conversation(&c);
+        }
         self.carry_unloaded_damage(&living);
     }
 

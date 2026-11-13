@@ -6,6 +6,7 @@
 pub mod autosave;
 pub mod codec;
 mod continuity;
+pub(crate) mod conversation;
 mod copies;
 pub(crate) mod fights;
 pub mod file;

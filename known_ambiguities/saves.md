@@ -433,6 +433,27 @@ Native policies (not SE claims):
   dropped, as before. A save whose `VM` names an effect `AEFF` doesn't keep
   is refused before anything changes. Legacy saves had no effect objects.
 
+## The player's conversation (`CONV`)
+
+Optional `CONV` keeps the conversation on when the save was made: the
+speaker, the topic and INFO being said, the first of its responses still to
+say, and whether a goodbye line has ended it. Loading discards the old
+session's conversation (as before) and opens the saved one again once its
+speaker has loaded: on that INFO, without running its begin fragment again
+(its end fragment runs when its last response ends, as usual), the response
+being said starting over (partial audio seeking isn't supported, as for
+`SDLG`), then the options as the speaker's records and conditions give them
+then. A conversation is dropped, with a warning, if its speaker is dead or
+knocked down when it loads, or if its INFO is no longer in that topic or
+has fewer responses. Arrest conversations aren't saved: pending arrests
+don't resume dialogue (below), so the guard approaches again. Legacy saves
+have no `CONV`, so loading ends any conversation.
+
+Choices without a source: whether Skyrim SE saves during a conversation at
+all (here the console and `Game.RequestSave` in a dialogue fragment can),
+and what it shows after loading such a save. Native
+policy, not an SE claim.
+
 ## Fights and searches (`FGHT`)
 
 Optional `FGHT` keeps living loaded actors' fights and searches, with those

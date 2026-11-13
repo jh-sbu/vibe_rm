@@ -134,11 +134,12 @@ the queue; the next normal scene update attempts each start with the usual
 quest, alias and condition checks. Legacy saves clear this queue. The optional
 `SFGT` section retains a greeted actor marker only while a scene-owned force-greet
 package is active, so the package can complete after load without reopening the
-greet. The conversation itself is not saved: a load discards any live conversation
-without running goodbye, INFO-end or arrest-completion side effects. If a save
-was taken mid-greet, its start-time completion marker is retained, so the greet
-is treated as accepted/completed after loading rather than continued from its
-current line. This is a native policy, not verified Skyrim SE save behavior.
+greet. A load discards the old session's live conversation without running
+goodbye, INFO-end or arrest-completion side effects; the save's own
+conversation, if any, opens again once its speaker loads (`CONV`,
+`known_ambiguities/saves.md`). If a save was taken mid-greet, its start-time
+completion marker is retained, so the greet is treated as accepted/completed
+after loading, and its conversation goes on from the line being said. This is a native policy, not verified Skyrim SE save behavior.
 
 Before applying a native snapshot, scene records and their action references are
 checked against the loaded plugin definitions, including phase/action bounds,
