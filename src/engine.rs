@@ -1717,10 +1717,16 @@ impl Engine {
                     };
                     (own, base)
                 }
-                // Created objects have their base's.
+                // Created objects have their base's; created actors their
+                // base's script part, as placed ones.
                 None => match self.created(r) {
                     Some(c) if !c.actor => (Vec::new(), c.base),
-                    _ => continue,
+                    Some(_) => (
+                        Vec::new(),
+                        self.templates_of(r)
+                            .map_or(FormId::NULL, |t| t.of(crate::world::template::SCRIPT)),
+                    ),
+                    None => continue,
                 },
             };
             if let Some(b) = self.lo.get(base)
@@ -2714,7 +2720,7 @@ impl Engine {
             &mut doors,
         );
         let made = self.created_objects(crate::ai::schedule::Place::Interior(cell_id));
-        let made_ids: Vec<FormId> = made.iter().map(|o| o.ref_id).collect();
+        let mut made_ids: Vec<FormId> = made.iter().map(|o| o.ref_id).collect();
         objects.extend(made);
         self.apply_scales(&mut objects);
         self.instantiate(key, &objects, lights, doors);
@@ -2733,6 +2739,7 @@ impl Engine {
         self.load_furniture(key, &refs);
         let actors = self.actors_for_cell(key, &refs);
         self.spawn_scheduled_actors_inner(key, &actors, true);
+        made_ids.extend(self.created_actors_among(&actors));
         self.load_triggers(key, &refs);
         self.load_hazards(key, &refs);
         self.load_decals(key, &refs);
@@ -2967,7 +2974,7 @@ impl Engine {
             &mut doors,
         );
         let made = self.created_objects(crate::ai::schedule::Place::Exterior(world, (x, y)));
-        let made_ids: Vec<FormId> = made.iter().map(|o| o.ref_id).collect();
+        let mut made_ids: Vec<FormId> = made.iter().map(|o| o.ref_id).collect();
         objects.extend(made);
         self.apply_scales(&mut objects);
         timing.next("cell.objects");
@@ -2997,6 +3004,7 @@ impl Engine {
         timing.next("cell.actors");
         let actors = self.actors_for_cell(key, &refs);
         self.spawn_scheduled_actors_inner(key, &actors, true);
+        made_ids.extend(self.created_actors_among(&actors));
         timing.next("cell.triggers_scripts_audio");
         self.load_triggers(key, &refs);
         self.load_hazards(key, &refs);

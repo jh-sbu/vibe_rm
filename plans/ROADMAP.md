@@ -1983,8 +1983,8 @@ readings are applied (see Done; autotest23 and autotest24's on
     explosion that reached nobody, "By Formula"'s rule with damage, the hit
     reaction of a blast without knockdown flags, and `SetDontMove` keeping
     an actor from knockdowns (`known_ambiguities/explosions.md`). Its dry
-    runs found that created actors don't get their base's scripts in our
-    engine (its actor logs read nothing).
+    runs found that created actors didn't get their base's scripts in our
+    engine (its actor logs read nothing; fixed 2026-11-12).
   - Built and waiting for the user's run: `loadscreens`
     (`plans/loading-screen.md`), `crafting1` (`plans/crafting.md`) and
     `spell-visuals` (`plans/spell-visuals.md`, Pending SE validation; its

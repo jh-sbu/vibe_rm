@@ -384,7 +384,18 @@ impl Engine {
         self.whereabouts.add_actor(id, place, position);
         if let Some(key) = self.key_of_place(place) {
             self.spawn_actors(key, &[(id, Some(position))]);
+            self.attach_cell_scripts(&[id]);
         }
+    }
+
+    /// The created actors among those spawned with a cell (they have no
+    /// placed reference in its lists for their scripts to come by).
+    pub(crate) fn created_actors_among(&self, actors: &[(FormId, Option<Vec3>)]) -> Vec<FormId> {
+        actors
+            .iter()
+            .map(|&(r, _)| r)
+            .filter(|&r| self.created(r).is_some_and(|c| c.actor))
+            .collect()
     }
 }
 
@@ -413,6 +424,51 @@ mod crafting_tests {
         assert_ne!(
             magic_form_key(&a.to_bytes()).unwrap(),
             magic_form_key(&c.to_bytes()).unwrap()
+        );
+    }
+}
+
+#[cfg(test)]
+mod created_actor_tests {
+    use super::*;
+    use crate::engine::PLAYER_REF;
+
+    /// A created actor has its base's scripts, as a placed one does, when
+    /// made in a loaded cell and again when its cell loads later.
+    #[test]
+    #[ignore = "requires installed vanilla assets and a headless GPU adapter"]
+    fn created_actors_have_their_bases_scripts() {
+        let data = vfs::locate_data_dir().unwrap();
+        let names: Vec<_> = esp::BASE_MASTERS.iter().map(|s| s.to_string()).collect();
+        let mut e = crate::stats::action_tests::headless_engine_plugins(&data, &names);
+        e.vfs = vfs::Vfs::new(&data, &names).into();
+        let cell = FormId(0x1605e);
+        e.enter_interior(cell, None).unwrap();
+        // Donnel's base carries `WIDeadBodyCleanupScript`.
+        let base = e.lo.find_editor_id("Donnel").unwrap();
+        let made = e.create_ref(base, PLAYER_REF, false).unwrap();
+        let scripts = |e: &Engine| {
+            e.vm.attached_scripts(papyrus::ObjectId::Form(made.0))
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+        };
+        assert!(
+            scripts(&e)
+                .iter()
+                .any(|s| s.eq_ignore_ascii_case("WIDeadBodyCleanupScript")),
+            "{:?}",
+            scripts(&e)
+        );
+        // Detached with its cell, attached again when it loads.
+        e.vm = Default::default();
+        e.enter_interior(cell, None).unwrap();
+        assert!(
+            scripts(&e)
+                .iter()
+                .any(|s| s.eq_ignore_ascii_case("WIDeadBodyCleanupScript")),
+            "{:?}",
+            scripts(&e)
         );
     }
 }
