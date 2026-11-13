@@ -278,7 +278,40 @@ pub struct Search {
     fled: bool,
 }
 
+/// What a search keeps across a save (`FGHT`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct SavedSearch {
+    pub target: FormId,
+    pub at: Vec3,
+    pub lost: bool,
+    pub unseen: f32,
+    pub fled: bool,
+}
+
 impl Search {
+    pub(crate) fn saved(&self) -> SavedSearch {
+        SavedSearch {
+            target: self.target,
+            at: self.at,
+            lost: self.lost,
+            unseen: self.unseen,
+            fled: self.fled,
+        }
+    }
+
+    /// A saved search, looking about `at` afresh.
+    pub(crate) fn restored(s: &SavedSearch, idle_line: f32) -> Search {
+        Search {
+            target: s.target,
+            at: s.at,
+            lost: s.lost,
+            dwell: SEARCH_DWELL.1,
+            idle_line,
+            unseen: s.unseen,
+            fled: s.fled,
+        }
+    }
+
     /// Note a state update: whether the target was detected, and whether it
     /// is fleeing. True when the searcher gives up a lost target that fled,
     /// undetected for `remove_after` seconds
@@ -1085,7 +1118,7 @@ impl Engine {
 
     /// Seconds before a searcher's next idle line
     /// (`fCombatDetectionDialogueIdleMin` / `MaxElapsedTime`).
-    fn detection_idle_wait(&mut self) -> f32 {
+    pub(crate) fn detection_idle_wait(&mut self) -> f32 {
         let lo = gmst_f32(&self.lo, "fCombatDetectionDialogueIdleMinElapsedTime", 10.0);
         let hi = gmst_f32(&self.lo, "fCombatDetectionDialogueIdleMaxElapsedTime", 25.0);
         lo + (self.rand() % 1000) as f32 / 1000.0 * (hi - lo).max(0.0)
@@ -1111,7 +1144,7 @@ impl Engine {
         self.bark(r, if lost { b"COLO" } else { b"NOTA" });
     }
 
-    fn search_towards(&mut self, r: FormId, to: Vec3) {
+    pub(crate) fn search_towards(&mut self, r: FormId, to: Vec3) {
         let Some(key) = self.actor_cells.get(&r).copied() else {
             return;
         };

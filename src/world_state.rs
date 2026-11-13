@@ -18,6 +18,8 @@ use crate::engine::Engine;
 #[derive(Default)]
 pub struct WorldState {
     pub(crate) pending_knocks: HashMap<FormId, crate::save::knock::SavedKnock>,
+    /// Saved fights and searches waiting for their actors' cells to load.
+    pub(crate) pending_fights: HashMap<FormId, crate::save::fights::SavedEngagement>,
     /// Explicit Papyrus `SetAlert` flags, independent of loaded actor runtimes.
     /// Automatic detection-state changes are not mapped to this flag yet.
     pub alerted: std::collections::HashSet<FormId>,

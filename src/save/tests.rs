@@ -7285,3 +7285,131 @@ fn object_graphs_run_on_from_where_they_were_saved() {
     Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
     assert!(b.world_state.saved_graphs.is_empty());
 }
+
+#[test]
+fn fights_payload() {
+    use super::fights::SavedEngagement;
+    use crate::ai::combat::SavedFight;
+    use crate::detection::SavedSearch;
+    let fight = SavedFight {
+        target: PLAYER_REF,
+        fleeing: true,
+        confidence_mod: 0.5,
+        threat_check: 1.25,
+        flee_distance: 900.0,
+        safe: 2.0,
+        unseen: 3.0,
+        last_seen: Some(Vec3::new(1.0, 2.0, 3.0)),
+        ally_killed: Some(CELL),
+    };
+    let search = SavedSearch {
+        target: PLAYER_REF,
+        at: Vec3::new(4.0, 5.0, 6.0),
+        lost: true,
+        unseen: 7.0,
+        fled: true,
+    };
+    let mut s = Snapshot::default();
+    s.fights = vec![
+        SavedEngagement {
+            actor: ACTOR,
+            fight: Some(fight),
+            search: None,
+        },
+        SavedEngagement {
+            actor: SCENE_ACTOR,
+            fight: None,
+            search: Some(search),
+        },
+    ];
+    s.fights.sort_by_key(|f| f.actor);
+    let file = s.write();
+    let restored = Snapshot::read(&file).unwrap();
+    assert_eq!(restored.fights, s.fights);
+    assert_eq!(restored.write().to_bytes(), file.to_bytes());
+    check_continuity_payload(&file, b"FGHT");
+    let mut neither = Snapshot::default();
+    neither.fights = vec![SavedEngagement {
+        actor: ACTOR,
+        fight: None,
+        search: None,
+    }];
+    assert!(Snapshot::read(&neither.write()).is_err());
+    let mut own = Snapshot::default();
+    own.fights = vec![SavedEngagement {
+        actor: ACTOR,
+        fight: Some(SavedFight {
+            target: ACTOR,
+            ..fight
+        }),
+        search: None,
+    }];
+    assert!(Snapshot::read(&own.write()).is_err());
+    let mut unsorted = s;
+    unsorted.fights.reverse();
+    assert!(Snapshot::read(&unsorted.write()).is_err());
+    assert!(Snapshot::default().write().section(b"FGHT").is_none());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn fights_carry_on_after_loading_without_combat_events() {
+    use crate::ai::combat::CombatState;
+    let (_a, mut a) = engine("fights-a");
+    attach_scene_test_actor(&mut a);
+    assert!(a.start_combat(SCENE_ACTOR, PLAYER_REF));
+    a.report_combat_states();
+    a.actor_mut(SCENE_ACTOR)
+        .unwrap()
+        .exec
+        .combat
+        .as_mut()
+        .unwrap()
+        .fleeing = true;
+    let file = Snapshot::capture(&a).write();
+    assert!(file.section(b"FGHT").is_some());
+
+    let (_b, mut b) = engine("fights-b");
+    Snapshot::read(&file).unwrap().apply(&mut b).unwrap();
+    // Not loaded yet: it waits for its cell, and is saved again meanwhile.
+    assert!(b.world_state.pending_fights.contains_key(&SCENE_ACTOR));
+    assert_eq!(Snapshot::capture(&b).fights.len(), 1);
+    attach_scene_test_actor(&mut b);
+    let pending = b
+        .world_state
+        .pending_fights
+        .drain()
+        .map(|(_, f)| f)
+        .collect();
+    b.restore_saved_fights(pending);
+    let actor = b.actor_ref(SCENE_ACTOR).unwrap();
+    assert_eq!(
+        actor.combat_state(),
+        (CombatState::Fighting, Some(PLAYER_REF))
+    );
+    assert!(actor.exec.combat.as_ref().unwrap().fleeing);
+    assert_eq!(actor.combat_reported, CombatState::Fighting);
+
+    // A search instead, and legacy saves have neither.
+    b.end_combat(SCENE_ACTOR);
+    b.start_search(SCENE_ACTOR, PLAYER_REF, Vec3::new(50.0, 0.0, 0.0), true);
+    let file = Snapshot::capture(&b).write();
+    let (_c, mut c) = engine("fights-c");
+    Snapshot::read(&file).unwrap().apply(&mut c).unwrap();
+    attach_scene_test_actor(&mut c);
+    let pending = c
+        .world_state
+        .pending_fights
+        .drain()
+        .map(|(_, f)| f)
+        .collect();
+    c.restore_saved_fights(pending);
+    assert_eq!(
+        c.actor_ref(SCENE_ACTOR).unwrap().combat_state(),
+        (CombatState::Searching, Some(PLAYER_REF))
+    );
+    let mut legacy = file;
+    legacy.sections.retain(|(tag, _)| tag != b"FGHT");
+    Snapshot::read(&legacy).unwrap().apply(&mut c).unwrap();
+    assert!(c.world_state.pending_fights.is_empty());
+}

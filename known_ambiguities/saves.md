@@ -69,8 +69,9 @@ Player and actor stealth-point reservoirs, with their remaining regeneration
 delay, are stored in optional `STPT`. Loading replaces the entire reservoir map;
 an older save without the section clears it. Loading also drops cached
 observer-to-player detection values and schedules an immediate fresh observation.
-This persists the engine's reservoir values only: searches, combat targets
-and detection state transitions remain outside save state.
+This persists the engine's reservoir values only; searches and combat targets
+are in `FGHT` (below), and detection state transitions remain outside save
+state.
 
 Transportation continuity uses optional MOUN (horse/rider transitions), VEHI
 (passenger frames), TETH (horse hitch frames) and FLGT (flight permissions,
@@ -106,8 +107,8 @@ loaded actors' too, and are joined to their executions as the save loads.
 Not kept: the package list and goal (taken again from the records: the
 execution's alias generation never matches the loaded game's, and its goal is
 worked out at its next reading, at once for one that attaches), a goal set by
-hand with the console, fights, searches and greetings (as on unloading), and
-package events not yet delivered. Loading replaces every execution before the
+hand with the console, fights and searches (kept for loaded actors in `FGHT`
+instead), greetings, and package events not yet delivered. Loading replaces every execution before the
 save's cells attach their actors; runs carry on without package events, as
 autotest14 saw of Skyrim SE. Saves without `AEXC` keep only wounds, and their
 actors are placed by their schedules. Either way, where every unloaded actor
@@ -413,6 +414,33 @@ Native policies (not SE claims):
   effects `AEFF` keeps are written; finished effects' lingering scripts are
   dropped, as before. A save whose `VM` names an effect `AEFF` doesn't keep
   is refused before anything changes. Legacy saves had no effect objects.
+
+## Fights and searches (`FGHT`)
+
+Optional `FGHT` keeps living loaded actors' fights and searches, with those
+still waiting for their actors' cells after a load. A fight keeps its
+target, whether it is fleeing, its confidence adjustment, its threat and
+flee clocks (next threat check, flee distance, time spent safe), how long
+the target has gone unseen and where it was last seen, and the ally whose
+death it is to remark on. A search keeps its target, where it searches,
+whether it is alert or has lost the target, how long the target has gone
+unseen and whether it saw the target flee. Paths, swings, guards, bashes,
+draws and casts are not kept: they start afresh, as after a stagger.
+
+Loading sets each fight or search again once its actor's cell has loaded
+(at once for the cells entered with the save, as its cells stream in for
+the rest): weapons drawn as `start_combat` / `start_search` would, but
+without their detection barks, and with the combat state scripts last heard
+of set to match, so no `OnCombatStateChanged` is sent. Dead actors' entries
+are dropped. Fights of actors whose cells unloaded before the save were
+already dropped, as on unloading. Legacy saves have no `FGHT`: loaded
+actors start out of combat and fights begin again only by detection.
+
+Choices without a source: that a fight survives a load at all (the CK
+wiki's `OnCombatStateChanged` doesn't say whether loading sends it, and no
+public source describes how the original saves combat), and that loading
+sends no combat events, matching the package events policy above
+(autotest14 saw none for packages). Native policy, not an SE claim.
 
 ## Objects' behaviour graphs (`GRPH`)
 

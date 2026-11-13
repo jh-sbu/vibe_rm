@@ -1447,6 +1447,7 @@ impl Engine {
         // Unloading stands knocked actors up; saved ones still waiting for
         // their cells do too.
         self.world_state.pending_knocks.clear();
+        self.world_state.pending_fights.clear();
         self.tree_lod = None;
         self.scene.tree_lod.clear();
         if let Some(a) = self.audio.as_mut() {
@@ -2392,6 +2393,12 @@ impl Engine {
             .filter(|k| living.contains(&k.actor))
             .collect();
         self.restore_saved_knocks(saved);
+        let fights = runtimes_ids
+            .iter()
+            .filter_map(|r| self.world_state.pending_fights.remove(r))
+            .filter(|f| living.contains(&f.actor))
+            .collect();
+        self.restore_saved_fights(fights);
         self.carry_unloaded_damage(&living);
     }
 

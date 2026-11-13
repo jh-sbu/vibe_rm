@@ -36,10 +36,11 @@
 //! their procedure cursors and start positions, where they are and their clocks, for actors away and
 //! loaded alike; their wounds stay in `WRLD`), mounted relationships (`MOUN`),
 //! carriage passengers/hitches (`VEHI`/`TETH`) and dragon flight state (`FLGT`).
-//! Objects' behaviour graphs are in `GRPH` (with the open states of `GOPN`).
-//! Not yet saved: actors' goals set by hand, fights, searches and greetings,
-//! and the rest of AI progress (actors' graphs, procedures' loaded-only
-//! state); see `plans/ROADMAP.md`.
+//! Objects' behaviour graphs are in `GRPH` (with the open states of `GOPN`),
+//! loaded actors' fights and searches in `FGHT` (`super::fights`).
+//! Not yet saved: actors' goals set by hand, greetings, and the rest of AI
+//! progress (actors' graphs, procedures' loaded-only state); see
+//! `plans/ROADMAP.md`.
 //!
 //! Form ids are saved as loaded (their top byte is the load-order index), so a
 //! save only loads with the same plugins in the same order: `HEAD` lists them
@@ -103,6 +104,7 @@ impl std::fmt::Display for HalfApplied {
 #[derive(Default)]
 pub struct Snapshot {
     pub(crate) knocks: Vec<super::knock::SavedKnock>,
+    pub(crate) fights: Vec<super::fights::SavedEngagement>,
     /// Owned runtime base records, in global form-ID order (optional FORM).
     pub forms: Vec<Vec<u8>>,
     pub crafting_help: HashSet<[u8; 4]>,
@@ -535,6 +537,7 @@ impl Snapshot {
         continuity.executions = executions;
         Snapshot {
             knocks: super::knock::capture(e),
+            fights: super::fights::capture(e),
             // Saved state omits runtime roots such as projectiles. Keep every
             // created form until lifetime tracking covers those roots too.
             forms: e.lo.runtime_records(),
@@ -1328,6 +1331,7 @@ impl Snapshot {
         }
         file.add(b"TEAM", w.0);
         super::knock::write(&self.knocks, &mut file);
+        super::fights::write(&self.fights, &mut file);
         self.continuity.write(&mut file);
         self.vm.write(&mut file);
         file
@@ -1403,6 +1407,7 @@ impl Snapshot {
         }
         s.continuity = super::continuity::Continuity::read(file)?;
         s.knocks = super::knock::read(file)?;
+        s.fights = super::fights::read(file)?;
 
         if file
             .sections
@@ -2637,6 +2642,7 @@ impl Snapshot {
         ws.bleedout_dialogue = self.bleedout_dialogue;
         ws.body_poses = self.body_poses;
         ws.pending_knocks.clear();
+        ws.pending_fights.clear();
         ws.moved = self.moved;
         ws.item_charges = self.item_charges;
         ws.broken_joints = self.broken_joints;
@@ -2710,6 +2716,7 @@ impl Snapshot {
             _ => {}
         }
         e.restore_saved_knocks(self.knocks);
+        e.restore_saved_fights(self.fights);
         // Rebuilding loaded actors may draw random numbers. Those draws must
         // not consume the saved gameplay/condition continuation.
         e.rng = random_streams.0;

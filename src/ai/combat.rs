@@ -869,6 +869,51 @@ pub struct Combat {
     pub(crate) last_seen: Option<Vec3>,
 }
 
+/// What a fight keeps across a save (`FGHT`): its target, whether it is
+/// fleeing, its confidence adjustment and flee clocks, and what it knows of
+/// the target. Paths, swings, guards and casts start afresh.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct SavedFight {
+    pub target: FormId,
+    pub fleeing: bool,
+    pub confidence_mod: f32,
+    pub threat_check: f32,
+    pub flee_distance: f32,
+    pub safe: f32,
+    pub unseen: f32,
+    pub last_seen: Option<Vec3>,
+    pub ally_killed: Option<FormId>,
+}
+
+impl Combat {
+    pub(crate) fn saved(&self) -> SavedFight {
+        SavedFight {
+            target: self.target,
+            fleeing: self.fleeing,
+            confidence_mod: self.confidence_mod,
+            threat_check: self.threat_check,
+            flee_distance: self.flee_distance,
+            safe: self.safe,
+            unseen: self.unseen,
+            last_seen: self.last_seen,
+            ally_killed: self.ally_killed,
+        }
+    }
+
+    pub(crate) fn restored(s: &SavedFight) -> Combat {
+        let mut c = Combat::new(s.target);
+        c.fleeing = s.fleeing;
+        c.confidence_mod = s.confidence_mod;
+        c.threat_check = s.threat_check;
+        c.flee_distance = s.flee_distance;
+        c.safe = s.safe;
+        c.unseen = s.unseen;
+        c.last_seen = s.last_seen;
+        c.ally_killed = s.ally_killed;
+        c
+    }
+}
+
 /// What an actor's bashes cost (bash, power bash; before the attack's own
 /// multiplier) and how far they reach.
 #[derive(Debug, Clone, Copy)]
