@@ -2018,7 +2018,18 @@ readings are applied (see Done; autotest23 and autotest24's on
     Update.esm's `CellWaterCurrentMarker` references (position and heading
     only) lie near every lake; what sets a current's strength, direction
     and reach is unpublished. Measure a still swimmer's drift near a marker
-    in a later batch.
+    in a later batch: `test-mod autotest25`'s CurrentPlayer and CurrentNpc.
+  - `test-mod autotest25` (built 2026-11-13, waiting for the user's run):
+    swimming in two authored cells of ours (a cell water level; placed still
+    water), steps of exact depth, a ramp walked by `TranslateTo` for
+    hysteresis, swimmers placed deep watched for 20 s; and a mountain
+    lake's current (Update.esm's marker `01002B8A`) measured on the player
+    and an NPC. autotest20's charge waits for a later batch, with both NPCs
+    fighting.
+  - Placed water: ours reads only cell and worldspace water levels, so
+    interiors whose water is placed (`ACTI` with a water type, `WNAM`: 62
+    in Skyrim.esm, in 128 interiors) have none, and outdoor rivers placed so
+    neither.
   - Drawing spells (`known_ambiguities/player-body.md`, "Drawing spells"):
     put off by the user (2026-11-04). In SE, check which draw event is used
     for mixed hands (sword + spell, staff + spell). Also check what happens

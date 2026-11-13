@@ -46,7 +46,7 @@ pub fn override_of(
 }
 
 /// A cell's children: its persistent and temporary references.
-fn cell_children(
+pub(super) fn cell_children(
     cell: FormId,
     persistent: Vec<RecordBuilder>,
     temporary: Vec<RecordBuilder>,
@@ -557,4 +557,130 @@ pub fn shore(lo: &LoadOrder, world: FormId, near: [f32; 2], depths: &[f32]) -> R
         }
     }
     bail!("no lake shore reaching {depths:?}")
+}
+
+/// A water current marker's spot for measuring the current: the marker,
+/// the water's surface, and points around it deep enough to swim.
+#[derive(Debug)]
+pub struct CurrentSite {
+    /// The marker (Update.esm's or Skyrim.esm's, as loaded with both).
+    pub marker: FormId,
+    pub grid: (i32, i32),
+    pub surface: f32,
+    /// The marker's heading (radians clockwise from north).
+    pub heading: f32,
+    /// (label, XY, the bed's depth there): the marker's spot first.
+    pub points: Vec<(&'static str, [f32; 2], f32)>,
+}
+
+/// `CellWaterCurrentMarker`, the static water current references use.
+const CURRENT_MARKER: FormId = FormId(0x61);
+
+/// The water current marker in `world` with the deepest water under it
+/// (by `LAND`) and no actor, leveled actor or critter spawner within 4096,
+/// in a cell with its own water level. Markers are mostly Update.esm's, so
+/// Skyrim.esm and Update.esm are loaded from `lo`'s data directory. Its
+/// points: the marker, then 512 and 1024 along its heading each way and
+/// 512 across each way, those with the bed `min_depth` or more down.
+pub fn current_site(lo: &LoadOrder, world: FormId, min_depth: f32) -> Result<CurrentSite> {
+    let mut names = vec!["Skyrim.esm".to_owned()];
+    if lo.data_dir().join("Update.esm").is_file() {
+        names.push("Update.esm".to_owned());
+    }
+    let full = LoadOrder::load(lo.data_dir(), &names)?;
+    let index = full.world(world).context("not a worldspace")?;
+    let base_of = |r: FormId| -> Option<FormId> {
+        let rec = full.get(r)?;
+        let b = rec.get(b"NAME").filter(|d| d.len() >= 4)?;
+        Some(rec.fid(FormId(u32::from_le_bytes(b[0..4].try_into().unwrap()))))
+    };
+    let data = |r: FormId| -> Option<[f32; 6]> {
+        let rec = full.get(r)?;
+        let d = rec.get(b"DATA").filter(|d| d.len() >= 24)?;
+        let f = |i: usize| f32::from_le_bytes(d[i * 4..i * 4 + 4].try_into().unwrap());
+        Some([f(0), f(1), f(2), f(3), f(4), f(5)])
+    };
+    let depth_at = |surface: f32, x: f32, y: f32| -> Option<f32> {
+        let g = ((x / 4096.0).floor() as i32, (y / 4096.0).floor() as i32);
+        let cell = full.cell(*index.cells.get(&g)?)?;
+        let heights = land_heights(&full, cell.land?)?;
+        Some(surface - height_in_cell(&heights, x - g.0 as f32 * 4096.0, y - g.1 as f32 * 4096.0))
+    };
+    let mut best: Option<CurrentSite> = None;
+    for (&grid, &cell) in &index.cells {
+        let Some(ci) = full.cell(cell) else { continue };
+        let Some(surface) = full
+            .get(cell)
+            .and_then(|r| {
+                r.get(b"XCLW")
+                    .map(|d| f32::from_le_bytes(d[0..4].try_into().unwrap()))
+            })
+            .filter(|s| s.abs() < 1.0e6)
+        else {
+            continue;
+        };
+        for &r in ci.persistent.iter().chain(&ci.temporary) {
+            if base_of(r) != Some(CURRENT_MARKER) {
+                continue;
+            }
+            let Some(d) = data(r) else { continue };
+            let Some(depth) = depth_at(surface, d[0], d[1]) else {
+                continue;
+            };
+            if depth < min_depth || best.as_ref().is_some_and(|b| b.points[0].2 >= depth) {
+                continue;
+            }
+            let mobs = (-1..=1)
+                .flat_map(|dx| (-1..=1).map(move |dy| (grid.0 + dx, grid.1 + dy)))
+                .filter_map(|g| index.cells.get(&g).and_then(|c| full.cell(*c)))
+                .flat_map(|c| c.persistent.iter().chain(&c.temporary))
+                .filter(|&&o| {
+                    let Some(rec) = full.get(o) else { return false };
+                    let base = base_of(o).and_then(|b| full.get(b));
+                    let edid = base
+                        .as_ref()
+                        .and_then(|b| b.get(b"EDID"))
+                        .map(|e| String::from_utf8_lossy(e).to_ascii_lowercase())
+                        .unwrap_or_default();
+                    rec.tag().0 == *b"ACHR"
+                        || base.is_some_and(|b| {
+                            matches!(&b.tag().0, b"NPC_" | b"LVLN")
+                                || (b.tag().0 == *b"ACTI" && edid.contains("critterspawn"))
+                        })
+                })
+                .filter_map(|&o| data(o))
+                .any(|p| (p[0] - d[0]).hypot(p[1] - d[1]) < 4096.0);
+            if mobs {
+                continue;
+            }
+            let heading = d[5];
+            let (along, across) = (
+                [heading.sin(), heading.cos()],
+                [heading.cos(), -heading.sin()],
+            );
+            let mut points = Vec::new();
+            for (label, dir, s) in [
+                ("marker", along, 0.0),
+                ("512 along", along, 512.0),
+                ("512 back", along, -512.0),
+                ("1024 along", along, 1024.0),
+                ("1024 back", along, -1024.0),
+                ("512 right", across, 512.0),
+                ("512 left", across, -512.0),
+            ] {
+                let (x, y) = (d[0] + dir[0] * s, d[1] + dir[1] * s);
+                if let Some(depth) = depth_at(surface, x, y).filter(|&z| z >= min_depth) {
+                    points.push((label, [x, y], depth));
+                }
+            }
+            best = Some(CurrentSite {
+                marker: r,
+                grid,
+                surface,
+                heading,
+                points,
+            });
+        }
+    }
+    best.context("no deep water current marker without actors near it")
 }
