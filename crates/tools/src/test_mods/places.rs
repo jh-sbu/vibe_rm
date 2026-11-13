@@ -571,6 +571,9 @@ pub struct CurrentSite {
     pub heading: f32,
     /// (label, XY, the bed's depth there): the marker's spot first.
     pub points: Vec<(&'static str, [f32; 2], f32)>,
+    /// Dry land nearest the marker: a terrain vertex 32 or more above the
+    /// surface, within the marker's cell and those around it.
+    pub shore: [f32; 3],
 }
 
 /// `CellWaterCurrentMarker`, the static water current references use.
@@ -673,12 +676,40 @@ pub fn current_site(lo: &LoadOrder, world: FormId, min_depth: f32) -> Result<Cur
                     points.push((label, [x, y], depth));
                 }
             }
+            let mut shore: Option<[f32; 3]> = None;
+            for dx in -1..=1 {
+                for dy in -1..=1 {
+                    let g = (grid.0 + dx, grid.1 + dy);
+                    let Some(heights) = index
+                        .cells
+                        .get(&g)
+                        .and_then(|c| full.cell(*c))
+                        .and_then(|c| c.land)
+                        .and_then(|l| land_heights(&full, l))
+                    else {
+                        continue;
+                    };
+                    for (i, h) in heights.iter().enumerate() {
+                        if *h < surface + 32.0 {
+                            continue;
+                        }
+                        let x = g.0 as f32 * 4096.0 + (i % LAND_VERTS) as f32 * 128.0;
+                        let y = g.1 as f32 * 4096.0 + (i / LAND_VERTS) as f32 * 128.0;
+                        let near = |p: &[f32; 3]| (p[0] - d[0]).hypot(p[1] - d[1]);
+                        if shore.is_none_or(|s| near(&[x, y, *h]) < near(&s)) {
+                            shore = Some([x, y, *h]);
+                        }
+                    }
+                }
+            }
+            let Some(shore) = shore else { continue };
             best = Some(CurrentSite {
                 marker: r,
                 grid,
                 surface,
                 heading,
                 points,
+                shore,
             });
         }
     }

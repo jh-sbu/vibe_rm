@@ -2019,13 +2019,22 @@ readings are applied (see Done; autotest23 and autotest24's on
     only) lie near every lake; what sets a current's strength, direction
     and reach is unpublished. Measure a still swimmer's drift near a marker
     in a later batch: `test-mod autotest25`'s CurrentPlayer and CurrentNpc.
-  - `test-mod autotest25` (built 2026-11-13, waiting for the user's run):
-    swimming in two authored cells of ours (a cell water level; placed still
-    water), steps of exact depth, a ramp walked by `TranslateTo` for
-    hysteresis, swimmers placed deep watched for 20 s; and a mountain
-    lake's current (Update.esm's marker `01002B8A`) measured on the player
-    and an NPC. autotest20's charge waits for a later batch, with both NPCs
-    fighting.
+  - `test-mod autotest25`: run 2026-11-13 (`research/autotest25.md`).
+    SE makes no water from an interior cell's `XCLW` (ours does, so 19
+    vanilla interiors with a level and no placed water get water in ours).
+    In placed water swimming begins with the feet about 90 under (ours:
+    100); moving out continuously it lasts until 55 to 68 under (ours: the
+    bed under 96); `MoveTo` judges afresh; a still swimmer placed deep stays
+    deep (ours floats every swimmer at 92). Not yet applied. Its current
+    tests were faults (`MoveTo` to the lake markers from an interior did
+    nothing).
+  - `test-mod autotest26` (built 2026-11-13, waiting for the user's run):
+    the current again, each move checked and reported, with a way round by
+    dry land.
+  - autotest20's charge waits for a later batch, with both NPCs fighting.
+  - Ours, from autotest25/26's dry runs: `GetParentCell` gives none for
+    exterior references; a swimmer moved by `TranslateTo` leaves the swim
+    state at once; no `OnEffectStart` as an ability is added.
   - Placed water: ours reads only cell and worldspace water levels, so
     interiors whose water is placed (`ACTI` with a water type, `WNAM`: 62
     in Skyrim.esm, in 128 interiors) have none, and outdoor rivers placed so
