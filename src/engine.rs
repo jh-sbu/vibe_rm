@@ -2631,6 +2631,91 @@ impl Engine {
         }
     }
 
+    /// Take a placed object out of the loaded cell holding it (moved to
+    /// another cell): its collision, bodies, lights, doors, sounds and
+    /// navmesh blocking go; its drawn instances are hidden and disowned
+    /// (other entries index the cell's instances, so they stay in place).
+    pub(crate) fn take_out_of_cell(&mut self, key: CellKey, r: FormId) {
+        let Some(rt) = self.cells.get_mut(&key) else {
+            return;
+        };
+        rt.refs.retain(|&x| x != r);
+        let lights = rt.lights.iter().any(|l| l.ref_id == r);
+        rt.lights.retain(|l| l.ref_id != r);
+        rt.doors.retain(|d| d.ref_id != r);
+        rt.animated.retain(|a| a.ref_id != r);
+        let owners = &self.physics.owners;
+        let (owned, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut rt.colliders)
+            .into_iter()
+            .partition(|h| owners.get(h) == Some(&r));
+        rt.colliders = kept;
+        let (gone, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut rt.obstacles)
+            .into_iter()
+            .partition(|o| o.ref_id() == r);
+        rt.obstacles = kept;
+        let (loose, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut rt.loose)
+            .into_iter()
+            .partition(|l| l.ref_id == r);
+        rt.loose = kept;
+        let (sounds, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut rt.sounds)
+            .into_iter()
+            .partition(|(s, _)| *s == r);
+        rt.sounds = kept;
+        self.physics.remove_colliders(&owned);
+        self.physics.remove_picks(&[r].into_iter().collect());
+        for l in &loose {
+            for b in &l.bodies {
+                self.physics.remove_body(b.handle);
+            }
+        }
+        self.remove_nav_obstacles(&gone);
+        if let Some(a) = &self.audio {
+            for (_, v) in sounds {
+                a.stop(v);
+            }
+        }
+        if let Some(rc) = self.scene.cells.get_mut(&key) {
+            for inst in rc.instances.iter_mut().filter(|i| i.ref_id == r.0) {
+                inst.hidden = true;
+                inst.ref_id = 0;
+            }
+        }
+        if lights {
+            self.rebuild_lights();
+        }
+    }
+
+    /// Put a placed object into a loaded cell as the cell's own load would
+    /// (`apply_moves`, `created_objects`): drawn, with collision, lights,
+    /// doors, sounds and its scripts' load events.
+    pub(crate) fn put_in_cell(&mut self, key: CellKey, r: FormId) {
+        let Some(place) = self.place_of_key(key) else {
+            return;
+        };
+        let (mut objects, mut lights, mut doors) = (Vec::new(), Vec::new(), Vec::new());
+        if self.created(r).is_some() {
+            objects.extend(self.created_object(r));
+        } else {
+            self.moved_reference_parts(place, r, &mut objects, &mut lights, &mut doors);
+        }
+        self.apply_scales(&mut objects);
+        self.add_objects(key, &objects, false);
+        let Some(rt) = self.cells.get_mut(&key) else {
+            return;
+        };
+        if !rt.refs.contains(&r) {
+            rt.refs.push(r);
+        }
+        let any_lights = !lights.is_empty();
+        rt.lights.extend(lights);
+        rt.doors.extend(doors);
+        if any_lights {
+            self.rebuild_lights();
+        }
+        self.start_cell_sounds(key, &[r]);
+        self.attach_cell_scripts(&[r]);
+    }
+
     pub(crate) fn unload_cell(&mut self, key: CellKey) {
         let _timing = crate::diagnostics::Span::new("stream.unload");
         crate::diagnostics::count("cells.unloaded", 1);

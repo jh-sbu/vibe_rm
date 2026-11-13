@@ -311,7 +311,7 @@ impl Engine {
     }
 
     /// A created object (not an actor, nor in a container) to draw.
-    fn created_object(&self, r: FormId) -> Option<crate::world::cell::PlacedObject> {
+    pub(crate) fn created_object(&self, r: FormId) -> Option<crate::world::cell::PlacedObject> {
         let c = self
             .created(r)
             .filter(|c| !c.actor && c.container.is_none())?;

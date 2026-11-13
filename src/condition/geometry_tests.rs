@@ -321,6 +321,7 @@ fn a_translated_reference_moves_at_its_speed_and_says_when_it_arrives() {
     move_to(&mut e, A, [100.0, 200.0, 300.0], [0.0; 3]);
     let key = crate::render::CellKey::Interior(CELL);
     e.cells.entry(key).or_default().refs.push(A);
+    e.location = crate::engine::Location::Interior(CELL);
     let events = |e: &Engine| -> Vec<String> {
         e.scripts
             .pending_events

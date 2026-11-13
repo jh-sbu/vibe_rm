@@ -1423,7 +1423,9 @@ game each piece unlocks.
   doors the player opened stay open, and doors actors left open at unloading
   (`ADOR` in saves) stay open until they close; references scripts move (`MoveTo`,
   `SetPosition`, `SetAngle`, `MoveToMyEditorLocation`, `GetAngleX/Y/Z`) move
-  with their collision and lights, between cells too, and stay moved. Console
+  with their collision and lights, between cells too, and stay moved (one
+  moved into the loaded cell from an unloaded one appears at once, and then
+  loads and unloads with its new cell). Console
   `[ref.]enable` / `disable`, `[ref.]moveto`. Open questions:
   `known_ambiguities/world-state.md`
 - Scenes (`SCEN`): started by Papyrus (`Start`, `ForceStart`, `Stop`,
@@ -2403,9 +2405,11 @@ readings are applied (see Done; autotest23 and autotest24's on
        rebuilding the quest's script variables; resetting a loaded
        behaviour-graph object in place; categories for dialogue, music and
        weather sounds; `Actor.IsArrested` (always False; no vanilla caller).
-   - World state: moved references appearing at once when moved out of an
-     unloaded cell and following their new cell between loaded ones; looping sounds of enabled references checked
-     with an audio device
+   - World state: looping sounds of enabled references checked with an
+     audio device. Moved references' triggers, hazards and furniture markers
+     stay with the cell they were placed in (moving an object between cells
+     takes out its drawing, collision, bodies, lights, doors, sounds and
+     navmesh blocking)
 6. **UI** (the game's menus through `crates/ui-swf`; see Done)
    - Done: the HUD, message boxes, the item menus (inventory, container,
      barter), the journal, gift, magic, favorites, tween, sleep / wait,

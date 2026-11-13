@@ -29,6 +29,10 @@ pub(crate) struct Obstacle {
 }
 
 impl Obstacle {
+    pub(crate) fn ref_id(&self) -> FormId {
+        self.ref_id
+    }
+
     /// An obstacle for a reference of `base` with these colliders (and the
     /// animated node each moves with), if the base is flagged one.
     pub(crate) fn new(

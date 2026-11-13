@@ -591,9 +591,13 @@ impl Engine {
             pos,
         );
         let delta = new * old.inverse();
-        let loaded = self.cells.values().any(|rt| rt.refs.contains(&r));
-        let shown = self.key_of_place(place).is_some();
-        if loaded && shown {
+        let holder = self
+            .cells
+            .iter()
+            .find(|(_, rt)| rt.refs.contains(&r))
+            .map(|(&k, _)| k);
+        let target = self.key_of_place(place);
+        if holder.is_some() && holder == target {
             for rc in self.scene.cells.values_mut() {
                 for inst in rc.instances.iter_mut().filter(|i| i.ref_id == r.0) {
                     inst.transform = delta * inst.transform;
@@ -619,17 +623,51 @@ impl Engine {
             if lights {
                 self.rebuild_lights();
             }
-        } else if loaded {
-            // Moved somewhere not loaded: gone from here.
-            for rc in self.scene.cells.values_mut() {
-                for inst in rc.instances.iter_mut().filter(|i| i.ref_id == r.0) {
-                    inst.hidden = true;
-                }
-            }
-            self.physics.set_owner_enabled(r, false);
+            return;
         }
-        // Moved into a loaded cell from one that isn't: shown when a cell holding
-        // it loads (`apply_moves`).
+        // Into another cell: out of the one holding it, if loaded, and into
+        // the new one, if loaded, as that cell's load would place it; it
+        // then loads and unloads with its new cell.
+        if let Some(h) = holder {
+            self.take_out_of_cell(h, r);
+        }
+        if let Some(t) = target {
+            self.put_in_cell(t, r);
+        }
+    }
+
+    /// The parts (drawn object, light, door) of a plugin reference moved
+    /// into `place`, where and as it was moved to.
+    pub(crate) fn moved_reference_parts(
+        &self,
+        place: Place,
+        r: FormId,
+        objects: &mut Vec<crate::world::cell::PlacedObject>,
+        lights: &mut Vec<crate::world::cell::PointLight>,
+        doors: &mut Vec<crate::world::cell::Door>,
+    ) {
+        let Some(m) = self.world_state.moved.get(&r).filter(|m| m.place == place) else {
+            return;
+        };
+        let (mut o, mut l, mut d) = (Vec::new(), Vec::new(), Vec::new());
+        crate::world::cell::add_reference(&self.lo, r, &mut o, &mut l, &mut d);
+        for mut x in o {
+            let scale = x.transform.to_scale_rotation_translation().0.x;
+            x.transform = Mat4::from_scale_rotation_translation(
+                Vec3::splat(scale),
+                crate::world::records::rotation_from_euler(m.rot),
+                m.pos,
+            );
+            objects.push(x);
+        }
+        lights.extend(l.into_iter().map(|x| crate::world::cell::PointLight {
+            position: m.pos,
+            ..x
+        }));
+        doors.extend(d.into_iter().map(|x| crate::world::cell::Door {
+            position: m.pos,
+            ..x
+        }));
     }
 
     /// While building a cell's objects: leave out references moved elsewhere, put
@@ -653,37 +691,86 @@ impl Engine {
         objects.retain(|o| !away(&o.ref_id));
         lights.retain(|l| !away(&l.ref_id));
         doors.retain(|d| !away(&d.ref_id));
-        for (&r, m) in self
+        let moved: Vec<FormId> = self
             .world_state
             .moved
             .iter()
             .filter(|(_, m)| m.place == place)
-        {
-            if self.created(r).is_some() || self.lo.tag_of(r).is_some_and(|t| t.0 == *b"ACHR") {
-                continue;
-            }
+            .map(|(&r, _)| r)
+            .filter(|&r| {
+                self.created(r).is_none() && self.lo.tag_of(r).is_none_or(|t| t.0 != *b"ACHR")
+            })
+            .collect();
+        for r in moved {
             objects.retain(|o| o.ref_id != r);
             lights.retain(|l| l.ref_id != r);
             doors.retain(|d| d.ref_id != r);
-            let (mut o, mut l, mut d) = (Vec::new(), Vec::new(), Vec::new());
-            crate::world::cell::add_reference(&self.lo, r, &mut o, &mut l, &mut d);
-            for mut x in o {
-                let scale = x.transform.to_scale_rotation_translation().0.x;
-                x.transform = Mat4::from_scale_rotation_translation(
-                    Vec3::splat(scale),
-                    crate::world::records::rotation_from_euler(m.rot),
-                    m.pos,
-                );
-                objects.push(x);
-            }
-            lights.extend(l.into_iter().map(|x| crate::world::cell::PointLight {
-                position: m.pos,
-                ..x
-            }));
-            doors.extend(d.into_iter().map(|x| crate::world::cell::Door {
-                position: m.pos,
-                ..x
-            }));
+            self.moved_reference_parts(place, r, objects, lights, doors);
         }
+    }
+}
+
+#[cfg(test)]
+mod moved_ref_tests {
+    use super::*;
+    use crate::engine::PLAYER_REF;
+    use crate::render::CellKey;
+
+    const BREEZEHOME: FormId = FormId(0x165A8);
+    /// A cast iron pot (a loose object) in the Bannered Mare.
+    const POT: FormId = FormId(0x6170C);
+    /// A candle light in the Bannered Mare.
+    const CANDLE: FormId = FormId(0xC9037);
+
+    fn drawn(e: &Engine, key: CellKey, r: FormId) -> usize {
+        e.scene.cells[&key]
+            .instances
+            .iter()
+            .filter(|i| i.ref_id == r.0 && !i.hidden)
+            .count()
+    }
+
+    /// Moved out of an unloaded cell into the loaded one, a reference is
+    /// there at once, with its body and light; moved away again, it is gone.
+    #[test]
+    #[ignore = "requires installed vanilla assets and a headless GPU adapter"]
+    fn references_moved_out_of_unloaded_cells_appear_at_once() {
+        let data = vfs::locate_data_dir().unwrap();
+        let names: Vec<_> = esp::BASE_MASTERS.iter().map(|s| s.to_string()).collect();
+        let mut e = crate::stats::action_tests::headless_engine_plugins(&data, &names);
+        e.vfs = vfs::Vfs::new(&data, &names).into();
+        let here = e.lo.find_editor_id("WhiterunBreezehome").unwrap();
+        assert_eq!(here, BREEZEHOME);
+        e.enter_interior(here, None).unwrap();
+        let key = CellKey::Interior(here);
+        assert_eq!(drawn(&e, key, POT), 0);
+        let at = e.ref_position(PLAYER_REF).unwrap();
+        assert!(e.move_ref(POT, PLAYER_REF, at + Vec3::X * 100.0, Vec3::ZERO));
+        assert!(e.move_ref(CANDLE, PLAYER_REF, at + Vec3::Y * 100.0, Vec3::ZERO));
+        assert!(drawn(&e, key, POT) > 0, "the pot isn't drawn");
+        assert!(e.cells[&key].loose.iter().any(|l| l.ref_id == POT));
+        assert!(e.cells[&key].lights.iter().any(|l| l.ref_id == CANDLE));
+        assert!(e.ref_position(POT).unwrap().distance(at + Vec3::X * 100.0) < 1.0);
+        // Moved within the cell: the same pot, moved.
+        assert!(e.move_ref(POT, PLAYER_REF, at + Vec3::X * 200.0, Vec3::ZERO));
+        assert_eq!(
+            e.cells[&key]
+                .loose
+                .iter()
+                .filter(|l| l.ref_id == POT)
+                .count(),
+            1
+        );
+        // Back where it was placed: out of this cell.
+        assert!(e.move_to_editor_location(POT));
+        assert!(e.move_to_editor_location(CANDLE));
+        assert_eq!(drawn(&e, key, POT), 0);
+        assert!(!e.cells[&key].refs.contains(&POT));
+        assert!(!e.cells[&key].loose.iter().any(|l| l.ref_id == POT));
+        assert!(!e.cells[&key].lights.iter().any(|l| l.ref_id == CANDLE));
+        assert!(!e.physics.owners.values().any(|&o| o == POT));
+        // Reloading the cell doesn't bring it back.
+        e.enter_interior(here, None).unwrap();
+        assert_eq!(drawn(&e, key, POT), 0);
     }
 }
