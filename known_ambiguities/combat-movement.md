@@ -19,8 +19,8 @@ built for this choice in this implementation.
 NPC charging sprints use the graph's authored `iState_*Sprinting` movement
 type and actions. Start beyond 1000 units and continue to the target while
 stamina and action conditions permit. Fleeing actors always run (autotest19).
-Charging has no successful SE observation yet; autotest20 (built
-2026-11-13) awaits the user's run. Sprint attacks are eligible only during
+Charging has no successful SE observation yet: autotest20's fighter never
+engaged its held target (`research/autotest20.md`). Sprint attacks are eligible only during
 a charge, with ordinary attacks as fallback when the race has no sprint
 attack.
 

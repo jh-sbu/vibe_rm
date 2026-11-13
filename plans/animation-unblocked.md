@@ -18,7 +18,7 @@ sub-step as marked.
 
 Implemented in the scheduled commits below. Autotest19 was already run before
 this pass; autotest20 was deferred by the user then, and built on 2026-11-13
-(`test-mod autotest20`, waiting for the user's run). Swim entry depth and charge initiation
+(`test-mod autotest20`, run 2026-11-13: `research/autotest20.md`). Swim entry depth and charge initiation
 retain the plan's placeholders, with evidence and uncertainty in
 `known_ambiguities/water.md` and `combat-movement.md`.
 

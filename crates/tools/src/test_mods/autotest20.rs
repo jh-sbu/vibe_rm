@@ -58,6 +58,13 @@
 //! (7 tests, about 5 minutes). After a crash, load the newest save, open the
 //! console at once and `set VrmAt20SkipTest to <n>` to step past test n
 //! (see the module doc of `test_mods`). Read with `vrm-tool test-results`.
+//!
+//! **Run 2026-11-13** (`research/autotest20.md`): the detector worked
+//! (`-D` on land). Swimming began between bed depths 100.4 and 105.1 for
+//! the player, the NPC and with Waterbreathing alike, and teleporting back
+//! showed the same bound. A swimmer placed at 105 to 120 held at about
+//! -93, but one placed deeper stayed deeper. Both charges were faults: the
+//! fighter never engaged the held target (searching, then out of combat).
 
 use anyhow::Result;
 use esp::writer::{AttachedScript, Node, PropertyValue, RecordBuilder, write_plugin};
