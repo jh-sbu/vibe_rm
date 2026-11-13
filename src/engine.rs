@@ -2852,17 +2852,9 @@ impl Engine {
         attached.extend(self.attach_cell_scripts(&made_ids));
         self.send_cell_load(&attached);
         self.start_cell_sounds(key, &refs);
-        if contents.info.has_water
-            && let Some(h) = contents.info.water_height
-            && h < 1.0e30
-        {
-            let wt = if contents.info.water_type.is_null() {
-                FormId(0x18)
-            } else {
-                contents.info.water_type
-            };
-            self.add_water(key, vec![(-50_000.0, -50_000.0, 100_000.0, h, wt)]);
-        }
+        // No water from an interior's own water level (`XCLW`): SE made none
+        // in autotest25's cell flagged as having water at level 0
+        // (`known_ambiguities/water.md`). Interiors' water is placed.
         self.rebuild_lights();
         self.location = Location::Interior(cell_id);
         self.physics.step(1.0 / 60.0);

@@ -133,6 +133,20 @@ speed uses NPCSwimming walk/run, scaled by the existing armor movement rule.
 Diving controls await underwater rendering; breath still applies to actors
 whose head is actually submerged (including externally placed actors).
 
+## Interior water levels
+
+An interior cell can carry the has-water flag (`DATA` 0x2), a water level
+(`XCLW`) and a water type (`XCWT`). In SE (`research/autotest25.md`) an
+authored interior with the flag, level 0 and
+`DefaultIntWaterWaistHeightStill` had no water: none to see, and nobody
+swam at any depth. Vanilla interiors' visible water is placed (activators
+with a water type). Chosen: interiors get no water from their level.
+Uncertain: 19 vanilla interiors have the flag and a finite level with no
+placed water (`BronzeWaterCave`, `RiftenRatway01`, `AnisesCabin01`,
+`Mzulft01`, ...). Whether SE shows water at the level in any of them, for
+example with another water type, wasn't checked. Before this change ours
+gave them a water plane at that level.
+
 ## Breath and drowning
 
 The local UESP [Waterbreathing revision 3380569](https://en.uesp.net/w/index.php?oldid=3380569)
