@@ -2325,8 +2325,7 @@ readings are applied (see Done; autotest23 and autotest24's on
      scrolls not yet observed in SE: Telekinesis's concentration scroll,
      mixed effect casting types, authored against effect charge times, and
      learned-spell / other-hand limits airborne or swimming
-     (`plans/scroll-casting-hold.md`); the console's `player.equipitem` uses
-     up magic items, scrolls among them, instead of equipping them
+     (`plans/scroll-casting-hold.md`)
    - Pickpocket retry resets beyond the two-day gate (see Done): guards sent
      off by bribes, Thanes or guild payment, and Harmony
      (`known_ambiguities/crime.md`)

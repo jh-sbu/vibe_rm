@@ -1408,7 +1408,7 @@ fn item_command(engine: &mut Engine, r: esp::FormId, cmd: &str, args: &[&str]) -
                 return vec![format!("usage: {cmd} <item> [left|right]")];
             };
             let on = cmd == "equipitem";
-            if on && engine.magic_item(item).is_some() {
+            if on && engine.consumed_on_equip(item) {
                 return match engine.consume(r, item) {
                     Ok(()) => engine.describe_effects(r),
                     Err(e) => vec![e],

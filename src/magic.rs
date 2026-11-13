@@ -1948,6 +1948,14 @@ impl Engine {
         self.finish_magic_effect(id);
     }
 
+    /// Whether equipping `item` uses it up: potions, food and ingredients
+    /// (`ALCH`, `INGR`). Scrolls are held in a hand to cast instead.
+    pub fn consumed_on_equip(&self, item: FormId) -> bool {
+        self.lo
+            .tag_of(item)
+            .is_some_and(|t| t.0 == *b"ALCH" || t.0 == *b"INGR")
+    }
+
     /// The player (or an actor) drinks a potion or eats food or an ingredient
     /// they carry.
     pub fn consume(&mut self, actor: FormId, item: FormId) -> Result<(), String> {

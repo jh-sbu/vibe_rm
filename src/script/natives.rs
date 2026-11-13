@@ -1918,7 +1918,7 @@ pub fn call(
         ("actor", "equipitem") | ("actor", "unequipitem") => {
             if let (Some(a), Some(item)) = (me, form_arg(args, 0)) {
                 let on = func == "equipitem";
-                let r = if on && e.magic_item(item).is_some() {
+                let r = if on && e.consumed_on_equip(item) {
                     e.consume(a, item)
                 } else {
                     e.equip_item(a, item, on)

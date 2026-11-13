@@ -174,6 +174,22 @@ fn a_scroll_goes_to_the_hand_asked_for_and_comes_out_again() {
 
 #[test]
 #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn equipitem_holds_a_scroll_instead_of_using_it_up() {
+    let (_f, mut e) = fixture();
+    e.add_item(PLAYER_REF, SCROLL, 2);
+    crate::console::execute(&mut e, &format!("player.equipitem {SCROLL} left"));
+    assert_eq!(e.equipped_spell(PLAYER_REF, LEFT), Some(SCROLL));
+    assert_eq!(e.inventories[&PLAYER_REF].count(SCROLL), 2);
+    // Papyrus `EquipItem` too, in the hand its equip slot gives it.
+    let me = e.object_value(PLAYER_REF);
+    let scroll = e.object_value(SCROLL);
+    crate::script::natives::call(&mut e, "actor", "equipitem", Some(&me), &[scroll]);
+    assert_eq!(e.equipped_spell(PLAYER_REF, RIGHT), Some(SCROLL));
+    assert_eq!(e.inventories[&PLAYER_REF].count(SCROLL), 2);
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
 fn casting_a_scroll_uses_it_up_without_magicka() {
     let (_f, mut e) = fixture();
     e.add_item(PLAYER_REF, SCROLL, 2);
