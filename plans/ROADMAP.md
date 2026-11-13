@@ -2013,6 +2013,12 @@ readings are applied (see Done; autotest23 and autotest24's on
     fighter never engaged a held target that didn't fight back), leaving
     the water without a teleport (hysteresis), and the wading feet held
     24 to 37 above that lake's terrain.
+  - Water currents (`research/autotest20.md`, "Water currents"): SE's lake
+    current carried autotest20's swimming NPC 200 units; ours has none.
+    Update.esm's `CellWaterCurrentMarker` references (position and heading
+    only) lie near every lake; what sets a current's strength, direction
+    and reach is unpublished. Measure a still swimmer's drift near a marker
+    in a later batch.
   - Drawing spells (`known_ambiguities/player-body.md`, "Drawing spells"):
     put off by the user (2026-11-04). In SE, check which draw event is used
     for mixed hands (sword + spell, staff + spell). Also check what happens

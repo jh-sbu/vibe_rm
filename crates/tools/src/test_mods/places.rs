@@ -446,8 +446,11 @@ fn height_in_cell(heights: &[f32], x: f32, y: f32) -> f32 {
 /// 6 along it, consecutive points are at least 48 apart, and the line,
 /// at most 1600 long, stays 64 inside one cell. A lake is a cell of
 /// ordinary (not damaging) water at least a quarter of whose land lies
-/// 200 or more under it, which rules out the narrow rivers and their
-/// currents. Of a cell's lines, the one closest to 800 long.
+/// 200 or more under it, which rules out the narrow rivers. It doesn't rule
+/// out currents: Update.esm places a `CellWaterCurrentMarker` within 2048
+/// units of every lake line this finds, autotest20's lake had a visible one,
+/// and nothing published says how far a marker's current reaches. Of a
+/// cell's lines, the one closest to 800 long.
 pub fn shore(lo: &LoadOrder, world: FormId, near: [f32; 2], depths: &[f32]) -> Result<Shore> {
     let wrld = lo.get(world).context("not a worldspace")?;
     let default_water = wrld

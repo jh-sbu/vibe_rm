@@ -71,9 +71,29 @@ at about the bed's depth (−103, −110, −120, −142, −181), with the NPC
   at 40 to 80. Something here stands higher than the terrain, perhaps the
   large `MountainTrim02RiverbedEdge01` 410 units from the line. Or SE
   lifts a wading actor. Not settled.
-- The NPC's 200-unit drift while swimming: a `CellWaterCurrentMarker`
-  (Update.esm, `01002A99`) lies 48 units from the 100.4 marker, so this
-  lake may have a current. Or the NPC swam toward the player.
+- The NPC's 200-unit drift while swimming was the lake's **current**.
+  The user saw it plainly in the run. A `CellWaterCurrentMarker`
+  (Update.esm `01002A99`, a static `00000061` with only a position and a
+  heading of 103°) lies 48 units from the 100.4 marker. The deep
+  swimmers' heights (an NPC holding its placed depth while carried off)
+  may be the current's doing too. The player's drift wasn't read.
+
+## Water currents
+
+The engine doesn't model currents at all. What the data shows:
+Update.esm places about 570 `CellWaterCurrentMarker` references in
+Tamriel. They reach 1326 of its 11186 cells counting each marker's own
+and neighbouring cells, and every lake line `places::shore` finds has one
+within 2048 units. autotest19's lake (-3, -15) has one too (`01002A93`).
+Each holds only `NAME` and `DATA`: no `XCVL` velocity, which UESP's REFR
+page ([revision 2354868](https://en.uesp.net/w/index.php?oldid=2354868))
+finds once in the whole game. UESP's WATR page
+([revision 3507781](https://en.uesp.net/w/index.php?oldid=3507781)) names
+a displacement velocity but nothing for flow. So what sets a current's
+strength and reach, and whether the marker's heading is its direction, is
+open. Still water for a later swimming batch can't be found by excluding
+markers. A batch could measure the current instead: the drift of a still
+swimmer by position and time near a marker, against its heading.
 
 **Charge1500**, **Charge2500**: *Fault*. The fighter never engaged the
 held target. After 8 s it was 218 to 358 units off, in combat state 2
@@ -111,3 +131,6 @@ charge is still unobserved.
   water (a Travel package to the shore) rather than teleporting.
 - What holds the wading player above this lake's bed, and whether a
   swimmer placed deep ever rises (a longer watch than 3 s).
+- The current: a still swimmer's drift (direction, speed) by distance
+  from the marker and against its heading, and whether it carries
+  wading actors.
