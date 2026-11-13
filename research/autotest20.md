@@ -92,8 +92,9 @@ finds once in the whole game. UESP's WATR page
 a displacement velocity but nothing for flow. So what sets a current's
 strength and reach, and whether the marker's heading is its direction, is
 open. Still water for a later swimming batch can't be found by excluding
-markers. A batch could measure the current instead: the drift of a still
-swimmer by position and time near a marker, against its heading.
+markers. `test-mod autotest26` measured one instead
+(`research/autotest26.md`): about 71 units a second along the marker's
+heading, in water of the flow-mapped type `RiverWaterFlow`.
 
 **Charge1500**, **Charge2500**: *Fault*. The fighter never engaged the
 held target. After 8 s it was 218 to 358 units off, in combat state 2

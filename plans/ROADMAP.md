@@ -2017,8 +2017,7 @@ readings are applied (see Done; autotest23 and autotest24's on
     current carried autotest20's swimming NPC 200 units; ours has none.
     Update.esm's `CellWaterCurrentMarker` references (position and heading
     only) lie near every lake; what sets a current's strength, direction
-    and reach is unpublished. Measure a still swimmer's drift near a marker
-    in a later batch: `test-mod autotest25`'s CurrentPlayer and CurrentNpc.
+    and reach is unpublished. Measured by `test-mod autotest26` (below).
   - `test-mod autotest25`: run 2026-11-13 (`research/autotest25.md`).
     SE makes no water from an interior cell's `XCLW` (ours does, so 19
     vanilla interiors with a level and no placed water get water in ours).
@@ -2028,9 +2027,17 @@ readings are applied (see Done; autotest23 and autotest24's on
     deep (ours floats every swimmer at 92). Not yet applied. Its current
     tests were faults (`MoveTo` to the lake markers from an interior did
     nothing).
-  - `test-mod autotest26` (built 2026-11-13, waiting for the user's run):
-    the current again, each move checked and reported, with a way round by
-    dry land.
+  - `test-mod autotest26`: run 2026-11-13 (`research/autotest26.md`), with
+    `bBorderRegionsEnabled=0`, since the lake lies outside
+    `BorderRegionSkyrim` (with borders on, SE refused every script
+    `MoveTo` there). The current carries a still swimmer along its
+    marker's heading at about 71 units a second, the same for the player
+    and NPCs, at every free point within 1024 and at any depth. Open: where
+    the speed comes from (no `DNAM` value near it), other flowing waters'
+    speeds, and flowing cells without a marker. 558 of `RiverWaterFlow`'s
+    613 cells have one.
+  - Ours: script `MoveTo` to a spot outside the border region isn't
+    refused, where SE's is (with border regions enabled).
   - autotest20's charge waits for a later batch, with both NPCs fighting.
   - Ours, from autotest25/26's dry runs: `GetParentCell` gives none for
     exterior references; a swimmer moved by `TranslateTo` leaves the swim

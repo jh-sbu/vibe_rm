@@ -39,6 +39,13 @@
 //! newest save, open the console at once and `set VrmAt26SkipTest to <n>`
 //! to step past test n (see the module doc of `test_mods`). Read with
 //! `vrm-tool test-results`.
+//!
+//! **Run 2026-11-13** (`research/autotest26.md`): with border regions on,
+//! every `MoveTo` to the lake failed: it lies outside `BorderRegionSkyrim`.
+//! Run again with `bBorderRegionsEnabled=0` in `Skyrim.ini` (`[General]`),
+//! it reached the lake. The current carried the player and an NPC along the
+//! marker's heading at about 71 units a second, the same at every free
+//! point and depth; across it, nothing.
 
 use anyhow::Result;
 use esp::writer::{AttachedScript, Node, PropertyValue, RecordBuilder, write_plugin};
