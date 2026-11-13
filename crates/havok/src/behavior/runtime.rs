@@ -17,6 +17,9 @@ use std::sync::Arc;
 use super::expr::{self, Expr, Statement};
 use super::*;
 
+mod snapshot;
+pub use snapshot::SnapshotError;
+
 /// Supplies clip lengths (seconds) for animation paths relative to the project
 /// (`Animations\male\MT_Idle.hkx`).
 pub trait ClipSource {
@@ -7648,5 +7651,91 @@ mod tests {
             i.handle_event("Kill", &mut durations),
             "free once the blend ends"
         );
+    }
+
+    /// What an update shows of an instance: its states, samples and the
+    /// events it raised.
+    fn observe(i: &mut Instance, dt: f32) -> (Vec<String>, Vec<(String, f32, f32)>, Vec<String>) {
+        i.update(dt, &mut durations);
+        (
+            i.active_states(),
+            i.samples()
+                .iter()
+                .map(|s| (s.animation.to_string(), s.time, s.weight))
+                .collect(),
+            i.take_raised().into_iter().map(|r| r.event).collect(),
+        )
+    }
+
+    #[test]
+    fn snapshots_resume_mid_clip_and_mid_blend() {
+        for steps in [
+            &[("Sit", 0.3)][..],
+            &[("Sit", 0.0), ("Next", 0.0), ("Stand", 0.2)][..],
+        ] {
+            let mut a = instance(graph());
+            for &(event, dt) in steps {
+                a.send_event(event);
+                a.update(dt, &mut durations);
+            }
+            a.take_raised();
+            let mut b = instance(graph());
+            b.restore(&a.snapshot()).unwrap();
+            for _ in 0..8 {
+                assert_eq!(observe(&mut a, 0.15), observe(&mut b, 0.15), "{steps:?}");
+            }
+            assert_eq!(a.snapshot(), b.snapshot());
+        }
+    }
+
+    #[test]
+    fn a_pending_transition_is_found_again() {
+        let mut a = instance(graph());
+        if let Kind::Machine(m) = &mut a.root.as_mut().unwrap().kind {
+            let mut t = Transition::new(0, 1, None);
+            t.priority = 3;
+            m.pending = Some(t);
+        }
+        let mut g = graph();
+        if let Generator::StateMachine { states, .. } = &mut g.generators[0] {
+            states[0].transitions[0].priority = 3;
+        }
+        let mut b = instance(g);
+        b.restore(&a.snapshot()).unwrap();
+        let Kind::Machine(m) = &b.root.as_ref().unwrap().kind else {
+            panic!("root isn't a machine");
+        };
+        assert_eq!(
+            m.pending.as_ref().map(|t| (t.to_state, t.priority)),
+            Some((1, 3))
+        );
+    }
+
+    #[test]
+    fn snapshots_that_dont_fit_change_nothing() {
+        let mut a = instance(graph());
+        a.send_event("Sit");
+        a.update(0.3, &mut durations);
+        let bytes = a.snapshot();
+        let fresh = instance(graph()).snapshot();
+        // Truncated, trailing data, another version.
+        for bad in [
+            bytes[..bytes.len() - 1].to_vec(),
+            [bytes.clone(), vec![0]].concat(),
+            [&bytes[..4], &[9], &bytes[5..]].concat(),
+        ] {
+            let mut b = instance(graph());
+            assert!(b.restore(&bad).is_err());
+            assert_eq!(b.snapshot(), fresh);
+        }
+        // A graph whose machine has other states.
+        let mut g = graph();
+        if let Generator::StateMachine { states, .. } = &mut g.generators[0] {
+            states.retain(|s| s.id != 1);
+        }
+        let mut b = instance(g);
+        let before = b.snapshot();
+        assert!(b.restore(&bytes).is_err());
+        assert_eq!(b.snapshot(), before);
     }
 }
