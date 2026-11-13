@@ -84,8 +84,11 @@ also leaves the state. The bed comes from static-world ground rays.
 Scale/race-dependent depth and Waterbreathing's influence on state remain
 unmeasured; use the same threshold for land-capable swimmers for now.
 autotest20 (2026-11-13, `research/autotest20.md`) put SE's entry between bed
-depths 100.4 and 105.1, the same for an NPC and with Waterbreathing; the
-choices here aren't yet revised to it.
+depths 100.4 and 105.1, the same for an NPC and with Waterbreathing.
+autotest25 (`research/autotest25.md`), in an authored cell with exact
+floors, supersedes the lake's depths: entry with the feet about 90 under,
+exit when moving out at 55 to 68 under, no rise to a float height from
+deeper. The choices here aren't yet revised to it.
 
 The local UESP [RACE revision 3650080](https://en.uesp.net/w/index.php?oldid=3650080)
 documents Swims (0x40) and Walks (0x100). Chosen scope guard: exclude only

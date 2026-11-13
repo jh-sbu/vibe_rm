@@ -88,6 +88,14 @@
 //! save, open the console at once and `set VrmAt25SkipTest to <n>` to step
 //! past test n (see the module doc of `test_mods`). Read with `vrm-tool
 //! test-results`.
+//!
+//! **Run 2026-11-13** (`research/autotest25.md`): the level-water cell had
+//! no water (SE makes none from an interior's `XCLW`). In placed water,
+//! swimming began with the feet about 90 under, for the player and the NPC
+//! alike; moving out continuously it lasted until the feet were 55 to 68
+//! under; a still swimmer placed deep stayed deep. The current tests were
+//! faults: `MoveTo` to the lake markers left the player in the cell
+//! (`test-mod autotest26` repeats them).
 
 use anyhow::Result;
 use esp::writer::{AttachedScript, Node, PropertyValue, RecordBuilder, write_plugin};
