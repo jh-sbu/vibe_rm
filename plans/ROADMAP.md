@@ -5,6 +5,14 @@ the original data files should play as designed. Work is ordered by how much of 
 game each piece unlocks.
 
 ## Done
+- **The magic menu's 3D model** (2026-11-14; `plans/magic-3d.md`): the
+  highlighted spell, shout or active effect shows its menu display object
+  (`MDOB`) above the card: a spell's or shout's own, an active effect's
+  source spell's or else its first shown effect's. The model plays as an
+  effect (standalone controllers, materials' controllers, particles) on the
+  menu's real time, sized by its marker's zoom alone. `magicmenu.swf` has no
+  `MouseRotationRect`, so it isn't turned or zoomed. Choices in
+  `known_ambiguities/item-3d.md`, "The magic menu".
 - **Swimming reconciled, placed water and currents** (2026-11-13;
   `research/autotest25.md`, `autotest26.md`; choices in
   `known_ambiguities/water.md`): swimming starts with the feet past 90
@@ -2481,10 +2489,9 @@ readings are applied (see Done; autotest23 and autotest24's on
      when toggled from an interior, and the explored radius indoors and out).
      Show on Map's precise vanilla opening zoom remains
      an open observation (`known_ambiguities/journal.md` records the current choice).
-   - The inventory's rest: the magic menu's models (`UpdateMagic3D`: spells',
-     effects' and shouts' `MDOB` menu display objects, in the item menus' 3D
-     view; unblocked, planned in `plans/magic-3d.md`), the gamepad's Rotate and Item Zoom for the 3D item, and its size,
-     light and zoom against SE screenshots (`known_ambiguities/item-3d.md`);
+   - The inventory's rest: the gamepad's Rotate and Item Zoom for the 3D
+     item, and its size, light and zoom against SE screenshots, the magic
+     menu's effects' too (`known_ambiguities/item-3d.md`);
      independent per-hand
      selection for two differently modified copies of the same weapon base;
      equipping torches in a hand (the player's body doesn't show a carried

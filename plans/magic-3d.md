@@ -1,6 +1,9 @@
 # Plan: the magic menu's 3D model
 
-**Status: drafted** (2026-11-14). Not started. ROADMAP item 6 (UI), "The
+**Status: done** (2026-11-14; steps 1–5, with follow-up fixes to step 3's
+sizing and step 4's placement). See "Outcome" at the end: the work found
+that `magicmenu.swf` has no `MouseRotationRect` and that the effects are
+sized by their zoom alone, and steps 3 and 4 changed with it. ROADMAP item 6 (UI), "The
 inventory's rest": "the magic menu's models (`UpdateMagic3D`: spells',
 effects' and shouts' `MDOB` menu display objects, in the item menus' 3D
 view)". It follows `plans/item-3d.md`, which built that view and left this
@@ -151,3 +154,41 @@ Screenshots or a short video of SE's magic menu would settle:
   like an item.
 - Whether the effects restart when the highlight returns to a row.
 - What the powers and spells without an `MDOB` show (`DLC1RevertForm`).
+
+## Outcome
+
+Commits: `f86be9c` (step 1), `80c86d6` (step 2), `982be7b` (step 3),
+`5900e8f` (step 4), `3a04f37` (fixes step 3's sizing), `f5ebe57` (fixes
+step 4's placement), then this step's docs. Where the work departed from
+the steps above:
+
+- **No phase is chosen** (step 3). None of the 37 models has a controller
+  manager or sequences; ten name a behaviour graph
+  (`CastingWithIntro.hkx`, `WardBodyFX.hkx`) that has nothing to play.
+  The controllers' own spans don't follow the `mIdle` text keys (0–10.8 s
+  and 0–3.33 s against `mIdle`'s 0–6.67 s; Detect Life's and Paralyze's
+  10.03–19.67 s), so clamping them to it would cut the art. They play as
+  authored, without the graph.
+- **Sized by zoom alone** (fixing step 3). Bringing each effect's bounds to
+  one size, as items are, drew them a few pixels across. The markers'
+  zooms already shrink the larger art in step with its size (radius times
+  zoom 23 to 81, where zoom spans 0.08 to 1.36), so they are shown about
+  their origin at a reference radius of 15, scaled by the zoom.
+- **No `MouseRotationRect`** (step 4). The shared `ItemMenu` code sizes it
+  only if the clip exists, and `magicmenu.swf` doesn't place one. The effect
+  stands where it would be (the card's column, down to 0.55 of the stage),
+  read once as the menu opens: the card holder's width later follows the
+  card (an active effect's is wider). With no rect the movie never asks to
+  turn or zoom the effect, so the magic menu does neither, and the Item Zoom
+  key isn't taken there. "Left out"'s trailing particles don't arise.
+- **Materials on the menu's time**: the renderer's clock stands still in
+  menus, so `Renderer::set_model_age` puts the effect's material clocks at
+  its age before it is drawn.
+
+Verified with unit tests, GPU-ignored engine tests (the rows' objects; four
+vanilla rows loading and playing with their particles) and offscreen
+captures of the menu: Flames, Healing, Battle Cry, Conjure Familiar,
+Unrelenting Force and a Fortify Health potion's active effect, each above
+the card, and none after going back to the categories. The captures are
+this engine's, not evidence of SE's look. Choices:
+`known_ambiguities/item-3d.md`, "The magic menu".
