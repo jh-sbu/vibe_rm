@@ -540,6 +540,9 @@ fn draw_item(
     view: &wgpu::TextureView,
 ) {
     if let Some((scene, camera)) = crate::item_view::frame_parts(item) {
+        if let Some(item) = item {
+            item.sync_materials(renderer);
+        }
         renderer.render_over(scene, &camera, view);
     }
 }

@@ -211,6 +211,16 @@ pub(crate) fn headless_engine(dir: &std::path::Path, plugin: &str) -> Engine {
 pub(crate) fn headless_engine_plugins(dir: &std::path::Path, plugins: &[String]) -> Engine {
     let lo = esp::LoadOrder::load(dir, plugins).unwrap();
     let vfs = vfs::Vfs::new(dir, &[]);
+    headless_engine_with(lo, vfs, dir)
+}
+
+/// An engine on a load order and its files, rendering to nothing; saves go
+/// under `saves`.
+pub(crate) fn headless_engine_with(
+    lo: esp::LoadOrder,
+    vfs: vfs::Vfs,
+    saves: &std::path::Path,
+) -> Engine {
     let instance =
         wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
     let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
@@ -229,7 +239,7 @@ pub(crate) fn headless_engine_plugins(dir: &std::path::Path, plugins: &[String])
         crate::render::Renderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm, 16, 16);
     let mut engine = Engine::new(lo, vfs, renderer, 12.0, None, 0);
     engine.settings = crate::settings::Settings::default();
-    engine.save_directory = dir.join("saves");
+    engine.save_directory = saves.join("saves");
     engine
 }
 

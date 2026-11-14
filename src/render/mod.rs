@@ -239,8 +239,9 @@ struct MaterialClock {
     /// What it was made from (for one on a clock of its own).
     desc: MaterialDesc,
     /// When it started (an effect's, all its controllers running from
-    /// then); else the started controllers run on the renderer's clock.
-    start: Option<f32>,
+    /// then: an `f32`'s bits, moved by [`Renderer::set_model_age`]); else
+    /// the started controllers run on the renderer's clock.
+    start: Option<std::sync::atomic::AtomicU32>,
     /// Set only on a placed object's private material copy. Retains a
     /// completed sequence's terminal sample until the next selection.
     sequence: MaterialSequenceClock,
@@ -272,8 +273,11 @@ impl MaterialSequenceClock {
 
 impl MaterialClock {
     fn at(&self, now: f32) -> MaterialUniform {
-        let u = match self.start {
-            Some(s) => self.base.animated(&self.anim, now - s, true),
+        let u = match &self.start {
+            Some(s) => {
+                let s = f32::from_bits(s.load(std::sync::atomic::Ordering::Relaxed));
+                self.base.animated(&self.anim, now - s, true)
+            }
             None => self.base.animated(&self.anim, now, false),
         };
         self.sequence.apply(&self.anim, u)
@@ -2325,7 +2329,9 @@ impl Renderer {
             let mut mat = self.create_material(&clock.desc);
             mat.key = m.key;
             if let Some(c) = mat.anim.as_mut() {
-                c.start = Some(self.time - at);
+                c.start = Some(std::sync::atomic::AtomicU32::new(
+                    (self.time - at).to_bits(),
+                ));
                 self.queue
                     .write_buffer(&c.buf, 0, bytemuck::bytes_of(&c.at(self.time)));
             }
@@ -2360,6 +2366,20 @@ impl Renderer {
                 .collect(),
             bound_center: model.bound_center,
             bound_radius: model.bound_radius,
+        }
+    }
+
+    /// Puts a [`Renderer::started_model`]'s materials `age` seconds into
+    /// their controllers, whatever the renderer's clock says: the magic
+    /// menu's effect plays on while the world's clock stands still.
+    pub fn set_model_age(&self, model: &GpuModel, age: f32) {
+        let start = (self.time - age).to_bits();
+        for part in &model.parts {
+            for m in [&*part.material, part.material.current()] {
+                if let Some(s) = m.anim.as_ref().and_then(|c| c.start.as_ref()) {
+                    s.store(start, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
         }
     }
 

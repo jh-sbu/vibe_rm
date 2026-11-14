@@ -12,7 +12,8 @@ use esp::{FormId, LoadOrder};
 use glam::{Mat4, Quat, Vec3};
 
 use crate::engine::Engine;
-use crate::render::{Camera, Environment, GpuModel, Instance, Projection, Scene};
+use crate::render::{Camera, Environment, GpuModel, Instance, Projection, Renderer, Scene};
+use crate::spell_fx::effect::EffectInstance;
 
 /// The camera's vertical field of view, degrees.
 const FOV: f32 = 30.0;
@@ -99,9 +100,26 @@ impl From<nif::InvMarker> for Marker {
     }
 }
 
+/// What the view shows: an item menu's item, or a magic menu row's menu
+/// display object.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Shows {
+    Item(FormId),
+    Magic(MagicRow),
+}
+
+/// The model shown: an item's, still; a magic row's, an effect playing.
+enum Body {
+    Still(Arc<GpuModel>),
+    Effect(Box<EffectInstance>),
+}
+
 struct Shown {
-    form: FormId,
-    model: Arc<GpuModel>,
+    shows: Shows,
+    body: Body,
+    /// Its bounding sphere at rest, in its own space.
+    center: Vec3,
+    radius: f32,
     marker: Marker,
 }
 
@@ -285,7 +303,15 @@ impl ItemView {
 
     /// The item shown, if one is.
     pub fn form(&self) -> Option<FormId> {
-        self.shown.as_ref().map(|s| s.form)
+        match self.shows() {
+            Some(Shows::Item(form)) => Some(form),
+            _ => None,
+        }
+    }
+
+    /// What is shown, if anything.
+    pub fn shows(&self) -> Option<Shows> {
+        self.shown.as_ref().map(|s| s.shows)
     }
 
     /// Where the movie has the item, and the viewport's shape.
@@ -296,25 +322,53 @@ impl ItemView {
         }
     }
 
-    /// Poses the item for the frame.
-    fn pose(&mut self) {
+    /// Poses the item for the frame, an effect `dt` seconds on (its parts,
+    /// its particles simulated).
+    fn pose(&mut self, dt: f32) {
         self.scene.dynamic.clear();
-        let Some(s) = &self.shown else {
+        self.scene.particles.clear();
+        let Some(s) = &mut self.shown else {
             return;
         };
         // Eased in and out.
         let t = self.zoom * self.zoom * (3.0 - 2.0 * self.zoom);
         let transform = placement(
-            s.model.bound_center,
-            s.model.bound_radius,
+            s.center,
+            s.radius,
             &s.marker,
             self.turn,
             &self.rect.lerp(&Rect::ZOOMED, t),
             self.aspect,
         );
-        self.scene
-            .dynamic
-            .push(Instance::new(s.model.clone(), transform));
+        match &mut s.body {
+            Body::Still(model) => self
+                .scene
+                .dynamic
+                .push(Instance::new(model.clone(), transform)),
+            Body::Effect(effect) => {
+                effect.transform = transform;
+                effect.advance(dt);
+                // The camera looks along +Y, +Z up.
+                effect.step(dt, Vec3::X, Vec3::Z, &mut self.scene.particles);
+                effect.draw(&mut self.scene);
+            }
+        }
+    }
+
+    /// Puts a playing effect's materials at its age: the menu's real time,
+    /// while the world's clock (the renderer's) stands still.
+    pub fn sync_materials(&self, renderer: &Renderer) {
+        let Some(Body::Effect(effect)) = self.shown.as_ref().map(|s| &s.body) else {
+            return;
+        };
+        let age = effect.anim.as_ref().map_or(0.0, |a| a.start) + effect.age;
+        for inst in effect
+            .root
+            .iter()
+            .chain(effect.parts.iter().map(|(i, _)| i))
+        {
+            renderer.set_model_age(&inst.model, age);
+        }
     }
 
     /// The mouse moved `fraction` of the viewport's width across: while it
@@ -333,7 +387,7 @@ impl ItemView {
         } else {
             (self.zoom - step).max(0.0)
         };
-        self.pose();
+        self.pose(dt);
     }
 }
 
@@ -366,22 +420,115 @@ impl Engine {
                 let marker = inventory_marker(&self.vfs, &path);
                 if let (Some(model), Some(view)) = (self.models.get(&path), &mut self.item_view) {
                     view.shown = Some(Shown {
-                        form,
-                        model,
+                        shows: Shows::Item(form),
+                        center: model.bound_center,
+                        radius: model.bound_radius,
+                        body: Body::Still(model),
                         marker,
                     });
                 }
             }
         }
         if let Some(view) = &mut self.item_view {
-            view.pose();
+            view.pose(0.0);
         }
+    }
+
+    /// Shows a magic menu row's menu display object beside its card (None:
+    /// nothing), playing as the effect it is from its start. The same row
+    /// again keeps it playing, and the player's turn.
+    pub fn show_magic_3d(&mut self, row: Option<MagicRow>) {
+        let shows = row.map(Shows::Magic);
+        let view = self.item_view.get_or_insert_with(ItemView::new);
+        if view.shows() == shows && shows.is_some() {
+            return;
+        }
+        view.turn = 0.0;
+        view.shown = None;
+        if row.is_none() {
+            view.zoomed = false;
+            view.zoom = 0.0;
+        }
+        let shown = row.and_then(|row| {
+            let model = self.magic_model(row)?;
+            let effect = self.menu_effect(&model)?;
+            let (center, radius) = rest_bounds(&effect);
+            Some(Shown {
+                shows: Shows::Magic(row),
+                body: Body::Effect(Box::new(effect)),
+                center,
+                radius,
+                marker: inventory_marker(&self.vfs, &model),
+            })
+        });
+        if let Some(view) = &mut self.item_view {
+            view.shown = shown;
+            view.pose(0.0);
+        }
+    }
+
+    /// A menu display object's model as an effect: its standalone
+    /// controllers, materials' controllers and particles running from its
+    /// start. Not its behaviour graph: the vanilla ones name
+    /// `CastingWithIntro.hkx` or `WardBodyFX.hkx` but have no sequences
+    /// for it to play (`plans/magic-3d.md`).
+    fn menu_effect(&mut self, model: &str) -> Option<EffectInstance> {
+        let path = format!("{model}#effect");
+        self.models
+            .load_all(&mut self.renderer, &self.vfs, std::slice::from_ref(&path));
+        let (root, anim) = (self.models.get(&path), self.models.anim(&path));
+        if root.is_none() && anim.is_none() {
+            return None;
+        }
+        let seed = self.rand() as u32;
+        let mut effect = EffectInstance::new(&self.renderer, root, anim, Mat4::IDENTITY, seed);
+        if let Some(nif) = self.vfs.read(model).and_then(|d| nif::Nif::parse(&d).ok()) {
+            effect.configure(&nif);
+        }
+        Some(effect)
     }
 
     /// The menu closed: no item, and its view gone.
     pub fn close_item_3d(&mut self) {
         self.item_view = None;
     }
+}
+
+/// An effect's bounding sphere at rest, in its own space: its still
+/// meshes' and each part's (at its rest pose), together.
+fn rest_bounds(effect: &EffectInstance) -> (Vec3, f32) {
+    let mut spheres: Vec<(Vec3, f32)> = Vec::new();
+    if let Some(root) = &effect.root {
+        spheres.push((root.model.bound_center, root.model.bound_radius));
+    }
+    for part in effect.anim.iter().flat_map(|a| &a.parts) {
+        let m = part.parent * part.rest;
+        let scale = m
+            .x_axis
+            .truncate()
+            .length()
+            .max(m.y_axis.truncate().length())
+            .max(m.z_axis.truncate().length());
+        spheres.push((
+            m.transform_point3(part.model.bound_center),
+            part.model.bound_radius * scale,
+        ));
+    }
+    let spheres: Vec<_> = spheres.into_iter().filter(|&(_, r)| r > 0.0).collect();
+    let Some(&first) = spheres.first() else {
+        return (Vec3::ZERO, 1.0);
+    };
+    let (mut lo, mut hi) = (first.0 - first.1, first.0 + first.1);
+    for &(c, r) in &spheres {
+        lo = lo.min(c - r);
+        hi = hi.max(c + r);
+    }
+    let center = (lo + hi) * 0.5;
+    let radius = spheres
+        .iter()
+        .map(|&(c, r)| (c - center).length() + r)
+        .fold(0.0, f32::max);
+    (center, radius)
 }
 
 /// The model's `BSInvMarker`, or none's defaults.
@@ -617,6 +764,173 @@ mod tests {
         };
         assert!((size(10.0, 1.0) - size(80.0, 1.0)).abs() < 1e-3);
         assert!((size(10.0, 1.25) / size(10.0, 1.0) - 1.25).abs() < 1e-4);
+    }
+
+    /// A synthetic effect: a still root of radius 10 at the origin, and one
+    /// part of radius 5 standing 20 up.
+    fn effect() -> EffectInstance {
+        let model = |center: Vec3, radius: f32| {
+            Arc::new(GpuModel {
+                path: "synthetic".into(),
+                parts: Vec::new(),
+                skinned: Vec::new(),
+                particles: Vec::new(),
+                bound_center: center,
+                bound_radius: radius,
+            })
+        };
+        let part = model(Vec3::ZERO, 5.0);
+        let rest = Mat4::from_translation(Vec3::new(0.0, 0.0, 20.0));
+        let anim = Arc::new(crate::world::loader::ModelAnim {
+            parts: vec![crate::world::loader::AnimPart {
+                node: "part".into(),
+                block: 1,
+                parent: Mat4::IDENTITY,
+                rest,
+                model: part.clone(),
+                within: None,
+            }],
+            sequences: Vec::new(),
+            controllers: Vec::new(),
+            start: 0.0,
+            graph: None,
+        });
+        EffectInstance::from_parts(
+            Mat4::IDENTITY,
+            Some(Instance::new(model(Vec3::ZERO, 10.0), Mat4::IDENTITY)),
+            Some(anim),
+            vec![(Instance::new(part, rest), true)],
+            f32::INFINITY,
+        )
+    }
+
+    #[test]
+    fn an_effects_bounds_take_in_its_parts_at_rest() {
+        let (center, radius) = rest_bounds(&effect());
+        // From the root's -10 to the part's 25 up.
+        assert!(
+            (center - Vec3::new(0.0, 0.0, 7.5)).length() < 1e-4,
+            "{center}"
+        );
+        assert!((radius - 17.5).abs() < 1e-4, "{radius}");
+    }
+
+    #[test]
+    fn a_magic_rows_effect_plays_on_in_the_rect() {
+        let fx = effect();
+        let (center, radius) = rest_bounds(&fx);
+        let mut view = ItemView::new();
+        let row = MagicRow::Spell(FormId(0x800));
+        view.shown = Some(Shown {
+            shows: Shows::Magic(row),
+            body: Body::Effect(Box::new(fx)),
+            center,
+            radius,
+            marker: Marker::default(),
+        });
+        assert_eq!(view.shows(), Some(Shows::Magic(row)));
+        // Not an item: the item menus' zoom and turn checks see none.
+        assert_eq!(view.form(), None);
+        view.update(0.5);
+        view.update(0.25);
+        let Some(Shown {
+            body: Body::Effect(fx),
+            ..
+        }) = &view.shown
+        else {
+            unreachable!()
+        };
+        assert!((fx.age - 0.75).abs() < 1e-6);
+        let at = placement(
+            center,
+            radius,
+            &Marker::default(),
+            0.0,
+            &Rect::DEFAULT,
+            16.0 / 9.0,
+        );
+        assert_eq!(fx.transform, at);
+        // The part stands where its rest pose puts it under the placement,
+        // and both it and the still root are drawn.
+        let part = fx.parts[0].0.transform;
+        let expected = at * Mat4::from_translation(Vec3::new(0.0, 0.0, 20.0));
+        assert!(part.abs_diff_eq(expected, 1e-3), "{part} {expected}");
+        assert_eq!(
+            view.scene.dynamic.len(),
+            0,
+            "synthetic models have no meshes"
+        );
+        let (x, y) = project(at, center, 16.0 / 9.0);
+        let (cx, cy) = Rect::DEFAULT.centre();
+        assert!((x - cx).abs() < 1e-4 && (y - cy).abs() < 1e-4);
+    }
+
+    /// Vanilla spells' and a shout's menu objects load as effects, particles
+    /// and all, and play on.
+    #[test]
+    #[ignore = "needs a headless GPU adapter and installed vanilla Skyrim SE"]
+    fn vanilla_magic_rows_play_their_effects() {
+        let data = vfs::locate_data_dir().expect("Skyrim SE Data directory");
+        let names = ["Skyrim.esm".to_string()];
+        let lo = LoadOrder::load(&data, &names).unwrap();
+        let vfs = vfs::Vfs::new(&data, &names);
+        let scratch = std::env::temp_dir().join(format!("vrm-magic-3d-{}", std::process::id()));
+        let mut e = crate::stats::action_tests::headless_engine_with(lo, vfs, &scratch);
+        for (row, model) in [
+            // Flames: the fireball art; Healing; Conjure Familiar; Unrelenting Force.
+            (MagicRow::Spell(FormId(0x12FCD)), "fireballinvart"),
+            (MagicRow::Spell(FormId(0x12FCC)), "maginvhealspellart"),
+            (MagicRow::Spell(FormId(0x640B6)), "maginvsummon"),
+            (MagicRow::Shout(FormId(0x13E07)), "maginvunrelentspellart"),
+        ] {
+            let path = e.magic_model(row).unwrap();
+            assert!(path.contains(model), "{row:?}: {path}");
+            e.show_magic_3d(Some(row));
+            let view = e.item_view.as_mut().unwrap();
+            assert_eq!(view.shows(), Some(Shows::Magic(row)));
+            for _ in 0..30 {
+                view.update(1.0 / 30.0);
+            }
+            let s = view.shown.as_ref().unwrap();
+            let Body::Effect(fx) = &s.body else {
+                panic!("{row:?} is still")
+            };
+            let systems = fx
+                .root
+                .iter()
+                .chain(fx.parts.iter().map(|(i, _)| i))
+                .map(|i| i.model.particles.len())
+                .sum::<usize>();
+            assert!(s.radius > 0.0 && s.radius.is_finite(), "{row:?}");
+            if systems > 0 {
+                assert!(!view.scene.particles.is_empty(), "{row:?}: no particles");
+            }
+            assert!(!view.scene.dynamic.is_empty(), "{row:?}: no meshes");
+            eprintln!(
+                "{row:?} {path}: radius {:.1}, {} meshes, {} systems, {} batches",
+                s.radius,
+                view.scene.dynamic.len(),
+                systems,
+                view.scene.particles.len()
+            );
+            // The same row again keeps it playing.
+            let age = fx.age;
+            e.show_magic_3d(Some(row));
+            let Some(Body::Effect(fx)) = e
+                .item_view
+                .as_ref()
+                .unwrap()
+                .shown
+                .as_ref()
+                .map(|s| &s.body)
+            else {
+                unreachable!()
+            };
+            assert_eq!(fx.age, age);
+        }
+        e.show_magic_3d(None);
+        assert_eq!(e.item_view.as_ref().unwrap().shows(), None);
+        let _ = std::fs::remove_dir_all(&scratch);
     }
 
     #[test]
