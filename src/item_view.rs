@@ -24,6 +24,13 @@ const DISTANCE: f32 = 300.0;
 /// The item's bounding sphere's diameter, as a share of the rect's width
 /// (before the marker's zoom).
 const RECT_SHARE: f32 = 0.6;
+/// The radius a magic menu's effect is shown as having: they are sized by
+/// their marker's zoom alone, not their bounds, about their origin. Their
+/// authored zooms (0.08 to 1.36) shrink the larger art in step with its
+/// size (radius times zoom 23 to 81), so the game doesn't bring them to
+/// one size first; this value is picked from captures
+/// (`known_ambiguities/item-3d.md`).
+const MAGIC_RADIUS: f32 = 15.0;
 
 /// The rect the item stands in, as fractions of the viewport (left, top,
 /// right, bottom).
@@ -452,12 +459,11 @@ impl Engine {
         let shown = row.and_then(|row| {
             let model = self.magic_model(row)?;
             let effect = self.menu_effect(&model)?;
-            let (center, radius) = rest_bounds(&effect);
             Some(Shown {
                 shows: Shows::Magic(row),
                 body: Body::Effect(Box::new(effect)),
-                center,
-                radius,
+                center: Vec3::ZERO,
+                radius: MAGIC_RADIUS,
                 marker: inventory_marker(&self.vfs, &model),
             })
         });
@@ -492,43 +498,6 @@ impl Engine {
     pub fn close_item_3d(&mut self) {
         self.item_view = None;
     }
-}
-
-/// An effect's bounding sphere at rest, in its own space: its still
-/// meshes' and each part's (at its rest pose), together.
-fn rest_bounds(effect: &EffectInstance) -> (Vec3, f32) {
-    let mut spheres: Vec<(Vec3, f32)> = Vec::new();
-    if let Some(root) = &effect.root {
-        spheres.push((root.model.bound_center, root.model.bound_radius));
-    }
-    for part in effect.anim.iter().flat_map(|a| &a.parts) {
-        let m = part.parent * part.rest;
-        let scale = m
-            .x_axis
-            .truncate()
-            .length()
-            .max(m.y_axis.truncate().length())
-            .max(m.z_axis.truncate().length());
-        spheres.push((
-            m.transform_point3(part.model.bound_center),
-            part.model.bound_radius * scale,
-        ));
-    }
-    let spheres: Vec<_> = spheres.into_iter().filter(|&(_, r)| r > 0.0).collect();
-    let Some(&first) = spheres.first() else {
-        return (Vec3::ZERO, 1.0);
-    };
-    let (mut lo, mut hi) = (first.0 - first.1, first.0 + first.1);
-    for &(c, r) in &spheres {
-        lo = lo.min(c - r);
-        hi = hi.max(c + r);
-    }
-    let center = (lo + hi) * 0.5;
-    let radius = spheres
-        .iter()
-        .map(|&(c, r)| (c - center).length() + r)
-        .fold(0.0, f32::max);
-    (center, radius)
 }
 
 /// The model's `BSInvMarker`, or none's defaults.
@@ -805,20 +774,9 @@ mod tests {
     }
 
     #[test]
-    fn an_effects_bounds_take_in_its_parts_at_rest() {
-        let (center, radius) = rest_bounds(&effect());
-        // From the root's -10 to the part's 25 up.
-        assert!(
-            (center - Vec3::new(0.0, 0.0, 7.5)).length() < 1e-4,
-            "{center}"
-        );
-        assert!((radius - 17.5).abs() < 1e-4, "{radius}");
-    }
-
-    #[test]
     fn a_magic_rows_effect_plays_on_in_the_rect() {
         let fx = effect();
-        let (center, radius) = rest_bounds(&fx);
+        let (center, radius) = (Vec3::ZERO, MAGIC_RADIUS);
         let mut view = ItemView::new();
         let row = MagicRow::Spell(FormId(0x800));
         view.shown = Some(Shown {
@@ -895,20 +853,19 @@ mod tests {
             let Body::Effect(fx) = &s.body else {
                 panic!("{row:?} is still")
             };
+            assert_eq!((s.center, s.radius), (Vec3::ZERO, MAGIC_RADIUS));
             let systems = fx
                 .root
                 .iter()
                 .chain(fx.parts.iter().map(|(i, _)| i))
                 .map(|i| i.model.particles.len())
                 .sum::<usize>();
-            assert!(s.radius > 0.0 && s.radius.is_finite(), "{row:?}");
             if systems > 0 {
                 assert!(!view.scene.particles.is_empty(), "{row:?}: no particles");
             }
             assert!(!view.scene.dynamic.is_empty(), "{row:?}: no meshes");
             eprintln!(
-                "{row:?} {path}: radius {:.1}, {} meshes, {} systems, {} batches",
-                s.radius,
+                "{row:?} {path}: {} meshes, {} systems, {} batches",
                 view.scene.dynamic.len(),
                 systems,
                 view.scene.particles.len()
