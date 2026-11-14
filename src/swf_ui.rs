@@ -498,12 +498,15 @@ impl SwfUi {
     /// The 3D item: gone with the item and crafting menus, hidden while the
     /// inventory fades out, posed for the frame.
     fn item_3d(&mut self, engine: &mut Engine, dt: Duration) {
-        if self.items.is_none() && self.crafting.is_none() {
+        if self.items.is_none() && self.crafting.is_none() && self.magic.is_none() {
             engine.close_item_3d();
             return;
         }
         if self.items.as_ref().is_some_and(|i| i.closing) {
             engine.show_item_3d(None);
+        }
+        if self.magic.as_ref().is_some_and(|m| m.closing) {
+            engine.show_magic_3d(None);
         }
         let dx = std::mem::take(&mut self.turn_dx);
         if let Some(view) = &mut engine.item_view {
@@ -2512,6 +2515,32 @@ fn show_item_3d(
     form: Option<FormId>,
 ) {
     engine.show_item_3d(form);
+    place_item_3d(engine, menu, rect, size);
+}
+
+/// Stands the magic menu's effect in the card's column (`column`, the
+/// card's holder), from the top down to 0.55 of the stage: where the movie
+/// would stand its `MouseRotationRect`, but `magicmenu.swf` has none
+/// (`known_ambiguities/item-3d.md`).
+fn place_in_card_column(engine: &mut Engine, menu: &Menu, column: &str, size: (u32, u32)) {
+    let (w, h) = (size.0.max(1) as f32, size.1.max(1) as f32);
+    if let Some(view) = &mut engine.item_view
+        && let Some((left, _, right, _)) = menu.pixel_rect(column)
+    {
+        view.set_rect(
+            crate::item_view::Rect {
+                left: left as f32 / w,
+                top: 0.0,
+                right: right as f32 / w,
+                bottom: 0.55,
+            },
+            w / h,
+        );
+    }
+}
+
+/// Stands the 3D item in the movie's `rect` clip.
+fn place_item_3d(engine: &mut Engine, menu: &Menu, rect: &str, size: (u32, u32)) {
     let (w, h) = (size.0.max(1) as f32, size.1.max(1) as f32);
     if let Some(view) = &mut engine.item_view
         && let Some((left, top, right, bottom)) = menu.pixel_rect(rect)

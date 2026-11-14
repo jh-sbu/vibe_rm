@@ -17,6 +17,7 @@ use esp::FormId;
 use ui_swf::{GameCall, Menu, UiSwf, Value};
 
 use crate::engine::{Engine, PLAYER_REF};
+use crate::item_view::MagicRow;
 use crate::magic::{flags, spell_type};
 use crate::spells::{CONCENTRATION, LEFT, RIGHT, SCHOOLS, VOICE};
 
@@ -73,6 +74,8 @@ pub(super) struct MagicMenu {
     pub closing: bool,
     /// Closing for the tween menu (`ShowTweenMenu`), not the world.
     to_tween: bool,
+    /// The stage's size in pixels, to place the effect beside the card.
+    size: (u32, u32),
 }
 
 /// The categories for `SetCategoriesList`: (name, flag, always listed) each.
@@ -149,6 +152,7 @@ impl MagicMenu {
             player: None,
             closing: false,
             to_tween: false,
+            size,
         };
         m.update(engine);
         if !indices.is_empty() {
@@ -262,9 +266,30 @@ impl MagicMenu {
                 self.to_tween = true;
             }
             "CloseTweenMenu" => self.closing = true,
-            // A disabled entry (none are), the item's model (none for spells).
-            "ShowShoutFail" | "UpdateItem3D" | "StartMouseRotation" | "StopMouseRotation"
-            | "ZoomItemModel" | "DisabledItemSelect" => {}
+            // The highlighted row's menu display object beside the card, or
+            // none (`plans/magic-3d.md`).
+            "UpdateItem3D" => {
+                let row = matches!(call.args.first(), Some(Value::Bool(true)))
+                    .then(|| self.selected())
+                    .flatten()
+                    .map(|row| match row {
+                        Row::Spell(f) => MagicRow::Spell(f),
+                        Row::Shout(f) => MagicRow::Shout(f),
+                        Row::Effects(f) => MagicRow::Effects(f),
+                    });
+                engine.show_magic_3d(row);
+                super::place_in_card_column(
+                    engine,
+                    &self.menu,
+                    &format!("{M}.ItemCardFadeHolder_mc"),
+                    self.size,
+                );
+            }
+            // A disabled entry (none are). The movie has no
+            // `MouseRotationRect`, so it never asks to turn or zoom the
+            // effect (`StartMouseRotation`, `ZoomItemModel`).
+            "ShowShoutFail" | "DisabledItemSelect" | "StartMouseRotation" | "StopMouseRotation"
+            | "ZoomItemModel" => {}
             _ => return false,
         }
         true
