@@ -2518,14 +2518,14 @@ fn show_item_3d(
     place_item_3d(engine, menu, rect, size);
 }
 
-/// Stands the magic menu's effect in the card's column (`column`, the
-/// card's holder), from the top down to 0.55 of the stage: where the movie
-/// would stand its `MouseRotationRect`, but `magicmenu.swf` has none
-/// (`known_ambiguities/item-3d.md`).
-fn place_in_card_column(engine: &mut Engine, menu: &Menu, column: &str, size: (u32, u32)) {
+/// Stands the magic menu's effect in the card's column (`column`: its
+/// left and right in pixels), from the top down to 0.55 of the stage: where
+/// the movie would stand its `MouseRotationRect`, but `magicmenu.swf` has
+/// none (`known_ambiguities/item-3d.md`).
+fn place_in_card_column(engine: &mut Engine, column: Option<(f64, f64)>, size: (u32, u32)) {
     let (w, h) = (size.0.max(1) as f32, size.1.max(1) as f32);
     if let Some(view) = &mut engine.item_view
-        && let Some((left, _, right, _)) = menu.pixel_rect(column)
+        && let Some((left, right)) = column
     {
         view.set_rect(
             crate::item_view::Rect {

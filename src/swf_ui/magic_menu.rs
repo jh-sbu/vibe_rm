@@ -76,6 +76,10 @@ pub(super) struct MagicMenu {
     to_tween: bool,
     /// The stage's size in pixels, to place the effect beside the card.
     size: (u32, u32),
+    /// The card's column (left and right, pixels) as the movie lays it out,
+    /// read once: the holder's width later follows the card shown (an
+    /// active effect's is wider), as the movie's `MouseRotationRect` doesn't.
+    column: Option<(f64, f64)>,
 }
 
 /// The categories for `SetCategoriesList`: (name, flag, always listed) each.
@@ -153,7 +157,12 @@ impl MagicMenu {
             closing: false,
             to_tween: false,
             size,
+            column: None,
         };
+        m.column = m
+            .menu
+            .pixel_rect(&format!("{M}.ItemCardFadeHolder_mc"))
+            .map(|(left, _, right, _)| (left, right));
         m.update(engine);
         if !indices.is_empty() {
             m.menu.callback("RestoreIndices", indices);
@@ -278,12 +287,7 @@ impl MagicMenu {
                         Row::Effects(f) => MagicRow::Effects(f),
                     });
                 engine.show_magic_3d(row);
-                super::place_in_card_column(
-                    engine,
-                    &self.menu,
-                    &format!("{M}.ItemCardFadeHolder_mc"),
-                    self.size,
-                );
+                super::place_in_card_column(engine, self.column, self.size);
             }
             // A disabled entry (none are). The movie has no
             // `MouseRotationRect`, so it never asks to turn or zoom the
