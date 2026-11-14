@@ -196,6 +196,65 @@ pub fn item_model(lo: &LoadOrder, form: FormId, female: bool) -> Option<String> 
     Some(format!("{model}#rigid"))
 }
 
+/// A row of the magic menu, as the model beside its card sees it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MagicRow {
+    /// A spell or power.
+    Spell(FormId),
+    Shout(FormId),
+    /// The effects of one item (a spell, potion, enchantment...) on the
+    /// player.
+    Effects(FormId),
+}
+
+/// The model of a menu display object (`MDOB`): its `STAT`'s `MODL`. None
+/// for anything else, or an editor marker (`meshes/marker...`, which the
+/// game doesn't draw: seven script effects name the map marker's).
+pub fn menu_object_model(lo: &LoadOrder, object: FormId) -> Option<String> {
+    let rec = lo.get(object).filter(|r| r.tag().0 == *b"STAT")?;
+    let model = rec
+        .get(b"MODL")
+        .map(esp::decode_zstring)
+        .filter(|s| !s.is_empty())
+        .map(|s| crate::world::records::mesh_path(&s))?;
+    (!model.to_ascii_lowercase().starts_with("meshes/marker")).then_some(model)
+}
+
+impl Engine {
+    /// The menu display object a magic menu row shows: a spell's or
+    /// shout's own; an active effect's source spell's, else the first of its
+    /// shown effects' that has one (potions and enchantments have none of
+    /// their own). Null when none has one. `known_ambiguities/item-3d.md`.
+    pub fn magic_menu_object(&self, row: MagicRow) -> FormId {
+        match row {
+            MagicRow::Spell(spell) => self
+                .magic_item(spell)
+                .map_or(FormId::NULL, |m| m.menu_object),
+            MagicRow::Shout(shout) => self.shout(shout).map_or(FormId::NULL, |s| s.menu_object),
+            MagicRow::Effects(item) => {
+                let Some(m) = self.magic_item(item) else {
+                    return FormId::NULL;
+                };
+                if !m.menu_object.is_null() {
+                    return m.menu_object;
+                }
+                m.effects
+                    .iter()
+                    .filter_map(|e| self.magic_effect(e.effect))
+                    .filter(|x| !x.has(crate::magic::flags::HIDE_IN_UI))
+                    .map(|x| x.menu_object)
+                    .find(|o| !o.is_null())
+                    .unwrap_or(FormId::NULL)
+            }
+        }
+    }
+
+    /// The model a magic menu row shows, if any.
+    pub fn magic_model(&self, row: MagicRow) -> Option<String> {
+        menu_object_model(&self.lo, self.magic_menu_object(row))
+    }
+}
+
 impl ItemView {
     fn new() -> Self {
         let scene = Scene {
@@ -419,6 +478,116 @@ mod tests {
             Some("meshes/clutter/note.nif#rigid")
         );
         assert_eq!(model(0x806, false), None);
+    }
+
+    /// A plugin with menu display objects: STATs (one an editor marker), a
+    /// spell, a shout, effects (one hidden) and a potion.
+    fn magic_plugin(dir: &std::path::Path) {
+        use esp::writer::{Node, RecordBuilder, write_plugin};
+        let mdob = |v: u32| v.to_le_bytes();
+        let mgef = |id: u32, flags: u32, object: Option<u32>| {
+            let mut data = vec![0u8; 0x8C];
+            data[..4].copy_from_slice(&flags.to_le_bytes());
+            let r = RecordBuilder::new(b"MGEF", FormId(id)).field(b"DATA", &data);
+            match object {
+                Some(o) => r.field(b"MDOB", &mdob(o)),
+                None => r,
+            }
+        };
+        let groups = [
+            Node::top(
+                b"STAT",
+                vec![
+                    RecordBuilder::new(b"STAT", FormId(0x800))
+                        .zstring(b"MODL", "Magic\\SpellArt.nif"),
+                    RecordBuilder::new(b"STAT", FormId(0x801))
+                        .zstring(b"MODL", "Magic\\EffectArt.nif"),
+                    RecordBuilder::new(b"STAT", FormId(0x802)).zstring(b"MODL", "marker_map.nif"),
+                    RecordBuilder::new(b"STAT", FormId(0x803))
+                        .zstring(b"MODL", "Magic\\HiddenArt.nif"),
+                ],
+            ),
+            Node::top(
+                b"MGEF",
+                vec![
+                    mgef(0x810, 0, Some(0x801)),
+                    mgef(0x811, crate::magic::flags::HIDE_IN_UI, Some(0x803)),
+                    mgef(0x812, 0, None),
+                ],
+            ),
+            Node::top(
+                b"SPEL",
+                vec![
+                    RecordBuilder::new(b"SPEL", FormId(0x820))
+                        .field(b"MDOB", &mdob(0x800))
+                        .field(b"EFID", &0x810u32.to_le_bytes()),
+                    // No object of its own, an effect with one.
+                    RecordBuilder::new(b"SPEL", FormId(0x821))
+                        .field(b"EFID", &0x812u32.to_le_bytes())
+                        .field(b"EFID", &0x810u32.to_le_bytes()),
+                ],
+            ),
+            Node::top(
+                b"SHOU",
+                vec![RecordBuilder::new(b"SHOU", FormId(0x830)).field(b"MDOB", &mdob(0x802))],
+            ),
+            Node::top(
+                b"ALCH",
+                vec![
+                    // A hidden effect's object is passed over.
+                    RecordBuilder::new(b"ALCH", FormId(0x840))
+                        .field(b"EFID", &0x811u32.to_le_bytes())
+                        .field(b"EFID", &0x810u32.to_le_bytes()),
+                    RecordBuilder::new(b"ALCH", FormId(0x841))
+                        .field(b"EFID", &0x812u32.to_le_bytes()),
+                ],
+            ),
+        ];
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(
+            dir.join("Magic.esp"),
+            write_plugin(0, &[], "test", "", 0x900, &groups),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_menu_display_object_shows_its_statics_model() {
+        let dir = std::env::temp_dir().join(format!("vrm-mdob-model-{}", std::process::id()));
+        magic_plugin(&dir);
+        let lo = LoadOrder::load(&dir, &["Magic.esp".into()]).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        let model = |id: u32| menu_object_model(&lo, FormId(id));
+        assert_eq!(model(0x800).as_deref(), Some("meshes/magic/spellart.nif"));
+        // An editor marker, a non-static, nothing.
+        assert_eq!(model(0x802), None);
+        assert_eq!(model(0x820), None);
+        assert_eq!(model(0x8FF), None);
+        assert_eq!(model(0), None);
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter"]
+    fn each_magic_row_shows_its_menu_display_object() {
+        let dir = std::env::temp_dir().join(format!("vrm-mdob-rows-{}", std::process::id()));
+        magic_plugin(&dir);
+        let e = crate::stats::action_tests::headless_engine(&dir, "Magic.esp");
+        let _ = std::fs::remove_dir_all(&dir);
+        let object = |row| e.magic_menu_object(row);
+        assert_eq!(object(MagicRow::Spell(FormId(0x820))), FormId(0x800));
+        assert_eq!(object(MagicRow::Shout(FormId(0x830))), FormId(0x802));
+        // The spell's own, else its first shown effect's.
+        assert_eq!(object(MagicRow::Effects(FormId(0x820))), FormId(0x800));
+        assert_eq!(object(MagicRow::Effects(FormId(0x821))), FormId(0x801));
+        assert_eq!(object(MagicRow::Effects(FormId(0x840))), FormId(0x801));
+        assert_eq!(object(MagicRow::Effects(FormId(0x841))), FormId::NULL);
+        assert_eq!(object(MagicRow::Spell(FormId(0x821))), FormId::NULL);
+        assert_eq!(
+            e.magic_model(MagicRow::Spell(FormId(0x820))).as_deref(),
+            Some("meshes/magic/spellart.nif")
+        );
+        // The shout's object is an editor marker: nothing shows.
+        assert_eq!(e.magic_model(MagicRow::Shout(FormId(0x830))), None);
     }
 
     #[test]
