@@ -2483,7 +2483,7 @@ readings are applied (see Done; autotest23 and autotest24's on
      an open observation (`known_ambiguities/journal.md` records the current choice).
    - The inventory's rest: the magic menu's models (`UpdateMagic3D`: spells',
      effects' and shouts' `MDOB` menu display objects, in the item menus' 3D
-     view), the gamepad's Rotate and Item Zoom for the 3D item, and its size,
+     view; unblocked, planned in `plans/magic-3d.md`), the gamepad's Rotate and Item Zoom for the 3D item, and its size,
      light and zoom against SE screenshots (`known_ambiguities/item-3d.md`);
      independent per-hand
      selection for two differently modified copies of the same weapon base;
