@@ -43,6 +43,8 @@ pub struct Shout {
     pub name: String,
     pub description: String,
     pub words: Vec<ShoutWord>,
+    /// What the magic menu shows of it (`MDOB`, a `STAT`; null if none).
+    pub menu_object: FormId,
 }
 
 /// A `WOOP` record: the word in the dragon tongue and its meaning.
@@ -116,6 +118,7 @@ impl Engine {
             name: text(b"FULL"),
             description: text(b"DESC"),
             words,
+            menu_object: crate::magic::menu_object(&rec),
         })
     }
 

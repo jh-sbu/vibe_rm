@@ -178,6 +178,18 @@ pub struct MagicEffect {
     pub keywords: Vec<FormId>,
     pub conditions: Vec<Condition>,
     pub scripts: Vec<crate::script::vmad::ScriptRef>,
+    /// What the magic menu shows of it (`MDOB`, a `STAT`; null if none).
+    pub menu_object: FormId,
+}
+
+/// A spell's, effect's or shout's menu display object (`MDOB`): the `STAT`
+/// the magic menu shows beside its card. Null when absent or zero.
+pub(crate) fn menu_object(rec: &esp::LoadedRecord<'_>) -> FormId {
+    rec.get(b"MDOB")
+        .and_then(|d| d.get(..4))
+        .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+        .filter(|&v| v != 0)
+        .map_or(FormId::NULL, |v| rec.fid(FormId(v)))
 }
 
 impl MagicEffect {
@@ -240,6 +252,7 @@ impl MagicEffect {
             scripts: crate::script::vmad::parse(&rec)
                 .map(|v| v.scripts)
                 .unwrap_or_default(),
+            menu_object: menu_object(&rec),
         })
     }
 
@@ -277,6 +290,8 @@ pub struct MagicItem {
     /// The item's own keywords (`KWDA`).
     pub keywords: Vec<FormId>,
     pub effects: Vec<EffectItem>,
+    /// What the magic menu shows of a spell (`MDOB`; null if none).
+    pub menu_object: FormId,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -336,6 +351,7 @@ impl MagicItem {
                 m.cast_type = u(d, 0x10);
                 m.delivery = u(d, 0x14);
                 m.range = f32::from_bits(u(d, 0x1C));
+                m.menu_object = menu_object(&rec);
             }
             b"ENCH" => {
                 m.enchantment = EnchantmentData::parse(&rec);
@@ -2164,5 +2180,61 @@ mod rolled_spells_tests {
             rolled.get_or_roll(other, list, || vec![FormId(0x31)]),
             vec![FormId(0x31)]
         );
+    }
+}
+
+#[cfg(test)]
+mod menu_object_tests {
+    use super::*;
+    use esp::writer::{Node, RecordBuilder, write_plugin};
+
+    #[test]
+    fn spells_effects_and_shouts_name_their_menu_object() {
+        let dir = std::env::temp_dir().join(format!("vrm-mdob-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mdob = |v: u32| v.to_le_bytes();
+        let data = vec![0u8; 0x8C];
+        let groups = [
+            Node::top(
+                b"MGEF",
+                vec![
+                    RecordBuilder::new(b"MGEF", FormId(0x801))
+                        .field(b"DATA", &data)
+                        .field(b"MDOB", &mdob(0x810)),
+                    RecordBuilder::new(b"MGEF", FormId(0x802))
+                        .field(b"DATA", &data)
+                        .field(b"MDOB", &mdob(0)),
+                    RecordBuilder::new(b"MGEF", FormId(0x803)).field(b"DATA", &data),
+                ],
+            ),
+            Node::top(
+                b"SPEL",
+                vec![RecordBuilder::new(b"SPEL", FormId(0x804)).field(b"MDOB", &mdob(0x811))],
+            ),
+            Node::top(
+                b"SHOU",
+                vec![RecordBuilder::new(b"SHOU", FormId(0x805)).field(b"MDOB", &mdob(0x812))],
+            ),
+        ];
+        std::fs::write(
+            dir.join("Mdob.esp"),
+            write_plugin(0, &[], "test", "", 0x900, &groups),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("Empty.esp"),
+            write_plugin(0, &[], "test", "", 0x800, &[]),
+        )
+        .unwrap();
+        let lo = esp::LoadOrder::load(&dir, &["Empty.esp".into(), "Mdob.esp".into()]).unwrap();
+        let effect = |id| MagicEffect::load_from(&lo, FormId(id)).unwrap().menu_object;
+        // The plugin's own forms, at its load index.
+        assert_eq!(effect(0x0100_0801), FormId(0x0100_0810));
+        assert_eq!(effect(0x0100_0802), FormId::NULL);
+        assert_eq!(effect(0x0100_0803), FormId::NULL);
+        let record = |id| menu_object(&lo.get(FormId(id)).unwrap());
+        assert_eq!(record(0x0100_0804), FormId(0x0100_0811));
+        assert_eq!(record(0x0100_0805), FormId(0x0100_0812));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
