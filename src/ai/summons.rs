@@ -158,6 +158,82 @@ impl Engine {
         self.kill_actor_by(x.target, None);
     }
 
+    /// The effects that keep `r` commanded: the summon that brought it, or
+    /// the reanimation that raised it.
+    fn commanding_effects(&self, r: FormId) -> Vec<u64> {
+        self.magic
+            .effects
+            .iter()
+            .filter(|e| !e.done)
+            .filter(|e| {
+                e.summoned == Some(r)
+                    || (e.target == r
+                        && self
+                            .magic_effect(e.effect)
+                            .is_some_and(|m| m.archetype == archetype::REANIMATE))
+            })
+            .map(|e| e.id)
+            .collect()
+    }
+
+    /// Banish (Banish Daedra, Expel Daedra; UESP *Skyrim:Banish*: "sent
+    /// back to Oblivion", only summoned ones): the summon that brought `r`
+    /// ends, and it goes. The level cap and the Daedra keyword are the
+    /// effect's (`level_capped`, its conditions); the portal it leaves is
+    /// its script's (`magicBanishScript`).
+    pub(crate) fn banish(&mut self, r: FormId) {
+        let summons: Vec<u64> = self
+            .magic
+            .effects
+            .iter()
+            .filter(|e| !e.done && e.summoned == Some(r))
+            .map(|e| e.id)
+            .collect();
+        for id in summons {
+            log::info!("{r} is banished");
+            self.dispel_effect(id);
+        }
+    }
+
+    /// Command Daedra (UESP *Skyrim:Command Daedra*: "summoned and raised
+    /// creatures are put under your control"): `r` is commanded by
+    /// `commander` for what is left of the effect that keeps it (a summon
+    /// taken over lasts as long as its summoner's would have: UESP's note
+    /// on Atromancy). The effect becomes the new commander's, so a save
+    /// keeps it so and the old summoner's death doesn't end it (the spell
+    /// is sold as getting "help to defeat the remaining ones").
+    pub(crate) fn take_command(&mut self, r: FormId, commander: FormId) {
+        if r == commander || self.is_dead(r) {
+            return;
+        }
+        let Some(&from) = self.magic.commanded.get(&r) else {
+            return;
+        };
+        if from == commander {
+            return;
+        }
+        let keeping = self.commanding_effects(r);
+        if keeping.is_empty() {
+            return;
+        }
+        for e in self
+            .magic
+            .effects
+            .iter_mut()
+            .filter(|e| keeping.contains(&e.id))
+        {
+            e.caster = Some(commander);
+            // A summon's effect is on its summoner: it moves to the new
+            // commander, so the old one's death no longer ends it.
+            if e.summoned == Some(r) {
+                e.target = commander;
+            }
+        }
+        log::info!("{commander} takes command of {r} from {from}");
+        self.magic.commanded.insert(r, commander);
+        self.end_combat(r);
+    }
+
     /// A summon effect ends: its actor goes.
     pub(crate) fn unsummon(&mut self, r: FormId) {
         log::info!("{r} unsummoned");
@@ -422,3 +498,7 @@ mod follower_tests {
 #[cfg(test)]
 #[path = "reanimate_tests.rs"]
 mod reanimate_tests;
+
+#[cfg(test)]
+#[path = "banish_tests.rs"]
+mod banish_tests;

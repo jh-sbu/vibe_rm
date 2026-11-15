@@ -1171,6 +1171,10 @@ game each piece unlocks.
   raised aren't raised. It dies again when the effect ends, and the
   vanilla `ReanimateAshPile` script turns it to ash once; a raised body
   left behind stays raised. Choices: `known_ambiguities/magic.md`
+- Banish and Command Daedra (archetypes 42 and 10): a summon within the
+  effect's level is sent back (its summon ends), or comes under the
+  caster's command for the rest of its time, outliving its old summoner;
+  raised bodies can be taken too. Choices: `known_ambiguities/magic.md`
 - Bound weapons: the effect's weapon in hand while it lasts (Bound Bow's
   script giving its arrows), gone at the end or when put away. Weapon
   `Can't Drop` flags prevent dropping; non-playable weapons stay out of

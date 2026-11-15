@@ -43,6 +43,9 @@ pub mod archetype {
     pub const DEMORALIZE: u32 = 7;
     pub const FRENZY: u32 = 8;
     pub const DISARM: u32 = 9;
+    /// Command Daedra: a summon or raised body comes under the caster's
+    /// command (`Engine::take_command`).
+    pub const COMMAND_SUMMONED: u32 = 10;
     pub const INVISIBILITY: u32 = 11;
     pub const BOUND_WEAPON: u32 = 17;
     pub const SUMMON_CREATURE: u32 = 18;
@@ -64,6 +67,8 @@ pub mod archetype {
     pub const SLOW_TIME: u32 = 37;
     pub const RALLY: u32 = 38;
     pub const ETHEREALIZE: u32 = 41;
+    /// Banish Daedra, Expel Daedra: a summon sent back (`Engine::banish`).
+    pub const BANISH: u32 = 42;
 
     /// Target value modifiers (CommonLibSSE `TargetValueModifierEffect`)
     /// hold their actor value at a value of their own while they last, and
@@ -83,7 +88,10 @@ pub mod archetype {
     /// Those whose magnitude is the highest level they affect (UESP's
     /// Illusion: "Target Level does not apply to Rally effects").
     pub fn level_capped(archetype: u32) -> bool {
-        matches!(archetype, CALM | DEMORALIZE | FRENZY | TURN_UNDEAD | DISARM)
+        matches!(
+            archetype,
+            CALM | DEMORALIZE | FRENZY | TURN_UNDEAD | DISARM | COMMAND_SUMMONED | BANISH
+        )
     }
 }
 
@@ -1017,6 +1025,7 @@ impl Engine {
         // it sends `OnHit` (Disarm only when it disarms).
         let mut hostile = false;
         let mut hit = false;
+        let mut took_command = false;
         for (index, ei) in m.effects.iter().enumerate() {
             if !applies(index) {
                 continue;
@@ -1134,6 +1143,7 @@ impl Engine {
             hit |= mgef.has(flags::HOSTILE) && passes && mgef.archetype != archetype::DISARM;
             if passes {
                 self.start_magic_effect(id);
+                took_command |= mgef.archetype == archetype::COMMAND_SUMMONED;
             }
             // `OnMagicEffectApply` (caster, effect) to the target.
             let args = vec![
@@ -1142,9 +1152,12 @@ impl Engine {
             ];
             self.send_script_event(target, "OnMagicEffectApply", args);
         }
+        // One just taken under the caster's command (Command Daedra) doesn't
+        // turn on it.
         if hostile
             && !quiet
             && let Some(c) = caster.filter(|&c| c != target)
+            && !(took_command && self.commander_of(target) == Some(c))
         {
             self.hostile_magic_landed(target, c, item, hit);
         }
@@ -1328,6 +1341,12 @@ impl Engine {
             archetype::INVISIBILITY => self.hold(i, &mgef, [1.0, 0.0]),
             archetype::SUMMON_CREATURE => self.summon(id, &mgef),
             archetype::REANIMATE => self.reanimate(id),
+            archetype::BANISH => self.banish(x.target),
+            archetype::COMMAND_SUMMONED => {
+                if let Some(c) = x.caster {
+                    self.take_command(x.target, c);
+                }
+            }
             // A bound weapon: in hand while it lasts.
             archetype::BOUND_WEAPON if !mgef.related.is_null() => {
                 self.add_item(x.target, mgef.related, 1);

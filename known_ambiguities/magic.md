@@ -240,6 +240,31 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
   - Not modelled: Serana raising bodies through walls, a stronger caster
     taking over a body still rising, paralyzed bodies rising stuck, the
     skill XP rule ("only when you and your thrall enter combat").
+- **Banish** (archetype 42) **and Command Daedra** (archetype 10;
+  `Engine::banish`, `Engine::take_command`, `src/ai/summons.rs`). Sources:
+  UESP *Skyrim:Banish* (revision 3371035: summoned Daedra "up to level
+  <mag> are sent back to Oblivion", only summoned ones), *Skyrim:Banish
+  Daedra* (revision 1974186: too strong, it is "instead pushed back and
+  damaged", the spell's other two effects), *Skyrim:Command Daedra*
+  (revision 3065393: "summoned and raised creatures are put under your
+  control"; a taken atronach lasts its summoner's 120 s). The records: both
+  are hostile Target Actor effects with `HasKeyword(ActorTypeDaedra) == 1`;
+  Banish's `magicBanishScript` only places the portal and applies
+  `MAGBanishImod`. Choices:
+  - Both are level capped as Calm is (the magnitude after perks against
+    the target's level; one too strong still takes the blow and the
+    spell's other effects).
+  - Banish ends the summon effect that keeps the target (it goes as at the
+    end of its time: no body). Raised bodies aren't summons and stay.
+  - Command moves the effect that keeps the target (its summon, or its
+    reanimation) to the caster: the target is commanded for what is left
+    of that effect, counted nowhere against the new commander's limit,
+    and a save keeps it so. A summon's effect also moves off its old
+    summoner, so the old summoner's death no longer ends it. Whether SE
+    ends a taken summon with its old summoner isn't published; this
+    follows the spell's description as help against "the remaining ones".
+  - The commanded one doesn't turn on its new commander for the hostile
+    spell (no fight, no assault from that cast).
 - **Bound weapons** (archetype 17; the weapon is the related form): the
   weapon is put in the target's inventory and equipped in the right hand; at the end it is
   unequipped and every one taken away. Put away (another weapon taken up)
