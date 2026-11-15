@@ -185,7 +185,8 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
   spell lands (cast some other way, beside the caster), facing the caster.
   A commander has one summon, more by its Mod Commanded Actor Limit perk
   entries (Twin Souls: +1; tabs: owner, spell); a new one sends the oldest
-  away. The summoned follow their commander (keeping 160 to 320 units off,
+  away. The summoned follow their commander (keeping 250 to 400 units off,
+  `fSummonedCreatureMinFollowDist` and `fSummonedCreatureMaxFollowDist`,
   running), are moved beside it when more than 4096 units behind out of a
   fight, fight the nearest actor fighting their commander (or the one it
   fights), within 3000 units, never their commander, and pick no fights

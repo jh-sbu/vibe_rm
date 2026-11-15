@@ -15,9 +15,10 @@ use crate::magic::{MagicEffect, archetype};
 
 use super::package::Gait;
 
-/// How far from their commander the commanded keep: closer than the first
-/// they stop, farther than the second they come (chosen by eye).
-const ATTEND_RADIUS: (f32, f32) = (160.0, 320.0);
+/// How far apart the commanded arrive beside or behind their commander
+/// (chosen by eye; they keep their follow distances once there:
+/// `Engine::summon_follow_distances`).
+const ARRIVE_SPACING: f32 = 160.0;
 /// How far a commanded actor looks for its commander's enemies.
 const DEFEND_RADIUS: f32 = 3000.0;
 /// Farther than this from its commander (a cell's width), out of a fight,
@@ -38,7 +39,7 @@ impl Engine {
         let Some(from) = self.ref_position(commander) else {
             return;
         };
-        let at = x.at.unwrap_or(from + Vec3::X * ATTEND_RADIUS.0);
+        let at = x.at.unwrap_or(from + Vec3::X * ARRIVE_SPACING);
         let Some(r) = self.create_ref(mgef.related, commander, false) else {
             return;
         };
@@ -317,8 +318,8 @@ impl Engine {
         let side = Vec3::new(back.y, -back.x, 0.0);
         let n = party.len() as f32;
         for (i, r) in party.into_iter().enumerate() {
-            let offset = (i as f32 - (n - 1.0) / 2.0) * ATTEND_RADIUS.0;
-            let mut to = feet + back * ATTEND_RADIUS.0 + side * offset;
+            let offset = (i as f32 - (n - 1.0) / 2.0) * ARRIVE_SPACING;
+            let mut to = feet + back * ARRIVE_SPACING + side * offset;
             if let Some(z) = self.nav.height_at(to) {
                 to.z = z;
             }
@@ -350,9 +351,9 @@ impl Engine {
                 let back = (pos - c).truncate().normalize_or_zero().extend(0.0);
                 let to = self
                     .nav
-                    .height_at(c + back * ATTEND_RADIUS.0)
+                    .height_at(c + back * ARRIVE_SPACING)
                     .map_or(c, |z| {
-                        let p = c + back * ATTEND_RADIUS.0;
+                        let p = c + back * ARRIVE_SPACING;
                         Vec3::new(p.x, p.y, z)
                     });
                 log::debug!("{r} catches up with {commander}");
@@ -393,14 +394,26 @@ impl Engine {
             let Some(key) = self.actor_cells.get(&r).copied() else {
                 continue;
             };
+            let follow = self.summon_follow_distances();
             if let Some(a) = self
                 .cells
                 .get_mut(&key)
                 .and_then(|rt| rt.actors.iter_mut().find(|a| a.ref_id == r))
             {
-                a.attend(commander, ATTEND_RADIUS, Gait::Run, &mut self.furniture);
+                a.attend(commander, follow, Gait::Run, &mut self.furniture);
             }
         }
+    }
+
+    /// How near the commanded keep to their commander: closer than the
+    /// first they stop, farther than the second they come
+    /// (`fSummonedCreatureMinFollowDist` 250, `fSummonedCreatureMaxFollowDist`
+    /// 400; what the game does between them is our reading of the names).
+    fn summon_follow_distances(&self) -> (f32, f32) {
+        let gmst = |name, default| super::combat::gmst_f32(&self.lo, name, default);
+        let near = gmst("fSummonedCreatureMinFollowDist", 250.0);
+        let far = gmst("fSummonedCreatureMaxFollowDist", 400.0).max(near);
+        (near, far)
     }
 
     /// The nearest living actor near `pos` fighting `commander`, or that
