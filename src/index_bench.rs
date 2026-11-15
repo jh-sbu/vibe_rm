@@ -109,3 +109,34 @@ fn other_indexes_benchmark() {
         e.lo.find_editor_id("WhiterunOrigin").is_some()
     });
 }
+
+/// Horse searches for every actor whose package rides, run away at 07:00.
+#[test]
+#[ignore = "needs Skyrim SE Data and a headless GPU adapter"]
+fn horse_search_benchmark() {
+    let mut e = vanilla();
+    e.hour = 7.0;
+    e.refresh_whereabouts();
+    let mut actors: Vec<_> = e.whereabouts.of.keys().copied().collect();
+    actors.sort();
+    for &r in &actors {
+        e.run_away(r);
+    }
+    e.advance_menu_time(0.0);
+    e.advance_menu_time(6.0);
+    let riders: Vec<_> = actors
+        .into_iter()
+        .filter(|&r| e.riding_package(r).is_some())
+        .collect();
+    eprintln!("{} away", e.away.len());
+    if let Some(&r) = riders.first() {
+        e.horse_for(r);
+    }
+    let start = std::time::Instant::now();
+    let found = riders.iter().filter(|&&r| e.horse_for(r).is_some()).count();
+    eprintln!(
+        "{} riders, {found} found a horse: {:.3} ms each",
+        riders.len(),
+        start.elapsed().as_secs_f64() * 1000.0 / riders.len() as f64
+    );
+}

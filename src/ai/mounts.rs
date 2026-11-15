@@ -68,7 +68,7 @@ impl Engine {
         self.rides.get(&actor).is_some_and(|r| r.mounted())
     }
 
-    fn riding_package(&self, actor: FormId) -> Option<FormId> {
+    pub(crate) fn riding_package(&self, actor: FormId) -> Option<FormId> {
         let x = self.execution(actor)?;
         if x.pinned
             || x.combat.is_some()
@@ -91,7 +91,7 @@ impl Engine {
         horse_input(n).then_some(p.id)
     }
 
-    pub(super) fn horse_for(&self, actor: FormId) -> Option<FormId> {
+    pub(crate) fn horse_for(&self, actor: FormId) -> Option<FormId> {
         let (place, pos) = self.current_place_of(actor)?;
         let available = |horse: FormId| {
             horse != actor

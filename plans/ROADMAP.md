@@ -2226,12 +2226,21 @@ readings are applied (see Done; autotest23 and autotest24's on
        450 busy actors (movement, Find retries in interiors with hundreds of
        references, locks); empty Finds could be remembered until something
        in their place changes if that matters later. Outcomes differ by an
-       actor or two between runs of the same code (hash order).
+       actor or two between runs of the same code (hash order). Measured
+       2026-11-15 (400 away, one hour, 0.7 s): package reference searches
+       take 6.7 ms of it, so remembering empty Finds would gain nothing.
+       The time is in 66,819 `step_away_at` calls (about 167 per actor,
+       10–18 µs each): `settle_menu_time` steps the same actors again at
+       each boundary until their signatures stop changing. Fewer passes
+       would change how zero-time transitions settle, not just cache.
      - Failed horse searches (`Engine::horse_for`, `src/ai/mounts.rs`)
        repeat every frame for each rider whose package allows riding but
        finds no horse. The scan is now over the 76 cached placed horses,
-       ownership first; if profiling shows it matters, retry only when the
-       rider's package changes or a horse becomes available.
+       ownership first. Measured 2026-11-15 (`horse_search_benchmark`,
+       `src/index_bench.rs`): at 07:00 five of all 9,680 actors have a
+       riding package, none finding a horse, at 0.014 ms a search, so
+       retrying only on change isn't worth its bookkeeping. The placed
+       horses' list costs 35 ms once, on the first search.
    - Blocked, waiting on evidence (details in `plans/ai-depth.md`, "Left
      out: blocked"):
      - The Guard procedure (75 tree uses: GuardPost,
