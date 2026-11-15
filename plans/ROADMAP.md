@@ -2573,8 +2573,8 @@ readings are applied (see Done; autotest23 and autotest24's on
    preserve live plugin/cache state. Original collection timing is still an open
    research question.
 10. **Performance**: async loading, GPU-driven culling; the local map's
-   image served without its PNG encode / decode round trip
-   (`plans/local-map.md`)
+   image served without a PNG encode / decode at all (now uncompressed:
+   `plans/local-map.md`)
    - Plugin loading: record form versions. A copy of `FXspiderWebKitDestructible`
      (activator with destruction data, form version 39) crashed Skyrim SE while it
      loaded plugins when marked version 44, and loaded marked 39 (autotest21's

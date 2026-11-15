@@ -4511,7 +4511,7 @@ dependencies = [
  "async-channel",
  "flate2",
  "log",
- "png 0.17.16",
+ "png 0.18.1",
  "ruffle_core",
  "ruffle_render",
  "ruffle_render_wgpu",

@@ -261,5 +261,10 @@ before markers are projected, including consecutive drag, wheel and keyboard
 updates. Idle views and zoom input against a limit keep the existing image.
 Remaining work:
 
-- Investigate serving the rendered image without a PNG encode/decode round
-  trip, and measure the subsequent movie texture upload separately.
+- The rendered image still goes through a PNG encode/decode round trip, now
+  with stored deflate blocks and no filtering (2026-11-15): a 1600 by 900
+  image takes about 5.6 ms to encode and 4.8 ms to decode whatever it shows,
+  against about 11 ms each with png 0.17's defaults on a map-like test image
+  (dev profile). Skipping it altogether would need a raw-pixel path through
+  the vendored Ruffle loader (`ContentType` sniffing, `from_loaded_image`,
+  `decode_define_bits_jpeg`). Still to measure: the movie texture upload.

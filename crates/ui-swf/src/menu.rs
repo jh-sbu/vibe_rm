@@ -267,6 +267,12 @@ impl Menu {
             let mut encoder = png::Encoder::new(&mut bytes, width, height);
             encoder.set_color(png::ColorType::Rgba);
             encoder.set_depth(png::BitDepth::Eight);
+            // Decoded again straight away, never stored: stored deflate blocks
+            // and no filtering cost the same for any picture, 1600 by 900 in
+            // about 5.6 ms to encode and 4.8 ms to decode, against about 11 ms
+            // each with the default settings (dev profile).
+            encoder.set_compression(png::Compression::NoCompression);
+            encoder.set_filter(png::Filter::NoFilter);
             encoder.write_header()?.write_image_data(rgba)?;
             Ok(())
         })();
