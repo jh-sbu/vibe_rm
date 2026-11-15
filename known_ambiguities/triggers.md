@@ -65,6 +65,35 @@ A box of half extent 128 with a script logging its events:
   placed fires' flames are separate statics: whether the hazard's
   `FXFire01New.nif` is drawn too is unknown), drop to ground, align to
   normal. Disabled hazards do nothing.
+- **Spawned hazards** (Spawn Hazard effects, archetype 40: Blizzard,
+  Circle of Protection, Guardian Circle; `Engine::spawn_effect_hazard`).
+  Sources: UESP *Skyrim Mod:Mod File Format/HAZD* (revision 2308972: the
+  flags "Inherit Duration from Spawn Spell" 0x2, "Inherit Radius from
+  Spawn Spell" 0x8, "Drop to Ground" 0x10); CommonLibSSE's `Hazard`
+  (an owner actor, lifetime and magnitude) and `SpawnHazardEffect` (a
+  hazard handle, overriding start and finish but no update). Choices:
+  - It is left where the spell landed, else at its target's feet, and
+    stays there (no update to follow its caster). It lasts the effect's
+    duration with 0x2, else its record's lifetime; reaches the effect's
+    area with 0x8. It outlasts the effect if the record says so: whether
+    the effect's end removes it isn't known.
+  - Its touches are its owner's (the caster): conditions run against the
+    owner, kills are theirs. Still quiet (no fight from a touch). A
+    hostile hazard spell spares its owner, as area spells spare their
+    caster: UESP's *Skyrim:Blizzard* (revision 3426842, notes) warns it
+    hurts the caster's friends and that it harms only hostile targets;
+    neither says the caster is hurt. The friends rule is left to the
+    spell (nothing spares them here).
+  - Its spell's magnitudes are scaled by what the spawning effect gained
+    over its authored magnitude (perks, dual casting). UESP's *Skyrim:Circle
+    of Protection* (revision 3483831) gives dual casting 220% of the levels turned and
+    Necromage a larger cap; Blizzard's Augmented Frost raises its 20
+    damage to 25 or 30. That the gain carries this way (CommonLibSSE's
+    hazard `magnitude`) is inferred.
+  - Drop to ground and align to impact normal aren't used.
+- **Hazards placed by script** (`PlaceAtMe` of a `HAZD`: Guardian
+  Circle's `MagicPlaceHazard`): live at once, owned by the actor placed at
+  (or its actor cause), until disabled or deleted; no lifetime.
 - **Water and lava**: water "damage" is the `WATR` `FNAM` flag 0x1
   (CommonLibSSE `kCauseDamage`, `GetDangerous`), which the
   `IsInDangerousWater` condition (332) reads; the water does no damage of

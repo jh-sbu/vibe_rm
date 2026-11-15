@@ -16,8 +16,12 @@ use crate::casting::UNITS_PER_FOOT;
 use crate::engine::{Engine, PLAYER_REF};
 use crate::render::CellKey;
 
-/// `HAZD` `DATA` flag: affects the player only.
+/// `HAZD` `DATA` flags (UESP *Skyrim Mod:Mod File Format/HAZD*): affects
+/// the player only; one spawned by a spell lasts the spell's duration, and
+/// reaches its area.
 const PLAYER_ONLY: u32 = 0x1;
+const INHERIT_DURATION: u32 = 0x2;
+const INHERIT_RADIUS: u32 = 0x8;
 /// Heights above the feet tested against a hazard's reach (as triggers').
 const BODY_POINTS: [f32; 3] = [10.0, 60.0, 110.0];
 /// How long a hazard an impact left lasts when its record gives no lifetime.
@@ -41,6 +45,13 @@ pub struct Hazard {
     life: Option<f32>,
     /// How many of its record may exist at once (`DATA` limit).
     limit: u32,
+    /// `DATA` flags.
+    flags: u32,
+    /// Whose it is (the caster of the effect that spawned it, the actor it
+    /// was placed at): its touches are cast by them.
+    owner: Option<FormId>,
+    /// Its spell's magnitudes times this (the spawning effect's gain).
+    scale: f32,
 }
 
 /// The hazard a `PHZD` reference places, if its base gives a spell.
@@ -82,6 +93,9 @@ fn hazard_at(
         next: 0.0,
         life: None,
         limit: u32_at(0x00),
+        flags: u32_at(0x14),
+        owner: None,
+        scale: 1.0,
     })
 }
 
@@ -90,6 +104,16 @@ fn lifetime_of(lo: &esp::LoadOrder, base: FormId) -> Option<f32> {
     let rec = lo.get(base)?;
     let d = rec.get(b"DATA").filter(|d| d.len() >= 0x0C)?;
     Some(f32::from_le_bytes(d[8..12].try_into().unwrap()))
+}
+
+/// A hazard reaching someone: its spell, cast by its owner (else itself).
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Touch {
+    hazard: FormId,
+    spell: FormId,
+    who: FormId,
+    source: FormId,
+    scale: f32,
 }
 
 impl Hazard {
@@ -107,12 +131,7 @@ impl Hazard {
     }
 
     /// Who among the bodies it reaches (the player only, if it says so).
-    fn reaches(
-        &self,
-        bodies: &[(FormId, Vec3)],
-        r: FormId,
-        touches: &mut Vec<(FormId, FormId, FormId)>,
-    ) {
+    fn reaches(&self, bodies: &[(FormId, Vec3)], r: FormId, touches: &mut Vec<Touch>) {
         for &(who, feet) in bodies {
             if self.player_only && who != PLAYER_REF {
                 continue;
@@ -121,7 +140,13 @@ impl Hazard {
                 .iter()
                 .any(|z| (feet + Vec3::Z * z).distance(self.pos) <= self.radius);
             if near {
-                touches.push((r, self.spell, who));
+                touches.push(Touch {
+                    hazard: r,
+                    spell: self.spell,
+                    who,
+                    source: self.owner.unwrap_or(r),
+                    scale: self.scale,
+                });
             }
         }
     }
@@ -136,6 +161,76 @@ impl Engine {
         };
         let life = lifetime_of(&self.lo, base).filter(|&l| l > 0.0);
         h.life = Some(life.unwrap_or(DEFAULT_LIFETIME));
+        self.add_hazard(h);
+    }
+
+    /// A Spawn Hazard effect (archetype 40: Blizzard, Circle of
+    /// Protection, Guardian Circle) leaves its hazard where it landed, or
+    /// at its target's feet (CommonLibSSE's `SpawnHazardEffect` keeps the
+    /// hazard's handle and overrides no update: it doesn't follow). The
+    /// hazard is its caster's; it lasts its record's lifetime, or the
+    /// effect's duration and reaches the effect's area where its flags say
+    /// so; its spell's magnitudes grow as the effect's did over its
+    /// authored magnitude (perks, dual casting: UESP's Circle of
+    /// Protection gives dual casting's 220% to the levels it turns).
+    pub(crate) fn spawn_effect_hazard(&mut self, x: &crate::magic::ActiveEffect, base: FormId) {
+        let Some(at) = x.at.or_else(|| self.ref_position(x.target)) else {
+            return;
+        };
+        let Some(mut h) = hazard_at(&self.lo, base, base, at, 1.0) else {
+            log::debug!("{}: hazard {base} has no spell", x.effect);
+            return;
+        };
+        let authored = self
+            .magic_item(x.item)
+            .and_then(|m| m.effects.get(x.index).map(|e| (e.magnitude, e.area)));
+        if let Some((magnitude, area)) = authored {
+            if magnitude > 0.0 && x.magnitude > 0.0 {
+                h.scale = x.magnitude / magnitude;
+            }
+            if h.flags & INHERIT_RADIUS != 0 && area > 0 {
+                h.radius = area as f32 * UNITS_PER_FOOT;
+            }
+        }
+        let record = lifetime_of(&self.lo, base).filter(|&l| l > 0.0);
+        h.life = Some(if h.flags & INHERIT_DURATION != 0 && x.duration > 0.0 {
+            x.duration
+        } else {
+            record.unwrap_or(DEFAULT_LIFETIME)
+        });
+        h.owner = x.caster;
+        log::info!(
+            "{:?} spawns hazard {base} at {at:.0} ({:.0} units, {:.0?} s, x{:.2})",
+            x.caster,
+            h.radius,
+            h.life,
+            h.scale
+        );
+        self.add_hazard(h);
+    }
+
+    /// `PlaceAtMe` of a hazard: it is there, the actor it was placed at's,
+    /// until it is disabled or deleted (Guardian Circle's
+    /// `MagicPlaceHazard` places one and disables it when its effect ends).
+    pub(crate) fn place_hazard(&mut self, r: FormId, base: FormId, at: FormId) {
+        let Some(pos) = self.ref_position(r) else {
+            return;
+        };
+        let Some(mut h) = hazard_at(&self.lo, base, r, pos, 1.0) else {
+            return;
+        };
+        h.owner = self
+            .world_state
+            .actor_causes
+            .get(&at)
+            .copied()
+            .or_else(|| self.is_actor_ref(at).then_some(at));
+        self.add_hazard(h);
+    }
+
+    fn add_hazard(&mut self, h: Hazard) {
+        let base = h.base;
+        let at = h.pos;
         let hazards = &mut self.impacts.hazards;
         if h.limit > 0 {
             while hazards.iter().filter(|x| x.base == base).count() >= h.limit as usize {
@@ -177,7 +272,7 @@ impl Engine {
         {
             bodies.push((PLAYER_REF, p));
         }
-        let mut touches: Vec<(FormId, FormId, FormId)> = Vec::new();
+        let mut touches: Vec<Touch> = Vec::new();
         let keys: Vec<CellKey> = self.cells.keys().copied().collect();
         for key in keys {
             let n = self.cells[&key].hazards.len();
@@ -192,19 +287,44 @@ impl Engine {
                 }
             }
         }
-        // Those impacts left run out their lifetimes.
+        // Those impacts and spells left run out their lifetimes; those
+        // placed by script last until disabled or deleted.
+        let gone: Vec<FormId> = self
+            .impacts
+            .hazards
+            .iter()
+            .filter(|h| h.ref_id != h.base)
+            .filter(|h| self.is_disabled(h.ref_id) || self.ref_position(h.ref_id).is_none())
+            .map(|h| h.ref_id)
+            .collect();
         self.impacts.hazards.retain_mut(|h| {
             h.life = h.life.map(|l| l - dt);
-            h.life.is_none_or(|l| l > 0.0)
+            h.life.is_none_or(|l| l > 0.0) && !gone.contains(&h.ref_id)
         });
         for h in &mut self.impacts.hazards {
             if h.due(dt) {
                 h.reaches(&bodies, h.ref_id, &mut touches);
             }
         }
-        for (hazard, spell, who) in touches {
-            log::debug!("hazard {hazard} touches {who} with {spell}");
-            self.apply_item_quietly(spell, hazard, who);
+        for t in touches {
+            // A hostile hazard spares its owner, as an area spell spares its
+            // caster (Blizzard; Guardian Circle's heals it).
+            if t.who == t.source
+                && self
+                    .magic_item(t.spell)
+                    .is_some_and(|m| self.item_hostile(&m))
+            {
+                continue;
+            }
+            log::debug!(
+                "hazard {} touches {} with {} (from {}, x{:.2})",
+                t.hazard,
+                t.who,
+                t.spell,
+                t.source,
+                t.scale
+            );
+            self.apply_hazard_spell(t.spell, t.source, t.who, t.scale);
         }
     }
 }
@@ -273,6 +393,19 @@ mod tests {
         ];
         let mut touches = Vec::new();
         h.reaches(&bodies, FormId(0x800), &mut touches);
-        assert_eq!(touches, vec![(FormId(0x800), FormId(0xA00), FormId(0x14))]);
+        assert_eq!(
+            touches,
+            vec![Touch {
+                hazard: FormId(0x800),
+                spell: FormId(0xA00),
+                who: FormId(0x14),
+                source: FormId(0x800),
+                scale: 1.0,
+            }]
+        );
     }
 }
+
+#[cfg(test)]
+#[path = "hazard_spawn_tests.rs"]
+mod spawn_tests;

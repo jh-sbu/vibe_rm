@@ -1325,6 +1325,12 @@ game each piece unlocks.
   the Throat of the World's blizzard) give their spell to whoever is within
   reach every target interval (`src/hazards.rs`, vrm-tool `hazards`,
   `known_ambiguities/triggers.md`)
+- Spawned hazards: Spawn Hazard effects (Blizzard, the circles) leave
+  their hazard where they land, their caster's, lasting and reaching as
+  the spell does where the record inherits them, its spell grown with the
+  effect's perks and dual casting and sparing its owner if hostile;
+  `PlaceAtMe` of a hazard (Guardian Circle's heal) works until disabled
+  (`known_ambiguities/triggers.md`)
 - Wards (Accumulate Magnitude on `WardPower`): a ward held builds at its
   magnitude a second to `fMagicWardPowerMaxBase` times it (whole at once
   dual cast), and after hits builds again; spells, scrolls, staffs and

@@ -262,6 +262,9 @@ impl Engine {
         }
         // An explosion placed goes off there, blamed on the actor cause of
         // the reference it was placed at (`known_ambiguities/explosions.md`).
+        if &tag == b"HAZD" {
+            self.place_hazard(id, base, at);
+        }
         if &tag == b"EXPL" && !disabled {
             let mut d = crate::explosions::Detonation::new(base, position);
             d.owner = self.world_state.actor_causes.get(&at).copied();

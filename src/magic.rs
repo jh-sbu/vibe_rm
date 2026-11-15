@@ -66,6 +66,9 @@ pub mod archetype {
     /// Slow Time (`SlowTimeEffect`): the world's speed, as its magnitude.
     pub const SLOW_TIME: u32 = 37;
     pub const RALLY: u32 = 38;
+    /// Spawn Hazard (Blizzard, the circles): its related `HAZD` where the
+    /// effect lands (`Engine::spawn_effect_hazard`).
+    pub const SPAWN_HAZARD: u32 = 40;
     pub const ETHEREALIZE: u32 = 41;
     /// Banish Daedra, Expel Daedra: a summon sent back (`Engine::banish`).
     pub const BANISH: u32 = 42;
@@ -943,6 +946,7 @@ impl Engine {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn apply_item_as(
         &mut self,
         item: FormId,
@@ -953,6 +957,47 @@ impl Engine {
         dual: bool,
         effects: u64,
         equipment: Option<FormId>,
+    ) -> bool {
+        self.apply_item_scaled(
+            item, caster, target, quiet, at, dual, effects, equipment, 1.0,
+        )
+    }
+
+    /// A hazard's touch (`crate::hazards`): its spell quietly, from its
+    /// owner if it has one, the effects' magnitudes times `scale` (what the
+    /// effect that spawned it gained over its authored magnitude).
+    pub(crate) fn apply_hazard_spell(
+        &mut self,
+        spell: FormId,
+        source: FormId,
+        target: FormId,
+        scale: f32,
+    ) -> bool {
+        self.apply_item_scaled(
+            spell,
+            Some(source),
+            target,
+            true,
+            None,
+            false,
+            ALL_EFFECTS,
+            None,
+            scale,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn apply_item_scaled(
+        &mut self,
+        item: FormId,
+        caster: Option<FormId>,
+        target: FormId,
+        quiet: bool,
+        at: Option<glam::Vec3>,
+        dual: bool,
+        effects: u64,
+        equipment: Option<FormId>,
+        scale: f32,
     ) -> bool {
         let Some(m) = self.magic_item(item) else {
             return false;
@@ -1071,7 +1116,7 @@ impl Engine {
                 }
                 continue;
             }
-            let mut base = ei.magnitude;
+            let mut base = ei.magnitude * scale;
             if !mgef.has(flags::POWER_AFFECTS_DURATION) {
                 base *= power;
             }
@@ -1342,6 +1387,9 @@ impl Engine {
             archetype::SUMMON_CREATURE => self.summon(id, &mgef),
             archetype::REANIMATE => self.reanimate(id),
             archetype::BANISH => self.banish(x.target),
+            archetype::SPAWN_HAZARD if !mgef.related.is_null() => {
+                self.spawn_effect_hazard(&x, mgef.related);
+            }
             archetype::COMMAND_SUMMONED => {
                 if let Some(c) = x.caster {
                     self.take_command(x.target, c);
