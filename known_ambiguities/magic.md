@@ -265,6 +265,22 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
     follows the spell's description as help against "the remaining ones".
   - The commanded one doesn't turn on its new commander for the hostile
     spell (no fight, no assault from that cast).
+- **Enhance Weapon** (archetype 39: Elemental Fury, Dragonborn's Battle
+  Fury and Rage of the Ancients; `Engine::enhanced_weapon`). Records:
+  Elemental Fury's effect holds `WeaponSpeedMult` (+1.3, 1.5, 1.7 by
+  word, with Recover) and names `VoiceEnchElementalFury` as its related
+  form; its conditions want a drawn weapon that isn't a bow. UESP
+  *Skyrim:Elemental Fury* (revision 3482463): faster swings and damage,
+  not "on enchanted or bound weapons", not bows. Choices:
+  - The value is held as a value modifier's (`WeaponSpeedMult` only: the
+    left hand's isn't touched; UESP's dual-wield note says the left hand
+    sets double attacks' speed, so whether SE raises it too is open).
+  - While it lasts, a blow from the affected actor's weapon that has no
+    enchantment of its own (nor a copy's) carries the related enchantment,
+    paying no charge; bows, crossbows and the actor's bound weapons
+    don't. An enchanted weapon keeps its own. What the enchantment's
+    effect (a hostile Peak Value Modifier on Health, magnitude 10, no
+    duration) does is left to that archetype.
 - **Bound weapons** (archetype 17; the weapon is the related form): the
   weapon is put in the target's inventory and equipped in the right hand; at the end it is
   unequipped and every one taken away. Put away (another weapon taken up)

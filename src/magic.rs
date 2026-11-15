@@ -66,6 +66,10 @@ pub mod archetype {
     /// Slow Time (`SlowTimeEffect`): the world's speed, as its magnitude.
     pub const SLOW_TIME: u32 = 37;
     pub const RALLY: u32 = 38;
+    /// Enhance Weapon (Elemental Fury, Battle Fury): a value modifier on the
+    /// weapon's speed while its related enchantment rides the blows of an
+    /// unenchanted weapon (`Engine::enhanced_weapon`).
+    pub const ENHANCE_WEAPON: u32 = 39;
     /// Spawn Hazard (Blizzard, the circles): its related `HAZD` where the
     /// effect lands (`Engine::spawn_effect_hazard`).
     pub const SPAWN_HAZARD: u32 = 40;
@@ -1347,7 +1351,10 @@ impl Engine {
         };
         let holds = x.duration.is_infinite() || mgef.has(flags::RECOVER);
         match mgef.archetype {
-            archetype::VALUE_MODIFIER | archetype::DUAL_VALUE_MODIFIER | archetype::ABSORB
+            archetype::VALUE_MODIFIER
+            | archetype::DUAL_VALUE_MODIFIER
+            | archetype::ABSORB
+            | archetype::ENHANCE_WEAPON
                 if holds && mgef.archetype != archetype::ABSORB =>
             {
                 let second = if mgef.archetype == archetype::DUAL_VALUE_MODIFIER {
@@ -1958,6 +1965,39 @@ impl Engine {
             .map(|x| ObjectId::Effect(x.id))
     }
 
+    /// The enchantment an Enhance Weapon effect on `actor` lends `weapon`'s
+    /// blows (UESP *Skyrim:Elemental Fury*, revision 3482463: it "does not
+    /// work on enchanted or bound weapons" nor bows): its related `ENCH`,
+    /// for a weapon of its own that isn't a bow, a crossbow or a bound
+    /// weapon. The caller has seen it isn't enchanted. No charge is paid.
+    pub(crate) fn enhanced_weapon(&self, actor: FormId, weapon: FormId) -> Option<FormId> {
+        if crate::ai::archery::shoots_ammo(&self.lo, weapon) {
+            return None;
+        }
+        let mut bound = false;
+        let mut lent = None;
+        for x in self
+            .magic
+            .effects
+            .iter()
+            .filter(|x| x.target == actor && x.active && !x.done)
+        {
+            let Some(m) = self.magic_effect(x.effect) else {
+                continue;
+            };
+            match m.archetype {
+                archetype::BOUND_WEAPON => bound |= m.related == weapon,
+                archetype::ENHANCE_WEAPON
+                    if self.lo.tag_of(m.related).is_some_and(|t| t.0 == *b"ENCH") =>
+                {
+                    lent = lent.or(Some(m.related));
+                }
+                _ => {}
+            }
+        }
+        lent.filter(|_| !bound)
+    }
+
     pub fn active_effect(&self, id: u64) -> Option<&ActiveEffect> {
         self.magic.effects.iter().find(|x| x.id == id)
     }
@@ -2351,3 +2391,7 @@ mod menu_object_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
+
+#[cfg(test)]
+#[path = "enhance_weapon_tests.rs"]
+mod enhance_weapon_tests;
