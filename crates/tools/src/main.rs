@@ -5599,7 +5599,8 @@ fn main() -> Result<()> {
             // magic <data dir> [item]: one spell / enchantment / potion /
             // ingredient / scroll with its effects (archetype, actor values,
             // flags, magnitude, area, duration, conditions, scripts), or
-            // --scrolls lists scroll cast types and charge times; otherwise
+            // --scrolls lists scroll cast types and charge times, or
+            // --archetype <n> lists the magic effects of one archetype; otherwise
             // counts over all magic effects: archetypes, cast types and
             // deliveries, and how many have scripts.
             let data = std::path::Path::new(&args[1]);
@@ -5660,6 +5661,17 @@ fn main() -> Result<()> {
                 println!(
                     "Scroll SPIT cast types (2 concentration, 3 scroll): {counts:?}; longest stored charge {longest}s"
                 );
+                return Ok(());
+            }
+            if args.get(2).is_some_and(|arg| arg == "--archetype") {
+                let want: u32 = args.get(3).context("--archetype <n>")?.parse()?;
+                for &id in lo.ids_of_type(b"MGEF") {
+                    let Some(m) = lo.get(id) else { continue };
+                    let d = m.get(b"DATA").unwrap_or_default();
+                    if d.len() >= 0x5C && u32_at(d, 0x40) == want {
+                        println!("{}", describe_effect(id));
+                    }
+                }
                 return Ok(());
             }
             if let Some(name) = args.get(2) {
