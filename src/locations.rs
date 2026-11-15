@@ -30,6 +30,27 @@ fn u32_at(d: &[u8], o: usize) -> u32 {
 }
 
 impl LocationIndex {
+    /// A plugin reference's editor location: from the locations' lists, its
+    /// own `XLCN`, else its cell's. Reads only the load order, so it can run
+    /// on other threads.
+    pub(crate) fn editor_location(&self, lo: &esp::LoadOrder, r: FormId) -> Option<FormId> {
+        if let Some(&l) = self.editor.get(&r) {
+            return Some(l);
+        }
+        let rec = lo.get(r)?;
+        if let Some(l) = rec
+            .get(b"XLCN")
+            .filter(|d| d.len() >= 4)
+            .map(|d| rec.fid(FormId(u32_at(d, 0))))
+            .filter(|f| !f.is_null())
+        {
+            return Some(l);
+        }
+        let pos = records::reference(&rec).position;
+        drop(rec);
+        ref_cell_location(lo, r, pos)
+    }
+
     fn build(lo: &esp::LoadOrder) -> Self {
         let mut ix = LocationIndex::default();
         for &l in lo.ids_of_type(b"LCTN") {
@@ -181,13 +202,7 @@ impl Engine {
         if let Some(c) = self.created(r) {
             return c.location;
         }
-        if let Some(&l) = self.locations().editor.get(&r) {
-            return Some(l);
-        }
-        if let Some(l) = self.form_field(r, b"XLCN") {
-            return Some(l);
-        }
-        ref_cell_location(&self.lo, r, records::reference(&self.lo.get(r)?).position)
+        self.locations().editor_location(&self.lo, r)
     }
 
     /// The location a reference is in now: the player's, a loaded actor's cell's,

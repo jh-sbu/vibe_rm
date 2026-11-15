@@ -204,6 +204,12 @@ without other builds or heavy work competing for CPU time.
   `src/index_bench.rs`, development profile, 16 threads). The location
   index's pass over references' `XLRT` (first use: the first cell entered)
   likewise: 231 → 21.5 ms (`location_index_benchmark`), the same index.
+- The persistent-reference index alias fills narrow by (first use: the
+  first `Matching` fill outside the loaded area) reads plugin references
+  from the load order alone, in parallel: 96–162 → 41 ms, the location
+  index's 21.5 ms included (`other_indexes_benchmark`), the same index.
+  Placed horses (35 ms on a rider's first search) resolve actor templates
+  through the engine, which isn't shared across threads; left as is.
 - One run had a 52 ms `cell.triggers_scripts_audio` at a cell load (frame 844);
   not reproduced or looked into.
 - `ai.loaded.enemies` once took 34 ms (frame 710 of one run); not looked into.

@@ -426,7 +426,7 @@ impl Engine {
     }
 
     /// Persistent references (every cell's), and the player.
-    fn persistent_refs(&self) -> &[FormId] {
+    pub(crate) fn persistent_refs(&self) -> &[FormId] {
         self.persistent_refs.get_or_init(|| {
             let mut out = vec![PLAYER_REF];
             for &c in self.lo.ids_of_type(b"CELL") {
@@ -442,23 +442,51 @@ impl Engine {
     /// whether they're placed actors, all read from the load order and so
     /// fixed for plugin references. The player (position 0) is left out: its
     /// location changes.
-    fn persistent_index(&self) -> &PersistentIndex {
+    pub(crate) fn persistent_index(&self) -> &PersistentIndex {
         self.persistent_index.get_or_init(|| {
+            use rayon::prelude::*;
+            // Plugin references only, so read from the load order alone, in
+            // parallel; then gathered in list order.
+            let (lo, locations) = (&self.lo, self.locations());
+            let voice = |npc: FormId| {
+                let rec = lo.get(npc)?;
+                let d = rec.get(b"VTCK")?;
+                Some(rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().ok()?))))
+            };
+            let read: Vec<_> = self.persistent_refs()[1..]
+                .par_iter()
+                .map(|&r| {
+                    let base = lo
+                        .get(r)
+                        .map(|rec| crate::world::records::reference(&rec).base);
+                    let actor = lo.tag_of(r).is_some_and(|t| t.0 == *b"ACHR");
+                    (
+                        r,
+                        base,
+                        lo.cell_of_ref(r),
+                        // As `Engine::editor_location`: the player's changes.
+                        (r != PLAYER_REF)
+                            .then(|| locations.editor_location(lo, r))
+                            .flatten(),
+                        actor.then(|| base.and_then(voice)),
+                    )
+                })
+                .collect();
             let mut index = PersistentIndex::default();
-            for (i, &r) in self.persistent_refs().iter().enumerate().skip(1) {
-                let i = i as u32;
-                if let Some(base) = self.base_of(r) {
+            for (i, (r, base, cell, location, actor)) in read.into_iter().enumerate() {
+                let i = i as u32 + 1;
+                if let Some(base) = base {
                     index.by_base.entry(base).or_default().push(i);
                 }
-                if let Some(cell) = self.lo.cell_of_ref(r) {
+                if let Some(cell) = cell {
                     index.by_cell.entry(cell).or_default().push(i);
                 }
-                if let Some(l) = self.editor_location(r) {
+                if let Some(l) = location {
                     index.by_editor_location.entry(l).or_default().push(i);
                 }
-                if self.lo.tag_of(r).is_some_and(|t| t.0 == *b"ACHR") {
+                if let Some(v) = actor {
                     index.actors.push(i);
-                    match self.base_of(r).and_then(|b| self.npc_voice_type(b)) {
+                    match v {
                         Some(v) => index.by_voice.entry(v).or_default().push(i),
                         None => index.voice_from_templates.push(i),
                     }

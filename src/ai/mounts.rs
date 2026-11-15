@@ -141,7 +141,7 @@ impl Engine {
 
     /// Placed horses, scanned once instead of every `ACHR` on every search.
     /// Created actors are few and are checked as they come.
-    fn placed_horses(&self) -> &[FormId] {
+    pub(crate) fn placed_horses(&self) -> &[FormId] {
         self.placed_horses.get_or_init(|| {
             self.lo
                 .ids_of_type(b"ACHR")

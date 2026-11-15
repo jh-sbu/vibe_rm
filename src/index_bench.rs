@@ -93,3 +93,19 @@ fn near_fill_benchmark() {
     fills.hash(&mut h);
     eprintln!("fills digest {:016x}", h.finish());
 }
+
+/// The other indexes read over the whole load order on first use.
+#[test]
+#[ignore = "needs Skyrim SE Data and a headless GPU adapter"]
+fn other_indexes_benchmark() {
+    let e = vanilla();
+    time("npc references", || e.npc_refs_index().len());
+    time("persistent references", || e.persistent_refs().len());
+    time("persistent index", || {
+        std::hint::black_box(e.persistent_index()) as *const _ as usize
+    });
+    time("placed horses", || e.placed_horses().len());
+    time("editor ids", || {
+        e.lo.find_editor_id("WhiterunOrigin").is_some()
+    });
+}
