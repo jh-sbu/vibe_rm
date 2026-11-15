@@ -183,8 +183,13 @@ without other builds or heavy work competing for CPU time.
   5.4 → 0.34 ms per fill, the same fills.
 - Textures and spawning actors' models now load in the background
   ([async textures](async-textures.md)): the first-time cells hitch fell from
-  243 to 75 ms. Placed objects' models are still parsed synchronously
-  (`objects.models` ~17 ms in that frame).
+  243 to 75 ms. Since 2026-11-15 streamed exterior cells' object models are
+  parsed in the background too: queued cells beyond the player's cell and
+  its neighbours load once their models are in (`Engine::update_streaming`),
+  the near ones at once as before. Seven cells east of Riverwood, radius 2
+  (`streamed_cells_wait_for_their_models_then_load_as_synchronously`,
+  headless, dev profile), the frames loading the outer 16 cells took 121 ms
+  in all and 16 ms at most, against 216 and 49 ms, with the same instances.
 - The Companions SCPT start's script stage fell from ~75 to ~30 ms
   (2026-11-07): `GetIsVoiceType` narrows matching candidates (CR01 BeastVictim
   ~15 → ~3 ms); factions are memoized per actor during a fill, and authored

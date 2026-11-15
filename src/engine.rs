@@ -124,6 +124,9 @@ pub struct Engine {
     pub(crate) local_seen: crate::local_map::seen::Seen,
     pub(crate) local_seen_next: f32,
     pending_loads: Vec<(i32, i32)>,
+    /// Queued exterior cells' object models, asked for in the background
+    /// when queued: a cell loads once they are all in (`update_streaming`).
+    pending_models: HashMap<(i32, i32), Vec<String>>,
     /// Name of what the crosshair points at, if activatable.
     pub look_target: Option<(FormId, String)>,
     skeletons: HashMap<String, Option<std::sync::Arc<crate::world::skeleton::Skeleton>>>,
@@ -634,6 +637,7 @@ impl Engine {
             local_seen: Default::default(),
             local_seen_next: 0.0,
             pending_loads: Vec::new(),
+            pending_models: HashMap::new(),
             look_target: None,
             skeletons: HashMap::new(),
             anims: Default::default(),
@@ -1489,6 +1493,7 @@ impl Engine {
         self.breath.clear();
         self.physics.clear();
         self.pending_loads.clear();
+        self.pending_models.clear();
         self.world_persistent.clear();
         self.nav.clear();
         self.furniture = Default::default();
@@ -1575,6 +1580,43 @@ impl Engine {
         }
     }
 
+    /// The model a placed object is drawn with: harvested plants' picked
+    /// form, else (with no variant named) the placed form, which runs its
+    /// standalone node controllers.
+    fn placed_model(&self, o: &PlacedObject) -> String {
+        if self.is_harvested(o.ref_id) {
+            format!("{}#harvested", o.model)
+        } else if !o.model.contains('#') {
+            format!("{}#world", o.model)
+        } else {
+            o.model.clone()
+        }
+    }
+
+    /// The models of an exterior cell's placed objects, as `add_objects`
+    /// draws them. Moved and created objects are left out (few; loaded with
+    /// the cell).
+    fn exterior_cell_models(&mut self, world: FormId, x: i32, y: i32) -> Vec<String> {
+        let (mut objects, mut lights, mut doors) = (Vec::new(), Vec::new(), Vec::new());
+        if let Some(cid) = self
+            .lo
+            .world(world)
+            .and_then(|w| w.cells.get(&(x, y)).copied())
+        {
+            let references = self.cell_references.get(&self.lo, cid);
+            for placed in references.exterior_entries() {
+                cell::add_cached_reference(&self.lo, placed, &mut objects, &mut lights, &mut doors);
+            }
+        }
+        for placed in self.world_persistent.get(&(x, y)).into_iter().flatten() {
+            cell::add_cached_reference(&self.lo, placed, &mut objects, &mut lights, &mut doors);
+        }
+        let mut paths: Vec<String> = objects.iter().map(|o| self.placed_model(o)).collect();
+        paths.sort_unstable();
+        paths.dedup();
+        paths
+    }
+
     /// Draw objects in a loaded cell, with their collision: loose objects as
     /// bodies of their own (falling at once when `fresh`ly made).
     pub(crate) fn add_objects(&mut self, key: CellKey, objects: &[PlacedObject], fresh: bool) {
@@ -1586,16 +1628,13 @@ impl Engine {
             .iter()
             .map(|o| {
                 let mut o = o.clone();
-                if self.is_harvested(o.ref_id) {
-                    o.model = format!("{}#harvested", o.model);
-                } else if !o.model.contains('#') {
-                    o.model = format!("{}#world", o.model);
-                }
+                o.model = self.placed_model(&o);
                 o
             })
             .collect();
         let objects = &placed;
         let paths: Vec<String> = objects.iter().map(|o| o.model.clone()).collect();
+        // Those asked for in the background (`update_streaming`) are in.
         self.models.load_all(&mut self.renderer, &self.vfs, &paths);
         timing.next("objects.instances_collision");
         // Both or neither: taking one alone would drop it.
@@ -3287,15 +3326,42 @@ impl Engine {
             // Nearest first.
             self.pending_loads
                 .sort_by_key(|(x, y)| std::cmp::Reverse((x - g.0).abs() + (y - g.1).abs()));
+            // In the windowed game the farther ones' models are parsed in the
+            // background meanwhile, so a cell's loading frame only installs
+            // what's left. The player's cell and its neighbours load at once.
+            let near = |&(x, y): &(i32, i32)| (x - g.0).abs() <= 1 && (y - g.1).abs() <= 1;
+            let pending = self.pending_loads.clone();
+            self.pending_models.retain(|c, _| pending.contains(c));
+            if self.renderer.loads_in_background() {
+                let vfs = self.vfs.clone();
+                for (x, y) in pending.into_iter().filter(|c| !near(c)) {
+                    if !self.pending_models.contains_key(&(x, y)) {
+                        let paths = self.exterior_cell_models(world, x, y);
+                        self.models.request(&vfs, &paths);
+                        self.pending_models.insert((x, y), paths);
+                    }
+                }
+            }
             if !to_unload.is_empty() {
                 self.rebuild_lights();
             }
         }
         let mut loaded = false;
         for _ in 0..2 {
-            let Some((x, y)) = self.pending_loads.pop() else {
+            // The nearest whose models are all in; the player's own cell and
+            // its neighbours at once, whatever is still parsing.
+            let ready = self.pending_loads.iter().rposition(|&(x, y)| {
+                ((x - g.0).abs() <= 1 && (y - g.1).abs() <= 1)
+                    || self
+                        .pending_models
+                        .get(&(x, y))
+                        .is_none_or(|paths| paths.iter().all(|p| self.models.loaded(p)))
+            });
+            let Some(i) = ready else {
                 break;
             };
+            let (x, y) = self.pending_loads.remove(i);
+            self.pending_models.remove(&(x, y));
             self.load_exterior_cell(world, x, y);
             loaded = true;
         }
