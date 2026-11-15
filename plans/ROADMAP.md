@@ -1163,6 +1163,14 @@ game each piece unlocks.
   casters whose style scores magic and melee the same (atronachs) fight
   with their spells; spells and arrows strike actors made while playing
   (they flew through them). Open questions: `known_ambiguities/magic.md`
+- Reanimation (archetype 22: Raise Zombie to Dead Thrall, the staves):
+  a body up to the effect's level rises with what it carries, commanded
+  by its caster as a summon is and counted against the same limit; the
+  effect's conditions (`MagicNoReanimate`, Dead Thrall's people only)
+  decide which bodies, and the living, disintegrated, ashen and already
+  raised aren't raised. It dies again when the effect ends, and the
+  vanilla `ReanimateAshPile` script turns it to ash once; a raised body
+  left behind stays raised. Choices: `known_ambiguities/magic.md`
 - Bound weapons: the effect's weapon in hand while it lasts (Bound Bow's
   script giving its arrows), gone at the end or when put away. Weapon
   `Can't Drop` flags prevent dropping; non-playable weapons stay out of
@@ -2280,7 +2288,8 @@ readings are applied (see Done; autotest23 and autotest24's on
    stuck in actors, sneak shots, killmoves and the decapitations they end in, the player's own weapon and
    animations), magic (see Done; next: native healing thresholds and timing, spells chosen by their
    scores, NPCs raising wards against spells already in flight and arrows (`known_ambiguities/wards.md`), summons and buffs in combat, runes' decals, Light Foot and Chain Lightning's leaps (`plans/explosions.md`, Left out), magic sounds, the other archetypes (Illusion's calm, fear, frenzy
-   and rally, summons, bound weapons done: see Done): NPCs summoning, reanimation,
+   and rally, summons, reanimation, bound weapons done: see Done): NPCs summoning and reanimating
+   (their combat spells are hostile ones only),
    bound weapons in the casting
    hand, light, paralysis,
    invisibility's constant sources, potion rules and other interaction paths

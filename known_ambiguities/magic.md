@@ -197,6 +197,49 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
   once: no banishing effect, no body left. The distances are chosen by
   eye; the game's follow and catch-up rules for commanded actors aren't
   public.
+- **Reanimation** (archetype 22; `Engine::reanimate`, `src/ai/summons.rs`).
+  Sources: UESP *Skyrim:Reanimate (spells)* (revision 3565616) and
+  *Skyrim:Reanimate* (revision 3575808): bodies "up to level <mag>" rise
+  to fight for the caster for the duration; they turn to ash when killed,
+  when the spell expires, or past the summon limit; Twin Souls allows two
+  (*Skyrim:Dead Thrall*, revision 3587675); a raised body can be
+  looted as it rises. The records: Raise Zombie's effect (`ReanimateFFAimed0`)
+  is archetype 22 with the condition `HasKeyword(MagicNoReanimate) == 0`,
+  Dead Thrall's adds `HasKeyword(ActorTypeNPC) == 1`; the companion
+  "Reanimate Secondary Effects" (archetype 1, No Death Dispel) carries
+  `ReanimateAshPile`, which treats its target as raised only if it is
+  `IsCommandedActor` at `OnEffectStart` and turns it to ash (critical
+  stages, `AttachAshPile`) on `OnDying` or `OnEffectFinish`. Choices:
+  - The body rises at once where it lies (no getting-up animation or
+    hovering phase), with its health whole, its inventory as it is now
+    (not `Resurrect`'s base inventory) and its fights over. It is
+    commanded as a summon is (follows, defends, picks no fights).
+  - What isn't raised: the living (the companion effects still land, as
+    their own conditions allow; the script then calls the target immune),
+    bodies above the level, disintegrated ones (any critical stage),
+    those that left an ash pile, disabled ones, those already commanded,
+    unloaded ones. The level is the magnitude after perks; Necromage's
+    25% on undead is a magnitude entry, so it rides on that. Decapitated
+    bodies (UESP: can't be raised) aren't told apart: nothing decapitates
+    yet.
+  - Its other effects wait until it has risen: an item reaching a body
+    gives nothing but its reanimation, and the rest of its effects then
+    land on the risen actor.
+  - When the reanimation ends with the body standing, its companion
+    effects from the same cast end first and then it dies (no killer), so
+    the ash pile script runs once from `OnEffectFinish` and not from
+    `OnDying` as well. Killed while raised, the script's `OnDying` does it.
+    Whether SE ends the companion first isn't known; the order only
+    decides which handler makes the single pile.
+  - A raised body left in an unloaded cell stays raised (summons go): the
+    Dead Thrall page tells of a thrall waiting where it was lost. Staves'
+    bodies leaving a corpse and not ash follow from their records (no ash
+    pile companion), as UESP describes for unpatched staves.
+  - Raised bodies count against the commander's summon limit with its
+    summons; the oldest goes (dies) to make room.
+  - Not modelled: Serana raising bodies through walls, a stronger caster
+    taking over a body still rising, paralyzed bodies rising stuck, the
+    skill XP rule ("only when you and your thrall enter combat").
 - **Bound weapons** (archetype 17; the weapon is the related form): the
   weapon is put in the target's inventory and equipped in the right hand; at the end it is
   unequipped and every one taken away. Put away (another weapon taken up)

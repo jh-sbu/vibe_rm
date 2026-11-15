@@ -11,7 +11,7 @@ use esp::FormId;
 use glam::Vec3;
 
 use crate::engine::{Engine, PLAYER_REF};
-use crate::magic::MagicEffect;
+use crate::magic::{MagicEffect, archetype};
 
 use super::package::Gait;
 
@@ -34,27 +34,7 @@ impl Engine {
         if mgef.related.is_null() || self.is_dead(commander) {
             return;
         }
-        // The commander's limit: the oldest summons go to make room.
-        let limit = self
-            .perk_entry_point(
-                crate::perks::ep::MOD_COMMANDED_ACTOR_LIMIT,
-                commander,
-                &[Some(x.item)],
-                1.0,
-            )
-            .max(1.0) as usize;
-        let mut theirs: Vec<u64> = self
-            .magic
-            .effects
-            .iter()
-            .filter(|e| !e.done && e.id != id && e.summoned.is_some())
-            .filter(|e| e.caster.unwrap_or(e.target) == commander)
-            .map(|e| e.id)
-            .collect();
-        while theirs.len() >= limit {
-            let oldest = theirs.remove(0);
-            self.dispel_effect(oldest);
-        }
+        self.make_room_to_command(commander, id, x.item);
         let Some(from) = self.ref_position(commander) else {
             return;
         };
@@ -74,6 +54,108 @@ impl Engine {
         if let Some(e) = self.magic.effects.iter_mut().find(|e| e.id == id) {
             e.summoned = Some(r);
         }
+    }
+
+    /// The commander's limit (one, more by Mod Commanded Actor Limit: Twin
+    /// Souls): the oldest of its summons and raised bodies go to make room
+    /// for effect `id` (UESP *Skyrim:Reanimate (spells)*: raised bodies turn
+    /// to ash "when you cast another summon or reanimate spell past your
+    /// summon limit"; *Skyrim:Dead Thrall*: Twin Souls allows two thralls).
+    fn make_room_to_command(&mut self, commander: FormId, id: u64, item: FormId) {
+        let limit = self
+            .perk_entry_point(
+                crate::perks::ep::MOD_COMMANDED_ACTOR_LIMIT,
+                commander,
+                &[Some(item)],
+                1.0,
+            )
+            .max(1.0) as usize;
+        let mut theirs: Vec<u64> = self
+            .magic
+            .effects
+            .iter()
+            .filter(|e| !e.done && e.id != id)
+            .filter(|e| {
+                e.summoned.is_some()
+                    || (e.caster == Some(commander)
+                        && self.magic.commanded.get(&e.target) == Some(&commander)
+                        && self
+                            .magic_effect(e.effect)
+                            .is_some_and(|m| m.archetype == archetype::REANIMATE))
+            })
+            .filter(|e| e.caster.unwrap_or(e.target) == commander)
+            .map(|e| e.id)
+            .collect();
+        while theirs.len() >= limit {
+            let oldest = theirs.remove(0);
+            self.dispel_effect(oldest);
+        }
+    }
+
+    /// Whether a reanimation of `magnitude` from `caster` raises `body`: a
+    /// loaded body up to that level (UESP *Skyrim:Reanimate (spells)*:
+    /// "dead bodies up to level <mag>"), whole (not disintegrated or turned
+    /// to ash: "you cannot reanimate the same corpse twice"), and not
+    /// already someone's. The effect's own conditions (`MagicNoReanimate`,
+    /// Dead Thrall's people only) are checked as any effect's.
+    pub(crate) fn reanimates(&self, body: FormId, caster: Option<FormId>, magnitude: f32) -> bool {
+        caster.is_some_and(|c| c != body && !self.is_dead(c))
+            && self.is_dead(body)
+            && self.actor_ref(body).is_some()
+            && !self.is_disabled(body)
+            && self.critical_stage(body) == 0
+            && !self.world_state.ash_piles.values().any(|&b| b == body)
+            && !self.magic.commanded.contains_key(&body)
+            && self.actor_level(body) as f32 <= magnitude
+    }
+
+    /// A reanimation starts: its body rises as it lay, with what it carries,
+    /// commanded by the caster.
+    pub(crate) fn reanimate(&mut self, id: u64) {
+        let Some(x) = self.active_effect(id).cloned() else {
+            return;
+        };
+        let Some(commander) = x.caster else {
+            return;
+        };
+        if !self.is_dead(x.target) {
+            return;
+        }
+        self.make_room_to_command(commander, id, x.item);
+        self.revive(x.target);
+        log::info!("{commander} reanimates {}", x.target);
+        self.magic.commanded.insert(x.target, commander);
+    }
+
+    /// A reanimation ends: the raised body is no longer commanded and, still
+    /// standing, dies again ("when ... the spell expires": UESP). Its
+    /// companion effects from the same cast end first, so the ash pile
+    /// script (`ReanimateAshPile`) turns it to ash once, from its
+    /// `OnEffectFinish` rather than its `OnDying` too.
+    pub(crate) fn reanimation_ends(&mut self, x: &crate::magic::ActiveEffect) {
+        let Some(commander) = x.caster else {
+            return;
+        };
+        if self.magic.commanded.get(&x.target) != Some(&commander) {
+            return;
+        }
+        self.magic.commanded.remove(&x.target);
+        if self.is_dead(x.target) {
+            return;
+        }
+        let companions: Vec<u64> = self
+            .magic
+            .effects
+            .iter()
+            .filter(|e| !e.done && e.id != x.id && e.target == x.target)
+            .filter(|e| e.caster == x.caster && e.item == x.item)
+            .map(|e| e.id)
+            .collect();
+        for c in companions {
+            self.dispel_effect(c);
+        }
+        log::info!("{}'s reanimation ends", x.target);
+        self.kill_actor_by(x.target, None);
     }
 
     /// A summon effect ends: its actor goes.
@@ -336,3 +418,7 @@ mod follower_tests {
         assert_eq!(e.away[&ACTOR].package(), Some(PACKAGE));
     }
 }
+
+#[cfg(test)]
+#[path = "reanimate_tests.rs"]
+mod reanimate_tests;

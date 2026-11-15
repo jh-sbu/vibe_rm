@@ -46,6 +46,9 @@ pub mod archetype {
     pub const INVISIBILITY: u32 = 11;
     pub const BOUND_WEAPON: u32 = 17;
     pub const SUMMON_CREATURE: u32 = 18;
+    /// Reanimate (Raise Zombie, Dead Thrall): a body up to the magnitude's
+    /// level rises, commanded by the caster (`src/ai/summons.rs`).
+    pub const REANIMATE: u32 = 22;
     pub const TELEKINESIS: u32 = 20;
     pub const PARALYSIS: u32 = 21;
     pub const SOUL_TRAP: u32 = 23;
@@ -722,11 +725,22 @@ impl Engine {
                     .map(|(_, equipment)| equipment);
             }
         }
+        // Raised bodies are their reanimations' targets.
+        let raised: Vec<(FormId, FormId)> = saved
+            .iter()
+            .filter(|x| !x.done)
+            .filter(|x| {
+                self.magic_effect(x.effect)
+                    .is_some_and(|g| g.archetype == archetype::REANIMATE)
+            })
+            .filter_map(|x| Some((x.target, x.caster?)))
+            .collect();
         let m = &mut self.magic;
         m.next_id = saved.iter().map(|x| x.id).fold(next_id, u64::max);
         m.commanded = saved
             .iter()
             .filter_map(|x| Some((x.summoned?, x.caster.unwrap_or(x.target))))
+            .chain(raised)
             .collect();
         m.effects = saved;
         m.tapers.clear();
@@ -946,7 +960,14 @@ impl Engine {
                 crate::ai::combat::gmst_f32(&self.lo, "fMagicDualCastingEffectivenessBase", 2.2)
             }
         };
-        if self.is_dead(target) && target != PLAYER_REF {
+        // The dead take nothing but a reanimation, which raises them first.
+        let raising = self.is_dead(target) && target != PLAYER_REF;
+        if raising
+            && !m.effects.iter().any(|e| {
+                self.magic_effect(e.effect)
+                    .is_some_and(|g| g.archetype == archetype::REANIMATE)
+            })
+        {
             return false;
         }
         // A ward in the way stops it; a hostile spell stopped is still a blow.
@@ -1016,6 +1037,19 @@ impl Engine {
             // fight.
             let passes = condition::evaluate(self, &ei.conditions, ctx)
                 && condition::evaluate(self, &mgef.conditions, ctx);
+            // A body not raised (yet) takes nothing else; a reanimation
+            // raises only a body (`MagicNoReanimate`, Dead Thrall's
+            // `ActorTypeNPC`: its conditions), and does nothing at all where
+            // they fail.
+            if self.is_dead(target)
+                && target != PLAYER_REF
+                && mgef.archetype != archetype::REANIMATE
+            {
+                continue;
+            }
+            if mgef.archetype == archetype::REANIMATE && (!raising || !passes) {
+                continue;
+            }
             if !passes && !constant && ei.duration == 0 {
                 if mgef.has(flags::HOSTILE) && !quiet {
                     hostile = true;
@@ -1035,6 +1069,10 @@ impl Engine {
             let magnitude = self.effect_magnitude(&m, &mgef, base, caster, target);
             // Calm, fear, frenzy and disarm reach only those up to their magnitude's
             // level; one too strong for it is still struck by a hostile spell.
+            if mgef.archetype == archetype::REANIMATE && !self.reanimates(target, caster, magnitude)
+            {
+                continue;
+            }
             if archetype::level_capped(mgef.archetype)
                 && self.actor_level(target) as f32 > magnitude
             {
@@ -1289,6 +1327,7 @@ impl Engine {
             }
             archetype::INVISIBILITY => self.hold(i, &mgef, [1.0, 0.0]),
             archetype::SUMMON_CREATURE => self.summon(id, &mgef),
+            archetype::REANIMATE => self.reanimate(id),
             // A bound weapon: in hand while it lasts.
             archetype::BOUND_WEAPON if !mgef.related.is_null() => {
                 self.add_item(x.target, mgef.related, 1);
@@ -1557,6 +1596,9 @@ impl Engine {
             self.magic.effects[i].summoned = None;
             self.unsummon(r);
         }
+        if mgef.archetype == archetype::REANIMATE {
+            self.reanimation_ends(&x);
+        }
         if x.scripted {
             let obj = ObjectId::Effect(x.id);
             let args = vec![
@@ -1641,7 +1683,11 @@ impl Engine {
                 self.finish_magic_effect(id);
                 continue;
             };
-            let gone = x.target != PLAYER_REF && !self.actor_cells.contains_key(&x.target);
+            // A body raised stays raised while it is left behind (a thrall
+            // waits where it was lost: UESP *Skyrim:Dead Thrall*).
+            let gone = x.target != PLAYER_REF
+                && !self.actor_cells.contains_key(&x.target)
+                && mgef.archetype != archetype::REANIMATE;
             let dead = self.is_dead(x.target) && !mgef.has(flags::NO_DEATH_DISPEL);
             // A summon ends with its actor (killed, or left behind unloaded).
             let summon_gone = x

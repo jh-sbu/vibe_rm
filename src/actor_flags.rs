@@ -123,6 +123,16 @@ impl Engine {
                 self.inventory_mut(actor);
             }
         }
+        self.revive(actor);
+    }
+
+    /// Back from the dead as `Resurrect` brings an actor, but with what its
+    /// body carries now (a reanimated body: UESP *Skyrim:Reanimate (spells)*,
+    /// looting a body as it rises takes its weapons from it).
+    pub(crate) fn revive(&mut self, actor: FormId) {
+        if actor == PLAYER_REF {
+            return;
+        }
         self.world_state.dead.remove(&actor);
         self.world_state.deaths.remove(&actor);
         self.world_state.body_poses.remove(&actor);
