@@ -74,12 +74,18 @@ impl LocationIndex {
         }
         // References carrying their ref type (`XLRT`) belong to their own location
         // (`XLCN`) or their cell's.
-        for tag in [b"ACHR", b"REFR"] {
-            for &r in lo.ids_of_type(tag) {
-                let Some(rec) = lo.get(r) else { continue };
-                let Some(d) = rec.get(b"XLRT").filter(|d| d.len() >= 4) else {
-                    continue;
-                };
+        // Read in parallel (878,000 vanilla references), then gathered in
+        // load order.
+        use rayon::prelude::*;
+        let refs: Vec<FormId> = [b"ACHR", b"REFR"]
+            .into_iter()
+            .flat_map(|tag| lo.ids_of_type(tag).iter().copied())
+            .collect();
+        let typed: Vec<(FormId, FormId, FormId)> = refs
+            .par_iter()
+            .filter_map(|&r| {
+                let rec = lo.get(r)?;
+                let d = rec.get(b"XLRT").filter(|d| d.len() >= 4)?;
                 let ty = rec.fid(FormId(u32_at(d, 0)));
                 let own = rec
                     .get(b"XLCN")
@@ -87,15 +93,16 @@ impl LocationIndex {
                     .map(|d| rec.fid(FormId(u32_at(d, 0))));
                 let pos = records::reference(&rec).position;
                 drop(rec);
-                let Some(l) = own.or_else(|| ref_cell_location(lo, r, pos)) else {
-                    continue;
-                };
-                ix.editor.entry(r).or_insert(l);
-                ix.typed.entry(l).or_default().push((ty, r));
-                let types = ix.ref_types.entry(r).or_default();
-                if !types.contains(&ty) {
-                    types.push(ty);
-                }
+                let l = own.or_else(|| ref_cell_location(lo, r, pos))?;
+                Some((r, ty, l))
+            })
+            .collect();
+        for (r, ty, l) in typed {
+            ix.editor.entry(r).or_insert(l);
+            ix.typed.entry(l).or_default().push((ty, r));
+            let types = ix.ref_types.entry(r).or_default();
+            if !types.contains(&ty) {
+                types.push(ty);
             }
         }
         log::debug!(

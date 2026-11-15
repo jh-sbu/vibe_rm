@@ -201,7 +201,9 @@ without other builds or heavy work competing for CPU time.
 - The first `Disable` of a session builds the enable-parent index over all
   878,000 placed references (startup's nirnroot `OnCellAttach`). Read in
   parallel since 2026-11-15: 219 → 19 ms (`enable_children_benchmark`,
-  `src/index_bench.rs`, development profile, 16 threads).
+  `src/index_bench.rs`, development profile, 16 threads). The location
+  index's pass over references' `XLRT` (first use: the first cell entered)
+  likewise: 231 → 21.5 ms (`location_index_benchmark`), the same index.
 - One run had a 52 ms `cell.triggers_scripts_audio` at a cell load (frame 844);
   not reproduced or looked into.
 - `ai.loaded.enemies` once took 34 ms (frame 710 of one run); not looked into.
