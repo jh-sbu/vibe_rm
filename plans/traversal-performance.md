@@ -196,7 +196,9 @@ without other builds or heavy work competing for CPU time.
   from 8.8 to 1.4 ms and `engine.update` from 13.4 to 8.7 ms; the worst frame
   from 105 to 79 ms.
 - The first `Disable` of a session builds the enable-parent index over all
-  878,000 placed references (~170 ms; startup's nirnroot `OnCellAttach`).
+  878,000 placed references (startup's nirnroot `OnCellAttach`). Read in
+  parallel since 2026-11-15: 219 → 19 ms (`enable_children_benchmark`,
+  `src/index_bench.rs`, development profile, 16 threads).
 - One run had a 52 ms `cell.triggers_scripts_audio` at a cell load (frame 844);
   not reproduced or looked into.
 - `ai.loaded.enemies` once took 34 ms (frame 710 of one run); not looked into.

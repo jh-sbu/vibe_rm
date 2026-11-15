@@ -4537,18 +4537,29 @@ impl Engine {
     }
 
     /// References whose enable parent (`XESP`) each reference is, read on first use.
-    fn enable_children(&self) -> &HashMap<FormId, Vec<FormId>> {
+    pub(crate) fn enable_children(&self) -> &HashMap<FormId, Vec<FormId>> {
         self.enable_children.get_or_init(|| {
+            use rayon::prelude::*;
+            // Read in parallel (878,000 vanilla references), then gathered in
+            // load order so each parent's children keep their order.
+            let lo = &self.lo;
+            let pairs: Vec<(FormId, FormId)> = [b"REFR", b"ACHR"]
+                .into_iter()
+                .flat_map(|tag| lo.ids_of_type(tag))
+                .collect::<Vec<_>>()
+                .par_iter()
+                .filter_map(|&&r| {
+                    let rec = lo.get(r)?;
+                    let d = rec.get(b"XESP").filter(|d| d.len() >= 4)?;
+                    Some((
+                        rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))),
+                        r,
+                    ))
+                })
+                .collect();
             let mut out: HashMap<FormId, Vec<FormId>> = HashMap::new();
-            for tag in [b"REFR", b"ACHR"] {
-                for &r in self.lo.ids_of_type(tag) {
-                    let Some(rec) = self.lo.get(r) else { continue };
-                    if let Some(d) = rec.get(b"XESP").filter(|d| d.len() >= 4) {
-                        out.entry(rec.fid(FormId(u32::from_le_bytes(d[0..4].try_into().unwrap()))))
-                            .or_default()
-                            .push(r);
-                    }
-                }
+            for (parent, r) in pairs {
+                out.entry(parent).or_default().push(r);
             }
             out
         })

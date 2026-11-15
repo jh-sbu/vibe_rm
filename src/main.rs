@@ -40,6 +40,8 @@ mod havok_constraints;
 mod hazards;
 mod imagespace;
 mod impacts;
+#[cfg(test)]
+mod index_bench;
 mod input_map;
 mod invisibility;
 mod item_copies;
