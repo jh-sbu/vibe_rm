@@ -266,3 +266,133 @@ fn an_alias_hears_its_reference_load_with_it() {
     e.stop_quest(Q);
     assert!(!e.attach_cell_scripts(&[ACTOR]).contains(&alias));
 }
+
+/// `Near` fills narrowed by `crate::ref_links` find what testing every
+/// reference about the centre would: links in either `XLKR` form, ref types
+/// from the reference's `XLRT` and from its location's list (`LCSR`).
+#[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
+fn near_fills_find_linked_references_of_the_ref_type_nearest_first() {
+    let (_f, mut e) = fixture();
+    let dir = std::env::temp_dir().join(format!(
+        "vrm-alias-near-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir(&dir).unwrap();
+    const ROOM: FormId = FormId(0x8A0);
+    const ITEM: FormId = FormId(0x8A1);
+    const TYPE: FormId = FormId(0x8A2);
+    const LOC: FormId = FormId(0x8A3);
+    const QUEST: FormId = FormId(0x8A4);
+    const CENTRE: FormId = FormId(0x8B0);
+    let at = |x: f32| {
+        let mut d = [0; 24];
+        d[0..4].copy_from_slice(&x.to_le_bytes());
+        d
+    };
+    let placed = |id: u32, x: f32| {
+        RecordBuilder::new(b"REFR", FormId(id))
+            .form(b"NAME", ITEM)
+            .field(b"DATA", &at(x))
+    };
+    let keyed_link = [0x8A1u32.to_le_bytes(), CENTRE.0.to_le_bytes()].concat();
+    let refs = vec![
+        placed(0x8B0, 0.0),
+        // Linked and typed, but farther than 0x8B5.
+        placed(0x8B1, 100.0)
+            .form(b"XLKR", CENTRE)
+            .form(b"XLRT", TYPE),
+        placed(0x8B2, 10.0).form(b"XLKR", CENTRE), // not typed
+        placed(0x8B3, 20.0).form(b"XLRT", TYPE),   // not linked
+        placed(0x8B4, 50.0)
+            .form(b"XLKR", CENTRE)
+            .form(b"XLRT", TYPE),
+        // Linked with a keyword.
+        placed(0x8B5, 30.0)
+            .field(b"XLKR", &keyed_link)
+            .form(b"XLRT", TYPE),
+        // Typed by its location's list only.
+        placed(0x8B6, 5.0),
+    ];
+    let ctda = |func: u16, flags: u8, p1: u32| {
+        let mut d = [0; 32];
+        d[0] = flags;
+        d[4..8].copy_from_slice(&1f32.to_le_bytes());
+        d[8..10].copy_from_slice(&func.to_le_bytes());
+        d[12..16].copy_from_slice(&p1.to_le_bytes());
+        d
+    };
+    let lcsr = [
+        TYPE.0.to_le_bytes(),
+        0x8B6u32.to_le_bytes(),
+        ROOM.0.to_le_bytes(),
+        [0; 4],
+    ]
+    .concat();
+    let groups = vec![
+        Node::top(
+            b"MISC",
+            vec![RecordBuilder::new(b"MISC", ITEM).field(b"DATA", &[0; 8])],
+        ),
+        Node::top(b"LCRT", vec![RecordBuilder::new(b"LCRT", TYPE)]),
+        Node::top(
+            b"LCTN",
+            vec![RecordBuilder::new(b"LCTN", LOC).field(b"LCSR", &lcsr)],
+        ),
+        Node::top(
+            b"QUST",
+            vec![
+                RecordBuilder::new(b"QUST", QUEST)
+                    .u32(b"ALST", 0)
+                    .form(b"ALFR", CENTRE)
+                    .field(b"ALED", &[])
+                    .u32(b"ALST", 1)
+                    .u32(b"ALNA", 0)
+                    .field(b"CTDA", &ctda(650, 0x02, 0)) // IsLinkedTo the centre
+                    .field(b"CTDA", &ctda(561, 0, TYPE.0)) // HasRefType
+                    .field(b"ALED", &[])
+                    .u32(b"ALST", 2)
+                    .u32(b"ALNA", 0)
+                    .field(b"CTDA", &ctda(561, 0, TYPE.0))
+                    .field(b"ALED", &[]),
+            ],
+        ),
+        Node::Group {
+            label: *b"CELL",
+            group_type: 0,
+            children: vec![
+                Node::Record(
+                    RecordBuilder::new(b"CELL", ROOM)
+                        .field(b"DATA", &[1, 0])
+                        .form(b"XLCN", LOC),
+                ),
+                Node::Group {
+                    label: ROOM.0.to_le_bytes(),
+                    group_type: esp::group_type::CELL_CHILDREN,
+                    children: vec![Node::Group {
+                        label: ROOM.0.to_le_bytes(),
+                        group_type: esp::group_type::CELL_TEMPORARY,
+                        children: refs.into_iter().map(Node::Record).collect(),
+                    }],
+                },
+            ],
+        },
+    ];
+    std::fs::write(
+        dir.join("AliasNear.esp"),
+        write_plugin(0, &[], "test", "alias near", 0x900, &groups),
+    )
+    .unwrap();
+    e.lo = esp::LoadOrder::load(&dir, &["AliasNear.esp".into()]).unwrap();
+    std::fs::remove_dir_all(dir).unwrap();
+    e.alias_spec_cache.borrow_mut().clear();
+    e.scripts.quests.entry(QUEST).or_default().running = true;
+    assert!(e.fill_quest_aliases(QUEST));
+    assert_eq!(e.alias_ref(QUEST, 0), Some(CENTRE));
+    assert_eq!(e.alias_ref(QUEST, 1), Some(FormId(0x8B5)));
+    assert_eq!(e.alias_ref(QUEST, 2), Some(FormId(0x8B6)));
+}

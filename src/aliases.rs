@@ -518,6 +518,52 @@ impl Engine {
         best
     }
 
+    /// The plugin references that can pass alias `a`'s conditions by the
+    /// narrowest condition group made only of `IsLinkedTo` and `HasRefType`
+    /// (`crate::ref_links`); `None` when no group is. Every vanilla `Near`
+    /// alias tests `HasRefType`, most `IsLinkedTo` their centre too.
+    fn linked_candidates(&self, q: FormId, a: &AliasSpec) -> Option<HashSet<FormId>> {
+        let conds = &a.conditions;
+        let mut best: Option<Vec<FormId>> = None;
+        let mut start = 0;
+        while start < conds.len() {
+            let end = conds[start..]
+                .iter()
+                .position(|c| !c.or)
+                .map_or(conds.len(), |i| start + i + 1);
+            let mut union = Some(Vec::new());
+            for c in &conds[start..end] {
+                let plain = c.p1_ref.is_none()
+                    && c.run_on == 0
+                    && !c.swap
+                    && !c.use_global
+                    && c.op == 0
+                    && c.value == 1.0;
+                let p1 = if c.p1_alias {
+                    self.alias_ref(q, c.p1).unwrap_or_default()
+                } else {
+                    FormId(c.p1)
+                };
+                let set = match c.func {
+                    650 if plain => self.ref_links().linked_from(p1), // IsLinkedTo
+                    561 if plain => self.ref_links().of_ref_type(p1), // HasRefType
+                    _ => {
+                        union = None;
+                        break;
+                    }
+                };
+                union.as_mut().unwrap().extend_from_slice(set);
+            }
+            if let Some(set) = union
+                && best.as_ref().is_none_or(|b| set.len() < b.len())
+            {
+                best = Some(set);
+            }
+            start = end;
+        }
+        best.map(|v| v.into_iter().collect())
+    }
+
     /// Which persistent references (by position, the player's left out) can
     /// pass condition `c` of quest `q`'s alias, run on the reference.
     fn condition_candidates(&self, q: FormId, c: &Condition) -> Candidates {
@@ -601,7 +647,7 @@ impl Engine {
     }
 
     /// References in the loaded cells (and loaded actors), and the player.
-    fn loaded_refs(&self) -> Vec<FormId> {
+    pub(crate) fn loaded_refs(&self) -> Vec<FormId> {
         let mut out = vec![PLAYER_REF];
         let mut seen = HashSet::new();
         for (key, rt) in &self.cells {
@@ -636,7 +682,7 @@ impl Engine {
 
     /// References about `r`: the loaded ones when it is loaded, else those of
     /// its cell (and, outdoors, the cells around it).
-    fn refs_near(&self, r: FormId) -> Vec<FormId> {
+    pub(crate) fn refs_near(&self, r: FormId) -> Vec<FormId> {
         let loaded = |c: FormId| {
             self.cells.keys().any(|k| match (*k, self.location) {
                 (crate::render::CellKey::Interior(i), _) => i == c,
@@ -726,7 +772,12 @@ impl Engine {
 
     /// What alias `a` of quest `q` is filled with now (earlier aliases already in
     /// the quest's fills).
-    fn fill_alias(&self, q: FormId, a: &AliasSpec, reserved: &HashSet<FormId>) -> Option<FormId> {
+    pub(crate) fn fill_alias(
+        &self,
+        q: FormId,
+        a: &AliasSpec,
+        reserved: &HashSet<FormId>,
+    ) -> Option<FormId> {
         // Factions are worked out once per actor while the conditions run.
         struct Memo<'a>(&'a Engine);
         impl Drop for Memo<'_> {
@@ -832,9 +883,16 @@ impl Engine {
             Fill::Near(near) => {
                 let centre = self.alias_ref(q, *near)?;
                 let at = self.ref_position(centre)?;
+                let narrow = self.linked_candidates(q, a);
                 let mut found: Vec<(f32, FormId)> = self
                     .refs_near(centre)
                     .into_iter()
+                    // Runtime references aren't in the index, so always tested.
+                    .filter(|r| {
+                        narrow
+                            .as_ref()
+                            .is_none_or(|n| r.0 >= 0xFF00_0000 || n.contains(r))
+                    })
                     // Conditions first, as for the loaded area above.
                     .filter(|&r| r != centre && accepts(r) && self.eligible(q, a, r, reserved))
                     .map(|r| {

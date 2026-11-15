@@ -76,6 +76,7 @@ mod poisons;
 mod protection;
 mod quest_targets;
 mod recharge;
+mod ref_links;
 mod ref_state;
 mod registrations;
 mod relationships;

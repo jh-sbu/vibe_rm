@@ -173,11 +173,14 @@ without other builds or heavy work competing for CPU time.
 - Remaining slow alias fills: CR04 Brute and CR01 BeastVictim (anchored only by
   `GetIsVoiceType` and location functions), and `Near` fills.
 - `Near` fills now run the alias conditions before the eligibility checks
-  (both pure): 7–13 ms became 4.5–11 ms per fill. What's left is evaluating
-  `IsLinkedTo`/`HasRefType` over ~18,000 loaded references. A reverse `XLKR`
-  index over all 878,000 placed references takes ~178 ms to build, so it would
-  have to be built per cell during streaming to help. That would save roughly
-  10–15 ms per world encounter start; not done.
+  (both pure): 7–13 ms became 4.5–11 ms per fill. Since 2026-11-15 they test
+  only the references that can pass the alias's narrowest group of
+  `IsLinkedTo` / `HasRefType` conditions (every vanilla `Near` alias has
+  `HasRefType`, 271 of 353 `IsLinkedTo` their centre too), from an index of
+  references by link target and ref type read in parallel once
+  (`crate::ref_links`, 21.5 ms). `near_fill_benchmark` (`src/index_bench.rs`,
+  every vanilla `Near` alias about one centre, 18,203 references near it):
+  5.4 → 0.34 ms per fill, the same fills.
 - Textures and spawning actors' models now load in the background
   ([async textures](async-textures.md)): the first-time cells hitch fell from
   243 to 75 ms. Placed objects' models are still parsed synchronously

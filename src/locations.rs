@@ -242,6 +242,11 @@ impl Engine {
     }
 
     /// The location ref types of a reference.
+    /// Every reference the locations' lists give ref types, with them.
+    pub(crate) fn location_ref_types(&self) -> &HashMap<FormId, Vec<FormId>> {
+        &self.locations().ref_types
+    }
+
     pub fn ref_types(&self, r: FormId) -> Vec<FormId> {
         let mut out = self
             .locations()
