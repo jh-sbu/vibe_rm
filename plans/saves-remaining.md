@@ -100,24 +100,27 @@ the user decided:
    Test: a save made with plugins A, B loads with B, A into the same
    state, and loads unchanged with a plugin added after them. Both with
    test plugins built in the test, not game files.
-7. **Missing plugins' forms.** A pruning pass between the mapped read and
-   `apply`'s validation, so `apply`'s validations don't refuse the whole
-   save over a form that is gone:
-   - Entries keyed by a gone form are dropped.
-   - Optional fields naming one become none.
-   - Papyrus values naming one become `None`; script objects on gone forms
-     are dropped, with their threads (as for "a function that no longer
-     resolves").
-   - Inventories lose the items.
-   - Created references whose base is gone are dropped.
-   - A save standing in a gone cell or worldspace is refused, with a
-     message naming the plugin.
-   Each rule goes in `known_ambiguities/saves.md` as a choice: the
-   observation shows only that SE asks and then loads. The pass runs
-   section by section, through the same lists step 6 audited. Test: a
-   save whose quests, items, references, scripts and executions use a
-   test plugin loads without it, with those entries gone and everything
-   else as saved.
+7. **Missing plugins' forms.** Revised while implementing step 6
+   (2026-11-15): the forms of a plugin that isn't loaded are kept as inert
+   data, not pruned. Step 6's map already moves them to unused full
+   indices, where they resolve to nothing, as a record a plugin update
+   removed would. A field-by-field prune would have touched some 180
+   snapshot and continuity fields with nested types, and no public source
+   says what SE drops. So:
+   - `apply`'s validations that refuse a form that doesn't resolve skip or
+     drop that entry when its form belongs to a gone plugin
+     (`FormMap::is_gone`, carried on the snapshot). For any other form they
+     still refuse, as damage.
+   - A save standing in a gone cell or worldspace is refused, naming the
+     plugin.
+   - VM script instances on gone forms are dropped, with their threads
+     (as for "a function that no longer resolves"); values naming gone
+     objects become `None`.
+   - The runtime paths a gone form can reach after the load (inventories,
+     created references, quests, aliases, effects, executions) are
+     exercised by a test that loads a save whose state uses a test plugin
+     without it, then runs frames, opens the inventory and saves again.
+   Each rule goes in `known_ambiguities/saves.md` as a choice.
 8. **The menus.** The journal's Load page and the main menu's Load and
    Continue (`save_list_in`, `metadata.rs`'s `plugins_hash`) classify
    saves by step 5. Same, superset and reordered saves load as usual, no
