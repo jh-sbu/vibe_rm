@@ -1234,6 +1234,12 @@ fn a_save_loads_into_a_reordered_load_order_in_canonical_order() {
     a.scripts.globals.insert(other(0x800), 7.0);
     a.scripts.teammates.insert(other(0x801), true);
     a.scripts.teammates.insert(ACTOR, false);
+    let now = a.scripts.real_time;
+    a.barks.restore(crate::dialogue::barks::SavedBarks {
+        greeted: vec![(ACTOR, now), (other(0x801), now)],
+        chatter_at: vec![(ACTOR, now + 5.0), (other(0x801), now + 6.0)],
+        quiet_until: now,
+    });
     let saved = Snapshot::capture(&a).write();
     let (_b, mut b) = engine_with("b", &["Other.esp"], &[]);
     load_into(&mut b, &saved.to_bytes()).unwrap();
@@ -1242,6 +1248,8 @@ fn a_save_loads_into_a_reordered_load_order_in_canonical_order() {
     assert_eq!(b.scripts.globals[&save(GLOBAL)], 3.5);
     assert_eq!(b.scripts.teammates.get(&FormId(0x801)), Some(&true));
     assert_eq!(b.scripts.teammates.get(&save(ACTOR)), Some(&false));
+    let barks = b.barks.saved(now);
+    assert_eq!(barks.greeted, [(FormId(0x801), now), (save(ACTOR), now)]);
     // What it saves now reads as written, every check passed.
     let again = Snapshot::capture(&b).write();
     Snapshot::read(&SaveFile::from_bytes(&again.to_bytes()).unwrap()).unwrap();

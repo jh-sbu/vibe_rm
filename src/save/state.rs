@@ -1036,8 +1036,12 @@ impl Snapshot {
         if let Some(b) = &self.barks {
             let mut w = Writer::default();
             for list in [&b.greeted, &b.chatter_at] {
+                // By actor, as reading checks (a remapped save's may not be
+                // yet).
+                let mut list = list.clone();
+                list.sort_by_key(|&(actor, _)| actor);
                 w.len(list.len());
-                for &(actor, t) in list {
+                for &(actor, t) in &list {
                     w.form(actor);
                     w.f64(t);
                 }

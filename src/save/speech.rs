@@ -26,6 +26,9 @@ pub(super) fn validate(states: &[SavedSpeech]) -> Result<()> {
 pub(super) fn put(states: &[SavedSpeech]) -> Vec<u8> {
     let mut w = Writer::default();
     w.len(states.len());
+    // By actor, as `get` checks (a remapped save's may not be yet).
+    let mut states: Vec<&SavedSpeech> = states.iter().collect();
+    states.sort_by_key(|s| s.actor);
     for s in states {
         w.form(s.actor);
         w.form(s.owner.package);
