@@ -2043,6 +2043,12 @@ readings are applied (see Done; autotest23 and autotest24's on
     (`plans/loading-screen.md`), `crafting1` (`plans/crafting.md`) and
     `spell-visuals` (`plans/spell-visuals.md`, Pending SE validation; its
     steps are now `set VrmFxRun to <n>`, as vanilla SE has no `cqf`).
+  - Built and waiting for the user's run: `saveload`
+    (`plans/saves-remaining.md` step 9; run instructions in
+    `crates/tools/src/test_mods/saveload.rs`). Its dry run in our engine
+    found that a standing NPC never sneaks in ours: neither a package's
+    Always Sneak flag nor `StartSneaking` gets `ActionSneak` taken by its
+    graph (`ActorRuntime`'s graph update sends it each frame).
   - `controltags` (`research/ui/control-tags.md`): rounds 1 and 2 observed
     (2026-11-03). Still to see: a hint shown after binding Activate to a key
     without art (NumPad Enter, NumLock or Apps).

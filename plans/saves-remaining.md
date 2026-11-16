@@ -158,6 +158,17 @@ the user decided:
    scene and while sitting, and note which give "You cannot save right
    now". Build only; the user runs it. Its results decide a follow-up plan
    for actors' graphs, casts, swings and script loops after a load.
+   **Built** (2026-11-16), waiting for the user's run. As built: the site
+   is `WarehouseFurniture` (navmeshed, no actors of its own) with the
+   warehouse's own chair; Sneaker holds its place on a package flagged
+   Always Sneak, `StartSneaking` only if it isn't sneaking in 3 s (if the
+   native toggles, as ours does, calling it first could stop a sneaking
+   actor); the load is found by polling every 0.05 s for a jump of over
+   5 s in real time (or real time going back after a restart), so the
+   first reading comes as the script resumes, not after a fixed wait; the
+   user's hearing answers are message buttons, kept in the report; and
+   checkpoints save after Setup and at the end only, since a save between
+   the walker's start and the load would move the walk and the timings.
 10. **The roadmap.** Move what's done to ROADMAP Done; rewrite item 9's list
     with what the probe leaves.
 

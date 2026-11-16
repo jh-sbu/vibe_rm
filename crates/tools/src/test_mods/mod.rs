@@ -67,6 +67,7 @@ mod ragdolls;
 mod records;
 mod regen;
 pub mod results;
+mod saveload;
 mod script;
 mod spell_visuals;
 mod taper;
@@ -113,6 +114,7 @@ pub const NAMES: &[&str] = &[
     "firstperson",
     "regen",
     "ragdolls",
+    "saveload",
 ];
 
 /// A test mod's files: the plugin, and its compiled scripts by name.
@@ -134,6 +136,7 @@ pub fn build(name: &str, lo: &LoadOrder) -> Result<TestMod> {
         "ammo" => ammo::build(lo),
         "regen" => regen::build(lo),
         "ragdolls" => ragdolls::build(lo),
+        "saveload" => saveload::build(lo),
         "controltags" => controltags::build(),
         "crafting1" => crafting1::build(lo),
         "autotest" => autotest::build(lo),
