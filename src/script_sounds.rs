@@ -41,6 +41,15 @@ impl Default for ScriptSounds {
     }
 }
 
+impl ScriptSounds {
+    /// Forget the old game's playings on a load (their voices were stopped
+    /// with the rest). Ids go on from where they were, never reused; the
+    /// categories stay for the session.
+    pub(crate) fn reset_for_load(&mut self) {
+        self.instances.clear();
+    }
+}
+
 /// The key a `PlayAndWait` on instance `id` waits for.
 fn wait_key(id: i32) -> u64 {
     0x5E00_0000_0000_0000 | id as u32 as u64

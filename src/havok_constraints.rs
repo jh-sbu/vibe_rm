@@ -113,6 +113,13 @@ impl Engine {
         true
     }
 
+    /// Every joint scripts made, gone (a save loading).
+    pub(crate) fn release_all_havok_constraints(&mut self) {
+        for c in std::mem::take(&mut self.havok_constraints) {
+            self.physics.remove_joint(c.joint, c.anchor);
+        }
+    }
+
     pub(crate) fn release_actor_constraints(&mut self, actor: FormId) {
         let mut keep = Vec::new();
         for c in std::mem::take(&mut self.havok_constraints) {

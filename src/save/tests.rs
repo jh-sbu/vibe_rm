@@ -1076,6 +1076,25 @@ fn play(e: &mut Engine) {
 
 #[test]
 #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn a_load_leaves_the_old_games_death_and_session_state_behind() {
+    let (_a, mut a) = engine("a");
+    play(&mut a);
+    let bytes = Snapshot::capture(&a).write().to_bytes();
+    // The player died in the running game, later than the save was made.
+    a.player_died_at = Some(a.scripts.real_time + 1000.0);
+    a.console_ref = Some(ACTOR);
+    a.dependent_animated.push((ACTOR, FormId(0x999)));
+    Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap())
+        .unwrap()
+        .apply(&mut a)
+        .unwrap();
+    assert!(!a.player_dead());
+    assert_eq!(a.console_ref, None);
+    assert!(a.dependent_animated.is_empty());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
 fn a_saved_game_loads_into_another_engine_unchanged() {
     let (_a, mut a) = engine("a");
     play(&mut a);

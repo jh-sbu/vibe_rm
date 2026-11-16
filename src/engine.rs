@@ -1452,6 +1452,29 @@ impl Engine {
         }
     }
 
+    /// A save is loading, and the old game's cells are gone: forget what the
+    /// old game left running that saves neither hold nor replace
+    /// (`plans/saves-remaining.md`, step 1). Settings, caches and console
+    /// toggles stay.
+    pub(crate) fn reset_session_for_load(&mut self) {
+        // The save's player is alive (saves aren't made dead); a death
+        // timer left over would hold the loaded player dead until the
+        // loaded clock reached it, then reset their health.
+        self.player_died_at = None;
+        self.barks.reset_for_load();
+        self.script_sounds.reset_for_load();
+        self.pending_moveto = None;
+        self.script_precip = None;
+        self.dependent_animated.clear();
+        self.title_sequence = Default::default();
+        self.gift = None;
+        self.lockpick = None;
+        self.console_ref = None;
+        // Their bodies went with the cells; the attach points' scripts make
+        // them again as their cells load.
+        self.release_all_havok_constraints();
+    }
+
     pub(crate) fn unload_all(&mut self) {
         self.finish_player_knock();
         // Unloading stands knocked actors up; saved ones still waiting for

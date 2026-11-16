@@ -29,6 +29,17 @@ results) stays a separate, later job. For orientation only, UESP's
 - Loading unloads the cells, replaces the saved state, then enters the saved
   location with the player on their feet where they stood. The old game's
   pending stage and event queues are dropped.
+- Loading also leaves behind what the old game had running that no
+  section holds or replaces (`Engine::reset_session_for_load`): a player
+  death still counting down (saves aren't made dead), NPCs' hello and
+  chatter timers and the lines being said, script sound playings (their
+  ids go on, never reused), a script's pending player `MoveTo`, script
+  precipitation, dependent animated pairs, the title sequence, the gift
+  and lockpicking states, the console's picked reference, and script-made
+  Havok joints (their scripts make them again as cells load). Settings,
+  record caches, script sound categories (kept for the session) and the
+  console's toggles (`tgm`, `tm`, `tai`) stay. Native policy, not an SE
+  claim.
 
 ## What is saved
 

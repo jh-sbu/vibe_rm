@@ -2539,6 +2539,7 @@ impl Snapshot {
         e.discard_conversation_for_load();
         e.discard_package_dialogue();
         e.unload_all();
+        e.reset_session_for_load();
         if matches!(e.menu, Some(crate::items::Menu::Crafting { .. })) {
             e.menu = None;
         }

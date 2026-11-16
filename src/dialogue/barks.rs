@@ -49,6 +49,19 @@ pub struct Barks {
 }
 
 impl Barks {
+    /// Leave the old game's lines and timers on a load (package lines are
+    /// discarded with their procedures: `discard_package_dialogue`). The
+    /// topics stay: they come from the records.
+    pub(crate) fn reset_for_load(&mut self) {
+        let topics = std::mem::take(&mut self.topics);
+        let packages = std::mem::take(&mut self.packages);
+        *self = Barks {
+            packages,
+            topics,
+            ..Default::default()
+        };
+    }
+
     fn available(&self, now: f64) -> bool {
         self.current.is_none() && now >= self.quiet_until
     }
@@ -243,5 +256,25 @@ mod tests {
         barks.quiet_until = 5.0;
         assert!(!barks.available(4.99));
         assert!(barks.available(5.0));
+    }
+
+    #[test]
+    fn a_load_forgets_the_old_games_lines_and_timers_but_not_the_topics() {
+        let mut barks = Barks::default();
+        barks.greeted.insert(FormId(1), 100.0);
+        barks.chatter_at.insert(FormId(1), 120.0);
+        barks.quiet_until = 105.0;
+        barks.current = Some(Bark {
+            speaker: FormId(1),
+            name: "Synthetic speaker".into(),
+            text: "Synthetic line".into(),
+            voice: None,
+            ends_at: 104.0,
+        });
+        barks.topics.insert(*b"HELO", Vec::new());
+        barks.reset_for_load();
+        assert!(barks.greeted.is_empty() && barks.chatter_at.is_empty());
+        assert!(barks.current.is_none() && barks.available(0.0));
+        assert!(barks.topics.contains_key(b"HELO"));
     }
 }
