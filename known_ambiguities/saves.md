@@ -26,6 +26,17 @@ results) stays a separate, later job. For orientation only, UESP's
   `HEAD` lists them and another list is refused. (The original game maps ids
   through a form id array; that is the likely route to loading across load
   order changes.)
+- Optional `PLGS` keeps each plugin's slot as saved (full index, or light
+  index under `FE`), for reading a save into another load order
+  (`super::plugin_map`, `plans/saves-remaining.md` Part B). A save without
+  it has only `HEAD`'s names, in load order: its slots are taken as the
+  load order assigns them, each plugin light if it is light as loaded now,
+  else if its name ends in `.esl`. Choice: a plugin whose light flag
+  changed since a legacy save, and isn't loaded now, can't be told from
+  `HEAD`. UESP *Save File Format*
+  ([revision 3067914](https://en.uesp.net/w/index.php?oldid=3067914),
+  "Plugin Info" and "Light Plugin Info") shows SE keeping the two lists
+  apart, as `PLGS` does.
 - Loading unloads the cells, replaces the saved state, then enters the saved
   location with the player on their feet where they stood. The old game's
   pending stage and event queues are dropped.

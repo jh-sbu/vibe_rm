@@ -4,6 +4,7 @@
 //! puts it back.
 //!
 //! Sections: `HEAD` (the load order, the date, where the player stood),
+//! `PLGS` (each plugin's slot as saved: `super::plugin_map`),
 //! `TIME`, `GLOB`, `QUST`, `STAT`, `AVAL` (actor value changes), `INVT`
 //! (inventories with what is equipped), `SCRP` (what scripts did to
 //! references), `WRLD` (the world state kept across cell loads and the
@@ -116,6 +117,8 @@ pub struct Snapshot {
     pub metadata: Option<super::metadata::Metadata>,
     pub(crate) continuity: super::continuity::Continuity,
     pub plugins: Vec<String>,
+    /// Each plugin's slot as saved (`PLGS`); legacy saves have none.
+    pub plugin_slots: Option<super::plugin_map::SavedSlots>,
     pub spot: Option<Spot>,
     pub day: u32,
     pub hour: f32,
@@ -554,6 +557,7 @@ impl Snapshot {
             item_copies: e.ref_state.item_copies.clone(),
             metadata: Some(super::metadata::Metadata::capture(e)),
             continuity,
+            plugin_slots: Some(super::plugin_map::SavedSlots::of(&e.lo)),
             plugins: e
                 .lo
                 .plugins()
@@ -707,6 +711,9 @@ impl Snapshot {
             w.f32(spot.yaw);
         }
         file.add(b"HEAD", w.0);
+        if let Some(slots) = &self.plugin_slots {
+            file.add(b"PLGS", slots.write());
+        }
 
         // Save listings read only META (or legacy HEAD) at the front.
         let mut forms = Writer::default();
@@ -1519,6 +1526,10 @@ impl Snapshot {
         for _ in 0..r.count(4)? {
             s.plugins.push(r.str()?);
         }
+        s.plugin_slots = file
+            .section(b"PLGS")
+            .map(|data| super::plugin_map::SavedSlots::read(data, &s.plugins))
+            .transpose()?;
         if r.bool()? {
             s.spot = Some(Spot {
                 location: get_location(&mut r)?,

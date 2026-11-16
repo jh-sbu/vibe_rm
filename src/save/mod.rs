@@ -12,6 +12,7 @@ pub(crate) mod fights;
 pub mod file;
 pub(crate) mod knock;
 pub mod metadata;
+pub mod plugin_map;
 mod speech;
 pub mod state;
 #[cfg(test)]
