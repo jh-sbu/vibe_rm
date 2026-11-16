@@ -113,9 +113,9 @@ the user decided:
      still refuse, as damage.
    - A save standing in a gone cell or worldspace is refused, naming the
      plugin.
-   - VM script instances on gone forms are dropped, with their threads
-     (as for "a function that no longer resolves"); values naming gone
-     objects become `None`.
+   - VM script instances on gone forms are kept, inert, like the rest
+     (implemented so: their natives find nothing). Only the scripts of
+     active effects that are dropped go with them, as `apply` requires.
    - The runtime paths a gone form can reach after the load (inventories,
      created references, quests, aliases, effects, executions) are
      exercised by a test that loads a save whose state uses a test plugin

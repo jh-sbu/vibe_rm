@@ -34,11 +34,27 @@ results) stays a separate, later job. For orientation only, UESP's
   and alias quests, and runtime potions' and enchantments' form fields
   (`FormMap::map_runtime_record`). Not mapped: form ids scripts keep as
   plain `Int`s (`GetFormID`), which SE can't map either. A save needing a
-  plugin that isn't loaded is refused, naming it (until step 7 of
-  `plans/saves-remaining.md`). User-observed SE behavior: a save made
+  plugin that isn't loaded is refused, naming it, unless the player says
+  to go on without it (`Engine::load_game_from_with`; below). User-observed SE behavior: a save made
   without a plugin that is now loaded loads with no warning
   (`research/ui/main-menu.md`). Choice: a reordered load order loads the
   same way, unprompted (not observed).
+- Loading without some of a save's plugins (`super::gone`; choices, as no
+  public source says what SE drops; it only asks first: user-observed,
+  `research/ui/main-menu.md`). Their forms are moved to full indices the
+  load order doesn't use and kept, inert, resolving to nothing, as a
+  record a plugin update removed would. Only what `apply` checks against
+  the records is dropped when it names one: weapon usage counts (a gone
+  favorite gives way to the most used weapon left, the lowest id of those
+  tied), Greater Power cooldowns, the weather (the place picks one, as for
+  a save without one), scenes whose scene, topic, INFO or bound actor is
+  gone, rolled spell lists, package lines, active effects and tapers (with
+  their effect scripts), and an execution's gone package runs (it picks
+  afresh). A save standing in a gone cell or worldspace is refused, naming
+  the plugins. Everything else stays, and is saved again as it is; script
+  objects on gone forms stay too, their natives finding nothing. A plugin
+  that comes back later doesn't get its forms back: they are saved where
+  they were moved, under no plugin's name. Item lists skip gone items.
 - Optional `PLGS` keeps each plugin's slot as saved (full index, or light
   index under `FE`), for reading a save into another load order
   (`super::plugin_map`, `plans/saves-remaining.md` Part B). A save without

@@ -223,12 +223,21 @@ fn ready_scene_force_greet_actor(e: &mut Engine) {
 }
 
 fn engine(name: &str) -> (Fixture, Engine) {
-    engine_with(name, &[], &[])
+    engine_on(name, &["Save.esp"])
 }
 
 /// The save fixture's engine with empty plugins loaded before and after
 /// `Save.esp`.
 fn engine_with(name: &str, before: &[&str], after: &[&str]) -> (Fixture, Engine) {
+    let mut list: Vec<&str> = before.to_vec();
+    list.push("Save.esp");
+    list.extend(after);
+    engine_on(name, &list)
+}
+
+/// The save fixture's files with the load order `plugins`: `Save.esp` is the
+/// fixture's (left out to load without it), the others empty.
+fn engine_on(name: &str, plugins: &[&str]) -> (Fixture, Engine) {
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -896,17 +905,14 @@ fn engine_with(name: &str, before: &[&str], after: &[&str]) -> (Fixture, Engine)
         papyrus::pex::write(&effect_script.build().unwrap()).unwrap(),
     )
     .unwrap();
-    let mut plugins = Vec::new();
-    for p in before.iter().chain(after) {
+    for p in plugins.iter().filter(|p| **p != "Save.esp") {
         std::fs::write(
             f.0.join(p),
             write_plugin(0, &[], "test", "empty", 0x800, &[]),
         )
         .unwrap();
     }
-    plugins.extend(before.iter().map(|p| p.to_string()));
-    plugins.push("Save.esp".to_string());
-    plugins.extend(after.iter().map(|p| p.to_string()));
+    let plugins: Vec<String> = plugins.iter().map(|p| p.to_string()).collect();
     let e = crate::stats::action_tests::headless_engine_plugins(&f.0, &plugins);
     (f, e)
 }
@@ -1264,11 +1270,15 @@ fn a_save_loads_with_a_plugin_added_after_its_own_without_remapping() {
     let (_b, mut b) = engine_with("b", &[], &["Later.esp"]);
     load_into(&mut b, &saved.to_bytes()).unwrap();
     assert_eq!(b.scripts.globals[&GLOBAL], 3.5);
-    // A plugin it needs that isn't loaded is refused, by name, for now.
-    let (_c, mut c) = engine("c");
-    let with_later = Snapshot::capture(&b).write().to_bytes();
-    let err = load_into(&mut c, &with_later).unwrap_err().to_string();
+    // Loaded plainly, a save needing a plugin that isn't loaded is refused,
+    // naming it; told to go on without it, it loads.
+    let (c_dir, mut c) = engine("c");
+    let path = c_dir.0.join("with-later.vrs");
+    std::fs::write(&path, Snapshot::capture(&b).write().to_bytes()).unwrap();
+    let err = c.load_game_from(&path).unwrap_err().to_string();
     assert!(err.contains("Later.esp"), "{err}");
+    c.load_game_from_with(&path, true).unwrap();
+    assert_eq!(c.scripts.globals[&GLOBAL], 3.5);
 }
 
 #[test]
@@ -7846,4 +7856,111 @@ fn a_conversation_opens_again_on_the_line_being_said() {
     legacy.sections.retain(|(tag, _)| tag != b"CONV");
     Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
     assert!(b.conversation.is_none() && b.world_state.pending_conversation.is_none());
+}
+
+/// The fixture's game, with forms of `Other.esp` (loaded after `Save.esp`)
+/// in what `apply` checks against the records and in what it doesn't.
+fn snapshot_using_other_esp() -> (Fixture, Snapshot) {
+    let (f, mut a) = engine_on("other-a", &["Save.esp", "Other.esp"]);
+    play(&mut a);
+    assert!(a.apply_item(FORTIFY_CARRY_SPELL, Some(PLAYER_REF), PLAYER_REF));
+    a.update_magic(1.0);
+    let other = |local: u32| FormId(0x0100_0000 | local);
+    let mut s = Snapshot::capture(&a);
+    s.weapon_usage.push((other(0x800), 3));
+    s.favorite_weapon = Some(other(0x800));
+    s.power_uses.insert(other(0x802), 10.0);
+    s.weather.current = Some(other(0x801));
+    s.rolled_spells.push(crate::magic::SavedRolledSpell {
+        actor: ACTOR,
+        list: other(0x803),
+        spells: vec![],
+    });
+    s.rolled_spells.sort_by_key(|r| (r.actor, r.list));
+    let mut effect = s.continuity.active_effects.0[0].clone();
+    s.continuity.active_effects.1 += 1;
+    effect.id = s.continuity.active_effects.1;
+    effect.item = other(0x804);
+    effect.scripted = false;
+    s.continuity.active_effects.0.push(effect);
+    let mut execution = full_execution();
+    execution.place = None;
+    execution.stage = None;
+    execution.patrol = None;
+    execution.suspended = None;
+    execution.done_once = None;
+    execution.run.as_mut().unwrap().id = other(0x805);
+    s.continuity.executions.insert(ACTOR, execution);
+    s.scene_repeats.push(crate::scene::SavedSceneRepeat {
+        scene: other(0x806),
+        action: 0,
+        remaining: 1.0,
+    });
+    // Nothing checks these against the records.
+    s.globals.insert(other(0x807), 1.0);
+    s.quests.insert(other(0x808), Default::default());
+    s.inventories
+        .entry(PLAYER_REF)
+        .or_default()
+        .add(other(0x809), 2);
+    (f, s)
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn a_save_loads_without_a_plugin_its_state_uses() {
+    let (_a, s) = snapshot_using_other_esp();
+    let bytes = s.write().to_bytes();
+    let (_b, mut b) = engine_on("other-b", &["Save.esp"]);
+    let file = SaveFile::from_bytes(&bytes).unwrap();
+    // Asked for plainly, it's refused, naming the plugin.
+    let snapshot = Snapshot::read_for(&file, &b.lo).unwrap();
+    assert_eq!(snapshot.missing_plugins(), ["Other.esp"]);
+    snapshot.apply(&mut b).unwrap();
+    // What its checks would refuse is gone; the rest is kept, resolving
+    // to nothing.
+    let after = Snapshot::capture(&b);
+    let gone = |f: FormId| f.0 >> 24 > 1 && f.0 >> 24 < 0xFE;
+    assert!(after.weapon_usage.iter().all(|(w, _)| !gone(*w)));
+    assert_eq!(after.favorite_weapon, Some(SWORD));
+    assert!(after.power_uses.keys().all(|p| !gone(*p)));
+    assert!(after.weather.current.is_none_or(|w| !gone(w)));
+    assert!(after.rolled_spells.iter().all(|r| !gone(r.list)));
+    assert!(
+        after
+            .continuity
+            .active_effects
+            .0
+            .iter()
+            .all(|x| !gone(x.item))
+    );
+    assert!(after.scene_repeats.iter().all(|r| !gone(r.scene)));
+    assert!(after.globals.keys().any(|g| gone(*g)));
+    assert!(after.quests.keys().any(|q| gone(*q)));
+    // It plays on, lists the player's things (the gone item among them
+    // left out), and saves and loads again.
+    for _ in 0..20 {
+        b.update(Default::default(), 0.1, 20.0);
+    }
+    let listed = b.listed_inventory(PLAYER_REF);
+    assert!(listed.iter().all(|row| !gone(row.item)));
+    let again = Snapshot::capture(&b).write().to_bytes();
+    let (_c, mut c) = engine_on("other-c", &["Save.esp"]);
+    load_into(&mut c, &again).unwrap();
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn a_save_standing_in_a_missing_plugins_place_is_refused() {
+    let (_a, mut s) = snapshot_using_other_esp();
+    s.spot = Some(Spot {
+        location: Location::Interior(FormId(0x0100_0810)),
+        feet: Vec3::ZERO,
+        yaw: 0.0,
+    });
+    let bytes = s.write().to_bytes();
+    let (_b, mut b) = engine_on("other-place-b", &["Save.esp"]);
+    let snapshot = Snapshot::read_for(&SaveFile::from_bytes(&bytes).unwrap(), &b.lo).unwrap();
+    let err = snapshot.apply(&mut b).unwrap_err().to_string();
+    assert!(err.contains("Other.esp"), "{err}");
 }

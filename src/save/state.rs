@@ -119,6 +119,10 @@ pub struct Snapshot {
     pub plugins: Vec<String>,
     /// Each plugin's slot as saved (`PLGS`); legacy saves have none.
     pub plugin_slots: Option<super::plugin_map::SavedSlots>,
+    /// Read for a load order lacking some of the save's plugins
+    /// (`read_for`): the map that moved their forms where they resolve to
+    /// nothing.
+    pub(crate) gone: Option<super::plugin_map::FormMap>,
     pub spot: Option<Spot>,
     pub day: u32,
     pub hour: f32,
@@ -558,6 +562,7 @@ impl Snapshot {
             metadata: Some(super::metadata::Metadata::capture(e)),
             continuity,
             plugin_slots: Some(super::plugin_map::SavedSlots::of(&e.lo)),
+            gone: None,
             plugins: e
                 .lo
                 .plugins()
@@ -1397,8 +1402,9 @@ impl Snapshot {
     /// with every check. If its plugins' slots differ from `lo`'s, it is
     /// read again with its form ids mapped (`super::plugin_map::FormMap`,
     /// ordering checks off), then written out and read once more, so it is
-    /// in the canonical order with every check passed. A save needing
-    /// plugins `lo` lacks is refused.
+    /// in the canonical order with every check passed. The forms of
+    /// plugins `lo` lacks are kept where they resolve to nothing
+    /// (`missing_plugins`; `apply` drops what can't stand without them).
     pub fn read_for(file: &SaveFile, lo: &esp::LoadOrder) -> anyhow::Result<Snapshot> {
         use super::plugin_map::{FormMap, SavedSlots};
         let mut s = Snapshot::read(file)?;
@@ -1408,11 +1414,7 @@ impl Snapshot {
             .unwrap_or_else(|| SavedSlots::assumed(&s.plugins, lo));
         let current = SavedSlots::of(lo);
         let map = FormMap::new(&saved, &current)?;
-        anyhow::ensure!(
-            map.missing().is_empty(),
-            "the save needs plugins that aren't loaded: {}",
-            map.missing().join(", ")
-        );
+        let gone = Some(map.clone()).filter(|m| !m.missing().is_empty());
         let names: Vec<String> = lo
             .plugins()
             .iter()
@@ -1428,7 +1430,19 @@ impl Snapshot {
             s.plugins = names;
             s.plugin_slots = Some(current);
         }
+        s.gone = gone;
         Ok(s)
+    }
+
+    /// The plugins the save needs that the load order it was read for
+    /// lacks (`read_for`), as saved.
+    pub fn missing_plugins(&self) -> &[String] {
+        self.gone.as_ref().map_or(&[], |m| m.missing())
+    }
+
+    /// Whether `f` is a form of a plugin the load order lacks.
+    pub(crate) fn is_gone(&self, f: FormId) -> bool {
+        self.gone.as_ref().is_some_and(|m| m.is_gone(f))
     }
 
     /// Read every section; nothing is applied until all of them read.
@@ -2513,7 +2527,8 @@ impl Snapshot {
 
     /// Put this state into the engine, in place of its own, and go where the
     /// player stood. The engine must have the plugins the save was made with.
-    pub fn apply(self, e: &mut Engine) -> anyhow::Result<()> {
+    pub fn apply(mut self, e: &mut Engine) -> anyhow::Result<()> {
+        self.drop_gone()?;
         let runtime = validate_forms(&self.forms)?;
         anyhow::ensure!(
             self.forms.iter().all(|b| !self

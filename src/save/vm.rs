@@ -201,6 +201,24 @@ impl VmSnapshot {
         matches!(id, ObjectId::Effect(n) if !self.kept_effects.contains(&n))
     }
 
+    /// Drop the scripts, variables and threads of `effects` (effects
+    /// that can't load: `super::gone`). Waits are linked by key, not
+    /// thread position, so the rest stand as they were.
+    pub(super) fn drop_effect_objects(&mut self, effects: &std::collections::HashSet<u64>) {
+        if effects.is_empty() {
+            return;
+        }
+        let hit = |o: &ObjectId| matches!(o, ObjectId::Effect(n) if effects.contains(n));
+        let vm = &mut self.vm;
+        vm.instances.retain(|(o, ..)| !hit(o));
+        vm.attached.retain(|(o, _)| !hit(o));
+        vm.threads.retain(|t| {
+            !t.frames
+                .iter()
+                .any(|f| f.this.as_ref().is_some_and(|(o, _)| hit(o)))
+        });
+    }
+
     /// The effects the VM's scripts, variables and threads hang on.
     pub fn effect_objects(&self) -> std::collections::BTreeSet<u64> {
         let effect = |o: &ObjectId| match *o {

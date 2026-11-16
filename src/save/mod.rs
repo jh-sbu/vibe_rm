@@ -10,6 +10,7 @@ pub(crate) mod conversation;
 mod copies;
 pub(crate) mod fights;
 pub mod file;
+mod gone;
 pub(crate) mod knock;
 pub mod metadata;
 pub mod plugin_map;
@@ -327,10 +328,25 @@ impl Engine {
         Ok(())
     }
 
-    /// Load the save at `path`: all of it reads before the game changes.
+    /// Load the save at `path`: all of it reads before the game changes. A
+    /// save needing plugins that aren't loaded is refused, naming them.
     pub fn load_game_from(&mut self, path: &Path) -> Result<()> {
+        self.load_game_from_with(path, false)
+    }
+
+    /// Load the save at `path`, going on without the plugins it needs that
+    /// aren't loaded if `without_missing` (the player said to continue:
+    /// `deviations/main-menu.md`), refusing otherwise.
+    pub fn load_game_from_with(&mut self, path: &Path, without_missing: bool) -> Result<()> {
         let bytes = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
         let snapshot = Snapshot::read_for(&SaveFile::from_bytes(&bytes)?, &self.lo)?;
+        let missing = snapshot.missing_plugins();
+        if !missing.is_empty() && !without_missing {
+            bail!(
+                "the save needs plugins that aren't loaded: {}",
+                missing.join(", ")
+            );
+        }
         snapshot.apply(self)?;
         self.no_game = false;
         self.last_save.set(std::time::Instant::now());
