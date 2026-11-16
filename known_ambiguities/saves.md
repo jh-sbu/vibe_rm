@@ -22,10 +22,23 @@ results) stays a separate, later job. For orientation only, UESP's
 - Saves live in `$VRM_SAVES`, else `$XDG_DATA_HOME/vibe_rm/saves`, else
   `~/.local/share/vibe_rm/saves`.
 - Form ids are saved as loaded (global ids, with the load-order index in the
-  top byte), so a save loads only with the same plugins in the same order;
-  `HEAD` lists them and another list is refused. (The original game maps ids
-  through a form id array; that is the likely route to loading across load
-  order changes.)
+  top byte). A save loads into another load order through a map from its
+  plugins' slots to the running ones, by name (`Snapshot::read_for`,
+  `super::plugin_map`). The original game also maps ids through the save's
+  own plugin list (UESP *Save File Format*, "RefID"). If every saved slot is
+  where it was (the same plugins, or more loaded after them), the save reads
+  as written. Otherwise it is read as written, with every check, then again
+  with its ids mapped and ordering checks off, then written out and read
+  back, so its sections are in the canonical order with every check passed.
+  Ids mapped: everything read as a form (`Reader::form`), the VM's objects
+  and alias quests, and runtime potions' and enchantments' form fields
+  (`FormMap::map_runtime_record`). Not mapped: form ids scripts keep as
+  plain `Int`s (`GetFormID`), which SE can't map either. A save needing a
+  plugin that isn't loaded is refused, naming it (until step 7 of
+  `plans/saves-remaining.md`). User-observed SE behavior: a save made
+  without a plugin that is now loaded loads with no warning
+  (`research/ui/main-menu.md`). Choice: a reordered load order loads the
+  same way, unprompted (not observed).
 - Optional `PLGS` keeps each plugin's slot as saved (full index, or light
   index under `FE`), for reading a save into another load order
   (`super::plugin_map`, `plans/saves-remaining.md` Part B). A save without

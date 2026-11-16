@@ -44,9 +44,9 @@
 //! progress (actors' graphs, procedures' loaded-only state); see
 //! `plans/ROADMAP.md`.
 //!
-//! Form ids are saved as loaded (their top byte is the load-order index), so a
-//! save only loads with the same plugins in the same order: `HEAD` lists them
-//! and a mismatch is refused.
+//! Form ids are saved as loaded (their top byte is the load-order index);
+//! `Snapshot::read_for` maps a save made with another load order onto the
+//! running one (`super::plugin_map`).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -76,7 +76,7 @@ fn validate_forms(forms: &[Vec<u8>]) -> Result<esp::LoadOrder> {
         let id = lo
             .insert_runtime_record(bytes)
             .map_err(|e| Corrupt(e.to_string()))?;
-        if previous.is_some_and(|p| p >= id) {
+        if super::codec::out_of_order(previous, id) {
             return Err(Corrupt("FORM IDs are not ordered".into()));
         }
         previous = Some(id);
@@ -1388,6 +1388,45 @@ fn section<'a>(file: &'a SaveFile, tag: &[u8; 4]) -> Result<Reader<'a>> {
 }
 
 impl Snapshot {
+    /// Read a save to be applied to the running load order `lo`
+    /// (`plans/saves-remaining.md`, step 6). It is read as written first,
+    /// with every check. If its plugins' slots differ from `lo`'s, it is
+    /// read again with its form ids mapped (`super::plugin_map::FormMap`,
+    /// ordering checks off), then written out and read once more, so it is
+    /// in the canonical order with every check passed. A save needing
+    /// plugins `lo` lacks is refused.
+    pub fn read_for(file: &SaveFile, lo: &esp::LoadOrder) -> anyhow::Result<Snapshot> {
+        use super::plugin_map::{FormMap, SavedSlots};
+        let mut s = Snapshot::read(file)?;
+        let saved = s
+            .plugin_slots
+            .clone()
+            .unwrap_or_else(|| SavedSlots::assumed(&s.plugins, lo));
+        let current = SavedSlots::of(lo);
+        let map = FormMap::new(&saved, &current)?;
+        anyhow::ensure!(
+            map.missing().is_empty(),
+            "the save needs plugins that aren't loaded: {}",
+            map.missing().join(", ")
+        );
+        let names: Vec<String> = lo
+            .plugins()
+            .iter()
+            .map(|p| p.plugin.name().to_string())
+            .collect();
+        if !map.is_identity() {
+            log::info!("reading a save made with another load order");
+            let mut mapped = super::codec::with_map(map, || Snapshot::read(file))?;
+            mapped.plugins = names;
+            mapped.plugin_slots = Some(current);
+            s = Snapshot::read(&mapped.write())?;
+        } else {
+            s.plugins = names;
+            s.plugin_slots = Some(current);
+        }
+        Ok(s)
+    }
+
     /// Read every section; nothing is applied until all of them read.
     pub fn read(file: &SaveFile) -> Result<Snapshot> {
         let mut s = Snapshot::default();
@@ -1443,7 +1482,7 @@ impl Snapshot {
         if let Some(data) = file.section(b"FORM") {
             let mut r = Reader::new(data);
             for _ in 0..r.count(4)? {
-                s.forms.push(r.bytes()?.to_vec());
+                s.forms.push(super::codec::map_runtime_record(r.bytes()?));
             }
             r.finish()?;
             validate_forms(&s.forms)?;
@@ -1474,7 +1513,7 @@ impl Snapshot {
                 let mut previous = None;
                 for _ in 0..r.count(4)? {
                     let id = r.form()?;
-                    if id.is_null() || previous.is_some_and(|p| p >= id) {
+                    if id.is_null() || super::codec::out_of_order(previous, id) {
                         return Err(Corrupt("invalid or unsorted map marker".into()));
                     }
                     previous = Some(id);
@@ -1504,7 +1543,7 @@ impl Snapshot {
                 if actor.is_null()
                     || actor == crate::engine::PLAYER_REF
                     || actor == FormId(7)
-                    || previous.is_some_and(|p| p >= actor)
+                    || super::codec::out_of_order(previous, actor)
                 {
                     return Err(Corrupt("invalid or unsorted teammate".into()));
                 }
@@ -1573,7 +1612,7 @@ impl Snapshot {
             for _ in 0..r.count(12)? {
                 let weapon = r.form()?;
                 let count = r.u64()?;
-                if weapon.is_null() || count == 0 || previous.is_some_and(|p| p >= weapon) {
+                if weapon.is_null() || count == 0 || super::codec::out_of_order(previous, weapon) {
                     return Err(Corrupt(
                         "invalid, duplicate, or unsorted favorite-weapon usage".into(),
                     ));
@@ -1596,7 +1635,7 @@ impl Snapshot {
                 if power.is_null()
                     || !last_used.is_finite()
                     || last_used < 0.0
-                    || previous.is_some_and(|p| p >= power)
+                    || super::codec::out_of_order(previous, power)
                 {
                     return Err(Corrupt(
                         "invalid, duplicate, or unsorted power cooldown".into(),
@@ -1737,7 +1776,7 @@ impl Snapshot {
                     || binding
                         .elapsed
                         .is_some_and(|elapsed| !elapsed.is_finite() || elapsed < 0.0)
-                    || previous.is_some_and(|previous| previous >= key)
+                    || super::codec::out_of_order(previous, key)
                 {
                     return Err(Corrupt(
                         "invalid, duplicate or unsorted scene binding".into(),
@@ -1783,7 +1822,7 @@ impl Snapshot {
                     || info.is_null()
                     || !remaining.is_finite()
                     || remaining < 0.0
-                    || previous.is_some_and(|previous| previous >= key)
+                    || super::codec::out_of_order(previous, key)
                 {
                     return Err(Corrupt(
                         "invalid, duplicate or unsorted scene dialogue".into(),
@@ -1824,7 +1863,7 @@ impl Snapshot {
                 if saved.scene.is_null()
                     || !saved.remaining.is_finite()
                     || saved.remaining < 0.0
-                    || previous.is_some_and(|previous| previous >= key)
+                    || super::codec::out_of_order(previous, key)
                 {
                     return Err(Corrupt(
                         "invalid, duplicate or unsorted scene repeat deadline".into(),
@@ -1869,7 +1908,7 @@ impl Snapshot {
             let mut previous = None;
             for _ in 0..r.count(4)? {
                 let actor = r.form()?;
-                if actor.is_null() || previous.is_some_and(|previous| previous >= actor) {
+                if actor.is_null() || super::codec::out_of_order(previous, actor) {
                     return Err(Corrupt(
                         "invalid, duplicate or unsorted scene force-greet marker".into(),
                     ));
@@ -1895,10 +1934,7 @@ impl Snapshot {
                 let actor = r.form()?;
                 let list = r.form()?;
                 let key = (actor, list);
-                if actor.is_null()
-                    || list.is_null()
-                    || previous.is_some_and(|previous| previous >= key)
-                {
+                if actor.is_null() || list.is_null() || super::codec::out_of_order(previous, key) {
                     return Err(Corrupt(
                         "invalid, duplicate or unsorted rolled spell-list key".into(),
                     ));
@@ -1940,7 +1976,7 @@ impl Snapshot {
                     || !matches!(state, 1 | 2)
                     || !remaining.is_finite()
                     || remaining <= 0.0
-                    || previous.is_some_and(|previous| previous >= actor)
+                    || super::codec::out_of_order(previous, actor)
                 {
                     return Err(Corrupt(
                         "invalid, duplicate or unsorted ward-hit state".into(),
@@ -2349,7 +2385,10 @@ impl Snapshot {
                 for _ in 0..r.count(12)? {
                     let actor = r.form()?;
                     let t = r.f64()?;
-                    if actor.is_null() || previous.is_some_and(|p| p >= actor) || !t.is_finite() {
+                    if actor.is_null()
+                        || super::codec::out_of_order(previous, actor)
+                        || !t.is_finite()
+                    {
                         return Err(Corrupt("invalid or unsorted greeting timer".into()));
                     }
                     previous = Some(actor);

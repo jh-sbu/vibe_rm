@@ -14,7 +14,7 @@ pub(super) fn validate(states: &[SavedSpeech]) -> Result<()> {
             || s.owner.started_at < 0.
             || s.owner.key.len() > 4096
             || s.owner.path.len() > 64
-            || previous.is_some_and(|p| p >= s.actor)
+            || super::codec::out_of_order(previous, s.actor)
         {
             return Err(Corrupt("invalid or unsorted package dialogue".into()));
         }

@@ -58,6 +58,12 @@ impl Writer {
     }
 
     pub fn form(&mut self, v: FormId) {
+        #[cfg(test)]
+        WRITTEN.with(|w| {
+            if let Some(list) = w.borrow_mut().as_mut() {
+                list.push(v);
+            }
+        });
         self.u32(v.0);
     }
 
@@ -82,9 +88,64 @@ impl Writer {
     }
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static WRITTEN: std::cell::RefCell<Option<Vec<FormId>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Every form id `Writer::form` wrote while `f` ran (tests).
+#[cfg(test)]
+pub(super) fn forms_written(f: impl FnOnce()) -> Vec<FormId> {
+    WRITTEN.with(|w| *w.borrow_mut() = Some(Vec::new()));
+    f();
+    WRITTEN.with(|w| w.borrow_mut().take().unwrap_or_default())
+}
+
+std::thread_local! {
+    /// The map form ids are read through while a save made with another
+    /// load order is read (`with_map`).
+    static MAP: std::cell::RefCell<Option<std::rc::Rc<super::plugin_map::FormMap>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Read with every `Reader` made inside `f` mapping its form ids through
+/// `map`, and with ordering checks (`out_of_order`) off: ids mapped from
+/// another load order needn't keep their order.
+pub(super) fn with_map<R>(map: super::plugin_map::FormMap, f: impl FnOnce() -> R) -> R {
+    struct Restore(Option<std::rc::Rc<super::plugin_map::FormMap>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            MAP.with(|m| *m.borrow_mut() = self.0.take());
+        }
+    }
+    let _restore = Restore(MAP.with(|m| m.replace(Some(std::rc::Rc::new(map)))));
+    f()
+}
+
+/// A runtime base record (`FORM`), its form ids mapped while remapping.
+pub(super) fn map_runtime_record(bytes: &[u8]) -> Vec<u8> {
+    match MAP.with(|m| m.borrow().clone()) {
+        Some(map) => map.map_runtime_record(bytes),
+        None => bytes.to_vec(),
+    }
+}
+
+fn remapping() -> bool {
+    MAP.with(|m| m.borrow().is_some())
+}
+
+/// Whether `next` doesn't come after `previous` where keys holding form ids
+/// must be sorted. Not checked while remapping (`with_map`): the canonical
+/// order is restored by writing the mapped snapshot out and reading it
+/// back.
+pub(super) fn out_of_order<T: PartialOrd>(previous: Option<T>, next: T) -> bool {
+    !remapping() && previous.is_some_and(|p| p >= next)
+}
+
 pub struct Reader<'a> {
     data: &'a [u8],
     pos: usize,
+    map: Option<std::rc::Rc<super::plugin_map::FormMap>>,
 }
 
 impl<'a> Reader<'a> {
@@ -93,7 +154,11 @@ impl<'a> Reader<'a> {
         self.take(n)
     }
     pub fn new(data: &'a [u8]) -> Self {
-        Reader { data, pos: 0 }
+        Reader {
+            data,
+            pos: 0,
+            map: MAP.with(|m| m.borrow().clone()),
+        }
     }
 
     pub fn left(&self) -> usize {
@@ -153,8 +218,11 @@ impl<'a> Reader<'a> {
         Ok(f64::from_le_bytes(self.array()?))
     }
 
+    /// A form id, mapped to the running load order while one is being
+    /// mapped from (`with_map`).
     pub fn form(&mut self) -> Result<FormId> {
-        Ok(FormId(self.u32()?))
+        let id = FormId(self.u32()?);
+        Ok(self.map.as_ref().map_or(id, |m| m.map(id)))
     }
 
     pub fn opt_form(&mut self) -> Result<Option<FormId>> {

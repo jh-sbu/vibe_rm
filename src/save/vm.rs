@@ -58,11 +58,11 @@ pub(super) fn put_object(w: &mut Writer, id: ObjectId) {
     match id {
         ObjectId::Form(f) => {
             w.u8(0);
-            w.u32(f);
+            w.form(esp::FormId(f));
         }
         ObjectId::Alias { quest, alias } => {
             w.u8(1);
-            w.u32(quest);
+            w.form(esp::FormId(quest));
             w.u32(alias);
         }
         ObjectId::Effect(n) => {
@@ -74,9 +74,9 @@ pub(super) fn put_object(w: &mut Writer, id: ObjectId) {
 
 pub(super) fn get_object(r: &mut Reader) -> Result<ObjectId> {
     match r.u8()? {
-        0 => Ok(ObjectId::Form(r.u32()?)),
+        0 => Ok(ObjectId::Form(r.form()?.0)),
         1 => Ok(ObjectId::Alias {
-            quest: r.u32()?,
+            quest: r.form()?.0,
             alias: r.u32()?,
         }),
         2 => Ok(ObjectId::Effect(r.u64()?)),

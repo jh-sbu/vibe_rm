@@ -330,7 +330,7 @@ impl Engine {
     /// Load the save at `path`: all of it reads before the game changes.
     pub fn load_game_from(&mut self, path: &Path) -> Result<()> {
         let bytes = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
-        let snapshot = Snapshot::read(&SaveFile::from_bytes(&bytes)?)?;
+        let snapshot = Snapshot::read_for(&SaveFile::from_bytes(&bytes)?, &self.lo)?;
         snapshot.apply(self)?;
         self.no_game = false;
         self.last_save.set(std::time::Instant::now());

@@ -124,9 +124,12 @@ enum Target {
     Gone(u8),
 }
 
-/// The plugins a save needs that the load order lacks.
+/// A save needs more plugins the load order lacks than there are unused
+/// full indices to hold their forms.
 #[derive(Debug)]
 pub struct TooManyPlugins;
+
+impl std::error::Error for TooManyPlugins {}
 
 impl std::fmt::Display for TooManyPlugins {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -211,6 +214,49 @@ impl FormMap {
     pub fn is_gone(&self, id: FormId) -> bool {
         let top = (id.0 >> 24) as u8;
         top != 0xFE && top != 0xFF && !id.is_null() && self.gone.contains(&top)
+    }
+
+    /// A runtime base record's bytes (`FORM`: only `ALCH` and `ENCH`, as
+    /// `LoadOrder::insert_runtime_record` takes), with the form ids in its
+    /// fields mapped. Which fields hold form ids is from the builders
+    /// (`crate::crafting`, `crate::created`) and UESP's record pages (*Mod
+    /// File Format/ALCH*,
+    /// [revision 2308919](https://en.uesp.net/w/index.php?oldid=2308919);
+    /// */ENCH*, [revision 2652910](https://en.uesp.net/w/index.php?oldid=2652910)):
+    /// `EFID`, `YNAM`, `ZNAM`, `KWDA`; `ALCH`'s `ENIT` addiction (8) and use
+    /// sound (16); `ENCH`'s `ENIT` base enchantment (28) and worn
+    /// restrictions (32). Its own id (`FF`) doesn't move. Bytes that don't
+    /// parse are kept as they are, for `insert_runtime_record` to refuse.
+    pub fn map_runtime_record(&self, bytes: &[u8]) -> Vec<u8> {
+        const HEADER: usize = 24;
+        let mut out = bytes.to_vec();
+        if self.identity || out.len() < HEADER {
+            return out;
+        }
+        let tag: [u8; 4] = out[..4].try_into().unwrap();
+        let mut at = HEADER;
+        while at + 6 <= out.len() {
+            let field: [u8; 4] = out[at..at + 4].try_into().unwrap();
+            let size = u16::from_le_bytes([out[at + 4], out[at + 5]]) as usize;
+            let data = at + 6;
+            if data + size > out.len() {
+                break;
+            }
+            let offsets: Vec<usize> = match (&tag, &field) {
+                (_, b"EFID" | b"YNAM" | b"ZNAM") => vec![0],
+                (_, b"KWDA") => (0..size / 4).map(|i| i * 4).collect(),
+                (b"ALCH", b"ENIT") => vec![8, 16],
+                (b"ENCH", b"ENIT") => vec![28, 32],
+                _ => vec![],
+            };
+            for o in offsets.into_iter().filter(|o| o + 4 <= size) {
+                let p = data + o;
+                let id = u32::from_le_bytes(out[p..p + 4].try_into().unwrap());
+                out[p..p + 4].copy_from_slice(&self.map(FormId(id)).0.to_le_bytes());
+            }
+            at = data + size;
+        }
+        out
     }
 
     /// The current id of a form the save names as `id`.
@@ -324,6 +370,63 @@ mod tests {
         let map = FormMap::new(&saved, &now).unwrap();
         assert_eq!(map.map(FormId(0x0100_0801)), FormId(0xFE00_0801));
         assert!(map.is_gone(map.map(FormId(0x0100_1801))));
+    }
+
+    #[test]
+    fn runtime_records_have_their_form_fields_mapped() {
+        use esp::writer::RecordBuilder;
+        let saved = slots(&[("Skyrim.esm", Slot::Full(0)), ("A.esp", Slot::Full(1))]);
+        let now = slots(&[
+            ("Skyrim.esm", Slot::Full(0)),
+            ("B.esp", Slot::Full(1)),
+            ("A.esp", Slot::Full(2)),
+        ]);
+        let map = FormMap::new(&saved, &now).unwrap();
+        let mut alch_enit = [0u8; 20];
+        alch_enit[8..12].copy_from_slice(&0x0100_0901u32.to_le_bytes());
+        alch_enit[16..20].copy_from_slice(&0x0000_0902u32.to_le_bytes());
+        let alch = RecordBuilder::new(b"ALCH", FormId(0xFF00_0800))
+            .zstring(b"FULL", "Potion")
+            .form(b"YNAM", FormId(0x0100_0903))
+            .field(
+                b"KWDA",
+                &[0x0100_0904u32.to_le_bytes(), 0x0000_0905u32.to_le_bytes()].concat(),
+            )
+            .field(b"ENIT", &alch_enit)
+            .form(b"EFID", FormId(0x0100_0906))
+            .field(b"EFIT", &[0u8; 12])
+            .to_bytes();
+        let bytes = map.map_runtime_record(&alch);
+        let mapped = esp::Record::from_raw(&bytes).unwrap();
+        assert_eq!(mapped.form_id(), FormId(0xFF00_0800));
+        let u32_at = |d: &[u8], o: usize| u32::from_le_bytes(d[o..o + 4].try_into().unwrap());
+        assert_eq!(u32_at(mapped.get(b"YNAM").unwrap(), 0), 0x0200_0903);
+        let kwda = mapped.get(b"KWDA").unwrap();
+        assert_eq!(
+            (u32_at(kwda, 0), u32_at(kwda, 4)),
+            (0x0200_0904, 0x0000_0905)
+        );
+        let enit = mapped.get(b"ENIT").unwrap();
+        assert_eq!(
+            (u32_at(enit, 8), u32_at(enit, 16)),
+            (0x0200_0901, 0x0000_0902)
+        );
+        assert_eq!(u32_at(mapped.get(b"EFID").unwrap(), 0), 0x0200_0906);
+        assert_eq!(mapped.get(b"FULL").unwrap(), b"Potion\0");
+
+        let mut ench_enit = [0u8; 36];
+        ench_enit[28..32].copy_from_slice(&0x0100_0907u32.to_le_bytes());
+        ench_enit[32..36].copy_from_slice(&0x0100_0908u32.to_le_bytes());
+        let ench = RecordBuilder::new(b"ENCH", FormId(0xFF00_0801))
+            .field(b"ENIT", &ench_enit)
+            .to_bytes();
+        let bytes = map.map_runtime_record(&ench);
+        let mapped = esp::Record::from_raw(&bytes).unwrap();
+        let enit = mapped.get(b"ENIT").unwrap();
+        assert_eq!(
+            (u32_at(enit, 28), u32_at(enit, 32)),
+            (0x0200_0907, 0x0200_0908)
+        );
     }
 
     #[test]

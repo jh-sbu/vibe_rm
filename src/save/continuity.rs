@@ -142,7 +142,7 @@ fn time(value: f64) -> Result<()> {
     Ok(())
 }
 fn ordered<K: Ord + Copy>(previous: &mut Option<K>, key: K) -> Result<()> {
-    if previous.is_some_and(|p| p >= key) {
+    if super::codec::out_of_order(*previous, key) {
         return Err(Corrupt("duplicate or unsorted continuity key".into()));
     }
     *previous = Some(key);

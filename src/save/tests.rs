@@ -223,6 +223,12 @@ fn ready_scene_force_greet_actor(e: &mut Engine) {
 }
 
 fn engine(name: &str) -> (Fixture, Engine) {
+    engine_with(name, &[], &[])
+}
+
+/// The save fixture's engine with empty plugins loaded before and after
+/// `Save.esp`.
+fn engine_with(name: &str, before: &[&str], after: &[&str]) -> (Fixture, Engine) {
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -890,7 +896,18 @@ fn engine(name: &str) -> (Fixture, Engine) {
         papyrus::pex::write(&effect_script.build().unwrap()).unwrap(),
     )
     .unwrap();
-    let e = crate::stats::action_tests::headless_engine(&f.0, "Save.esp");
+    let mut plugins = Vec::new();
+    for p in before.iter().chain(after) {
+        std::fs::write(
+            f.0.join(p),
+            write_plugin(0, &[], "test", "empty", 0x800, &[]),
+        )
+        .unwrap();
+    }
+    plugins.extend(before.iter().map(|p| p.to_string()));
+    plugins.push("Save.esp".to_string());
+    plugins.extend(after.iter().map(|p| p.to_string()));
+    let e = crate::stats::action_tests::headless_engine_plugins(&f.0, &plugins);
     (f, e)
 }
 
@@ -1160,6 +1177,90 @@ fn sound_instance_ids_go_on_after_a_load_and_legacy_saves_keep_the_counter() {
         }
     }
     assert!(Snapshot::read(&bad).is_err());
+}
+
+/// Load `bytes` into `e` through the running load order, as the game does.
+fn load_into(e: &mut Engine, bytes: &[u8]) -> anyhow::Result<()> {
+    Snapshot::read_for(&SaveFile::from_bytes(bytes).unwrap(), &e.lo)?.apply(e)
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn a_save_loads_into_a_shifted_load_order_and_back_unchanged() {
+    let (_a, mut a) = engine("a");
+    play(&mut a);
+    let saved = Snapshot::capture(&a).write();
+    // Another plugin before the save's: every one of its ids moves up one.
+    let (_b, mut b) = engine_with("b", &["Other.esp"], &[]);
+    load_into(&mut b, &saved.to_bytes()).unwrap();
+    assert_eq!(b.scripts.globals[&FormId(GLOBAL.0 + 0x0100_0000)], 3.5);
+    let mut shifted = None;
+    let written = super::codec::forms_written(|| shifted = Some(Snapshot::capture(&b).write()));
+    let shifted = shifted.unwrap();
+    // Other.esp (now 00) has no records: an id there was left unmapped.
+    let left: Vec<_> = written
+        .iter()
+        .filter(|f| !f.is_null() && f.0 >> 24 == 0)
+        .collect();
+    assert!(left.is_empty(), "unmapped: {left:?}");
+    assert!(written.iter().any(|f| f.0 >> 24 == 1), "the save's forms");
+    // And back, the other plugin after the save's: what each section holds
+    // comes out as it went in, so no id was left unmapped (it would be
+    // another plugin's by now).
+    let (_c, mut c) = engine_with("c", &[], &["Other.esp"]);
+    load_into(&mut c, &shifted.to_bytes()).unwrap();
+    let back = Snapshot::capture(&c).write();
+    for (tag, payload) in &saved.sections {
+        if matches!(tag, b"META" | b"THMB" | b"HEAD" | b"PLGS") {
+            continue;
+        }
+        assert_eq!(
+            back.section(tag),
+            Some(payload.as_slice()),
+            "section {:?}",
+            std::str::from_utf8(tag)
+        );
+    }
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn a_save_loads_into_a_reordered_load_order_in_canonical_order() {
+    // Save.esp, then Other.esp; loaded the other way round, the two
+    // plugins' ids swap order, so the remapped read is sorted afresh.
+    let (_a, mut a) = engine_with("a", &[], &["Other.esp"]);
+    play(&mut a);
+    let other = |local: u32| FormId(0x0100_0000 | local);
+    a.scripts.globals.insert(other(0x800), 7.0);
+    a.scripts.teammates.insert(other(0x801), true);
+    a.scripts.teammates.insert(ACTOR, false);
+    let saved = Snapshot::capture(&a).write();
+    let (_b, mut b) = engine_with("b", &["Other.esp"], &[]);
+    load_into(&mut b, &saved.to_bytes()).unwrap();
+    let save = |f: FormId| FormId(0x0100_0000 | f.0);
+    assert_eq!(b.scripts.globals[&FormId(0x800)], 7.0);
+    assert_eq!(b.scripts.globals[&save(GLOBAL)], 3.5);
+    assert_eq!(b.scripts.teammates.get(&FormId(0x801)), Some(&true));
+    assert_eq!(b.scripts.teammates.get(&save(ACTOR)), Some(&false));
+    // What it saves now reads as written, every check passed.
+    let again = Snapshot::capture(&b).write();
+    Snapshot::read(&SaveFile::from_bytes(&again.to_bytes()).unwrap()).unwrap();
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn a_save_loads_with_a_plugin_added_after_its_own_without_remapping() {
+    let (_a, mut a) = engine("a");
+    play(&mut a);
+    let saved = Snapshot::capture(&a).write();
+    let (_b, mut b) = engine_with("b", &[], &["Later.esp"]);
+    load_into(&mut b, &saved.to_bytes()).unwrap();
+    assert_eq!(b.scripts.globals[&GLOBAL], 3.5);
+    // A plugin it needs that isn't loaded is refused, by name, for now.
+    let (_c, mut c) = engine("c");
+    let with_later = Snapshot::capture(&b).write().to_bytes();
+    let err = load_into(&mut c, &with_later).unwrap_err().to_string();
+    assert!(err.contains("Later.esp"), "{err}");
 }
 
 #[test]
