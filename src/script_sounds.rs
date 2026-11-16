@@ -48,6 +48,18 @@ impl ScriptSounds {
     pub(crate) fn reset_for_load(&mut self) {
         self.instances.clear();
     }
+
+    /// The id the next playing gets (`SNDI`).
+    pub(crate) fn next_id(&self) -> i32 {
+        self.next
+    }
+
+    /// A save's ids were handed out up to `next`: new playings take ids
+    /// after both those and this session's, so an id a loaded script holds
+    /// never names a new sound.
+    pub(crate) fn continue_ids_from(&mut self, next: i32) {
+        self.next = self.next.max(next);
+    }
 }
 
 /// The key a `PlayAndWait` on instance `id` waits for.

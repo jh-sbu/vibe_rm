@@ -40,6 +40,11 @@ results) stays a separate, later job. For orientation only, UESP's
   record caches, script sound categories (kept for the session) and the
   console's toggles (`tgm`, `tm`, `tai`) stay. Native policy, not an SE
   claim.
+- Optional `SNDI` keeps the next script sound instance id. Loading takes
+  the larger of it and the running session's, so an id a loaded script
+  holds never names a sound started after the load. The playings
+  themselves aren't kept (`known_ambiguities/remaining-natives.md`, "Sound
+  instances"). Legacy saves keep the running counter.
 
 ## What is saved
 

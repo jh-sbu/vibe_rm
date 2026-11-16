@@ -1095,6 +1095,45 @@ fn a_load_leaves_the_old_games_death_and_session_state_behind() {
 
 #[test]
 #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn sound_instance_ids_go_on_after_a_load_and_legacy_saves_keep_the_counter() {
+    let (_a, mut a) = engine("a");
+    // Ids 1 to 6 went to playings the save's scripts may hold.
+    a.script_sounds.continue_ids_from(7);
+    let saved = Snapshot::capture(&a).write();
+    let bytes = saved.to_bytes();
+    let (_b, mut b) = engine("b");
+    Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap())
+        .unwrap()
+        .apply(&mut b)
+        .unwrap();
+    assert_eq!(b.script_sounds.next_id(), 7);
+    // A running session further on keeps its own count.
+    b.script_sounds.continue_ids_from(20);
+    Snapshot::read(&SaveFile::from_bytes(&bytes).unwrap())
+        .unwrap()
+        .apply(&mut b)
+        .unwrap();
+    assert_eq!(b.script_sounds.next_id(), 20);
+
+    let mut legacy = saved.clone();
+    legacy.sections.retain(|(tag, _)| tag != b"SNDI");
+    let (_c, mut c) = engine("c");
+    let snapshot = Snapshot::read(&legacy).unwrap();
+    assert_eq!(snapshot.sound_next, None);
+    snapshot.apply(&mut c).unwrap();
+    assert_eq!(c.script_sounds.next_id(), 1);
+
+    let mut bad = saved.clone();
+    for (tag, payload) in &mut bad.sections {
+        if tag == b"SNDI" {
+            *payload = 0i32.to_le_bytes().to_vec();
+        }
+    }
+    assert!(Snapshot::read(&bad).is_err());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
 fn a_saved_game_loads_into_another_engine_unchanged() {
     let (_a, mut a) = engine("a");
     play(&mut a);

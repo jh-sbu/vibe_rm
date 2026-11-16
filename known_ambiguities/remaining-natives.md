@@ -94,7 +94,8 @@ after detachment and first-person-only body behavior remain unverified.
 Instance ids are monotonic here and never reused; whether Skyrim reuses them is
 unknown. The voice stays at its start position (it does not follow a moving
 source; `Audio` has no position setter). Script-started loops are not saved:
-after a load a stored id stops nothing. Inference: SE does not persist sound
+after a load a stored id stops nothing
+(saves keep the id counter, `SNDI`, so it can't stop a later sound). Inference: SE does not persist sound
 handles. **test-mod** wanted: start a looping `Sound.Play`, save, load, and
 check whether it is still audible and whether `StopInstance` stops it.
 

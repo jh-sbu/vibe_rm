@@ -22,7 +22,7 @@
 //! `PDLG` (selected package Say responses and owning procedure tokens),
 //! `RLSP` (rolled leveled spell-list results),
 //! `WSTA` (ward-hit outcomes and their remaining `IsWardState` hold),
-//! `DETH` (killers and times of death), `DCNT` (deaths by actor base), `DSFL` (SetDestroyed flags), `UNCN` / `BRIB` / `INTI` / `BLDL` / `PCDL` (SetUnconscious, SetBribed, SetIntimidated, AllowBleedoutDialogue and AllowPCDialogue), `DFKL` (StartDeferredKill's actors and their pending killers), `ACAU` (SetActorCause), `LOSR` (line-of-sight registrations), `TSTL` (tracked-stats listeners), `FPGH` (ShowFirstPersonGeometry), `STPT` (stealth-point reservoirs and
+//! `DETH` (killers and times of death), `DCNT` (deaths by actor base), `DSFL` (SetDestroyed flags), `UNCN` / `BRIB` / `INTI` / `BLDL` / `PCDL` (SetUnconscious, SetBribed, SetIntimidated, AllowBleedoutDialogue and AllowPCDialogue), `DFKL` (StartDeferredKill's actors and their pending killers), `ACAU` (SetActorCause), `LOSR` (line-of-sight registrations), `TSTL` (tracked-stats listeners), `FPGH` (ShowFirstPersonGeometry), `SNDI` (the next script sound instance id), `STPT` (stealth-point reservoirs and
 //! regeneration delays), `COWN` (the owners of dropped stolen items), `ORIG`
 //! (world-created references' initial transforms), and `VM` / `VMAR`
 //! (`super::vm`: the Papyrus VM) and `MBXW` (message boxes and supported
@@ -162,6 +162,8 @@ pub struct Snapshot {
     pub los: Vec<crate::registrations::LosRegistration>,
     pub tracked_stats_listeners: Vec<papyrus::ObjectId>,
     pub first_person_hidden: bool,
+    /// The next script sound instance id (`SNDI`); legacy saves have none.
+    pub sound_next: Option<i32>,
     pub bleedout_dialogue: HashSet<FormId>,
     pub body_poses: HashMap<FormId, Vec<Mat4>>,
     pub wounds: HashMap<FormId, Wounds>,
@@ -609,6 +611,7 @@ impl Snapshot {
             los: e.scripts.los.clone(),
             tracked_stats_listeners: e.scripts.tracked_stats_listeners.clone(),
             first_person_hidden: e.first_person_hidden,
+            sound_next: Some(e.script_sounds.next_id()),
             bleedout_dialogue: ws.bleedout_dialogue.clone(),
             body_poses: ws.body_poses.clone(),
             wounds,
@@ -1014,6 +1017,12 @@ impl Snapshot {
         let mut w = Writer::default();
         w.bool(self.first_person_hidden);
         file.add(b"FPGH", w.0);
+
+        if let Some(next) = self.sound_next {
+            let mut w = Writer::default();
+            w.i32(next);
+            file.add(b"SNDI", w.0);
+        }
 
         let mut w = Writer::default();
         w.len(self.destruction.len());
@@ -2297,6 +2306,15 @@ impl Snapshot {
             s.first_person_hidden = r.bool()?;
             r.finish()?;
         }
+        if let Some(data) = file.section(b"SNDI") {
+            let mut r = Reader::new(data);
+            let next = r.i32()?;
+            if next < 1 {
+                return Err(Corrupt("invalid sound instance id".into()));
+            }
+            s.sound_next = Some(next);
+            r.finish()?;
+        }
         if let Some(data) = file.section(b"DSTR") {
             let mut r = Reader::new(data);
             for _ in 0..r.count(16)? {
@@ -2593,6 +2611,9 @@ impl Snapshot {
         s.los = self.los;
         s.tracked_stats_listeners = self.tracked_stats_listeners;
         e.first_person_hidden = self.first_person_hidden;
+        if let Some(next) = self.sound_next {
+            e.script_sounds.continue_ids_from(next);
+        }
         s.inventory_filters = self
             .vm
             .inventory_filters
