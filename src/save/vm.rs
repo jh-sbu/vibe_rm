@@ -417,7 +417,8 @@ impl VmSnapshot {
                     m.u64(key);
                 }
                 match b.action.clone() {
-                    None => m.u8(0),
+                    // A question about the load in hand outlasts nothing.
+                    None | Some(crate::messages::BoxAction::LoadWithoutPlugins { .. }) => m.u8(0),
                     Some(crate::messages::BoxAction::Enchant(request)) => {
                         m.u8(9);
                         m.form(request.station);

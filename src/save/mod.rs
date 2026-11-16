@@ -60,8 +60,33 @@ pub struct SaveListing {
     pub name: String,
     pub metadata: Option<metadata::Metadata>,
     pub corrupt: bool,
-    pub obsolete: bool,
+    /// The plugins it needs that aren't loaded (`Snapshot::read_for`): it
+    /// loads without them only if the player says so.
+    pub missing: Vec<String>,
     pub written: u64,
+}
+
+/// Of the plugins a save was made with (`saved`), those `loaded` lacks,
+/// matched by name ignoring case. The runtime records' plugin is in both.
+fn missing_plugins(saved: &[String], loaded: &[String]) -> Vec<String> {
+    saved
+        .iter()
+        .filter(|p| p.as_str() != "<runtime>")
+        .filter(|p| !loaded.iter().any(|l| l.eq_ignore_ascii_case(p)))
+        .cloned()
+        .collect()
+}
+
+/// `HEAD`'s plugin names, reading the whole save (legacy saves, whose
+/// `META` has only a hash).
+fn head_plugins(path: &Path) -> Result<Vec<String>> {
+    let file = SaveFile::from_bytes(&std::fs::read(path)?)?;
+    let mut r = codec::Reader::new(file.section(b"HEAD").context("missing HEAD")?);
+    let mut saved = Vec::new();
+    for _ in 0..r.count(4)? {
+        saved.push(r.str()?);
+    }
+    Ok(saved)
 }
 impl SaveListing {
     pub fn file_num(&self) -> u32 {
@@ -90,12 +115,16 @@ pub fn save_list_in(dir: &Path, plugins: &[String]) -> Vec<SaveListing> {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
-            let header = (|| -> Result<(Option<metadata::Metadata>, bool)> {
+            let header = (|| -> Result<(Option<metadata::Metadata>, Vec<String>)> {
                 let prefix = SaveFile::read_prefix(std::fs::File::open(&path)?)?;
                 if let Some(bytes) = prefix.section(b"META") {
                     let meta = metadata::Metadata::decode(bytes)?;
-                    let obsolete = meta.plugins_hash != metadata::plugin_hash(plugins);
-                    Ok((Some(meta), obsolete))
+                    let missing = match &meta.plugins {
+                        Some(saved) => missing_plugins(saved, plugins),
+                        None if meta.plugins_hash == metadata::plugin_hash(plugins) => vec![],
+                        None => missing_plugins(&head_plugins(&path)?, plugins),
+                    };
+                    Ok((Some(meta), missing))
                 } else {
                     let mut r =
                         codec::Reader::new(prefix.section(b"HEAD").context("missing HEAD")?);
@@ -103,19 +132,19 @@ pub fn save_list_in(dir: &Path, plugins: &[String]) -> Vec<SaveListing> {
                     for _ in 0..r.count(4)? {
                         saved.push(r.str()?);
                     }
-                    Ok((None, saved != plugins))
+                    Ok((None, missing_plugins(&saved, plugins)))
                 }
             })();
-            let (metadata, obsolete, corrupt) = match header {
-                Ok((m, o)) => (m, o, false),
-                Err(_) => (None, false, true),
+            let (metadata, missing, corrupt) = match header {
+                Ok((m, missing)) => (m, missing, false),
+                Err(_) => (None, vec![], true),
             };
             let written = metadata.as_ref().map_or(modified, |m| m.written);
             Some(SaveListing {
                 name,
                 metadata,
                 corrupt,
-                obsolete,
+                missing,
                 written,
             })
         })
@@ -224,7 +253,8 @@ impl Engine {
     /// return to: the session ends for the main menu, which shows the
     /// message.
     pub(crate) fn finish_save_load(&mut self, name: String) {
-        let Err(error) = self.load_game(&name) else {
+        let without_missing = self.load_without_missing.take().as_deref() == Some(name.as_str());
+        let Err(error) = self.load_game_with(&name, without_missing) else {
             return;
         };
         log::warn!("loading {name}: {error:#}");
@@ -371,10 +401,41 @@ impl Engine {
     }
 
     pub fn load_game(&mut self, name: &str) -> Result<()> {
+        self.load_game_with(name, false)
+    }
+
+    /// Load the save called `name`, without the plugins it needs that
+    /// aren't loaded if `without_missing` (`load_game_from_with`).
+    pub fn load_game_with(&mut self, name: &str, without_missing: bool) -> Result<()> {
         let Some(path) = save_path_in(&self.save_directory, name) else {
             bail!("'{name}' isn't a save name");
         };
-        self.load_game_from(&path)
+        self.load_game_from_with(&path, without_missing)
+    }
+
+    /// Load a listed save as the menus do: one needing plugins that aren't
+    /// loaded first asks whether to go on without them (worded in plugins:
+    /// `deviations/main-menu.md`), and loads on Yes; others load at once.
+    /// True if it asked.
+    pub fn load_listed_save(&mut self, save: &SaveListing) -> bool {
+        if save.missing.is_empty() {
+            self.pending_save_load = Some(save.name.clone());
+            return false;
+        }
+        let text = format!(
+            "This save relies on missing plugins. The following plugin(s) are missing:\n{}\nContinue loading?",
+            save.missing.join("\n")
+        );
+        let yes = self.gmst_string("sYes").unwrap_or_else(|| "Yes".into());
+        let no = self.gmst_string("sNo").unwrap_or_else(|| "No".into());
+        self.ask(
+            text,
+            vec![yes, no],
+            crate::messages::BoxAction::LoadWithoutPlugins {
+                save: save.name.clone(),
+            },
+        );
+        true
     }
 
     /// `Game.RequestSave` / `RequestAutoSave`: the game is written when the

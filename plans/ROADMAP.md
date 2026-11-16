@@ -2588,15 +2588,14 @@ readings are applied (see Done; autotest23 and autotest24's on
 9. **Saves** (the container, the engine's state, the Papyrus VM, scenes,
    objects' behaviour graphs, fights and searches, scripted moves and the
    player's conversation are done: see Done, and `plans/saves-unblocked.md`):
+   Saves load into changed load orders, and without missing plugins once
+   the player says so (`plans/saves-remaining.md`, steps 5-8).
    AI progress still restarts on load for actors' behaviour graphs (an actor
    attaches standing, its graph from its equipment and stance), NPC casts
-   and swings in progress, procedures' loaded-only state, and NPCs'
-   greetings; script sounds don't play on after a load (`Sound.PlayAndWait`
-   waits out the sound's length). Load orders that changed since the save:
-   form ids are written as loaded, many sections check their keys are
-   sorted (remapping on read would break those checks) and `FORM`'s records
-   carry form ids inside their bytes, so it needs a remapping pass over the
-   read snapshot and a policy for missing plugins. The original's refusals
+   and swings in progress and procedures' loaded-only state; script sounds
+   don't play on after a load (`Sound.PlayAndWait` waits out the sound's
+   length). What SE keeps of these is for `test-mod saveload`
+   (`plans/saves-remaining.md`, step 9). The original's refusals
    to save (combat, menus, scripted): no public source found says when
    Skyrim SE refuses (only `sCantSaveNow`). Reading the original's `.ess`
    saves later. Runtime form collection is deferred: all

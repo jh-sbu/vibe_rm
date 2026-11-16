@@ -29,8 +29,8 @@ menu?".
 
 This engine words both prompts in terms of plugins, not Creations. For missing
 plugins it asks whether to continue loading, not whether to search the
-Creations menu. The prompts aren't implemented yet; see `plans/main-menu.md`
-and `plans/saves-remaining.md`.
+Creations menu (`Engine::load_listed_save`; `plans/saves-remaining.md`,
+step 8).
 
 The user decided on 2026-11-15 that a plugin that is in Data but not
 loaded counts as missing. Such a save gets the missing-plugins prompt

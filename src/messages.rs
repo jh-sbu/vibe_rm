@@ -68,6 +68,11 @@ pub enum BoxAction {
         marker: crate::map_markers::PlayerMarker,
         replace: bool,
     },
+    /// Loading a save without the plugins it needs that aren't loaded
+    /// (`Engine::load_listed_save`).
+    LoadWithoutPlugins {
+        save: String,
+    },
     /// Making a skill Legendary, asked twice (`sLegendaryResetConfirm`, then
     /// `sLegendaryResetSecondConfirm`).
     Legendary {
@@ -497,6 +502,11 @@ impl Engine {
             }
             Some(BoxAction::Poison { weapon, poison }) if index == 0 => {
                 self.apply_poison(PLAYER_REF, weapon, poison)
+            }
+            Some(BoxAction::LoadWithoutPlugins { save }) if index == 0 => {
+                self.load_without_missing = Some(save.clone());
+                self.pending_save_load = Some(save);
+                self.menu = None;
             }
             Some(BoxAction::Legendary { skill, second }) if index == 0 => {
                 if second {

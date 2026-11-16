@@ -1222,13 +1222,8 @@ impl WindowState {
                 "Forward" | "Back" => self.auto_move = false,
                 "Quicksave" => self.engine.request_save(false),
                 "Quickload" => {
-                    if let Some(save) = self
-                        .engine
-                        .save_list()
-                        .into_iter()
-                        .find(|s| !s.corrupt && !s.obsolete)
-                    {
-                        self.engine.pending_save_load = Some(save.name);
+                    if let Some(save) = self.engine.save_list().into_iter().find(|s| !s.corrupt) {
+                        self.engine.load_listed_save(&save);
                     }
                 }
                 "Journal" | "Pause" if !self.engine.disabled_controls.journal => {

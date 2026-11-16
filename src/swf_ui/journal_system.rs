@@ -294,7 +294,9 @@ fn row(save: &SaveListing, labels: &(String, String)) -> Value {
             )),
         ),
         ("corrupt", Value::Bool(save.corrupt)),
-        ("obsolete", Value::Bool(save.obsolete)),
+        // Saves made with other plugins load (remapped, or asking first
+        // when some are missing), so none is shown as obsolete.
+        ("obsolete", Value::Bool(false)),
     ])
 }
 pub const AUDIO_ID: usize = 1000;
@@ -426,30 +428,29 @@ pub fn answer_load(
         "IsOKtoLoad" => {
             let listing = index(call).and_then(|i| system.lock().unwrap().visible.get(i).cloned());
             match listing {
-                Some(s) if !s.corrupt && !s.obsolete => {
-                    menu.callback("ConfirmOKToLoad", &[]);
-                }
-                Some(s) => engine.debug_message_box(if s.corrupt {
+                Some(s) if s.corrupt => engine.debug_message_box(
                     engine
                         .gmst_string("sSaveGameCorrupt")
-                        .unwrap_or_else(|| "This save is corrupt.".into())
-                } else {
-                    engine
-                        .gmst_string("sLoadingObsoleteSave")
-                        .unwrap_or_else(|| {
-                            "This save was made with a different plugin list.".into()
-                        })
-                }),
+                        .unwrap_or_else(|| "This save is corrupt.".into()),
+                ),
+                // Missing plugins: asked first, loaded on Yes.
+                Some(s) if !s.missing.is_empty() => {
+                    engine.load_listed_save(&s);
+                }
+                Some(_) => {
+                    menu.callback("ConfirmOKToLoad", &[]);
+                }
                 None => engine.debug_message_box("This save is no longer available.".into()),
             }
         }
         "LoadGame" => {
             if let Some(save) = index(call)
                 .and_then(|i| system.lock().unwrap().visible.get(i).cloned())
-                .filter(|s| !s.corrupt && !s.obsolete)
+                .filter(|s| !s.corrupt)
             {
-                engine.pending_save_load = Some(save.name);
-                engine.menu = None;
+                if !engine.load_listed_save(&save) {
+                    engine.menu = None;
+                }
             }
         }
         "PrepSaveGameScreenshot" => {

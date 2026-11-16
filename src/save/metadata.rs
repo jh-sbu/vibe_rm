@@ -13,6 +13,9 @@ pub struct Metadata {
     pub play_seconds: u64,
     pub written: u64,
     pub plugins_hash: u64,
+    /// The plugins the save was made with, by name (version 4 on), so a
+    /// listing can name those missing without reading the save.
+    pub plugins: Option<Vec<String>>,
     pub thumbnail: Option<Thumbnail>,
 }
 /// Stable, order-sensitive FNV-1a hash, with separators between plugin names.
@@ -67,13 +70,14 @@ impl Metadata {
             play_seconds: e.scripts.real_time as u64,
             written: 0,
             plugins_hash: plugin_hash(&plugins),
+            plugins: Some(plugins),
             thumbnail: e.save_thumbnail.clone(),
             ..Default::default()
         }
     }
     pub fn encode(&self) -> Vec<u8> {
         let mut w = Writer::default();
-        w.u32(3);
+        w.u32(4);
         w.u64(self.character);
         w.u32(self.file_num);
         w.str(&self.name);
@@ -84,12 +88,17 @@ impl Metadata {
         w.u64(self.play_seconds);
         w.u64(self.written);
         w.u64(self.plugins_hash);
+        let plugins = self.plugins.as_deref().unwrap_or_default();
+        w.len(plugins.len());
+        for p in plugins {
+            w.str(p);
+        }
         w.0
     }
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         let mut r = Reader::new(bytes);
         let version = r.u32()?;
-        if !matches!(version, 1..=3) {
+        if !matches!(version, 1..=4) {
             return Err(Corrupt("unknown META version".into()));
         }
         let mut result = Self {
@@ -103,8 +112,16 @@ impl Metadata {
             play_seconds: r.u64()?,
             written: r.u64()?,
             plugins_hash: r.u64()?,
+            plugins: None,
             thumbnail: None,
         };
+        if version >= 4 {
+            let mut plugins = Vec::new();
+            for _ in 0..r.count(4)? {
+                plugins.push(r.str()?);
+            }
+            result.plugins = Some(plugins);
+        }
         if version == 2 && r.bool()? {
             let width = r.u32()?;
             let height = r.u32()?;
@@ -159,7 +176,13 @@ mod tests {
     #[test]
     fn legacy_metadata_keeps_raw_previews_readable() {
         let image = Thumbnail::downscale(&[17; 64], 4, 4).unwrap();
-        let mut bytes = Metadata::default().encode();
+        // Version 4's plugin names (an empty list) come after the hash.
+        let legacy = || {
+            let mut b = Metadata::default().encode();
+            b.truncate(b.len() - 4);
+            b
+        };
+        let mut bytes = legacy();
         bytes[..4].copy_from_slice(&2u32.to_le_bytes());
         let mut w = Writer(bytes);
         w.bool(true);
@@ -168,9 +191,10 @@ mod tests {
         w.len(image.rgba.len());
         w.0.extend_from_slice(&image.rgba);
         assert_eq!(Metadata::decode(&w.0).unwrap().thumbnail, Some(image));
-        let mut v1 = Metadata::default().encode();
+        let mut v1 = legacy();
         v1[..4].copy_from_slice(&1u32.to_le_bytes());
-        assert!(Metadata::decode(&v1).unwrap().thumbnail.is_none());
+        let v1 = Metadata::decode(&v1).unwrap();
+        assert!(v1.thumbnail.is_none() && v1.plugins.is_none());
     }
 
     #[test]
@@ -232,6 +256,7 @@ mod tests {
             play_seconds: 123,
             written: 456,
             plugins_hash: plugin_hash(&["Skyrim.esm".into()]),
+            plugins: Some(vec!["Skyrim.esm".into()]),
             thumbnail: Some(Thumbnail::downscale(&[17; 64], 4, 4).unwrap()),
         };
         let mut header = m.clone();
@@ -263,6 +288,7 @@ mod listing_tests {
         std::fs::write(dir.join("legacy.vrs"), old.to_bytes()).unwrap();
         let meta = Metadata {
             plugins_hash: plugin_hash(&plugins),
+            plugins: Some(plugins.clone()),
             thumbnail: None,
             ..Default::default()
         };
@@ -285,12 +311,21 @@ mod listing_tests {
         let rows = save_list_in(&dir, &plugins);
         assert_eq!(rows.len(), 4);
         assert!(rows.iter().find(|s| s.name == "bad").unwrap().corrupt);
-        assert!(!rows.iter().find(|s| s.name == "legacy").unwrap().obsolete);
+        assert!(rows.iter().all(|s| s.missing.is_empty()));
+        // More plugins loaded, or other ones in another order: nothing is
+        // missing. Without the save's plugin, it is named.
+        let more = ["Extra.esm".to_string(), "SKYRIM.ESM".to_string()];
         assert!(
-            save_list_in(&dir, &[])
+            save_list_in(&dir, &more)
+                .iter()
+                .all(|s| s.missing.is_empty())
+        );
+        let without = save_list_in(&dir, &[]);
+        assert!(
+            without
                 .iter()
                 .filter(|s| !s.corrupt)
-                .all(|s| s.obsolete)
+                .all(|s| s.missing == ["Skyrim.esm"])
         );
         assert!(crate::save::delete_save_in(&dir, "../outside").is_err());
         crate::save::delete_save_in(&dir, "legacy").unwrap();

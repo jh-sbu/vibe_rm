@@ -248,15 +248,12 @@ show their three logos (`plans/main-menu-leftovers.md`).
 
 Remaining:
 
-- Saves made with other plugins (SE, observed). A save made without a
-  plugin that is now loaded loads without a warning. A save that needs an
-  inactive plugin asks to activate it; one that needs a missing plugin asks
-  whether to continue without it. Both prompts are worded in terms of plugins
-  (`deviations/main-menu.md`). All three cases need loading a save into a
-  different load order (form IDs remapped, missing plugins' forms dropped),
-  which is ROADMAP item 9's "load orders that changed since the save". Activating
-  a plugin also needs the engine rebuilt with another plugin list. Until then,
-  such saves are refused as obsolete.
+- Saves made with other plugins (SE, observed): done 2026-11-15
+  (`plans/saves-remaining.md`, steps 5-8). A save made without a plugin
+  that is now loaded, or with the same plugins in another order, loads
+  without a warning. One that needs plugins that aren't loaded (missing,
+  or inactive: the user's choice, `deviations/main-menu.md`) asks whether
+  to continue without them, naming them, and loads on Yes.
 - New: done (2026-11-08, `src/new_game.rs`; `known_ambiguities/new-game.md`).
 - What is behind the menu: the main menu cell, the logo model and the smoke,
   once their placement is known (`research/ui/main-menu.md`).

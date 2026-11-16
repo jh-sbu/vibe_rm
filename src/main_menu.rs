@@ -63,9 +63,7 @@ impl Engine {
 
     /// The save Continue loads: the newest one that can be loaded.
     pub fn continue_target(&self) -> Option<SaveListing> {
-        self.save_list()
-            .into_iter()
-            .find(|s| !s.corrupt && !s.obsolete)
+        self.save_list().into_iter().find(|s| !s.corrupt)
     }
 
     /// Quit to Main Menu: the session's pending saves are written, then a new

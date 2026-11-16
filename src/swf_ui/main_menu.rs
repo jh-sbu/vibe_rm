@@ -76,6 +76,10 @@ impl MainMenu {
         }
         match call.name.as_str() {
             "CONTINUE" => match engine.continue_target() {
+                // Missing plugins: asked in place of Continue's question.
+                Some(save) if !save.missing.is_empty() => {
+                    engine.load_listed_save(&save);
+                }
                 Some(_) => {
                     let text_ = engine
                         .gmst_string("sConfirmContinue")

@@ -7964,3 +7964,38 @@ fn a_save_standing_in_a_missing_plugins_place_is_refused() {
     let err = snapshot.apply(&mut b).unwrap_err().to_string();
     assert!(err.contains("Other.esp"), "{err}");
 }
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn a_listed_save_missing_plugins_asks_and_loads_on_yes() {
+    let (_b, mut b) = engine_with("ask-b", &[], &["Later.esp"]);
+    play(&mut b);
+    let bytes = Snapshot::capture(&b).write().to_bytes();
+    let (_c, mut c) = engine("ask-c");
+    std::fs::create_dir_all(&c.save_directory).unwrap();
+    std::fs::write(c.save_directory.join("needs later.vrs"), &bytes).unwrap();
+    let listing = c
+        .save_list()
+        .into_iter()
+        .find(|s| s.name == "needs later")
+        .unwrap();
+    assert_eq!(listing.missing, ["Later.esp"]);
+    // No: nothing loads.
+    assert!(c.load_listed_save(&listing));
+    let text = c.messages.boxes.back().unwrap().text.clone();
+    assert!(
+        text.contains("Later.esp") && text.contains("Continue loading?"),
+        "{text}"
+    );
+    c.choose_message_button(1);
+    assert_eq!(c.pending_save_load, None);
+    // Yes: it loads without the plugin.
+    assert!(c.load_listed_save(&listing));
+    c.choose_message_button(0);
+    c.apply_pending_save_load();
+    while c.is_loading() {
+        c.update(Default::default(), 0.05, 20.0);
+    }
+    assert_eq!(c.scripts.globals[&GLOBAL], 3.5);
+    assert_eq!(c.load_without_missing, None);
+}

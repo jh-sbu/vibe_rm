@@ -55,6 +55,16 @@ results) stays a separate, later job. For orientation only, UESP's
   objects on gone forms stay too, their natives finding nothing. A plugin
   that comes back later doesn't get its forms back: they are saved where
   they were moved, under no plugin's name. Item lists skip gone items.
+- The question before such a load ("This save relies on missing plugins.
+  The following plugin(s) are missing: ... Continue loading?", Yes / No) is
+  asked by the journal's and the main menu's Load in place of their own
+  confirmation, by Continue in place of `sConfirmContinue`, and by
+  Quickload, which takes the newest save that isn't corrupt either way.
+  Its wording is the user's (`deviations/main-menu.md`); when SE asks
+  relative to its other confirmations, and whether Quickload asks, are
+  unobserved. Save listings know a save's plugins from `META` (version 4
+  keeps their names); older saves whose plugin list differs are read
+  through to `HEAD` for them. None is shown as obsolete.
 - Optional `PLGS` keeps each plugin's slot as saved (full index, or light
   index under `FE`), for reading a save into another load order
   (`super::plugin_map`, `plans/saves-remaining.md` Part B). A save without

@@ -229,6 +229,9 @@ pub struct Engine {
     /// name, and whether it is an autosave.
     pub save_directory: std::path::PathBuf,
     pub pending_save_load: Option<String>,
+    /// The save the player said to load without the plugins it needs that
+    /// aren't loaded (`Engine::load_listed_save`), for its load to go on.
+    pub(crate) load_without_missing: Option<String>,
     /// A cell change or save load waiting for the next frame (`loading`).
     pub(crate) pending_load: Option<crate::loading::LoadRequest>,
     /// The loading state, while a load's screen is up.
@@ -750,6 +753,7 @@ impl Engine {
             autosave: Default::default(),
             save_thumbnail: None,
             pending_save_load: None,
+            load_without_missing: None,
             pending_load: None,
             loading: None,
             alias_location_sources: HashMap::new(),
