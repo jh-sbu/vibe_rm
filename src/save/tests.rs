@@ -1095,6 +1095,36 @@ fn a_load_leaves_the_old_games_death_and_session_state_behind() {
 
 #[test]
 #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn greeting_timers_round_trip_without_expired_ones_and_legacy_saves_start_clear() {
+    use crate::dialogue::barks::SavedBarks;
+    let (_a, mut a) = engine("a");
+    a.scripts.real_time = 1000.0;
+    a.barks.restore(SavedBarks {
+        // 0x900 greeted 50 s ago; 0x901 long enough ago to greet again.
+        greeted: vec![(FormId(0x900), 950.0), (FormId(0x901), 700.0)],
+        chatter_at: vec![(FormId(0x900), 1012.0), (FormId(0x902), 990.0)],
+        quiet_until: 1001.5,
+    });
+    let saved = Snapshot::capture(&a).write();
+    let (_b, mut b) = engine("b");
+    Snapshot::read(&saved).unwrap().apply(&mut b).unwrap();
+    assert_eq!(
+        b.barks.saved(1000.0),
+        SavedBarks {
+            greeted: vec![(FormId(0x900), 950.0)],
+            chatter_at: vec![(FormId(0x900), 1012.0), (FormId(0x902), 990.0)],
+            quiet_until: 1001.5,
+        }
+    );
+
+    let mut legacy = saved.clone();
+    legacy.sections.retain(|(tag, _)| tag != b"GRTG");
+    Snapshot::read(&legacy).unwrap().apply(&mut b).unwrap();
+    assert_eq!(b.barks.saved(1000.0), SavedBarks::default());
+}
+
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
 fn sound_instance_ids_go_on_after_a_load_and_legacy_saves_keep_the_counter() {
     let (_a, mut a) = engine("a");
     // Ids 1 to 6 went to playings the save's scripts may hold.

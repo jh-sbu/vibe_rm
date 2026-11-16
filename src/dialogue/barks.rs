@@ -32,6 +32,14 @@ pub struct Bark {
     pub ends_at: f64,
 }
 
+/// The greeting and chatter timers saves keep (`GRTG`), by real time.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct SavedBarks {
+    pub greeted: Vec<(FormId, f64)>,
+    pub chatter_at: Vec<(FormId, f64)>,
+    pub quiet_until: f64,
+}
+
 #[derive(Default)]
 pub struct Barks {
     pub(crate) packages: HashMap<FormId, crate::ai::speech::Speech>,
@@ -60,6 +68,34 @@ impl Barks {
             topics,
             ..Default::default()
         };
+    }
+
+    /// What saves keep (`GRTG`), at real time `now`: when NPCs last greeted
+    /// the player (those that may greet again already are left out: they
+    /// read as never greeted), when each may chatter next, and the quiet
+    /// after the last line. Sorted by actor.
+    pub(crate) fn saved(&self, now: f64) -> SavedBarks {
+        let mut greeted: Vec<_> = self
+            .greeted
+            .iter()
+            .filter(|&(_, &t)| now - t <= GREETING_INTERVAL)
+            .map(|(&r, &t)| (r, t))
+            .collect();
+        greeted.sort_by_key(|&(r, _)| r);
+        let mut chatter_at: Vec<_> = self.chatter_at.iter().map(|(&r, &t)| (r, t)).collect();
+        chatter_at.sort_by_key(|&(r, _)| r);
+        SavedBarks {
+            greeted,
+            chatter_at,
+            quiet_until: self.quiet_until,
+        }
+    }
+
+    /// A save's greeting timers, in place of whatever is kept.
+    pub(crate) fn restore(&mut self, saved: SavedBarks) {
+        self.greeted = saved.greeted.into_iter().collect();
+        self.chatter_at = saved.chatter_at.into_iter().collect();
+        self.quiet_until = saved.quiet_until;
     }
 
     fn available(&self, now: f64) -> bool {

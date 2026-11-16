@@ -22,7 +22,7 @@
 //! `PDLG` (selected package Say responses and owning procedure tokens),
 //! `RLSP` (rolled leveled spell-list results),
 //! `WSTA` (ward-hit outcomes and their remaining `IsWardState` hold),
-//! `DETH` (killers and times of death), `DCNT` (deaths by actor base), `DSFL` (SetDestroyed flags), `UNCN` / `BRIB` / `INTI` / `BLDL` / `PCDL` (SetUnconscious, SetBribed, SetIntimidated, AllowBleedoutDialogue and AllowPCDialogue), `DFKL` (StartDeferredKill's actors and their pending killers), `ACAU` (SetActorCause), `LOSR` (line-of-sight registrations), `TSTL` (tracked-stats listeners), `FPGH` (ShowFirstPersonGeometry), `SNDI` (the next script sound instance id), `STPT` (stealth-point reservoirs and
+//! `DETH` (killers and times of death), `DCNT` (deaths by actor base), `DSFL` (SetDestroyed flags), `UNCN` / `BRIB` / `INTI` / `BLDL` / `PCDL` (SetUnconscious, SetBribed, SetIntimidated, AllowBleedoutDialogue and AllowPCDialogue), `DFKL` (StartDeferredKill's actors and their pending killers), `ACAU` (SetActorCause), `LOSR` (line-of-sight registrations), `TSTL` (tracked-stats listeners), `FPGH` (ShowFirstPersonGeometry), `SNDI` (the next script sound instance id), `GRTG` (NPCs' greeting and chatter timers), `STPT` (stealth-point reservoirs and
 //! regeneration delays), `COWN` (the owners of dropped stolen items), `ORIG`
 //! (world-created references' initial transforms), and `VM` / `VMAR`
 //! (`super::vm`: the Papyrus VM) and `MBXW` (message boxes and supported
@@ -39,7 +39,7 @@
 //! Objects' behaviour graphs are in `GRPH` (with the open states of `GOPN`),
 //! loaded actors' fights and searches in `FGHT` (`super::fights`), the
 //! player's conversation in `CONV` (`super::conversation`).
-//! Not yet saved: actors' goals set by hand, NPCs' greetings, and the rest of AI
+//! Not yet saved: actors' goals set by hand, and the rest of AI
 //! progress (actors' graphs, procedures' loaded-only state); see
 //! `plans/ROADMAP.md`.
 //!
@@ -164,6 +164,8 @@ pub struct Snapshot {
     pub first_person_hidden: bool,
     /// The next script sound instance id (`SNDI`); legacy saves have none.
     pub sound_next: Option<i32>,
+    /// NPCs' greeting and chatter timers (`GRTG`); legacy saves have none.
+    pub(crate) barks: Option<crate::dialogue::barks::SavedBarks>,
     pub bleedout_dialogue: HashSet<FormId>,
     pub body_poses: HashMap<FormId, Vec<Mat4>>,
     pub wounds: HashMap<FormId, Wounds>,
@@ -612,6 +614,7 @@ impl Snapshot {
             tracked_stats_listeners: e.scripts.tracked_stats_listeners.clone(),
             first_person_hidden: e.first_person_hidden,
             sound_next: Some(e.script_sounds.next_id()),
+            barks: Some(e.barks.saved(e.scripts.real_time)),
             bleedout_dialogue: ws.bleedout_dialogue.clone(),
             body_poses: ws.body_poses.clone(),
             wounds,
@@ -1022,6 +1025,18 @@ impl Snapshot {
             let mut w = Writer::default();
             w.i32(next);
             file.add(b"SNDI", w.0);
+        }
+        if let Some(b) = &self.barks {
+            let mut w = Writer::default();
+            for list in [&b.greeted, &b.chatter_at] {
+                w.len(list.len());
+                for &(actor, t) in list {
+                    w.form(actor);
+                    w.f64(t);
+                }
+            }
+            w.f64(b.quiet_until);
+            file.add(b"GRTG", w.0);
         }
 
         let mut w = Writer::default();
@@ -2315,6 +2330,33 @@ impl Snapshot {
             s.sound_next = Some(next);
             r.finish()?;
         }
+        if let Some(data) = file.section(b"GRTG") {
+            let mut r = Reader::new(data);
+            let mut lists = [Vec::new(), Vec::new()];
+            for list in &mut lists {
+                let mut previous = None;
+                for _ in 0..r.count(12)? {
+                    let actor = r.form()?;
+                    let t = r.f64()?;
+                    if actor.is_null() || previous.is_some_and(|p| p >= actor) || !t.is_finite() {
+                        return Err(Corrupt("invalid or unsorted greeting timer".into()));
+                    }
+                    previous = Some(actor);
+                    list.push((actor, t));
+                }
+            }
+            let quiet_until = r.f64()?;
+            if !quiet_until.is_finite() {
+                return Err(Corrupt("invalid greeting quiet time".into()));
+            }
+            r.finish()?;
+            let [greeted, chatter_at] = lists;
+            s.barks = Some(crate::dialogue::barks::SavedBarks {
+                greeted,
+                chatter_at,
+                quiet_until,
+            });
+        }
         if let Some(data) = file.section(b"DSTR") {
             let mut r = Reader::new(data);
             for _ in 0..r.count(16)? {
@@ -2613,6 +2655,9 @@ impl Snapshot {
         e.first_person_hidden = self.first_person_hidden;
         if let Some(next) = self.sound_next {
             e.script_sounds.continue_ids_from(next);
+        }
+        if let Some(b) = self.barks {
+            e.barks.restore(b);
         }
         s.inventory_filters = self
             .vm

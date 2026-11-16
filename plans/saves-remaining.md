@@ -38,13 +38,14 @@ available evidence:
    takes the larger of it and the running counter. Legacy saves start at 1
    (the current behaviour). Test: a saved id can't stop a sound started
    after the load. The loop itself still doesn't play on (step 9).
-3. **Greetings** (`GRTG`). The player hello times (`greeted`), the
-   chatter times, `quiet_until`, the NPC-to-NPC hello contacts, and each
-   force greeter's `greeting`, `greet_wait` and `greet_check`, keyed by
-   actor. They're stored against `scripts.real_time`, which `TIME`
-   already saves. Dead or missing actors' entries are dropped. Legacy
-   saves keep step 1's reset. Native policy, recorded in
-   `known_ambiguities/saves.md`.
+3. **Greetings** (`GRTG`). The player hello times (`greeted`, less those
+   already free to greet again), the chatter times and `quiet_until`.
+   They're stored against `scripts.real_time`, which `TIME` already saves.
+   Legacy saves keep step 1's reset. Native policy, recorded in
+   `known_ambiguities/saves.md`. Left out when implementing: force
+   greeters' `greeting` / `greet_wait` / `greet_check` and the NPC-to-NPC
+   hello contacts. Unloading a cell already drops them (`take_back`
+   doesn't carry them), and a load attaches actors as a cell load does.
 4. **A goal set by hand** in `AEXC`, as a new version of the section.
    Older versions load with none, as now.
 

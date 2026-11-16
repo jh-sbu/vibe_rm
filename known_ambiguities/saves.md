@@ -45,6 +45,14 @@ results) stays a separate, later job. For orientation only, UESP's
   holds never names a sound started after the load. The playings
   themselves aren't kept (`known_ambiguities/remaining-natives.md`, "Sound
   instances"). Legacy saves keep the running counter.
+- Optional `GRTG` keeps NPCs' greeting and chatter timers, by real time
+  (`TIME` keeps the clock): when each last greeted the player (those
+  already free to greet again are left out, as they read the same), when
+  each may chatter next, and the quiet after the last line. Without it, a
+  load starts them clear, so NPCs near the player may greet at once.
+  Force greeters' cooldowns and NPCs' hello contacts with each other are
+  not kept: unloading a cell drops them already, and a load attaches
+  actors as a cell load does. Native policy, not an SE claim.
 
 ## What is saved
 
