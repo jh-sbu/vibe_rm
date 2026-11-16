@@ -39,7 +39,7 @@
 //! Objects' behaviour graphs are in `GRPH` (with the open states of `GOPN`),
 //! loaded actors' fights and searches in `FGHT` (`super::fights`), the
 //! player's conversation in `CONV` (`super::conversation`).
-//! Not yet saved: actors' goals set by hand, and the rest of AI
+//! Not yet saved: actors' pinned goals (see `known_ambiguities/saves.md`), and the rest of AI
 //! progress (actors' graphs, procedures' loaded-only state); see
 //! `plans/ROADMAP.md`.
 //!

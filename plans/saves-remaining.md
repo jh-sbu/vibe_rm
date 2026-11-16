@@ -18,7 +18,7 @@ available evidence:
 | Stale session state after a load | **Unblocked (found while checking)** | `Barks` (`greeted`, `chatter_at`, `quiet_until`, `HelloContacts`) and `ScriptSounds` are neither saved nor reset by `Snapshot::apply`. Loading in a running game keeps the old session's hello timers. Loading in a new process forgets them, so every NPC in range may greet at once. |
 | Sound instance ids | **Unblocked (part)** | `ScriptSounds::next` starts at 1 in a new process, but VM variables loaded from the save can hold earlier ids. A stored id can then match a new sound, and `StopInstance` stops the wrong sound. Saving the counter fixes that. Whether a script's loop plays on after a load is still a probe question (`known_ambiguities/remaining-natives.md`, "Sound instances"). |
 | NPCs' greetings | **Unblocked** | Native continuity policy, like `FGHT` and `AEXC`: the hello and chatter timers above, plus force greeters' `greeting` / `greet_wait` / `greet_check` (`ActorExec`, `src/ai/greet.rs`). No SE claim. |
-| A goal set by hand (console) | **Unblocked, small** | `ActorExec` keeps it (`src/ai/exec.rs:878`), but `AEXC` leaves it out. |
+| A goal set by hand (console) | **Dropped (step 4)** | Pinned goals also come from scripted moves and arrest pursuit; see step 4. |
 | Actors' behaviour graphs, NPC casts and swings in progress, procedures' loaded-only state | **Blocked on an SE observation; the probe is unblocked** | On load, every execution goes through `Engine::away` (`restore_executions`). So the save's own cells attach their actors as a cell reload does: `Stage::starts_fresh` follows autotest16's reload readings, where a seated Sit-package actor stands by its seat and a seated sandboxer picks anew. Nothing says what SE does with actors loaded *at save time*. autotest14 reloaded a save only for actors away from the player. Restoring graphs mid-furniture needs `seat`, `sub`, `moving`, `sneaking`, `drawn`, `torch` and more from `ActorRuntime` restored to match. That isn't worth building until SE shows what it keeps. Step 9 builds the probe. |
 | Script sounds playing on after a load | **Blocked on the same probe** | `known_ambiguities/remaining-natives.md` already asks for the test. It goes into step 9. |
 | SE's refusals to save | **Blocked on observation** | No public source covers this, and a script can't attempt a save and read whether it was refused. Step 9's run instructions add a short manual checklist for the user. |
@@ -46,8 +46,13 @@ available evidence:
    greeters' `greeting` / `greet_wait` / `greet_check` and the NPC-to-NPC
    hello contacts. Unloading a cell already drops them (`take_back`
    doesn't carry them), and a load attaches actors as a cell load does.
-4. **A goal set by hand** in `AEXC`, as a new version of the section.
-   Older versions load with none, as now.
+4. **A goal set by hand: dropped** (2026-11-15). A pinned goal
+   (`ActorExec::pinned`) isn't only the console's: `travel` and `escort`
+   (testing tools) set one, and so do `PathToReference` (restarted from
+   `PTHW`), `KeepOffsetFromActor` (re-pinned every frame from `KOFF`) and
+   a guard's pursuit for an arrest, which isn't saved. Saving pinned goals
+   would leave such a guard chasing the player after a load. Telling the
+   console's goals apart would only serve testing, so they stay unsaved.
 
 ## Part B: loading a save into a changed load order
 

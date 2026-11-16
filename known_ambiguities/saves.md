@@ -131,7 +131,8 @@ loaded actors' too, and are joined to their executions as the save loads.
 Not kept: the package list and goal (taken again from the records: the
 execution's alias generation never matches the loaded game's, and its goal is
 worked out at its next reading, at once for one that attaches), a goal set by
-hand with the console, fights and searches (kept for loaded actors in `FGHT`
+hand (pinned: the console's `travel` / `escort`, but also scripted moves,
+which `PTHW` and `KOFF` restart, and arrest pursuit, which isn't saved), fights and searches (kept for loaded actors in `FGHT`
 instead), greetings, and package events not yet delivered. Loading replaces every execution before the
 save's cells attach their actors; runs carry on without package events, as
 autotest14 saw of Skyrim SE. Saves without `AEXC` keep only wounds, and their
