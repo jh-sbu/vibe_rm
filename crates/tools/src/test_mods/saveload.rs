@@ -96,12 +96,13 @@
 //! traces at `RUST_LOG=vibe_rm::script::natives=debug`; offscreen answers
 //! the boxes and loads nothing, so the readings after "NOT LOADED" are of
 //! the live game) reaches the done box. In ours Sitter sat at 0.25 s,
-//! Sleeper slept at 0.75 s, Fighter fought, and the walker was caught at
-//! 1,174 of 2,342. Two states never came: Sneaker didn't sneak (a standing
-//! NPC's graph doesn't take `ActionSneak` in ours, with the package flag or
-//! `StartSneaking`), and Caster, weapon drawn on its practice package,
-//! never read `IsCastingRight`. Their SE readings still count; the setup
-//! line gives -1 for a state not reached.
+//! Sleeper slept at 0.75 s, Sneaker sneaked at 0.25 s, Fighter fought, and
+//! the walker was caught at 1,174 of 2,342. One state never came: Caster,
+//! weapon drawn on its practice package, never read `IsCastingRight`. Its
+//! SE readings still count; the setup line gives -1 for a state not
+//! reached. (Sneaker first didn't sneak: the graph took `SneakStart`, but
+//! ours read the stance back from the graph's `IsSneaking`, which no
+//! vanilla graph writes. Fixed 2026-11-17: the engine writes it.)
 //!
 //! Not run in Skyrim SE yet.
 

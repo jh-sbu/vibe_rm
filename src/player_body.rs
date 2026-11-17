@@ -47,6 +47,10 @@ pub struct PlayerBody {
     sneak_state: Option<f32>,
     sprint_state: Option<f32>,
     swim_told: bool,
+    /// The graph took `SneakStart` (and not `SneakStop` since). The engine
+    /// keeps this and writes it to `IsSneaking`: no vanilla graph writes
+    /// that variable, they only read it.
+    graph_sneak: bool,
     step_events: Vec<String>,
     script_events: Vec<String>,
     /// How the graph was last told they move, and its state changes by then
@@ -929,10 +933,7 @@ impl PlayerBody {
         }
     }
     pub(crate) fn graph_sneaking(&self) -> bool {
-        self.graph
-            .as_ref()
-            .and_then(|g| g.variable("IsSneaking"))
-            .map_or_else(|| self.told.is_some_and(|s| s.sneaking), |v| v != 0.0)
+        self.graph_sneak
     }
     pub(crate) fn project(&self) -> Option<&Arc<crate::world::behavior::ProjectRuntime>> {
         Some(self.graph.as_ref()?.project())
@@ -955,6 +956,7 @@ impl PlayerBody {
             sneak_state: None,
             sprint_state: None,
             swim_told: false,
+            graph_sneak: false,
             step_events: Vec::new(),
             script_events: Vec::new(),
             told: None,
@@ -1046,7 +1048,6 @@ impl PlayerBody {
             0.0
         };
         self.graph_heading = self.heading;
-        let graph_sneaking = self.graph_sneaking();
         let mut g = PlayerGraphs {
             third: self.graph.as_mut()?,
             first: self.first.as_mut(),
@@ -1055,6 +1056,8 @@ impl PlayerBody {
         if self.swim_told != m.swimming {
             g.action(actions, "ActionSwimStateChange");
             self.swim_told = m.swimming;
+            // Swimming leaves the sneak states.
+            self.graph_sneak &= !m.swimming;
             self.airborne = None;
             self.fell = false;
             self.told = None;
@@ -1155,10 +1158,23 @@ impl PlayerBody {
             sneaking: m.sneaking,
         };
         if (self.airborne.is_none() || !self.fell)
-            && (self.told != Some(stance) || g.changes() != self.told_at)
+            && (self.told != Some(stance)
+                || g.changes() != self.told_at
+                || self.graph_sneak != stance.sneaking)
         {
             for action in stance.events() {
-                if action == "ActionSneak" && graph_sneaking == stance.sneaking {
+                if action == "ActionSneak" {
+                    // Handled now, to know whether the graph took it; tried
+                    // again until it does. A graph without `IsSneaking` has
+                    // no sneak states to refuse it.
+                    if self.graph_sneak != stance.sneaking
+                        && (g.third.variable("IsSneaking").is_none()
+                            || actions
+                                .event(action)
+                                .is_some_and(|ev| g.event(ev, vfs, anims, &self.skeleton)))
+                    {
+                        self.graph_sneak = stance.sneaking;
+                    }
                     continue;
                 }
                 g.action(actions, action);
@@ -1170,6 +1186,7 @@ impl PlayerBody {
             // Taken, these change it again: told once more, then ignored.
             self.told_at = g.changes();
         }
+        g.set_variable("IsSneaking", self.graph_sneak as u8 as f32);
         self.sample(dt, vfs, anims)
     }
 
@@ -1861,6 +1878,24 @@ mod tests {
                 states.iter().any(|s| s == "MT_Standing_State"),
                 "{states:?}"
             );
+        }
+        // Sneaking and standing again: the graphs only read `IsSneaking`,
+        // so the body writes it as the graph takes `SneakStart` / `SneakStop`.
+        for sneaking in [true, false] {
+            e.player.sneaking = sneaking;
+            for _ in 0..30 {
+                e.update_player_body(Vec3::ZERO, 1. / 60.);
+            }
+            let states = e.player_graph_states().unwrap();
+            assert_eq!(
+                states.iter().any(|s| s == "Sneak_Idle_State"),
+                sneaking,
+                "{states:?}"
+            );
+            let body = e.player_body.as_ref().unwrap();
+            assert_eq!(body.graph_sneaking(), sneaking);
+            let graph = body.graph.as_ref().unwrap();
+            assert_eq!(graph.variable("IsSneaking"), Some(sneaking as u8 as f32));
         }
     }
 

@@ -43,6 +43,8 @@ mod movement_tests;
 #[cfg(test)]
 mod sandbox_load_tests;
 #[cfg(test)]
+mod sneak_tests;
+#[cfg(test)]
 mod time_bench;
 
 use std::sync::Arc;
@@ -424,7 +426,7 @@ pub struct ActorRuntime {
     graph_heading: f32,
     /// Turning in place through the graph: -1 right, 1 left, 0 not.
     turning: i8,
-    /// The graph is sneaking (`SneakStart` sent).
+    /// The graph is sneaking (it took `SneakStart`, and not `SneakStop` since).
     sneaking: bool,
     /// `StartSneaking`'s stance, in place of the package's until called
     /// again.
@@ -2354,13 +2356,26 @@ impl ActorRuntime {
             self.moving = false;
             if self.swimming {
                 self.drawn = false;
+                // Swimming leaves the sneak states.
+                self.sneaking = false;
             }
         }
-        let graph_sneaking = g.variable("IsSneaking").map_or(self.sneaking, |v| v != 0.0);
-        if sneak != graph_sneaking && !self.swimming {
-            self.actions.send(g, "ActionSneak");
-            self.sneaking = sneak;
+        // Handled now, to know whether the graph took it; tried again each
+        // update until it does. The engine keeps the stance and writes it to
+        // `IsSneaking`: no vanilla graph writes that variable, they only read
+        // it. A graph without it has no sneak states to refuse the stance.
+        if sneak != self.sneaking && !self.swimming {
+            let has_sneak = g.variable("IsSneaking").is_some();
+            if !has_sneak
+                || self
+                    .actions
+                    .event("ActionSneak")
+                    .is_some_and(|ev| g.handle_event(ev, clips.vfs, clips.anims, &self.skeleton))
+            {
+                self.sneaking = sneak;
+            }
         }
+        g.set_variable("IsSneaking", self.sneaking as u8 as f32);
         if let Some(s) = state {
             g.set_variable("iState", s);
         }
@@ -2434,7 +2449,6 @@ impl ActorRuntime {
             && g.active_states()
                 .iter()
                 .any(|s| s.starts_with("ST_Flight_Kill"));
-        self.sneaking = g.variable("IsSneaking").map_or(self.sneaking, |v| v != 0.0);
         if let Some(request) = self.turn_request.take() {
             self.exec.heading += (-frame.character_turn).clamp(request.min(0.0), request.max(0.0));
         }
@@ -2757,12 +2771,7 @@ impl Engine {
                             .as_ref()
                             .is_some_and(|b| b.graph_sneaking())
                     } else {
-                        self.actor_ref(actor).is_some_and(|a| {
-                            a.graph
-                                .as_ref()
-                                .and_then(|g| g.variable("IsSneaking"))
-                                .map_or(a.sneaking, |v| v != 0.0)
-                        })
+                        self.actor_ref(actor).is_some_and(|a| a.sneaking)
                     }
                 }),
                 ..Default::default()
