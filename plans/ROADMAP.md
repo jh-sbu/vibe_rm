@@ -2043,6 +2043,16 @@ readings are applied (see Done; autotest23 and autotest24's on
     (`plans/loading-screen.md`), `crafting1` (`plans/crafting.md`) and
     `spell-visuals` (`plans/spell-visuals.md`, Pending SE validation; its
     steps are now `set VrmFxRun to <n>`, as vanilla SE has no `cqf`).
+  - Built and waiting for the user's run (fully automatic): `autotest27`
+    (`crates/tools/src/test_mods/autotest27.rs`): autotest24's follow-ups
+    (`GetTimeDead`'s unit with the kill in its own test, `IsKillerObject`
+    on the dead victim last; Calm, Fear and Fury as target-actor copies;
+    Disarm idle, mid-swing, between swings and above the cap; `GetDisease`
+    after a skeever's Ataxia; the Vigilant free and hurt, and its wards;
+    Attack on Sight watched for 40 s and in Whiterun Hold), autotest20's
+    charge with both fighters free, and the held-actor readings repeated
+    free (hostile script cast, the 0.6 s sheathe and a redraw, whether a
+    restrained NPC fights).
   - Built and waiting for the user's run: `saveload`
     (`plans/saves-remaining.md` step 9; run instructions in
     `crates/tools/src/test_mods/saveload.rs`). Its dry run in our engine

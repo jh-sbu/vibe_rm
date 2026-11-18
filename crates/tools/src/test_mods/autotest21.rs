@@ -230,8 +230,17 @@ const FAILING_FIRE_SPELL: u32 = 0xA26;
 const SKIP_TEST: u32 = 0xA27;
 // Added for autotest24.
 const AOS_IS_GUARD: u32 = 0xA28;
+// Added for autotest27.
+const CALM_EFFECT: u32 = 0xA29;
+const FEAR_EFFECT: u32 = 0xA2A;
+const FURY_EFFECT: u32 = 0xA2B;
+const CALM_SPELL: u32 = 0xA2C;
+const FEAR_SPELL: u32 = 0xA2D;
+const FURY_SPELL: u32 = 0xA2E;
+const LEVEL15_FIGHTER: u32 = 0xA2F;
+const HOLD_GUARD: u32 = 0xA30;
 /// The next free object id.
-const NEXT_OBJECT: u32 = 0xA30;
+const NEXT_OBJECT: u32 = 0xA31;
 
 const DOOR: u32 = 0x850;
 const WEB: u32 = 0x851;
@@ -725,6 +734,8 @@ const VANILLA: &[(&str, &str, &str)] = &[
     ("GameDaysPassed", "GlobalVariable", "GameDaysPassed"),
     ("TrapAtaxia", "Spell", "TrapDiseaseAtaxia"),
     ("Sanguinare", "Spell", "DiseaseSanguinareVampiris"),
+    // Added for autotest27.
+    ("SkeeverBase", "ActorBase", "EncSkeever"),
 ];
 
 /// The weathers whose transitions are timed, with their trans deltas: the
@@ -855,6 +866,11 @@ const OWN: &[(&str, &str, u32)] = &[
     ("OurDisarm", "Spell", DISARM_SPELL),
     ("OurDisarmStrong", "Spell", DISARM_STRONG_SPELL),
     ("FailingFireSpell", "Spell", FAILING_FIRE_SPELL),
+    ("OurCalm", "Spell", CALM_SPELL),
+    ("OurFear", "Spell", FEAR_SPELL),
+    ("OurFury", "Spell", FURY_SPELL),
+    ("Level15FighterBase", "ActorBase", LEVEL15_FIGHTER),
+    ("HoldGuardBase", "ActorBase", HOLD_GUARD),
 ];
 
 /// The tests, in running order: every `String Function TestName()` of the
@@ -1929,6 +1945,30 @@ fn build_records(lo: &LoadOrder, batch: &Batch) -> Result<TestMod> {
             ..npc(AOS_IS_GUARD, "VrmAt21AosIsGuard")
         }
         .record(),
+        // Above Disarm's level cap of 12 (autotest27).
+        Npc {
+            level: 15,
+            temper: (1, 3, 0),
+            script: Some("VrmAt21ActorLog"),
+            items: vec![(sword, 1)],
+            ..npc(LEVEL15_FIGHTER, "VrmAt21Level15Fighter")
+        }
+        .record(),
+        // A guard by IsGuard of Whiterun's crime faction (Arrest and Attack
+        // on Sight), for Whiterun Hold (autotest27). Voiceless as ours are,
+        // so it can't open arrest dialogue.
+        Npc {
+            factions: vec![
+                (v.id("CrimeFactionWhiterun")?, 0),
+                (v.id("IsGuardFaction")?, 0),
+            ],
+            crime_faction: Some(v.id("CrimeFactionWhiterun")?),
+            class: v.id("GuardImperial")?,
+            temper: (1, 3, 0),
+            items: vec![(sword, 1)],
+            ..npc(HOLD_GUARD, "VrmAt21HoldGuard")
+        }
+        .record(),
     ];
 
     // Objects with a logger.
@@ -2065,6 +2105,57 @@ fn build_records(lo: &LoadOrder, batch: &Batch) -> Result<TestMod> {
             0.0,
         ))],
     ));
+
+    // Calm, Fear and Fury as target-actor spells (autotest24: the vanilla
+    // spells cast by script didn't land or did nothing), each the vanilla
+    // spell's main effect at its magnitude, 30 s.
+    for (effect, from, spell_id, edid, magnitude) in [
+        (
+            CALM_EFFECT,
+            "InfluenceAggDownFFAimed",
+            CALM_SPELL,
+            "VrmAt21Calm",
+            9.0,
+        ),
+        (
+            FEAR_EFFECT,
+            "InfluenceConfDownFFAimed",
+            FEAR_SPELL,
+            "VrmAt21Fear",
+            9.0,
+        ),
+        (
+            FURY_EFFECT,
+            "InfluenceAggUpFFAimed",
+            FURY_SPELL,
+            "VrmAt21Fury",
+            6.0,
+        ),
+    ] {
+        effects.push(records::copy(
+            lo,
+            from,
+            effect,
+            &format!("{edid}Effect"),
+            None,
+            |tag, d| {
+                if tag == b"DATA" && d.len() >= 0x58 {
+                    d[0x50..0x54].copy_from_slice(&spell::FIRE_AND_FORGET.to_le_bytes());
+                    d[0x54..0x58].copy_from_slice(&spell::TARGET_ACTOR.to_le_bytes());
+                }
+            },
+        )?);
+        spells.push(records::spell(
+            spell_id,
+            edid,
+            spell::SPELL,
+            spell::FIRE_AND_FORGET,
+            spell::TARGET_ACTOR,
+            0,
+            None,
+            &[records::Effect::new(own(effect), magnitude, 30)],
+        ));
+    }
 
     // Probes: a harmless constant +3 OneHanded on self, its condition the
     // probe's (autotest5 found this copy works as an ability's effect).
