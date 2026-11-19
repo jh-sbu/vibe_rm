@@ -49,14 +49,15 @@ unverified in Skyrim SE.
 
 ## Unconfirmed
 
-- `GetTimeDead` unit: game hours since death (`Engine::game_hours_total`) is
-  still what we return, though the game's isn't game hours (above); kept until
-  a follow-up reading tells hour boundaries from whole real minutes
-  (autotest27 ruled out tenths of a game hour). No
-  vanilla comparison settles it (see above). autotest23 and autotest24
-  (`research/autotest23.md`, `autotest24.md`) both crashed SE before
-  reading it again, so the unit is still open. Living subjects, and those dead before the game (placed dead, or
-  dead in a loaded save), have no value and fail the condition.
+- `GetTimeDead` unit: the hours struck on the game clock since the death
+  (`floor(now) - floor(death)` in game hours, `Engine::game_hours_total`).
+  Skyrim SE read whole numbers (autotest27: 0, then 1 at 1.18 to 1.44 game
+  hours), which rules out the elapsed game hours we used to return. Whole
+  real minutes counted from a few seconds after the death fit the readings
+  too; the hour count was chosen because the engine records deaths in game
+  time. autotest28 times it against `GameHour` to tell them apart. Living
+  subjects, and those dead before the game (placed dead, or dead in a
+  loaded save), have no value and fail the condition.
 - `IsKillerObject(FormList)`: the subject's killer is an actor whose
   reference or base the list names. In the game (`test-mod autotest22`,
   `research/autotest22.md`) it was false run on the killer with a list of

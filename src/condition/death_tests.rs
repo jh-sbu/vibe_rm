@@ -147,7 +147,7 @@ fn actor_get_killer_returns_the_recorded_killer_only_while_dead() {
 }
 
 #[test]
-fn get_time_dead_is_the_game_hours_since_the_death() {
+fn get_time_dead_counts_the_hours_struck_since_the_death() {
     let (_dir, mut e) = fixture();
     kill_victim(&mut e);
     // Day 1, 6 o'clock: 30 game hours in.
@@ -155,6 +155,12 @@ fn get_time_dead_is_the_game_hours_since_the_death() {
     e.hour = 6.0;
     assert!(holds(&e, VICTIM, GET_TIME_DEAD, 0, 20.0));
     assert!(!holds(&e, VICTIM, GET_TIME_DEAD, 0, 30.0));
+    // A whole number (autotest27): none struck yet, then one.
+    e.day = 0;
+    e.hour = 10.9;
+    assert!(holds(&e, VICTIM, GET_TIME_DEAD, 0, 0.0));
+    e.hour = 11.05;
+    assert!(holds(&e, VICTIM, GET_TIME_DEAD, 0, 1.0));
     // The living, and the dead before the game (no record), have no value.
     assert!(!holds(&e, KILLER, GET_TIME_DEAD, 0, 0.0));
     assert!(!holds(&e, OTHER_VICTIM, GET_TIME_DEAD, 0, 0.0));

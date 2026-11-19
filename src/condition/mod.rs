@@ -409,9 +409,13 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         // Game hours since the subject died in play (no value for the living, or
         // for those dead before the game: unsupported). Unit unconfirmed
         // (`known_ambiguities/death.md`).
+        // GetTimeDead: the hours struck on the game clock since the death.
+        // Skyrim SE (autotest27) read whole numbers, not the elapsed hours;
+        // this count, not whole real minutes, is a choice
+        // (`known_ambiguities/death.md`).
         361 => subject
             .and_then(|s| e.death(s))
-            .map(|d| (e.game_hours_total() - d.at) as f32), // GetTimeDead
+            .map(|d| (e.game_hours_total().floor() - d.at.floor()) as f32),
         // The subject (the victim) was killed by the actor named (test-mod
         // autotest22: true run on the victim, false run on the killer).
         408 => b(subject.is_some_and(|s| e.death(s).is_some_and(|d| d.killer == Some(p1)))), // IsKiller
