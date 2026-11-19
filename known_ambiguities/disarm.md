@@ -33,10 +33,15 @@ fighting a held target:
   weapon sent only `OnMagicEffectApply`. Ours sends `OnHit` with each
   disarm and none otherwise (`Engine::disarm`).
 - Every disarm was within the cap (levels 1 and 10 at magnitude 12, 10 at
-  30), but some casts within it left the weapon (levels 1 and 10). The cap
-  stays as UESP has it. What else stops it is open: perhaps the target's
-  action as it lands (CommonLibSSE-NG declares `DisarmEffect` a
-  `StaggerEffect`). Ours always disarms within the cap.
+  30), but some casts within it left the weapon (levels 1 and 10).
+  autotest27 (`research/autotest27.md`) found why: at level 1 and magnitude
+  12, NPCs caught mid-swing (`IsAttacking`) were disarmed 4 times of 4;
+  NPCs in combat between swings, and NPCs alerted with the weapon drawn out
+  of combat, 0 of 8. Ours takes the weapon only from a target that is
+  attacking (`Engine::is_attacking`, as the `IsAttacking` condition reads).
+  CommonLibSSE-NG declaring `DisarmEffect` a `StaggerEffect` fits. The cap
+  stays as UESP has it. autotest27's level 15 casts (at 12 and 30) were on
+  idle NPCs and so say nothing about it.
 - A disarmed level 1 NPC carrying a dagger fought on with nothing in hand
   for at least 4 s, not drawing the dagger or picking its sword up. Ours
   takes up what it still carries: differs, open (how long before it does).
@@ -51,9 +56,12 @@ fighting a held target:
 - **Weapons that can't be dropped** (the `DNAM` "Can't Drop" flag) are taken out
   of the hand and stay in the inventory; UESP doesn't say.
 - **Two-handed weapons and bows** are dropped as the right hand's weapon.
-- **"Drawn" as the test.** UESP's note about sheathing just as the draugr
-  stand up says the shout then does nothing; we test the weapon-drawn state
-  when the effect lands, ignoring the half-second windup.
+- **"Drawn" and attacking as the test.** UESP's note about sheathing just as
+  the draugr stand up says the shout then does nothing; we test the
+  weapon-drawn and attacking state when the effect lands, ignoring the
+  half-second windup.
+- **The player** is held to the same rule (disarmed only mid-swing, by our
+  `player_swing`). Only NPCs were read in SE.
 - **The player with no body graph** (console-only runs) never counts as having
   a weapon drawn, so is not disarmed.
 - **What follows.** A disarmed NPC fights with what it still carries (its

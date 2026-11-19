@@ -4,7 +4,9 @@
 //! bound weapons aren't affected, bows, crossbows and staves are, and
 //! sheathing in time avoids it. Its magnitude is the highest level it
 //! reaches, as with calm (`archetype::level_capped`: "Disarms enemies up to
-//! level 12"). The player's "Weapons Disarmed" statistic counts the actors
+//! level 12"). It takes the weapon only from a target that is attacking:
+//! Skyrim SE (autotest27) disarmed NPCs mid-swing every time, and never
+//! ones between swings or drawn out of combat. The player's "Weapons Disarmed" statistic counts the actors
 //! they disarm (UESP's Skyrim:Statistics). `known_ambiguities/disarm.md`.
 
 use esp::FormId;
@@ -14,10 +16,11 @@ use crate::world::inventory::{LEFT, RIGHT, item_droppable, weapon_bound};
 
 impl Engine {
     /// Pull the weapon out of `target`'s hands for `caster`'s Disarm (`item`,
-    /// the spell): whether they held one the effect takes. A disarm is a
-    /// blow: Skyrim SE (autotest23, autotest24) sent `OnHit` with each one.
+    /// the spell): whether they held one the effect takes, only while
+    /// attacking (autotest27). A disarm is a blow: Skyrim SE (autotest23,
+    /// autotest24) sent `OnHit` with each one.
     pub(crate) fn disarm(&mut self, target: FormId, caster: Option<FormId>, item: FormId) -> bool {
-        if self.is_dead(target) || !self.weapon_drawn(target) {
+        if self.is_dead(target) || !self.weapon_drawn(target) || !self.is_attacking(target) {
             return false;
         }
         let lo = &self.lo;
@@ -188,6 +191,17 @@ mod tests {
         }
         e.inventories.insert(ACTOR, inv);
         e.actor_mut(ACTOR).unwrap().drawn = true;
+        swinging(e, true);
+    }
+
+    /// The actor is (or isn't) in the middle of a swing at the player.
+    fn swinging(e: &mut Engine, on: bool) {
+        let a = e.actor_mut(ACTOR).unwrap();
+        let c = a
+            .exec
+            .combat
+            .get_or_insert_with(|| crate::ai::combat::Combat::new(PLAYER_REF));
+        c.set_swing(if on { 0.5 } else { 0.0 });
     }
 
     /// The weapons lying in the world, by base.
@@ -218,7 +232,7 @@ mod tests {
 
     #[test]
     #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
-    fn level_sheathing_and_bound_weapons_keep_the_weapon() {
+    fn level_sheathing_idling_and_bound_weapons_keep_the_weapon() {
         let (_f, mut e) = fixture();
         // The actor is level 20: "up to level 12" doesn't reach it.
         arm(&mut e, SWORD, None, false);
@@ -226,6 +240,11 @@ mod tests {
         assert_eq!(e.inventories[&ACTOR].held(RIGHT), Some(SWORD));
         // A sheathed weapon is safe.
         e.actor_mut(ACTOR).unwrap().drawn = false;
+        e.apply_item(REACHES_30, Some(PLAYER_REF), ACTOR);
+        assert_eq!(e.inventories[&ACTOR].held(RIGHT), Some(SWORD));
+        // So is a drawn one between swings (autotest27).
+        e.actor_mut(ACTOR).unwrap().drawn = true;
+        swinging(&mut e, false);
         e.apply_item(REACHES_30, Some(PLAYER_REF), ACTOR);
         assert_eq!(e.inventories[&ACTOR].held(RIGHT), Some(SWORD));
         // A bound weapon stays in the hand.

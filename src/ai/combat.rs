@@ -999,6 +999,12 @@ impl Combat {
         self.swing > 0.0
     }
 
+    /// Seconds left of a swing it is in (tests outside `ai`).
+    #[cfg(test)]
+    pub(crate) fn set_swing(&mut self, seconds: f32) {
+        self.swing = seconds;
+    }
+
     /// The graph wouldn't take the attack (busy flinching, say): no swing; try
     /// again shortly.
     pub fn refused(&mut self) {

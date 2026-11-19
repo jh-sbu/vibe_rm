@@ -995,15 +995,7 @@ fn function_value(e: &Engine, c: &Condition, subject: Option<FormId>, ctx: Conte
         // Nor flees, attacks, staggers, recoils or is ridden.
         329 => b(subject.is_some_and(|s| e.is_fleeing(s))), // IsFleeing
         477 => Some(subject.map_or(0.0, |s| e.threat_ratio(s, p1))), // GetThreatRatio
-        672 => b(subject.is_some_and(|s| {
-            if s == PLAYER_REF {
-                e.player_swing.is_some()
-            } else {
-                e.actor_ref(s)
-                    .and_then(|a| a.exec.combat.as_ref())
-                    .is_some_and(|c| c.swinging())
-            }
-        })),
+        672 => b(subject.is_some_and(|s| e.is_attacking(s))),
         701 | 702 | 714 => b(false),
         // Positions and angles of the subject, along an axis ('X', 'Y' or 'Z').
         // Angles are in degrees, as scripts give them (`GetAngleZ` in Papyrus).

@@ -366,6 +366,17 @@ impl Engine {
                 .is_some_and(|c| c.fleeing)
     }
 
+    /// IsAttacking: the player's swing, or an NPC's combat swing.
+    pub fn is_attacking(&self, actor: FormId) -> bool {
+        if actor == PLAYER_REF {
+            self.player_swing.is_some()
+        } else {
+            self.actor_ref(actor)
+                .and_then(|a| a.exec.combat.as_ref())
+                .is_some_and(|c| c.swinging())
+        }
+    }
+
     /// Strength updates and flee checks for everyone fighting; those who start to
     /// flee say so. Fleeing actors safe long enough (`fFleeIsSafeTimer`) leave the
     /// fight.
