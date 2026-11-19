@@ -631,6 +631,18 @@ const PROBE_LIST: &[Probe] = &[
     probe("Fleeing", "IsFleeing", P::None, P::None, EQ, ONE),
     // Added for test-mod explosions: knocked down (or getting up).
     probe("Knocked", "GetKnockedStateEnum", P::None, P::None, GE, ONE),
+    // Added for autotest28: a second victim's time dead.
+    Probe {
+        on: Some(GAMMA),
+        ..probe(
+            "TimeDeadGamma",
+            "GetTimeDead",
+            P::None,
+            P::None,
+            GE,
+            V::Probe,
+        )
+    },
 ];
 
 /// Vanilla forms the scripts name: property, type, editor id.
@@ -736,6 +748,10 @@ const VANILLA: &[(&str, &str, &str)] = &[
     ("Sanguinare", "Spell", "DiseaseSanguinareVampiris"),
     // Added for autotest27.
     ("SkeeverBase", "ActorBase", "EncSkeever"),
+    // Added for autotest28.
+    ("BearBase", "ActorBase", "EncBear"),
+    ("Rockjoint", "Spell", "DiseaseRockjoint"),
+    ("BoneBreak", "Spell", "DiseaseBoneBreakFever"),
 ];
 
 /// The weathers whose transitions are timed, with their trans deltas: the

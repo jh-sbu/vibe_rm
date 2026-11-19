@@ -2048,11 +2048,15 @@ readings are applied (see Done; autotest23 and autotest24's on
     only mid-attack, no charge sprint, restrained actors don't fight, a
     1.5 s idle sheathe (autotest21's 0.6 s was a test artefact) and
     `GetTimeDead` in hours struck. Its last test confirmed that
-    `IsKillerObject` run on a dead reference crashes SE. Left for
-    `test-mod autotest28` (its "Faults and open items"): `GetTimeDead`'s
-    unit, Disarm's cap mid-swing, `GetDisease` (the skeever never
-    attacked), the Vigilant (it died too soon), the sheathe delay, Attack
-    on Sight above 1000, and Fury's choice of target.
+    `IsKillerObject` run on a dead reference crashes SE. Its "Faults and
+    open items" are `test-mod autotest28`, built and waiting for the user's
+    run (fully automatic; `crates/tools/src/test_mods/autotest28.rs`):
+    `GetTimeDead` timed against the clock, Disarm's cap mid-swing,
+    `GetDisease` with a skeever, a wolf and a bear outdoors, the Vigilant
+    with 600 health, the sheathe delay, Attack on Sight at 2000 and 5000,
+    Fury's target, `SetRestrained` mid-fight and a script spell at a
+    `SetDontMove` NPC. Still open after it: Attack on Sight by a voiced
+    guard (its arrest dialogue would stop the script).
   - Built and waiting for the user's run: `saveload`
     (`plans/saves-remaining.md` step 9; run instructions in
     `crates/tools/src/test_mods/saveload.rs`). Its dry run in our engine
