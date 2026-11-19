@@ -16,21 +16,21 @@ These rules approximate the observed magnitudes; pacing, flank units and
 interaction with attack selection remain unverified. No new autotest is
 built for this choice in this implementation.
 
-NPC charging sprints use the graph's authored `iState_*Sprinting` movement
-type and actions. Start beyond 1000 units and continue to the target while
-stamina and action conditions permit. Fleeing actors always run (autotest19).
-Charging has no successful SE observation yet: autotest20's fighter never
-engaged its held target (`research/autotest20.md`). Sprint attacks are eligible only during
-a charge, with ordinary attacks as fallback when the race has no sprint
-attack.
+NPCs don't sprint to charge. In Skyrim SE (`test-mod autotest27`,
+`research/autotest27.md`) two level 15 fighters with swords and 50 stamina,
+fighting each other, ran (`IsRunning`) or walked to close 1500 and 2500
+units after one was moved away, never sprinting. Fleeing actors run
+(autotest19). Ours runs to the target in combat. Its NPC sprint attacks
+were made only at the end of a charge, so ours makes none now; whether SE's
+NPCs make them otherwise is unread. autotest20's fighter never
+engaged its held target, so it gave no reading. Unconfirmed: other races
+and actors (creatures, a fighter with more stamina) were not read, and none
+sprint here.
 
-Asset survey: `hkb-vars meshes/actors/character sprint` exposes
-`iState_NPCSprinting=1`, but no `AIControlledNPCSprinting` state. Both MOVT
-records have forward speeds 500; AIControlled's turn rates are four times
-NPCSprinting's. We choose the graph-named NPCSprinting record, rather than
-substituting the faster-turning AI record without evidence for when it applies.
-The original distinction remains uncertain. Stamina uses the existing player
-GMST formula, including equipped armor weight, for NPCs too.
+Asset survey (kept for the player's sprint and any NPC sprint later found):
+`hkb-vars meshes/actors/character sprint` exposes `iState_NPCSprinting=1`,
+but no `AIControlledNPCSprinting` state. Both MOVT records have forward
+speeds 500; AIControlled's turn rates are four times NPCSprinting's.
 
 ## Scripted draws and idle sheathing (autotest19)
 
@@ -49,9 +49,3 @@ wasn't measured; chosen here: the delay counts from the last
 accepted/requested draw and resets while readiness is wanted. Swim
 state prevents automatic draws.
 
-Review follow-up: reaching melee range ends the charging locomotion stance;
-a sprint attack may still be selected on that arrival update. Entering flee
-clears any prior sprint request before the flee step returns. Existing search
-readiness is preserved, and fleeing cowards are not automatically drawn by
-the idle-readiness update. Synthetic regressions cover charge arrival and
-transition to flee; IsRunning counts the sprint gait as for the player's path.

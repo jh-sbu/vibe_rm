@@ -387,7 +387,7 @@ fn dueling_circle_keeps_distance_and_reports_sideways_motion() {
 }
 
 #[test]
-fn a_charge_stops_sprinting_in_reach_and_a_flee_never_keeps_a_charge_stance() {
+fn a_charge_runs_and_a_flee_drops_any_sprint() {
     let mut a = actor();
     Arc::make_mut(&mut a.stats).unarmed_reach = 100.0;
     a.exec.combat = Some(combat::Combat::new(FormId(3)));
@@ -408,15 +408,13 @@ fn a_charge_stops_sprinting_in_reach_and_a_flee_never_keeps_a_charge_stance() {
         idles::LocomotionActions::NAMES
             .map(|name| (name == "ActionSprintStart").then(|| "SprintStart".into())),
     );
+    // Skyrim SE's fighters ran, not sprinted, to close 1500 and 2500
+    // (autotest27).
     with_world(|w| {
         a.combat_step(0.1, w, Vec3::Y * 1500.0);
     });
-    assert!(a.sprinting);
-    assert!(a.speed > 400.0);
-    with_world(|w| {
-        a.combat_step(0.1, w, a.exec.pos + Vec3::Y * 50.0);
-    });
     assert!(!a.sprinting);
+    assert!(a.speed > 0.0 && a.speed < 400.0);
     a.sprinting = true;
     a.exec.combat.as_mut().unwrap().fleeing = true;
     with_world(|w| {

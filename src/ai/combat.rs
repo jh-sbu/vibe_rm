@@ -1413,57 +1413,25 @@ impl ActorRuntime {
             self.chase(dt, w, target, self.run_speed());
             return None;
         }
-        let distance = (target - self.exec.pos).truncate().length();
-        let was_sprinting = self.sprinting;
-        let can_sprint = self
-            .exec
-            .combat
-            .as_ref()
-            .is_some_and(|c| !c.fleeing && !c.swinging() && c.guard <= 0.0)
-            && !self.bow
-            && self.combat_spell.is_none()
-            && self.exec.stamina > 0.0
-            && self.sprint_moves.is_some()
-            && self.actions.event("ActionSprintStart").is_some();
-        let sprint_attack = can_sprint && was_sprinting && distance <= reach * 0.85;
-        self.sprinting =
-            can_sprint && distance > reach * 0.85 && (distance > 1000.0 || was_sprinting);
-        let run = if self.sprinting {
-            self.sprint_moves.unwrap().0.run * self.armor_speed_mult
-        } else {
-            self.run_speed()
-        };
+        // No sprint to charge: Skyrim SE's fighters ran to close 1500 and
+        // 2500 units (autotest27), so nor are sprint attacks made.
+        self.sprinting = false;
+        let run = self.run_speed();
         let pos = self.exec.pos;
         // Those its hands can make (with none, as it did before it had
         // hands: the right hand's weapon attacks).
-        let swings = |fit: &dyn Fn(&Attack) -> bool| -> Vec<(usize, f32)> {
-            self.stats
-                .attacks
-                .iter()
-                .enumerate()
-                .filter(|(_, a)| {
-                    a.flags & ATK_BASH == 0
-                        && (a.event.to_ascii_lowercase().contains("sprint") == sprint_attack)
-                        && fit(a)
-                })
-                .map(|(i, a)| (i, a.chance.max(0.05)))
-                .collect()
-        };
-        let mut attacks = swings(&|a| a.fits(self.hands, self.stats.bare_handed));
-        if attacks.is_empty() {
-            attacks = self
-                .stats
-                .attacks
-                .iter()
-                .enumerate()
-                .filter(|(_, a)| {
-                    a.flags & ATK_BASH == 0
-                        && !a.event.to_ascii_lowercase().contains("sprint")
-                        && a.fits(self.hands, self.stats.bare_handed)
-                })
-                .map(|(i, a)| (i, a.chance.max(0.05)))
-                .collect();
-        }
+        let attacks: Vec<(usize, f32)> = self
+            .stats
+            .attacks
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| {
+                a.flags & ATK_BASH == 0
+                    && !a.event.to_ascii_lowercase().contains("sprint")
+                    && a.fits(self.hands, self.stats.bare_handed)
+            })
+            .map(|(i, a)| (i, a.chance.max(0.05)))
+            .collect();
         // Humanoids fight with their weapon out (the draw may not have been taken,
         // say mid-flinch: ask again).
         let humanoid = self.graph.as_ref().is_some_and(|g| g.project().humanoid());
