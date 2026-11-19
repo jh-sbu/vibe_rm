@@ -41,12 +41,18 @@ unverified in Skyrim SE.
 - `GetTimeDead` is not in game hours: 70–85 s after the death (0.41–0.47
   game hours at timescale 20) it was `>= 1` and not `>= 10`. Real minutes or
   tenths of a game hour fit; the unit stays open (`plans/ROADMAP.md`).
+  autotest27 (`research/autotest27.md`) read whole numbers, 0 and then 1
+  (1.18 to 1.44 game hours, 83 to 127 s after the kill). That rules out
+  tenths of a game hour, and game hours or real minutes as they are. Hour
+  boundaries on the clock passed since the death, or whole real minutes
+  counted from a few seconds after `Kill`, still fit.
 
 ## Unconfirmed
 
 - `GetTimeDead` unit: game hours since death (`Engine::game_hours_total`) is
   still what we return, though the game's isn't game hours (above); kept until
-  a follow-up reading tells real minutes from tenths of a game hour. No
+  a follow-up reading tells hour boundaries from whole real minutes
+  (autotest27 ruled out tenths of a game hour). No
   vanilla comparison settles it (see above). autotest23 and autotest24
   (`research/autotest23.md`, `autotest24.md`) both crashed SE before
   reading it again, so the unit is still open. Living subjects, and those dead before the game (placed dead, or
@@ -58,8 +64,9 @@ unverified in Skyrim SE.
   these". The reading as `IsKiller` (run on the victim) is inferred, not
   observed: run on the dead victim with a list of the killer's base, then
   of its reference, it crashed SE in autotest24 (`research/autotest24.md`;
-  autotest23's TimeDead, which began the same way, crashed too). The kill
-  and the probe ran in one test, so blaming the probe is inference.
+  autotest23's TimeDead, which began the same way, crashed too), and again
+  in autotest27 with the kill in an earlier test that had saved: run on a
+  dead reference, it crashes SE.
 - `GetCauseofDeath`: unsupported; the meaning of its values is not in any source
   checked (no UESP page, no cause enum in CommonLibSSE).
 - `GetKillingBlowLimb`: unsupported; the body part of the killing blow isn't kept

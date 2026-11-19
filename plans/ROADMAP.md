@@ -2043,16 +2043,19 @@ readings are applied (see Done; autotest23 and autotest24's on
     (`plans/loading-screen.md`), `crafting1` (`plans/crafting.md`) and
     `spell-visuals` (`plans/spell-visuals.md`, Pending SE validation; its
     steps are now `set VrmFxRun to <n>`, as vanilla SE has no `cqf`).
-  - Built and waiting for the user's run (fully automatic): `autotest27`
-    (`crates/tools/src/test_mods/autotest27.rs`): autotest24's follow-ups
-    (`GetTimeDead`'s unit with the kill in its own test, `IsKillerObject`
-    on the dead victim last; Calm, Fear and Fury as target-actor copies;
-    Disarm idle, mid-swing, between swings and above the cap; `GetDisease`
-    after a skeever's Ataxia; the Vigilant free and hurt, and its wards;
-    Attack on Sight watched for 40 s and in Whiterun Hold), autotest20's
-    charge with both fighters free, and the held-actor readings repeated
-    free (hostile script cast, the 0.6 s sheathe and a redraw, whether a
-    restrained NPC fights).
+  - `test-mod autotest27`: run 2026-11-19 (`research/autotest27.md`), not
+    yet compared with ours. Its last test confirmed that `IsKillerObject`
+    run on a dead reference crashes SE. Readings to apply: Disarm takes the
+    weapon only from a target mid-attack (ours: the level cap, any state);
+    NPCs didn't sprint to charge at 1500 or 2500; a restrained NPC doesn't
+    fight (ours fights in place); `GetTimeDead` is a whole number (0, then
+    1), so not game hours as ours has it. autotest21's 0.6 s idle sheathe,
+    which ours applies, was a test artefact (the weapon hadn't drawn yet);
+    autotest19's 1 to 3 s is what's known. Left for a follow-up batch (its
+    "Faults and open items"): `GetTimeDead`'s unit, Disarm's cap mid-swing,
+    `GetDisease` (the skeever never attacked), the Vigilant (it died too
+    soon), the sheathe delay, Attack on Sight above 1000 or by a voiced
+    guard, and Fury's choice of target.
   - Built and waiting for the user's run: `saveload`
     (`plans/saves-remaining.md` step 9; run instructions in
     `crates/tools/src/test_mods/saveload.rs`). Its dry run in our engine

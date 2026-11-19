@@ -59,6 +59,11 @@
 //! `test_mods`). The last test, KillerObjectDead, is expected to crash: if
 //! it does, there is nothing to step past, as every other report is already
 //! in the newest save. Read with `vrm-tool test-results`.
+//!
+//! **Run 2026-11-19** (`research/autotest27.md`): every test reported but
+//! KillerObjectDead, which crashed SE as expected. Disease (the skeever
+//! never attacked) and SheatheFree (the loop stopped before the draw
+//! showed) were faults.
 
 use anyhow::Result;
 use esp::LoadOrder;
