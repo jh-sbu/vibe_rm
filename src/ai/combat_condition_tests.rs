@@ -275,6 +275,19 @@ fn a_null_reference_in_positional_conditions_is_the_combat_target() {
 }
 
 /// Another loaded actor of `base`, standing at the origin.
+#[test]
+#[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+fn a_restrained_actor_starts_no_fight_and_a_held_one_does() {
+    let (_f, mut e) = fixture();
+    e.world_state.restrained.insert(ACTOR);
+    assert!(!e.start_combat(ACTOR, PLAYER_REF));
+    assert!(holds(&e, ACTOR, GET_COMBAT_STATE, 0, 0.0));
+    e.world_state.restrained.remove(&ACTOR);
+    e.world_state.dont_move.insert(ACTOR);
+    assert!(e.start_combat(ACTOR, PLAYER_REF));
+    assert!(holds(&e, ACTOR, GET_COMBAT_STATE, 0, 1.0));
+}
+
 fn add_actor(e: &mut Engine, id: FormId, base: FormId) {
     let mut actor = ActorRuntime::new(
         id,

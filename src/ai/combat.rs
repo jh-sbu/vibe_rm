@@ -1813,9 +1813,12 @@ impl Engine {
         self.reaction_towards(from, to).combat
     }
 
-    /// Start (or switch) an actor's fight with `target`: weapons out.
+    /// Start (or switch) an actor's fight with `target`: weapons out. A
+    /// restrained actor doesn't fight: Skyrim SE's (autotest27) stayed out of
+    /// combat, given `StartCombat` and struck, where a `SetDontMove` one
+    /// fought in place.
     pub fn start_combat(&mut self, actor: FormId, target: FormId) -> bool {
-        if actor == target {
+        if actor == target || self.world_state.restrained.contains(&actor) {
             return false;
         }
         let Some(key) = self.actor_cells.get(&actor).copied() else {

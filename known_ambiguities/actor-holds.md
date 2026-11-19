@@ -23,8 +23,9 @@ What ours does (`world_state.dont_move` / `restrained`,
 
 - Both hold an NPC where it stands: a walk its package starts is halted
   without turning it, and no step or root motion moves it (it can still
-  fall). It keeps evaluating packages, detecting, idling, talking and
-  fighting in place, and turns for other reasons. A restrained actor with
+  fall). It keeps evaluating packages, detecting, idling and talking, and
+  turns for other reasons. A `SetDontMove` actor fights in place; a
+  restrained one doesn't fight (`Engine::start_combat` refuses it). A restrained actor with
   an active `KeepOffsetFromActor` isn't held. `GetRestrained` (condition
   244) reads the restrained flag.
 - On the player, either stops movement input, camera switching (the POV
@@ -41,10 +42,14 @@ Choices the pages leave open:
   Whether package travel is stopped outright or only slowed is untested.
 - Whether `KeepOffsetFromActor` and other script movement move a
   `SetDontMove` actor (said only of restrained ones): ours holds it.
-- Whether a restrained actor fights: autotest4's restrained NPC told to
-  `StartCombat` an enemy 1500 units off, itself restrained, "neither
-  fought nor regenerated" (its `HealRate` was 0: autotest5), which can't
-  tell. Ours lets held actors fight in place.
+- Whether a restrained actor fights, settled in Skyrim SE by autotest27
+  (`research/autotest27.md`, RestrainedFights). A fighter 100 units from
+  an enemy, both given `StartCombat` on each other: restrained, it stayed
+  in combat state 0 for 12 s, never swung or hurt the enemy, and took 55
+  damage. Held by `SetDontMove`, it fought in place (5 swings, moved 0).
+  Free, it fought and moved. Unread: whether `SetRestrained` ends a fight
+  already under way (ours lets it go on), and how the restrained fighter
+  moved 162 units while struck (blows' pushes, perhaps; ours holds it).
 - Whether a held actor turns, sits or gives ground in combat; whether
   `IsMovementControlsEnabled` and `IsLookingControlsEnabled` read false
   for a held player (ours: they read only `DisablePlayerControls`);
