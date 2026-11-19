@@ -166,10 +166,24 @@ fighters: NPCs don't sprint to close a gap of 1500 or 2500 in combat
    copy, if the run can stay hands-off.
 7. Fury's target: the caster farther than the other NPC.
 
-## Compared with ours
+## Compared with ours (2026-11-19)
 
-Not yet compared (recorded 2026-11-19). Known differences to look at:
-Disarm (ours: the level cap, any state); the 0.6 s idle sheathe, which
-rests on autotest21's artefact; restrained actors fighting in place
-(`known_ambiguities/actor-holds.md`); the NPC charge sprint
-(`known_ambiguities/combat-movement.md`); `GetTimeDead` (ours: game hours).
+- **Changed to agree**:
+  - Disarm only takes the weapon from a target that is attacking
+    (`src/disarm.rs`, `known_ambiguities/disarm.md`).
+  - NPCs run, not sprint, to charge, and so make no sprint attacks
+    (`known_ambiguities/combat-movement.md`).
+  - A restrained actor doesn't fight (`Engine::start_combat`,
+    `known_ambiguities/actor-holds.md`).
+  - The idle sheathe is 1.5 s drawn, not 0.6 s: a choice between
+    autotest19's 1 and 3 s.
+  - `GetTimeDead` counts the hours struck on the game clock since the death
+    (`known_ambiguities/death.md`). This is a choice: whole real minutes
+    also fit.
+- **Agree already**: Calm holds Aggression at -1 and ends the fight; Fear
+  holds Confidence at 0 and the target flees, still in combat; Fury holds
+  Aggression at 3 and attacks the nearest (here the caster); a free target
+  of a hostile spell fights its caster (`src/magic.rs`).
+- **Differ, left open**: a restrained actor pushed by blows (ours holds it
+  still); `SetRestrained` on an actor already fighting (unread; ours lets it
+  fight on).
