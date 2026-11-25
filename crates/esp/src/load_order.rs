@@ -139,10 +139,25 @@ impl LoadOrder {
     /// Creation Club content from `Skyrim.ccc`, then any `plugins.txt` entries.
     pub fn default_plugin_list(data_dir: &Path, plugins_txt: Option<&Path>) -> Vec<String> {
         let mut list: Vec<String> = Vec::new();
-        let exists = |n: &str| data_dir.join(n).is_file();
+        // `Skyrim.ccc` and `plugins.txt` names need not match the files'
+        // case (installs often hold them in lower case), which matters on a
+        // case-sensitive file system: fall back to the file's own name.
+        let on_disk = |n: &str| -> Option<String> {
+            if data_dir.join(n).is_file() {
+                return Some(n.to_owned());
+            }
+            std::fs::read_dir(data_dir)
+                .ok()?
+                .flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .find(|f| f.eq_ignore_ascii_case(n) && data_dir.join(f).is_file())
+        };
+        let exists = |n: &str| on_disk(n).is_some();
         let push = |list: &mut Vec<String>, n: &str| {
-            if exists(n) && !list.iter().any(|x| x.eq_ignore_ascii_case(n)) {
-                list.push(n.to_owned());
+            if let Some(n) = on_disk(n)
+                && !list.iter().any(|x| x.eq_ignore_ascii_case(&n))
+            {
+                list.push(n);
             }
         };
         for m in BASE_MASTERS {
@@ -700,6 +715,31 @@ impl LoadOrder {
         } else {
             crate::decode_zstring(data)
         }
+    }
+}
+
+#[cfg(test)]
+mod plugin_list_tests {
+    use super::LoadOrder;
+
+    #[test]
+    fn plugin_lists_find_files_whatever_their_case() {
+        let base = std::env::temp_dir().join(format!("vrm-plugin-case-{}", std::process::id()));
+        let data = base.join("Data");
+        std::fs::create_dir_all(&data).unwrap();
+        for name in ["Skyrim.esm", "ccfoo001-bar.esm", "mymod.esp"] {
+            std::fs::write(data.join(name), b"").unwrap();
+        }
+        std::fs::write(base.join("Skyrim.ccc"), "ccFoo001-Bar.esm\nccMissing.esl\n").unwrap();
+        let txt = base.join("plugins.txt");
+        std::fs::write(&txt, "*MyMod.esp\n").unwrap();
+        let list = LoadOrder::default_plugin_list(&data, Some(&txt));
+        // Each entry names a file in Data, as `load` joins it onto Data.
+        assert_eq!(list.len(), 3, "{list:?}");
+        assert!(list.iter().all(|n| data.join(n).is_file()), "{list:?}");
+        assert!(list[1].eq_ignore_ascii_case("ccfoo001-bar.esm"));
+        assert!(list[2].eq_ignore_ascii_case("mymod.esp"));
+        std::fs::remove_dir_all(&base).unwrap();
     }
 }
 
