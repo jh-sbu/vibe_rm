@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo fmt --check
+
+  # The tests that run by default: no game data, no GPU (those are #[ignore]d).
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      # ALSA headers for cpal; FFmpeg for the synthetic compressed-audio test.
+      - name: Install ALSA headers and FFmpeg
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev ffmpeg
+      - name: Install FFmpeg
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+      - run: cargo test --workspace --locked
