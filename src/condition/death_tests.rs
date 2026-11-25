@@ -115,6 +115,7 @@ fn get_killer(e: &mut Engine, actor: FormId) -> papyrus::Value {
 }
 
 #[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn actor_get_killer_returns_the_recorded_killer_only_while_dead() {
     let (_dir, mut e) = fixture();
     kill_victim(&mut e);
@@ -147,6 +148,7 @@ fn actor_get_killer_returns_the_recorded_killer_only_while_dead() {
 }
 
 #[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn get_time_dead_counts_the_hours_struck_since_the_death() {
     let (_dir, mut e) = fixture();
     kill_victim(&mut e);
@@ -167,6 +169,7 @@ fn get_time_dead_counts_the_hours_struck_since_the_death() {
 }
 
 #[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn is_killer_runs_on_the_victim_and_names_the_killer() {
     let (_dir, mut e) = fixture();
     kill_victim(&mut e);
@@ -179,6 +182,7 @@ fn is_killer_runs_on_the_victim_and_names_the_killer() {
 }
 
 #[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn is_killer_object_asks_whether_the_subjects_killer_is_listed() {
     let (_dir, mut e) = fixture();
     kill_victim(&mut e);
@@ -191,6 +195,7 @@ fn is_killer_object_asks_whether_the_subjects_killer_is_listed() {
 }
 
 #[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn cause_of_death_and_killing_blow_limb_stay_unsupported() {
     let (_dir, mut e) = fixture();
     kill_victim(&mut e);

@@ -585,6 +585,7 @@ fn alias_inventory_grants_keys_only_on_successful_new_fills_and_stays_permanent(
 }
 
 #[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn a_load_door_pair_shares_one_lock() {
     let (_dir, mut e) = fixture();
     // The outside door has no lock of its own and reports the inside one's.
@@ -617,6 +618,7 @@ fn a_load_door_pair_shares_one_lock() {
 }
 
 #[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn procedure_locks_apply_once_to_the_named_cells_load_doors() {
     use crate::ai::{
         exec::ActorExec,

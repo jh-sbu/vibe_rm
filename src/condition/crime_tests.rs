@@ -75,6 +75,7 @@ fn holds(e: &Engine, subject: FormId, func: u16, p1: FormId, value: f32) -> bool
 }
 
 #[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn infamy_is_what_crime_gold_rose_by_and_paying_it_off_leaves_it() {
     let (_dir, mut e) = fixture();
     e.mod_crime_gold(FACTION, 100, true);
@@ -89,6 +90,7 @@ fn infamy_is_what_crime_gold_rose_by_and_paying_it_off_leaves_it() {
 }
 
 #[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn infamy_of_the_player_without_a_faction_sums_every_faction() {
     let (_dir, mut e) = fixture();
     e.mod_crime_gold(FACTION, 100, true);
@@ -111,6 +113,7 @@ fn infamy_of_the_player_without_a_faction_sums_every_faction() {
 }
 
 #[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn infamy_of_an_actor_without_a_faction_is_its_crime_faction_or_nothing() {
     let (_dir, mut e) = fixture();
     e.mod_crime_gold(FACTION, 40, true);
@@ -120,6 +123,7 @@ fn infamy_of_an_actor_without_a_faction_is_its_crime_faction_or_nothing() {
 }
 
 #[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn crime_functions_without_crime_state_are_unsupported() {
     let (_dir, e) = fixture();
     // Unsupported conditions fail whatever value they are compared with.
@@ -132,6 +136,7 @@ fn crime_functions_without_crime_state_are_unsupported() {
 }
 
 #[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn player_faction_flags_start_as_the_factions_data_and_follow_scripts() {
     const GET_PC_EXPELLED: u16 = 193;
     const GET_PC_ENEMY_OF_FACTION: u16 = 197;
@@ -160,6 +165,7 @@ fn player_faction_flags_start_as_the_factions_data_and_follow_scripts() {
 }
 
 #[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn actor_crime_player_enemy_reads_the_crime_factions_flag() {
     const GET_ACTOR_CRIME_PLAYER_ENEMY: u16 = 458;
     let (_dir, mut e) = fixture();
