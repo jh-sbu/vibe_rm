@@ -328,10 +328,10 @@ fn an_archer_backs_off_facing_its_target() {
     let velocity = a.exec.pos - before;
     assert!(velocity.y < 0.0);
     assert!(a.exec.heading.abs() < 1e-5);
-    assert_eq!(
-        crate::world::movement::direction(a.exec.heading, velocity),
-        Some(0.5)
-    );
+    // Straight back; atan2 of a backward step is pi only to within an ulp
+    // (macOS's atan2f rounds it down).
+    let back = crate::world::movement::direction(a.exec.heading, velocity).unwrap();
+    assert!((back - 0.5).abs() < 1e-6, "{back}");
     assert!((velocity.length() / 0.1 - 180.0).abs() < 0.01);
     assert_eq!(a.speed, 180.0);
 
