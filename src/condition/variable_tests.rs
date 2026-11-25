@@ -88,6 +88,7 @@ fn holds(e: &Engine, c: Condition, subject: FormId) -> bool {
 }
 
 #[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn get_script_variable_is_0_whatever_the_papyrus_variables() {
     let (_dir, mut e) = fixture();
     attach_vars(
@@ -115,6 +116,7 @@ fn get_script_variable_is_0_whatever_the_papyrus_variables() {
 }
 
 #[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn get_vm_script_variable_reads_the_reference_named_not_the_subject() {
     let (_dir, mut e) = fixture();
     attach_vars(
@@ -163,6 +165,7 @@ fn get_vm_script_variable_reads_the_reference_named_not_the_subject() {
 }
 
 #[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn get_script_variable_without_its_name_is_unsupported() {
     let (_dir, mut e) = fixture();
     attach_vars(
@@ -180,6 +183,7 @@ fn get_script_variable_without_its_name_is_unsupported() {
 }
 
 #[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn graph_variable_needs_a_running_graph() {
     let (_dir, mut e) = fixture();
     // An object with no behaviour graph (and no actor): unsupported, the condition fails.

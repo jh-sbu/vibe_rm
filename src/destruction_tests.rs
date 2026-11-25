@@ -420,6 +420,7 @@ fn damageobject_is_loaded_reference_gated_and_keeps_health_per_reference() {
 }
 
 #[test]
+#[ignore = "needs a headless GPU adapter; synthetic records only"]
 fn weapon_blows_damage_loaded_destructibles_until_the_stage_ignores_external_damage() {
     let (_dir, mut e) = fixture();
     let this_a = e.object_value(REF_A);
