@@ -25,7 +25,9 @@ What ours does (`world_state.dont_move` / `restrained`,
   without turning it, and no step or root motion moves it (it can still
   fall). It keeps evaluating packages, detecting, idling and talking, and
   turns for other reasons. A `SetDontMove` actor fights in place; a
-  restrained one doesn't fight (`Engine::start_combat` refuses it). A restrained actor with
+  restrained one doesn't start a fight (`Engine::start_combat` refuses it),
+  and one restrained while fighting stays in combat, drawn, without
+  attacking or casting (`Engine::update_actors`). A restrained actor with
   an active `KeepOffsetFromActor` isn't held. `GetRestrained` (condition
   244) reads the restrained flag.
 - On the player, either stops movement input, camera switching (the POV
@@ -47,9 +49,12 @@ Choices the pages leave open:
   an enemy, both given `StartCombat` on each other: restrained, it stayed
   in combat state 0 for 12 s, never swung or hurt the enemy, and took 55
   damage. Held by `SetDontMove`, it fought in place (5 swings, moved 0).
-  Free, it fought and moved. Unread: whether `SetRestrained` ends a fight
-  already under way (ours lets it go on), and how the restrained fighter
-  moved 162 units while struck (blows' pushes, perhaps; ours holds it).
+  Free, it fought and moved. autotest28 (`research/autotest28.md`,
+  RestrainedMidFight) restrained a fighter already engaged: combat state 1
+  and drawn for 10 s, 0 swings, 0 damage dealt, 36 taken, moved 75 units.
+  Ours keeps it in combat without attacking. Unread: how the restrained
+  fighter moves while struck (blows' pushes, perhaps; ours holds it), and
+  whether it turns to face its target.
 - Whether a held actor turns, sits or gives ground in combat; whether
   `IsMovementControlsEnabled` and `IsLookingControlsEnabled` read false
   for a held player (ours: they read only `DisablePlayerControls`);

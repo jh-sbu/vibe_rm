@@ -4200,6 +4200,9 @@ impl Engine {
             .copied()
             .filter(|&r| self.held_in_place(r))
             .collect();
+        // Restrained: one already fighting stays in combat, drawn, but
+        // doesn't attack (Skyrim SE, autotest28).
+        let restrained = self.world_state.restrained.clone();
         let nav = std::mem::take(&mut self.nav);
         let mut furniture = std::mem::take(&mut self.furniture);
         let (lo, vfs) = (&self.lo, &self.vfs);
@@ -4375,6 +4378,8 @@ impl Engine {
                     || a.exec.bleeding.is_some()
                     || self.ai_off.contains(&a.ref_id)
                 {
+                    a.halt(1.0);
+                } else if restrained.contains(&a.ref_id) && a.exec.combat.is_some() {
                     a.halt(1.0);
                 } else if let Some(target) = a.exec.combat.as_ref().map(|c| c.target) {
                     // Fighters lose a target that goes undetected (`detection`);
