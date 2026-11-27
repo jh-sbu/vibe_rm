@@ -395,6 +395,10 @@ fn explicit_alert_draws_and_unalerted_script_draw_sheathes_through_ai_readiness(
     assert!(e.weapon_drawn(ALLY_REF));
     e.update_weapon_readiness(1.0);
     assert!(e.weapon_drawn(ALLY_REF));
+    // A second draw while drawn doesn't put the sheathe off (autotest28).
+    assert!(e.draw_weapon(ALLY_REF, true));
+    e.update_weapon_readiness(1.0);
+    assert!(e.weapon_drawn(ALLY_REF));
     e.update_weapon_readiness(0.6);
     assert!(!e.weapon_drawn(ALLY_REF));
     e.set_alerted(ALLY_REF, true);
@@ -402,6 +406,6 @@ fn explicit_alert_draws_and_unalerted_script_draw_sheathes_through_ai_readiness(
     e.update_weapon_readiness(5.0);
     assert!(e.weapon_drawn(ALLY_REF));
     e.set_alerted(ALLY_REF, false);
-    e.update_weapon_readiness(2.0);
+    e.update_weapon_readiness(2.6);
     assert!(!e.weapon_drawn(ALLY_REF));
 }

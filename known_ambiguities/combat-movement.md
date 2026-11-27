@@ -38,15 +38,15 @@ All four test NPCs drew on DrawWeapon, including unalerted commoners and guards.
 Unalerted NPCs out of combat sheathed again between the 1 s and 3 s readings;
 SetAlert(true) drew by itself. The native remains unconditional. The humanoid
 AI now draws while explicitly alerted, in combat, or running a Weapon Drawn
-package, and sheathes an otherwise unwanted draw after 1.5 s drawn. It
-was 0.6 s, which rested on a misread: autotest21's AlertFlag loop (an unalerted NPC told to
-DrawWeapon, "sheathed" 0.52 to 0.62 s later) stopped at its 0.5 s floor
-because `IsWeaponDrawn` hadn't yet read true. autotest27 (SheatheFree,
-`research/autotest27.md`) repeated it with a free NPC and never saw the
-weapon drawn within the loop. The only timing known is autotest19's: drawn
-at 1 s, sheathed by 3 s. 1.5 s, between the two, is a choice until a
-reading times it (`plans/ROADMAP.md`, autotest27's follow-ups). Whether a repeated DrawWeapon restarts the delay
-wasn't measured; chosen here: the delay counts from the last
-accepted/requested draw and resets while readiness is wanted. Swim
+package, and sheathes an otherwise unwanted draw 2.5 s after it. Skyrim SE
+(autotest28, SheatheDelay, `research/autotest28.md`): an unalerted, free
+NPC told to `DrawWeapon` read drawn 0.59 to 0.72 s later and sheathed 2.46
+to 2.61 s after the call, and a second `DrawWeapon` 0.55 s after it read
+drawn didn't put the sheathe off; ours doesn't either (the clock restarts
+only on a draw from sheathed, and while readiness is wanted). Earlier
+readings were artefacts: autotest21's "sheathed 0.52 to 0.62 s later"
+stopped at its loop's 0.5 s floor before `IsWeaponDrawn` read true, and
+autotest27's loop never saw it drawn. Ours reads drawn as the draw starts,
+not 0.6 s in: differs, open (`plans/ROADMAP.md`). Swim
 state prevents automatic draws.
 

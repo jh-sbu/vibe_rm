@@ -189,10 +189,12 @@ impl Engine {
         else {
             return false;
         };
-        a.idle_weapon_time = 0.0;
+        // A draw already made keeps its clock: a second `DrawWeapon` while
+        // drawn doesn't put the idle sheathe off (autotest28).
         if a.drawn == draw {
             return true;
         }
+        a.idle_weapon_time = 0.0;
         let Some(g) = a.graph.as_mut() else {
             return false;
         };
@@ -206,8 +208,8 @@ impl Engine {
     }
 
     /// An unalerted NPC out of combat sheathes a scripted draw again after
-    /// [`IDLE_SHEATHE_DELAY`] (autotest19: drawn at 1 s, sheathed by 3 s);
-    /// explicit alert also draws.
+    /// [`IDLE_SHEATHE_DELAY`] (autotest28: 2.46 to 2.61 s after
+    /// `DrawWeapon`); explicit alert also draws.
     pub(crate) fn update_weapon_readiness(&mut self, dt: f32) {
         let actors: Vec<_> = self
             .cells
@@ -672,12 +674,12 @@ impl Engine {
     }
 }
 
-/// Seconds an unwanted draw lasts before the actor sheathes again. In
-/// Skyrim SE (`test-mod autotest19`) unalerted NPCs told to `DrawWeapon`
-/// read drawn at 1 s and sheathed by 3 s; 1.5 s, between the two, is a
-/// choice (`known_ambiguities/combat-movement.md`). autotest21's "about
-/// 0.6 s" was its loop ending before the weapon was out (autotest27).
-const IDLE_SHEATHE_DELAY: f32 = 1.5;
+/// Seconds an unwanted draw lasts before the actor sheathes again, from
+/// the draw. In Skyrim SE (`test-mod autotest28`, SheatheDelay) an unalerted
+/// NPC told to `DrawWeapon` read drawn 0.59 to 0.72 s later and sheathed
+/// 2.46 to 2.61 s after the call; ours reads drawn at once, so the delay is
+/// counted from the call.
+const IDLE_SHEATHE_DELAY: f32 = 2.5;
 
 /// Only time spent drawn and unwanted advances the idle-sheathing clock.
 fn idle_sheathe_due(elapsed: &mut f32, drawn: bool, wanted: bool, dt: f32) -> bool {
@@ -781,11 +783,11 @@ mod readiness_tests {
     }
 
     #[test]
-    fn idle_draw_sheathes_after_1_5_seconds_but_alert_or_combat_resets_delay() {
+    fn idle_draw_sheathes_after_2_5_seconds_but_alert_or_combat_resets_delay() {
         let mut elapsed = 0.0;
         assert!(!idle_sheathe_due(&mut elapsed, true, false, 0.3));
         assert!(!idle_sheathe_due(&mut elapsed, true, true, 10.0));
-        assert!(!idle_sheathe_due(&mut elapsed, true, false, 1.0));
+        assert!(!idle_sheathe_due(&mut elapsed, true, false, 2.0));
         assert!(!idle_sheathe_due(&mut elapsed, true, false, 0.4));
         assert!(idle_sheathe_due(&mut elapsed, true, false, 0.1));
         assert!(!idle_sheathe_due(&mut elapsed, false, false, 10.0));
