@@ -843,6 +843,8 @@ pub struct Combat {
     /// Casters: seconds left of the concentration spell they are channelling,
     /// and the hand casting in the graph.
     pub(crate) channel: f32,
+    /// The channelled spell's `OnSpellCast` has gone out.
+    pub(crate) channel_announced: bool,
     pub(crate) hand_cast: Option<super::casters::HandCast>,
     pub(crate) clear_shot: bool,
     /// Wards: seconds the ward is still kept up after the last spell seen
@@ -978,6 +980,7 @@ impl Combat {
             counter: false,
             draw: Default::default(),
             channel: 0.0,
+            channel_announced: false,
             hand_cast: None,
             clear_shot: false,
             ward_keep: 0.0,

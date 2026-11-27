@@ -469,6 +469,7 @@ impl Engine {
             let cost = self.player_spell_cost(h.spell, h.dual);
             self.player_pay(h.spell, cost);
             self.count_spell_cast(PLAYER_REF, h.spell);
+            self.spell_cast_event(PLAYER_REF, h.spell);
             self.cast_with(
                 PLAYER_REF,
                 h.spell,
@@ -735,6 +736,7 @@ impl Engine {
                     let cost = self.player_spell_cost(f.spell, f.dual);
                     self.player_pay(f.spell, cost);
                     self.count_spell_cast(PLAYER_REF, f.spell);
+                    self.spell_cast_event(PLAYER_REF, f.spell);
                     self.cast_with(
                         PLAYER_REF,
                         f.spell,
@@ -925,6 +927,7 @@ impl Engine {
                     h.tick += CONCENTRATION_TICK;
                     if !h.counted {
                         self.count_spell_cast(PLAYER_REF, h.spell);
+                        self.spell_cast_event(PLAYER_REF, h.spell);
                         h.counted = true;
                     }
                     self.cast_with(
@@ -1330,7 +1333,8 @@ impl Engine {
     /// Casters' casts this frame go at their targets' bodies, paid in
     /// magicka (a landing's share of a second for concentration spells).
     pub(crate) fn npc_casts(&mut self) {
-        // (caster, spell, landings, target, eye, dual, practice aim, fighting)
+        // (caster, spell, landings, target, eye, dual, practice aim, fighting,
+        // the cast's first landing)
         let mut casts: Vec<(
             FormId,
             CombatSpell,
@@ -1339,6 +1343,7 @@ impl Engine {
             Vec3,
             bool,
             Option<Vec3>,
+            bool,
             bool,
         )> = Vec::new();
         for rt in self.cells.values_mut() {
@@ -1368,11 +1373,12 @@ impl Engine {
                     cast.dual,
                     practice_aim,
                     a.exec.combat.is_some(),
+                    cast.announce,
                 ));
             }
         }
         let dual_mult = gmst_f32(&self.lo, "fMagicDualCastingCostMult", 2.8);
-        for (actor, spell, n, target, eye, dual, practice_aim, fighting) in casts {
+        for (actor, spell, n, target, eye, dual, practice_aim, fighting, announce) in casts {
             let aim = if spell.self_target {
                 Some(eye)
             } else if practice_aim.is_some() {
@@ -1389,6 +1395,7 @@ impl Engine {
             } else {
                 1.0
             };
+            let mut landed = 0;
             for _ in 0..n {
                 // Several landings can be queued by a long frame; do not spend
                 // another dose once an earlier one restored all its health.
@@ -1432,6 +1439,10 @@ impl Engine {
                     break;
                 }
                 self.damage_actor_value(actor, av::MAGICKA, cost);
+                if announce && landed == 0 {
+                    self.spell_cast_event(actor, spell.spell);
+                }
+                landed += 1;
                 let dir = (aim - eye).normalize_or_zero();
                 self.cast_from_source(
                     actor,
@@ -1444,6 +1455,15 @@ impl Engine {
                 );
             }
         }
+    }
+
+    /// `OnSpellCast(spell)` to a caster's scripts (and its aliases'), once a
+    /// cast as it is paid: Skyrim SE logged one for each spell a Vigilant
+    /// cast, concentration spells and wards once (autotest28, autotest30).
+    /// A staff's casts send none here (what the game sends is unread).
+    pub(crate) fn spell_cast_event(&mut self, caster: FormId, spell: FormId) {
+        let arg = self.object_value(spell);
+        self.send_script_event(caster, "OnSpellCast", vec![arg]);
     }
 
     /// A spell is cast by `caster` (the player, from the view; an actor, the

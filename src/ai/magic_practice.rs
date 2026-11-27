@@ -39,6 +39,8 @@ pub struct MagicPractice {
     cast: Option<HandCast>,
     /// Seconds left of a concentration spell being held.
     channel: f32,
+    /// The held spell's `OnSpellCast` has gone out.
+    announced: bool,
     /// Something is in the way of the target (set by the engine).
     pub(crate) blocked: bool,
     /// Where the cast in progress aims, for the engine.
@@ -223,6 +225,7 @@ impl ActorRuntime {
             target: recipient,
             landings: 1,
             dual: spell.dual && humanoid,
+            announce: true,
         };
         let mut started = None;
         if humanoid {
@@ -245,6 +248,7 @@ impl ActorRuntime {
         m.cast = started;
         if spell.concentration {
             m.channel = uniform(w.rand, goal.cast_time.0, goal.cast_time.1).max(CHANNEL_TICK);
+            m.announced = false;
         } else if !humanoid {
             self.casts = Some(cast);
             self.cast_over(&mut m, goal, left, w);
@@ -274,11 +278,15 @@ impl ActorRuntime {
         let before = (m.channel / CHANNEL_TICK).ceil();
         m.channel -= dt;
         let after = (m.channel.max(0.0) / CHANNEL_TICK).ceil();
+        let landings = (before - after) as u32;
+        let announce = landings > 0 && !m.announced;
+        m.announced |= landings > 0;
         self.casts = Some(CombatCast {
             spell,
             target: recipient,
-            landings: (before - after) as u32,
+            landings,
             dual: m.cast.is_some_and(|h| h.cast.dual),
+            announce,
         });
         if m.channel <= 0.0 {
             m.channel = 0.0;
@@ -712,9 +720,17 @@ mod tests {
                 target: ACTOR,
                 landings: 1,
                 dual: false,
+                announce: true,
             });
             e.npc_casts();
             assert_eq!(e.actor_value(ACTOR, av::MAGICKA), 50.0);
+            // Its scripts hear the cast (autotest28, autotest30).
+            let spell = e.object_value(held.spell);
+            assert!(e.scripts.pending_events.iter().any(|(o, ev, args)| {
+                *o == papyrus::ObjectId::Form(ACTOR.0)
+                    && ev == "OnSpellCast"
+                    && args.first() == Some(&spell)
+            }));
             // Away from its place the spell goes back.
             e.actor_mut(ACTOR).unwrap().exec.pos = Vec3::X * 5000.0;
             e.update_combat_spells(0.1);

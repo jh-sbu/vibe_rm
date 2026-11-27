@@ -179,6 +179,7 @@ mod tests {
                     target: FormId(1),
                     landings: 1,
                     dual: false,
+                    announce: true,
                 },
             };
             actor.exec.combat.as_mut().unwrap().hand_cast = Some(hand_cast(HandPhase::Released));
@@ -324,6 +325,9 @@ pub(crate) struct CombatCast {
     pub landings: u32,
     /// Cast from both hands.
     pub dual: bool,
+    /// The cast's first landing: its caster hears `OnSpellCast` as it is paid
+    /// (once a cast, a channelled one too: Skyrim SE logged one a cast).
+    pub announce: bool,
 }
 
 /// Seconds between a caster's throws, and how long it channels a
@@ -436,11 +440,14 @@ impl ActorRuntime {
             c.channel -= dt;
             let after = (c.channel.max(0.0) / CHANNEL_TICK).ceil();
             let landings = (before - after) as u32;
+            let announce = landings > 0 && !c.channel_announced;
+            c.channel_announced |= landings > 0;
             self.casts = Some(CombatCast {
                 spell,
                 target: recipient,
                 landings,
                 dual,
+                announce,
             });
             if c.channel <= 0.0 {
                 c.channel = 0.0;
@@ -458,6 +465,7 @@ impl ActorRuntime {
             target: recipient,
             landings: 1,
             dual: spell.dual && humanoid && uniform(w.rand, 0.0, 1.0) < DUAL_CHANCE,
+            announce: true,
         };
         let mut hand = self.cast_hand.unwrap_or(RIGHT);
         if humanoid {
@@ -471,6 +479,7 @@ impl ActorRuntime {
             hand = started;
         }
         let c = self.exec.combat.as_mut()?;
+        c.channel_announced = false;
         if spell.ward {
             c.channel = WARD_HOLD;
         } else if spell.concentration {
