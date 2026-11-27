@@ -212,10 +212,18 @@ struct NpcSpells {
     wards: Vec<CombatSpell>,
 }
 
+/// Health fraction below which a fighter starts healing itself. Skyrim SE's
+/// Vigilant (autotest28) healed at about 0.16 and below, never at 0.218 or
+/// more; 0.2 is a choice between (`known_ambiguities/npc-healing.md`).
+const HEAL_START: f32 = 0.2;
+/// Health fraction a heal stops at: autotest28's stopped near 0.25, as
+/// `fCombatRestoreStopCastThreshold` (0.25) has it.
+const HEAL_STOP: f32 = 0.25;
+
 /// Provisional combat policy, not the native scoring formula; see
 /// `known_ambiguities/npc-healing.md` for the evidence and unresolved settings.
 fn needs_combat_healing(health: f32, max_health: f32, continuing: bool) -> bool {
-    health > 0.0 && health < max_health * if continuing { 1.0 } else { 0.5 }
+    health > 0.0 && health < max_health * if continuing { HEAL_STOP } else { HEAL_START }
 }
 
 /// Whether an effect takes health from what it lands on, as a hostile
@@ -1913,16 +1921,17 @@ mod npc_healing_tests {
     use super::*;
 
     #[test]
-    fn emergency_healing_starts_below_half_and_ends_at_full_health() {
+    fn emergency_healing_starts_below_a_fifth_and_ends_at_a_quarter() {
         assert!(!needs_combat_healing(100.0, 100.0, false));
-        assert!(!needs_combat_healing(50.0, 100.0, false));
-        assert!(needs_combat_healing(49.0, 100.0, false));
-        assert!(needs_combat_healing(75.0, 100.0, true));
-        assert!(!needs_combat_healing(100.0, 100.0, true));
+        assert!(!needs_combat_healing(22.0, 100.0, false));
+        assert!(!needs_combat_healing(20.0, 100.0, false));
+        assert!(needs_combat_healing(19.0, 100.0, false));
+        assert!(needs_combat_healing(24.0, 100.0, true));
+        assert!(!needs_combat_healing(25.0, 100.0, true));
         assert!(!needs_combat_healing(0.0, 100.0, true));
         assert!(!needs_combat_healing(-1.0, 100.0, false));
         // The current maximum includes fortification and actor-value changes.
-        assert!(needs_combat_healing(75.0, 200.0, false));
+        assert!(needs_combat_healing(39.0, 200.0, false));
     }
 
     #[test]

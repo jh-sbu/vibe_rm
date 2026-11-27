@@ -42,17 +42,29 @@ Oakflesh once at the start and then held Lesser Ward. The game's settings:
 `iAICombatRestoreHealthPercentage` 60, `fCombatRestoreHealthPercentMin` 0 /
 `Max` 0.5, `fCombatRestoreHealthRestrictTime` 15,
 `fCombatRestoreStopCastThreshold` 0.25, `fCombatItemRestoreTimer` 3
-(`research/autotest23.md`, `autotest24.md`). Ours heals below 50%:
-differs. Whether the game heals only while being hurt, or only past the
-restrict time, is open; the next probe has the Vigilant struck.
+(`research/autotest23.md`, `autotest24.md`).
+
+autotest27 and autotest28 had the Vigilant struck (`research/autotest27.md`,
+`autotest28.md`). With 90 health it warded at 22% against melee and healed
+at about 5% in bleedout under fire. With 600: against melee from 70%, 50%
+and 30% it never healed in 24 s, even at 0.218 for 8 s with magicka to
+spare; against a fire warlock it healed at about 0.16 (for 1.5 s, until its
+magicka ran out) and below 0.150 (for 3.9 s, back to about 0.22, then
+warded). Out of magicka, it drank a restore-health potion.
 
 ## Implemented choices and remaining questions
 
 - A living fighter that is neither fleeing nor bleeding out starts healing
-  below 50% of current maximum Health. Once selected, healing remains preferred
-  until full Health or no affordable eligible spell remains. Exact start and
-  stop thresholds, healing cooldowns and their interaction with confidence,
-  threat and combat style remain unresolved. Healing can precede a weapon or
+  below 20% of current maximum Health (autotest28: healed at about 0.16 and
+  below, never at 0.218 or above; autotest24's held one at 20% didn't).
+  Once selected, healing remains preferred until 25% or no affordable
+  eligible spell remains (autotest28's stopped near 0.25;
+  `fCombatRestoreStopCastThreshold` is 0.25, but its use isn't documented).
+  The start between 0.16 and 0.218 is a choice. Unresolved: whether the
+  game heals only under spell attack (melee at 0.218 didn't), healing in
+  bleedout (autotest27; ours doesn't), drinking potions (ours doesn't),
+  healing cooldowns and their interaction with confidence, threat and
+  combat style. Healing can precede a weapon or
   bow attack regardless of the style's offensive magic multiplier; a swing or
   guard already under way finishes first, and an interrupted bow is lowered
   before healing and starts a fresh draw afterward.
