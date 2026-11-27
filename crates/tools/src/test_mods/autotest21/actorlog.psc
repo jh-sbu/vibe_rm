@@ -55,6 +55,26 @@ Function CheckWatch()
     EndIf
 EndFunction
 
+; Added for autotest30: the spells cast (potions too) and bleedouts alone,
+; each with the seconds since MarkCasts, apart from the full log.
+String Casts = ""
+Float CastsFrom = 0.0
+
+Function MarkCasts()
+    Casts = ""
+    CastsFrom = Utility.GetCurrentRealTime()
+EndFunction
+
+Function AddCast(String s)
+    Casts = Casts + s + "@" + (Math.Floor((Utility.GetCurrentRealTime() - CastsFrom) * 10.0) / 10.0) + " "
+EndFunction
+
+String Function TakeCasts()
+    String s = Casts
+    Casts = ""
+    return s
+EndFunction
+
 String Function Counts()
     return Blows + " blows, " + SpellHits + " spell hits (last #" + LastSpellSource + "); first at blow: HasSpell " + SpellBlow + ", HasMagicEffect " + EffectBlow + ", max stamina down " + StaminaBlow
 EndFunction
@@ -97,6 +117,7 @@ EndEvent
 
 Event OnEnterBleedout()
     Add("bleedout")
+    AddCast("bleedout")
 EndEvent
 
 Event OnDying(Actor akKiller)
@@ -110,8 +131,10 @@ EndEvent
 Event OnSpellCast(Form akSpell)
     If akSpell != None
         Add("cast#" + akSpell.GetFormID())
+        AddCast("cast#" + akSpell.GetFormID())
     Else
         Add("cast")
+        AddCast("cast")
     EndIf
 EndEvent
 

@@ -2091,6 +2091,17 @@ readings are applied (see Done; autotest23 and autotest24's on
     - Ours now delivers attack spells (`known_ambiguities/diseases.md`),
       to NPCs' blows only: the player's own attacks (a werewolf's) carry
       none yet.
+  - `test-mod autotest30`, built and waiting for the user's run (fully
+    automatic, about 15 to 20 minutes; `crates/tools/src/test_mods/autotest30.rs`),
+    all in the pens: autotest29's disease items (Disease Resist 0, 50 and
+    100; whether a caught disease's drain stays; `GetDisease` on an NPC),
+    autotest28's healing and hostile-spell items, Fury with its caster
+    unseen or gone, a disarmed fighter's next weapon, NPCs' regeneration
+    multipliers (`test-mod regen`) and knockdowns of held NPCs
+    (`test-mod explosions`). Its dry run in our engine: our Vigilants' casts
+    send no `OnSpellCast` to the logger, and our fighters never read
+    `IsAttacking` true, so ours disarmed nobody (SE read it in autotest27
+    and autotest28); both to look into.
   - Built and waiting for the user's run: `saveload`
     (`plans/saves-remaining.md` step 9; run instructions in
     `crates/tools/src/test_mods/saveload.rs`). Its dry run in our engine
