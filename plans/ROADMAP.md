@@ -2091,13 +2091,6 @@ readings are applied (see Done; autotest23 and autotest24's on
     - Ours applies no `ATKD` attack spells yet (`research/autotest28.md`).
     - Our engine read `IsInInterior` false in the pens after a script
       `MoveTo` (SE: true).
-  - Our engine loses the scripts of actors a script creates
-    (`PlaceActorAtMe`): `attach_cell_scripts` takes `self.vm` out to attach
-    them, but while a script is running the engine holds only an empty
-    stand-in VM, so they are attached to that and dropped when the real one
-    is put back. Casts to the base's script then read None (found in
-    autotest29's dry run: its NPCs' logger). Created actors made outside a
-    script run keep theirs (`created_actors_have_their_bases_scripts`).
   - Built and waiting for the user's run: `saveload`
     (`plans/saves-remaining.md` step 9; run instructions in
     `crates/tools/src/test_mods/saveload.rs`). Its dry run in our engine

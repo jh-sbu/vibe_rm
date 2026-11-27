@@ -653,26 +653,23 @@ impl Engine {
         let Some(func) = func.clone() else { return };
         let obj = papyrus::ObjectId::Form(package.0);
         let actor = self.object_value(actor);
-        let mut vm = std::mem::take(&mut self.vm);
-        {
-            let mut host = crate::script::EngineHost { engine: self };
-            for s in &vmad.scripts {
-                let props: Vec<(String, papyrus::Value)> = s
-                    .properties
-                    .iter()
-                    .map(|(n, pv)| {
-                        (
-                            n.clone(),
-                            crate::script::vmad::to_value(pv, &|f| host.engine.native_class(f)),
-                        )
-                    })
-                    .collect();
-                vm.attach(&mut host, obj, &s.name, &props);
-            }
-            log::debug!("package {package} fragment {func}");
-            vm.call_method(&mut host, obj, &frag.script, &func, vec![actor]);
-        }
-        self.vm = vm;
+        let mut ops: Vec<papyrus::HostOp> = vmad
+            .scripts
+            .iter()
+            .map(|s| papyrus::HostOp::Attach {
+                obj,
+                script: s.name.clone(),
+                props: self.script_props(s),
+            })
+            .collect();
+        log::debug!("package {package} fragment {func}");
+        ops.push(papyrus::HostOp::Call {
+            obj,
+            script: frag.script.clone(),
+            func,
+            args: vec![actor],
+        });
+        self.vm_ops(ops);
     }
 
     /// The package an actor runs (`GetCurrentPackage`): its run's, loaded or

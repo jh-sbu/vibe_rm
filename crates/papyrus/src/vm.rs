@@ -240,6 +240,33 @@ pub enum NativeResult {
     },
 }
 
+/// Work for the VM that the host could only queue: while the VM runs one of
+/// the host's natives it is the host's to lend no longer, so what the native
+/// does that needs it (scripts to attach to a reference a script made,
+/// events, fragments) waits here and is done as the native returns.
+#[derive(Debug, Clone)]
+pub enum HostOp {
+    /// [`Vm::attach`].
+    Attach {
+        obj: ObjectId,
+        script: String,
+        props: Vec<(String, Value)>,
+    },
+    /// [`Vm::send_event`].
+    Event {
+        obj: ObjectId,
+        name: String,
+        args: Vec<Value>,
+    },
+    /// [`Vm::call_method`].
+    Call {
+        obj: ObjectId,
+        script: String,
+        func: String,
+        args: Vec<Value>,
+    },
+}
+
 /// The embedding application.
 pub trait Host {
     fn load_script(&mut self, name: &str) -> Option<Vec<u8>>;
@@ -253,6 +280,10 @@ pub trait Host {
     ) -> NativeResult;
     /// Whether an object satisfies a native base type (`form`, `objectreference`, `actor`, ...).
     fn is_native_type(&self, obj: ObjectId, class: &str) -> bool;
+    /// What the last native queued for the VM ([`HostOp`]), taken.
+    fn take_ops(&mut self) -> Vec<HostOp> {
+        Vec::new()
+    }
 }
 
 struct Frame {
@@ -669,6 +700,26 @@ impl Vm {
             return true;
         }
         false
+    }
+
+    /// Do what a host queued.
+    pub fn apply(&mut self, host: &mut dyn Host, op: HostOp) {
+        match op {
+            HostOp::Attach { obj, script, props } => {
+                self.attach(host, obj, &script, &props);
+            }
+            HostOp::Event { obj, name, args } => {
+                self.send_event(host, obj, &name, args);
+            }
+            HostOp::Call {
+                obj,
+                script,
+                func,
+                args,
+            } => {
+                self.call_method(host, obj, &script, &func, args);
+            }
+        }
     }
 
     /// Start a call to a method on a specific script instance (e.g. quest fragments).
@@ -1242,12 +1293,18 @@ impl Vm {
                     }
                     match call {
                         Some((f, this, this_val)) if f.native => {
-                            match host.call_native(
+                            let result = host.call_native(
                                 &f.class,
                                 &f.name.to_ascii_lowercase(),
                                 this_val.as_ref(),
                                 &argv,
-                            ) {
+                            );
+                            // What the native did that needs the VM, before the
+                            // script goes on (a placed actor's scripts).
+                            for op in host.take_ops() {
+                                self.apply(host, op);
+                            }
+                            match result {
                                 NativeResult::Value(v) => {
                                     Self::set_in(&mut self.instances, &mut frame!(), &dest, v)
                                 }

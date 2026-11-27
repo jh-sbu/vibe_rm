@@ -1755,11 +1755,55 @@ impl Engine {
         }
     }
 
+    /// Hand work to the VM ([`papyrus::HostOp`]): done now, or, while a
+    /// native runs (the VM is out of the engine then), queued for the VM to
+    /// do as the native returns. A reference a script makes or a cell a
+    /// script's `MoveTo` loads gets its scripts so, and the script sees them.
+    pub(crate) fn vm_ops(&mut self, ops: Vec<papyrus::HostOp>) {
+        if ops.is_empty() {
+            return;
+        }
+        if self.scripts.native_depth > 0 {
+            self.scripts.vm_ops.extend(ops);
+            return;
+        }
+        let mut vm = std::mem::take(&mut self.vm);
+        {
+            let mut host = crate::script::EngineHost { engine: self };
+            for op in ops {
+                vm.apply(&mut host, op);
+            }
+        }
+        self.vm = vm;
+    }
+
+    /// A script's properties as the VM takes them.
+    pub(crate) fn script_props(
+        &self,
+        s: &crate::script::vmad::ScriptRef,
+    ) -> Vec<(String, papyrus::Value)> {
+        s.properties
+            .iter()
+            .map(|(n, pv)| {
+                (
+                    n.clone(),
+                    crate::script::vmad::to_value(pv, &|f| self.native_class(f)),
+                )
+            })
+            .collect()
+    }
+
     /// Attach scripts for references in a newly loaded cell and send load
     /// events, to them and to the aliases holding them. Returns the objects
     /// given scripts and those aliases.
     pub(crate) fn attach_cell_scripts(&mut self, refs: &[FormId]) -> Vec<papyrus::ObjectId> {
-        let mut vm = std::mem::take(&mut self.vm);
+        use papyrus::HostOp;
+        let event = |obj, name: &str| HostOp::Event {
+            obj,
+            name: name.into(),
+            args: vec![],
+        };
+        let mut ops = Vec::new();
         let mut attached = Vec::new();
         for &r in refs {
             // The aliases holding it hear its load events as it does (MQ101's
@@ -1769,14 +1813,11 @@ impl Engine {
                 .into_iter()
                 .filter(|o| matches!(o, papyrus::ObjectId::Alias { .. }))
                 .collect();
-            if !aliases.is_empty() {
-                let mut host = crate::script::EngineHost { engine: self };
-                for &obj in &aliases {
-                    vm.send_event(&mut host, obj, "OnLoad", vec![]);
-                    vm.send_event(&mut host, obj, "OnCellAttach", vec![]);
-                }
-                attached.extend(aliases);
+            for &obj in &aliases {
+                ops.push(event(obj, "OnLoad"));
+                ops.push(event(obj, "OnCellAttach"));
             }
+            attached.extend(aliases);
             let (mut scripts, base) = match self.lo.get(r) {
                 Some(rec) => {
                     let own = crate::script::vmad::parse(&rec)
@@ -1834,42 +1875,36 @@ impl Engine {
                 continue;
             }
             let obj = papyrus::ObjectId::Form(r.0);
-            {
-                let mut host = crate::script::EngineHost { engine: self };
-                for s in &scripts {
-                    let props: Vec<(String, papyrus::Value)> = s
-                        .properties
-                        .iter()
-                        .map(|(n, pv)| {
-                            (
-                                n.clone(),
-                                crate::script::vmad::to_value(pv, &|f| host.engine.native_class(f)),
-                            )
-                        })
-                        .collect();
-                    vm.attach(&mut host, obj, &s.name, &props);
-                }
-                if host.engine.scripts.initialized.insert(obj) {
-                    vm.send_event(&mut host, obj, "OnInit", vec![]);
-                }
-                vm.send_event(&mut host, obj, "OnLoad", vec![]);
-                vm.send_event(&mut host, obj, "OnCellAttach", vec![]);
+            for s in &scripts {
+                ops.push(HostOp::Attach {
+                    obj,
+                    script: s.name.clone(),
+                    props: self.script_props(s),
+                });
             }
+            if self.scripts.initialized.insert(obj) {
+                ops.push(event(obj, "OnInit"));
+            }
+            ops.push(event(obj, "OnLoad"));
+            ops.push(event(obj, "OnCellAttach"));
             attached.push(obj);
         }
-        self.vm = vm;
+        self.vm_ops(ops);
         attached
     }
 
     /// `OnCellLoad` to a loaded cell's scripted objects, once all of them
     /// have their scripts (a puzzle pillar's sets up with its lever's).
     fn send_cell_load(&mut self, objs: &[papyrus::ObjectId]) {
-        let mut vm = std::mem::take(&mut self.vm);
-        let mut host = crate::script::EngineHost { engine: self };
-        for &obj in objs {
-            vm.send_event(&mut host, obj, "OnCellLoad", vec![]);
-        }
-        self.vm = vm;
+        let ops = objs
+            .iter()
+            .map(|&obj| papyrus::HostOp::Event {
+                obj,
+                name: "OnCellLoad".into(),
+                args: vec![],
+            })
+            .collect();
+        self.vm_ops(ops);
     }
 
     pub(crate) fn skeleton(
@@ -4008,16 +4043,12 @@ impl Engine {
         }
         self.break_invisibility(PLAYER_REF);
         {
-            let mut vm = std::mem::take(&mut self.vm);
             let player = self.object_value(PLAYER_REF);
-            let mut host = crate::script::EngineHost { engine: self };
-            vm.send_event(
-                &mut host,
-                papyrus::ObjectId::Form(owner.0),
-                "OnActivate",
-                vec![player.clone()],
-            );
-            self.vm = vm;
+            self.vm_ops(vec![papyrus::HostOp::Event {
+                obj: papyrus::ObjectId::Form(owner.0),
+                name: "OnActivate".into(),
+                args: vec![player.clone()],
+            }]);
             // And to the aliases it fills.
             for obj in self.objects_of_ref(owner).into_iter().skip(1) {
                 self.scripts
@@ -4880,9 +4911,10 @@ impl Engine {
             .find(|sr| sr.tag.0 == *b"INDX" && sr.u8(2) & 0x2 != 0)
             .map(|sr| sr.u16(0));
         drop(rec);
-        let mut vm = std::mem::take(&mut self.vm);
         {
+            use papyrus::HostOp;
             let obj = papyrus::ObjectId::Form(q.0);
+            let mut ops = Vec::new();
             // Alias scripts run on the alias objects.
             for (alias, scripts) in &vmad.alias_scripts {
                 let aobj = papyrus::ObjectId::Alias {
@@ -4900,43 +4932,46 @@ impl Engine {
                             )
                         })
                         .collect();
-                    let mut host = crate::script::EngineHost { engine: self };
-                    vm.attach(&mut host, aobj, &s.name, &props);
+                    ops.push(HostOp::Attach {
+                        obj: aobj,
+                        script: s.name.clone(),
+                        props,
+                    });
                 }
             }
-            let mut host = crate::script::EngineHost { engine: self };
             for s in &vmad.scripts {
-                let props: Vec<(String, papyrus::Value)> = s
-                    .properties
-                    .iter()
-                    .map(|(n, pv)| {
-                        (
-                            n.clone(),
-                            crate::script::vmad::to_value(pv, &|f| host.engine.native_class(f)),
-                        )
-                    })
-                    .collect();
-                vm.attach(&mut host, obj, &s.name, &props);
+                ops.push(HostOp::Attach {
+                    obj,
+                    script: s.name.clone(),
+                    props: self.script_props(s),
+                });
             }
             // OnInit once ever (at game start for every quest): not again
             // when it starts or starts again, and its variables kept
             // (`test-mod autotest2`).
-            if host.engine.scripts.initialized.insert(obj) {
-                vm.send_event(&mut host, obj, "OnInit", vec![]);
+            if self.scripts.initialized.insert(obj) {
+                ops.push(HostOp::Event {
+                    obj,
+                    name: "OnInit".into(),
+                    args: vec![],
+                });
             }
             // Started by the Story Manager: the event, with its data.
-            let event = host
-                .engine
+            let event = self
                 .scripts
                 .quests
                 .get(&q)
                 .and_then(|st| st.event.as_ref())
-                .and_then(|e| host.engine.story_papyrus_event(e));
+                .and_then(|e| self.story_papyrus_event(e));
             if let Some((name, args)) = event {
-                vm.send_event(&mut host, obj, name, args);
+                ops.push(HostOp::Event {
+                    obj,
+                    name: name.into(),
+                    args,
+                });
             }
+            self.vm_ops(ops);
         }
-        self.vm = vm;
         if let Some(s) = startup {
             self.scripts.pending_stages.push((q, s));
         }
@@ -5000,25 +5035,23 @@ impl Engine {
         let edid = rec.editor_id().unwrap_or_default();
         drop(rec);
         log::info!("quest {edid} stage {stage}");
-        let mut vm = std::mem::take(&mut self.vm);
-        {
-            let mut host = crate::script::EngineHost { engine: self };
-            for f in vmad.fragments.iter().filter(|f| {
+        let ops = vmad
+            .fragments
+            .iter()
+            .filter(|f| {
                 f.stage == stage
                     && entries
                         .as_ref()
                         .is_none_or(|e| e.contains(&(f.log_entry as usize)))
-            }) {
-                vm.call_method(
-                    &mut host,
-                    papyrus::ObjectId::Form(q.0),
-                    &f.script,
-                    &f.function,
-                    vec![],
-                );
-            }
-        }
-        self.vm = vm;
+            })
+            .map(|f| papyrus::HostOp::Call {
+                obj: papyrus::ObjectId::Form(q.0),
+                script: f.script.clone(),
+                func: f.function.clone(),
+                args: vec![],
+            })
+            .collect();
+        self.vm_ops(ops);
     }
 
     /// Each NPC's first placed reference.

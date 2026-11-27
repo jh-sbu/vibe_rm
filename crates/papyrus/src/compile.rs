@@ -1546,6 +1546,66 @@ EndEvent
         );
     }
 
+    /// A native that makes something needing the VM (a placed actor's
+    /// scripts) queues it; the VM does it as the native returns, so the
+    /// script's next statement sees it.
+    #[test]
+    fn what_a_native_queues_is_done_before_the_script_goes_on() {
+        const LOGGER: &str = "Scriptname Logger extends Actor\nFunction Hello()\n    Debug.Trace(\"hello\")\nEndFunction\n";
+        const MAKER: &str = "Scriptname Maker extends Quest\nActor Property Player Auto\nEvent OnInit()\n    Player.GetFormID()\n    (Player as Logger).Hello()\nEndEvent\n";
+        struct Queuing {
+            inner: Host1,
+            ops: Vec<crate::vm::HostOp>,
+        }
+        impl Host for Queuing {
+            fn load_script(&mut self, name: &str) -> Option<Vec<u8>> {
+                self.inner.load_script(name)
+            }
+            fn call_native(
+                &mut self,
+                class: &str,
+                func: &str,
+                this: Option<&Value>,
+                args: &[Value],
+            ) -> NativeResult {
+                if func.eq_ignore_ascii_case("getformid") {
+                    self.ops.push(crate::vm::HostOp::Attach {
+                        obj: ObjectId::Form(0x14),
+                        script: "Logger".into(),
+                        props: Vec::new(),
+                    });
+                }
+                self.inner.call_native(class, func, this, args)
+            }
+            fn is_native_type(&self, _obj: ObjectId, class: &str) -> bool {
+                matches!(class, "form" | "objectreference" | "actor" | "quest")
+            }
+            fn take_ops(&mut self) -> Vec<crate::vm::HostOp> {
+                std::mem::take(&mut self.ops)
+            }
+        }
+        let built = compile_sources(&[LOGGER, MAKER], &Natives).unwrap();
+        let mut scripts: HashMap<String, Vec<u8>> = natives_pex().into_iter().collect();
+        for (n, b) in built {
+            scripts.insert(n.to_ascii_lowercase(), b);
+        }
+        let mut host = Queuing {
+            inner: Host1 {
+                scripts,
+                traces: Vec::new(),
+                calls: Vec::new(),
+            },
+            ops: Vec::new(),
+        };
+        let mut vm = Vm::new();
+        let quest = ObjectId::Form(0x0100_0800);
+        let player = Value::Object(ObjectId::Form(0x14), "Actor".into());
+        assert!(vm.attach(&mut host, quest, "Maker", &[("Player".into(), player)]));
+        vm.send_event(&mut host, quest, "OnInit", vec![]);
+        vm.run(&mut host, 0.0, 10_000);
+        assert_eq!(host.inner.traces, vec!["hello".to_owned()]);
+    }
+
     #[test]
     fn errors_name_the_line() {
         let e = compile_sources(

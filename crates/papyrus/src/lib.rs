@@ -7,7 +7,7 @@ pub mod value;
 pub mod vm;
 
 pub use value::{Array, ObjectId, Value};
-pub use vm::{Arg, Host, NativeResult, SavedFrame, SavedThread, SavedVm, Vm};
+pub use vm::{Arg, Host, HostOp, NativeResult, SavedFrame, SavedThread, SavedVm, Vm};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

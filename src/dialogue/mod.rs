@@ -1008,13 +1008,19 @@ impl Engine {
         };
         let speaker = self.object_value(speaker);
         let obj = papyrus::ObjectId::Form(info.id.0);
-        let mut vm = std::mem::take(&mut self.vm);
-        {
-            let mut host = crate::script::EngineHost { engine: self };
-            vm.attach(&mut host, obj, script, &[]);
-            vm.call_method(&mut host, obj, script, func, vec![speaker]);
-        }
-        self.vm = vm;
+        self.vm_ops(vec![
+            papyrus::HostOp::Attach {
+                obj,
+                script: script.into(),
+                props: Vec::new(),
+            },
+            papyrus::HostOp::Call {
+                obj,
+                script: script.into(),
+                func: func.into(),
+                args: vec![speaker],
+            },
+        ]);
     }
 
     fn begin_info(&mut self) {

@@ -108,6 +108,11 @@ pub struct ScriptState {
     pub inventory_filters: HashMap<ObjectId, HashSet<FormId>>,
     /// Events raised by natives, delivered after the current VM run.
     pub pending_events: Vec<(ObjectId, String, Vec<Value>)>,
+    /// Natives running now: while one runs, the VM is out of the engine
+    /// (`Engine::vm_ops` queues for it).
+    pub native_depth: u32,
+    /// What the running native queued for the VM, done as it returns.
+    pub vm_ops: Vec<papyrus::HostOp>,
     /// References whose `GetOpenState` scripts wait on, answered once the
     /// frame's scripts have run (`open_state_key`).
     pub open_state_queries: Vec<FormId>,
@@ -200,7 +205,14 @@ impl papyrus::Host for EngineHost<'_> {
         this: Option<&Value>,
         args: &[Value],
     ) -> papyrus::NativeResult {
-        natives::call(self.engine, class, func, this, args)
+        self.engine.scripts.native_depth += 1;
+        let r = natives::call(self.engine, class, func, this, args);
+        self.engine.scripts.native_depth -= 1;
+        r
+    }
+
+    fn take_ops(&mut self) -> Vec<papyrus::HostOp> {
+        std::mem::take(&mut self.engine.scripts.vm_ops)
     }
 
     fn is_native_type(&self, obj: ObjectId, class: &str) -> bool {

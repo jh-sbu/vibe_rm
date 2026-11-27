@@ -1502,26 +1502,24 @@ impl Engine {
     fn run_scene_fragment(&mut self, def: &SceneDef, func: &str) {
         let Some(frag) = &def.vmad.scene else { return };
         let obj = papyrus::ObjectId::Form(def.scene.id.0);
-        let mut vm = std::mem::take(&mut self.vm);
-        {
-            let mut host = crate::script::EngineHost { engine: self };
-            for s in &def.vmad.scripts {
-                let props: Vec<(String, papyrus::Value)> = s
-                    .properties
-                    .iter()
-                    .map(|(n, pv)| {
-                        (
-                            n.clone(),
-                            crate::script::vmad::to_value(pv, &|f| host.engine.native_class(f)),
-                        )
-                    })
-                    .collect();
-                vm.attach(&mut host, obj, &s.name, &props);
-            }
-            log::debug!("scene {} fragment {func}", def.scene.editor_id);
-            vm.call_method(&mut host, obj, &frag.script, func, vec![]);
-        }
-        self.vm = vm;
+        let mut ops: Vec<papyrus::HostOp> = def
+            .vmad
+            .scripts
+            .iter()
+            .map(|s| papyrus::HostOp::Attach {
+                obj,
+                script: s.name.clone(),
+                props: self.script_props(s),
+            })
+            .collect();
+        log::debug!("scene {} fragment {func}", def.scene.editor_id);
+        ops.push(papyrus::HostOp::Call {
+            obj,
+            script: frag.script.clone(),
+            func: func.into(),
+            args: vec![],
+        });
+        self.vm_ops(ops);
     }
 
     fn run_phase_fragment(&mut self, def: &SceneDef, phase: usize, completion: bool) {

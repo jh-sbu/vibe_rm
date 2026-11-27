@@ -1699,36 +1699,35 @@ impl Engine {
     }
 
     fn attach_effect_scripts(&mut self, x: &ActiveEffect, mgef: &MagicEffect) {
+        use papyrus::HostOp;
         let obj = ObjectId::Effect(x.id);
-        let mut vm = std::mem::take(&mut self.vm);
-        {
-            let mut host = crate::script::EngineHost { engine: self };
-            if vm.attached_scripts(obj).is_empty() {
-                for s in &mgef.scripts {
-                    let props: Vec<(String, Value)> = s
-                        .properties
-                        .iter()
-                        .map(|(n, pv)| {
-                            (
-                                n.clone(),
-                                crate::script::vmad::to_value(pv, &|f| host.engine.native_class(f)),
-                            )
-                        })
-                        .collect();
-                    vm.attach(&mut host, obj, &s.name, &props);
-                }
-                if host.engine.scripts.initialized.insert(obj) {
-                    vm.send_event(&mut host, obj, "OnInit", vec![]);
-                }
-            }
-            let args = vec![
-                host.engine.object_value(x.target),
-                x.caster
-                    .map_or(Value::None, |c| host.engine.object_value(c)),
-            ];
-            vm.send_event(&mut host, obj, "OnEffectStart", args);
+        // Attaching again keeps what is there.
+        let mut ops: Vec<HostOp> = mgef
+            .scripts
+            .iter()
+            .map(|s| HostOp::Attach {
+                obj,
+                script: s.name.clone(),
+                props: self.script_props(s),
+            })
+            .collect();
+        if self.scripts.initialized.insert(obj) {
+            ops.push(HostOp::Event {
+                obj,
+                name: "OnInit".into(),
+                args: vec![],
+            });
         }
-        self.vm = vm;
+        let args = vec![
+            self.object_value(x.target),
+            x.caster.map_or(Value::None, |c| self.object_value(c)),
+        ];
+        ops.push(HostOp::Event {
+            obj,
+            name: "OnEffectStart".into(),
+            args,
+        });
+        self.vm_ops(ops);
     }
 
     /// Run active effects: per-second changes, durations running out,
