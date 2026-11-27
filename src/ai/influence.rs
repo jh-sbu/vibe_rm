@@ -3,8 +3,9 @@
 //! a value of their own (`crate::magic::archetype::target_value`), and what
 //! the actor is doing changes with it. Calmed actors stop fighting and look
 //! for no fights until attacked; the frightened, cowards while it lasts,
-//! flee at once; the frenzied fall on whoever is nearest, friend or not, and
-//! give up the fights they no longer want when it ends; the rallied stop
+//! flee at once; the frenzied fall on their caster (or, with none, whoever
+//! is nearest, friend or not), and give up the fights they no longer want
+//! when it ends; the rallied stop
 //! fleeing. Open questions: `known_ambiguities/magic.md`.
 
 use std::collections::HashSet;
@@ -54,8 +55,13 @@ impl Engine {
         }
     }
 
-    /// A target value modifier began holding its value.
-    pub(crate) fn target_value_started(&mut self, actor: FormId, archetype: u32) {
+    /// A target value modifier from `caster` began holding its value.
+    pub(crate) fn target_value_started(
+        &mut self,
+        actor: FormId,
+        archetype: u32,
+        caster: Option<FormId>,
+    ) {
         if actor == PLAYER_REF {
             return;
         }
@@ -70,7 +76,10 @@ impl Engine {
                 }
             }
             archetype::FRENZY => {
-                if let Some(t) = self.frenzy_target(actor) {
+                // Skyrim SE (autotest27, autotest28): a Fury cast at an NPC
+                // sent it at its caster, even with another actor nearer.
+                let caster = caster.filter(|&c| c != actor && self.frenzy_can_attack(c));
+                if let Some(t) = caster.or_else(|| self.frenzy_target(actor)) {
                     log::info!("{actor} is frenzied: attacks {t}");
                     self.start_combat(actor, t);
                 }
@@ -96,6 +105,15 @@ impl Engine {
         if let Some(c) = self.actor_mut(actor).and_then(|a| a.exec.combat.as_mut()) {
             c.recheck = true;
         }
+    }
+
+    /// Whether a frenzied actor can go for `r`: living, standing, loaded.
+    fn frenzy_can_attack(&self, r: FormId) -> bool {
+        if r == PLAYER_REF {
+            return !self.player_dead();
+        }
+        self.actor_ref(r)
+            .is_some_and(|a| !a.dead && a.exec.bleeding.is_none())
     }
 
     /// The nearest living actor (or the player) a frenzied actor finds.
@@ -164,5 +182,55 @@ impl Engine {
                 self.end_combat(r);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::engine::PLAYER_REF;
+    use crate::magic::archetype;
+    use esp::FormId;
+    use glam::{Mat4, Vec3};
+
+    #[test]
+    fn a_fury_sends_its_target_at_its_caster_even_with_another_nearer() {
+        use crate::world::skeleton::Skeleton;
+        use esp::writer::write_plugin;
+        use std::sync::Arc;
+
+        let dir = std::env::temp_dir().join(format!("vrm-fury-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("Empty.esp"),
+            write_plugin(0, &[], "test", "fury", 0x900, &[]),
+        )
+        .unwrap();
+        let mut e = crate::stats::action_tests::headless_engine(&dir, "Empty.esp");
+        let key = crate::render::CellKey::Interior(FormId(0x801));
+        let skeleton = Arc::new(Skeleton::default());
+        for (id, x) in [(FormId(0x800), 0.0), (FormId(0x803), 150.0)] {
+            let mut a = crate::ai::ActorRuntime::new(
+                id,
+                FormId(0x802),
+                skeleton.clone(),
+                Mat4::IDENTITY,
+                vec![],
+                0.0,
+            );
+            a.exec.pos = Vec3::X * x;
+            e.actor_cells.insert(id, key);
+            e.cells.entry(key).or_default().actors.push(a);
+        }
+        e.player.position = Vec3::Y * -450.0;
+        e.target_value_started(FormId(0x800), archetype::FRENZY, Some(PLAYER_REF));
+        let target = e
+            .actor_ref(FormId(0x800))
+            .unwrap()
+            .exec
+            .combat
+            .as_ref()
+            .map(|c| c.target);
+        assert_eq!(target, Some(PLAYER_REF));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

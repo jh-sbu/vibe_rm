@@ -1388,7 +1388,7 @@ impl Engine {
                 let to = archetype::target_value(a).unwrap_or_default();
                 let now = self.actor_value(x.target, mgef.primary.unwrap_or_default());
                 self.hold(i, &mgef, [to - now, 0.0]);
-                self.target_value_started(x.target, a);
+                self.target_value_started(x.target, a, x.caster);
             }
             archetype::INVISIBILITY => self.hold(i, &mgef, [1.0, 0.0]),
             archetype::SUMMON_CREATURE => self.summon(id, &mgef),
