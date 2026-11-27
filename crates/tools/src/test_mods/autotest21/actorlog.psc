@@ -14,6 +14,51 @@ String Function Take()
     return s
 EndFunction
 
+; Added for autotest29: blows counted as they land, and the blow at which
+; a watched disease first shows (HasSpell, HasMagicEffect, max stamina
+; below a mark). A hit whose source is a spell is counted apart.
+Int Blows = 0
+Int SpellHits = 0
+Int LastSpellSource = 0
+Spell WatchSpell
+MagicEffect WatchEffect
+Float WatchStamina = 0.0
+Int SpellBlow = -1
+Int EffectBlow = -1
+Int StaminaBlow = -1
+
+Function Watch(Spell s, MagicEffect e, Float staminaMark)
+    Blows = 0
+    SpellHits = 0
+    LastSpellSource = 0
+    SpellBlow = -1
+    EffectBlow = -1
+    StaminaBlow = -1
+    WatchSpell = s
+    WatchEffect = e
+    WatchStamina = staminaMark
+EndFunction
+
+; Checks the watched disease after a hit; the blow so far is the one.
+Function CheckWatch()
+    If WatchStamina <= 0.0
+        return
+    EndIf
+    If SpellBlow < 0 && HasSpell(WatchSpell)
+        SpellBlow = Blows
+    EndIf
+    If EffectBlow < 0 && HasMagicEffect(WatchEffect)
+        EffectBlow = Blows
+    EndIf
+    If StaminaBlow < 0 && GetActorValueMax("Stamina") < WatchStamina
+        StaminaBlow = Blows
+    EndIf
+EndFunction
+
+String Function Counts()
+    return Blows + " blows, " + SpellHits + " spell hits (last #" + LastSpellSource + "); first at blow: HasSpell " + SpellBlow + ", HasMagicEffect " + EffectBlow + ", max stamina down " + StaminaBlow
+EndFunction
+
 Event OnHit(ObjectReference akAggressor, Form akSource, Projectile akProjectile, Bool abPowerAttack, Bool abSneakAttack, Bool abBashAttack, Bool abHitBlocked)
     String s = "hit"
     If abPowerAttack
@@ -36,6 +81,14 @@ Event OnHit(ObjectReference akAggressor, Form akSource, Projectile akProjectile,
         s += "<" + akAggressor.GetFormID()
     EndIf
     Add(s)
+    Spell sp = akSource as Spell
+    If sp != None
+        SpellHits += 1
+        LastSpellSource = sp.GetFormID()
+    Else
+        Blows += 1
+    EndIf
+    CheckWatch()
 EndEvent
 
 Event OnCombatStateChanged(Actor akTarget, Int aeCombatState)

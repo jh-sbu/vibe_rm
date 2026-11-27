@@ -59,7 +59,7 @@ String Function TestNpcDisease()
     Float[] stamina = new Float[9]
     Int i = 0
     While i < 9
-        subject[i] = SpawnPen(NakedBase, i, 0.0, -200.0)
+        subject[i] = SpawnPen(LoggedBase, i, 0.0, -200.0)
         bear[i] = SpawnPen(BearBase, i, 0.0, 250.0)
         i += 1
     EndWhile
@@ -77,6 +77,7 @@ String Function TestNpcDisease()
         spellAt[i] = -1.0
         effectAt[i] = -1.0
         stamina[i] = a.GetActorValueMax("Stamina")
+        (a as VrmAt21ActorLog).Watch(BoneBreak, BoneBreakEffect, stamina[i] - 20.0)
         i += 1
     EndWhile
     String r = "9 pens, each a level " + subject[0].GetLevel() + " unaggressive NPC (DiseaseResist " + Num(subject[0].GetActorValue("DiseaseResist")) + ", held by SetDontMove, 5000 health) and a level " + bear[0].GetLevel() + " bear 450 off, StartCombat on it; 150 s\n"
@@ -125,12 +126,15 @@ String Function TestNpcDisease()
     EndWhile
     Utility.Wait(2.0)
     ; Per NPC: health drops seen (a poll may merge blows), when HasSpell and
-    ; HasMagicEffect first read true (-1: never), max stamina before and
-    ; after (Bone Break Fever drains 25), and HasSpell at the end.
+    ; HasMagicEffect first read true in the poll (-1: never); then its
+    ; logger's count of blows (OnHit), of hits whose source is a spell, and
+    ; the blow at which HasSpell, HasMagicEffect and max stamina (Bone Break
+    ; Fever drains 25) first showed the disease (-1: never); max stamina
+    ; before and after, and HasSpell at the end.
     i = 0
     While i < 9
         Actor c = subject[i]
-        r += "  pen " + i + ": " + hits[i] + " drops, HasSpell at " + Num(spellAt[i]) + ", HasMagicEffect at " + Num(effectAt[i]) + ", max stamina " + Num(stamina[i]) + " -> " + Num(c.GetActorValueMax("Stamina")) + ", HasSpell now " + c.HasSpell(BoneBreak) + "\n"
+        r += "  pen " + i + ": " + hits[i] + " drops, HasSpell at " + Num(spellAt[i]) + " s, HasMagicEffect at " + Num(effectAt[i]) + " s; " + (c as VrmAt21ActorLog).Counts() + "; max stamina " + Num(stamina[i]) + " -> " + Num(c.GetActorValueMax("Stamina")) + ", HasSpell now " + c.HasSpell(BoneBreak) + "\n"
         i += 1
     EndWhile
     i = 0

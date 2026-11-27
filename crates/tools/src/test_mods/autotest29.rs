@@ -17,13 +17,18 @@
 //!   Fever on every attack, 6% a blow) given `StartCombat` on it, 150 s.
 //!   Per NPC: health drops, when `HasSpell(DiseaseBoneBreakFever)` and
 //!   `HasMagicEffect(DisDamageStamina)` first read true, and its max
-//!   stamina before and after (the fever drains 25).
+//!   stamina before and after (the fever drains 25). Its logger
+//!   (`VrmAt21ActorLog`, on `LoggedBase`) counts the blows as their
+//!   `OnHit`s arrive, hits whose source is a spell apart, and notes the
+//!   blow at which each of the three first showed the disease.
 //!
 //! | reading | means |
 //! | --- | --- |
 //! | max stamina 25 lower, on most of the nine | NPCs catch creature diseases |
 //! | no drop on any, after 40 or so blows each | they don't (UESP's note) |
 //! | `HasSpell` or `HasMagicEffect` true without a drop | it is added but does nothing on NPCs, or is added on every blow |
+//! | the stamina drop's blow numbers spread like a 6% chance per blow | each blow rolls the effect's condition |
+//! | spell hits as many as blows, source the disease | each blow delivers the disease as a hit of its own |
 //! | bears not fighting at 3 s, or 0 drops | the pens' navmesh or walls fault |
 //!
 //! Run: load a throwaway save (anywhere), wait for the "running"
