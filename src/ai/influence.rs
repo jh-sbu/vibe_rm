@@ -3,9 +3,9 @@
 //! a value of their own (`crate::magic::archetype::target_value`), and what
 //! the actor is doing changes with it. Calmed actors stop fighting and look
 //! for no fights until attacked; the frightened, cowards while it lasts,
-//! flee at once; the frenzied fall on their caster (or, with none, whoever
-//! is nearest, friend or not), and give up the fights they no longer want
-//! when it ends; the rallied stop
+//! flee at once; the frenzied fall on the player who cast it and is seen
+//! (else whoever is nearest, friend or not), and give up the fights they no
+//! longer want when it ends; the rallied stop
 //! fleeing. Open questions: `known_ambiguities/magic.md`.
 
 use std::collections::HashSet;
@@ -76,9 +76,14 @@ impl Engine {
                 }
             }
             archetype::FRENZY => {
-                // Skyrim SE (autotest27, autotest28): a Fury cast at an NPC
-                // sent it at its caster, even with another actor nearer.
-                let caster = caster.filter(|&c| c != actor && self.frenzy_can_attack(c));
+                // Skyrim SE: cast by the player it finds, it goes for the
+                // player, even with another actor nearer (autotest27,
+                // autotest28); cast by an NPC, or by the player unseen, for
+                // the nearest it finds, and with nobody it finds, nobody
+                // (autotest30).
+                let caster = caster.filter(|&c| {
+                    c == PLAYER_REF && self.frenzy_can_attack(c) && self.finds_player(actor)
+                });
                 if let Some(t) = caster.or_else(|| self.frenzy_target(actor)) {
                     log::info!("{actor} is frenzied: attacks {t}");
                     self.start_combat(actor, t);
@@ -193,7 +198,7 @@ mod tests {
     use glam::{Mat4, Vec3};
 
     #[test]
-    fn a_fury_sends_its_target_at_its_caster_even_with_another_nearer() {
+    fn a_fury_sends_its_target_at_the_player_who_cast_it_only_if_it_finds_them() {
         use crate::world::skeleton::Skeleton;
         use esp::writer::write_plugin;
         use std::sync::Arc;
@@ -208,7 +213,11 @@ mod tests {
         let mut e = crate::stats::action_tests::headless_engine(&dir, "Empty.esp");
         let key = crate::render::CellKey::Interior(FormId(0x801));
         let skeleton = Arc::new(Skeleton::default());
-        for (id, x) in [(FormId(0x800), 0.0), (FormId(0x803), 150.0)] {
+        for (id, x) in [
+            (FormId(0x800), 0.0),
+            (FormId(0x803), 150.0),
+            (FormId(0x804), -400.0),
+        ] {
             let mut a = crate::ai::ActorRuntime::new(
                 id,
                 FormId(0x802),
@@ -222,15 +231,24 @@ mod tests {
             e.cells.entry(key).or_default().actors.push(a);
         }
         e.player.position = Vec3::Y * -450.0;
+        let target = |e: &crate::engine::Engine| {
+            e.actor_ref(FormId(0x800))
+                .unwrap()
+                .exec
+                .combat
+                .as_ref()
+                .map(|c| c.target)
+        };
+        // Cast by the player it doesn't find (autotest30's booth): not at them.
         e.target_value_started(FormId(0x800), archetype::FRENZY, Some(PLAYER_REF));
-        let target = e
-            .actor_ref(FormId(0x800))
-            .unwrap()
-            .exec
-            .combat
-            .as_ref()
-            .map(|c| c.target);
-        assert_eq!(target, Some(PLAYER_REF));
+        assert_ne!(target(&e), Some(PLAYER_REF));
+        // Cast by an NPC: not at its caster.
+        e.target_value_started(FormId(0x800), archetype::FRENZY, Some(FormId(0x804)));
+        assert_ne!(target(&e), Some(FormId(0x804)));
+        // Cast by the player it finds: at the player (autotest27, autotest28).
+        e.detection.of_player.insert(FormId(0x800), 100.0);
+        e.target_value_started(FormId(0x800), archetype::FRENZY, Some(PLAYER_REF));
+        assert_eq!(target(&e), Some(PLAYER_REF));
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

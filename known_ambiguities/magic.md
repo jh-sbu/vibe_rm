@@ -173,15 +173,19 @@ MGEF, SPEL, ENCH and ALCH record pages; CommonLibSSE's `EffectSetting`,
 - **Fear**: a coward (confidence 0) thinks about fleeing every frame it
   isn't fleeing, not on the threat ratio timer, so the frightened run at
   once; when it ends the next check brings them back.
-- **Frenzy**: the target attacks its caster (Skyrim SE, autotest27 and
-  autotest28, `research/autotest28.md`: our Fury cast by script from the
-  player sent the target at the player both with the player nearer and
-  with another NPC nearer, 150 off against 437); with no caster able to be
-  fought, the nearest actor (or the player) it finds, allies too
-  (aggression 3 is hostile to everyone). Casting it is an assault as other
-  hostile spells are (UESP: Frenzy "not considered a crime" if the caster
-  is hidden). Unread: whom it turns on when its caster isn't found
-  (unseen, or far off), and after the first fight ends. When it ends, the target leaves a fight with someone it
+- **Frenzy**: the target goes for the player who cast it, if it finds the
+  player (Skyrim SE, autotest27 and autotest28: our Fury cast by script
+  from the player sent the target at the player with the player nearer,
+  and with another NPC nearer, 150 off against 437). Otherwise, cast by an
+  NPC or by the player unseen, it goes for the nearest actor it finds,
+  allies too (aggression 3 is hostile to everyone); with nobody it finds it
+  stays out of combat (autotest30, `research/autotest30.md`: the player in
+  the booth above unseen, or an NPC caster 400 off, and another NPC 150
+  off: the other, in all six pens; alone: no fight in all three). Why the
+  player is preferred (the cast as an assault on it?) is open. Casting it is
+  an assault as other hostile spells are (UESP: Frenzy "not considered a
+  crime" if the caster is hidden). Unread: whom it turns on after its first
+  fight ends (autotest30's never ended within 16 s). When it ends, the target leaves a fight with someone it
   wouldn't fight now, and those fighting it who wouldn't fight it leave
   theirs; the game's own clean-up isn't described.
 - **Summons** (archetype 18; the NPC is the effect's related form): the
