@@ -76,6 +76,7 @@ mod effect_perk_sources_tests {
             summoned: None,
             dual: false,
             channelled: false,
+            delivered: false,
         }
     }
 

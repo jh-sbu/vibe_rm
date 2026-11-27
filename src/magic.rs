@@ -517,6 +517,10 @@ pub struct ActiveEffect {
     /// A concentration spell's effect without a duration (wards): it lasts
     /// as long as the spell is cast, each landing keeping it on.
     pub channelled: bool,
+    /// A constant effect that landed on its target (a creature's disease,
+    /// `Engine::deliver_attack_spell`), not one of the target's own
+    /// spells: it stays until cured, its conditions rolled as it landed.
+    pub delivered: bool,
 }
 
 /// What leveled spell lists gave actors, rolled when first asked for and kept.
@@ -875,6 +879,72 @@ impl Engine {
         had
     }
 
+    /// A blow's spell (an attack's `ATKD` spell: a creature's disease)
+    /// landing on `target`. Each effect's conditions are rolled as it lands
+    /// (Bone Break Fever's `GetRandomPercent <= 5`: Skyrim SE, autotest29,
+    /// infected about one blow in 18), and only those that pass come. A
+    /// disease is resisted outright by the target's Disease Resist, as a
+    /// percent chance. It lands quietly: the blow was the hit (no `OnHit` of
+    /// its own in autotest29). A constant one stays until cured, not one of
+    /// the target's spells (`HasSpell` false: autotest28, autotest29).
+    pub(crate) fn deliver_attack_spell(&mut self, spell: FormId, attacker: FormId, target: FormId) {
+        let Some(m) = self.magic_item(spell) else {
+            return;
+        };
+        if m.spell_type == spell_type::DISEASE {
+            let resist = self.actor_value(target, av::DISEASE_RESIST);
+            if resist > 0.0 && ((self.rand() % 100) as f32) < resist {
+                log::debug!("{target} resists {} ({resist:.0}%)", m.name);
+                return;
+            }
+        }
+        let ctx = Context {
+            subject: Some(target),
+            target: Some(attacker),
+            ..Default::default()
+        };
+        let mut passing = 0u64;
+        for (index, ei) in m.effects.iter().enumerate().take(64) {
+            let Some(mgef) = self.magic_effect(ei.effect) else {
+                continue;
+            };
+            if condition::evaluate(self, &ei.conditions, ctx)
+                && condition::evaluate(self, &mgef.conditions, ctx)
+            {
+                passing |= 1 << index;
+            }
+        }
+        if passing == 0 {
+            return;
+        }
+        log::debug!("{attacker}'s blow gives {target} {}", m.name);
+        self.apply_item_scaled(
+            spell,
+            Some(attacker),
+            target,
+            true,
+            None,
+            false,
+            passing,
+            None,
+            1.0,
+            true,
+        );
+    }
+
+    /// Whether `actor` has caught a disease: a disease's effect delivered by
+    /// a blow on it (`GetDisease`).
+    pub(crate) fn has_caught_disease(&self, actor: FormId) -> bool {
+        self.magic.effects.iter().any(|x| {
+            x.target == actor
+                && x.delivered
+                && !x.done
+                && self
+                    .magic_item(x.item)
+                    .is_some_and(|m| m.spell_type == spell_type::DISEASE)
+        })
+    }
+
     /// An explicit script/console cast, separate from effects landing through
     /// projectiles, areas, concentration ticks or passive abilities.
     pub fn cast_item(&mut self, item: FormId, caster: Option<FormId>, target: FormId) -> bool {
@@ -963,7 +1033,7 @@ impl Engine {
         equipment: Option<FormId>,
     ) -> bool {
         self.apply_item_scaled(
-            item, caster, target, quiet, at, dual, effects, equipment, 1.0,
+            item, caster, target, quiet, at, dual, effects, equipment, 1.0, false,
         )
     }
 
@@ -987,6 +1057,7 @@ impl Engine {
             ALL_EFFECTS,
             None,
             scale,
+            false,
         )
     }
 
@@ -1002,6 +1073,7 @@ impl Engine {
         effects: u64,
         equipment: Option<FormId>,
         scale: f32,
+        delivered: bool,
     ) -> bool {
         let Some(m) = self.magic_item(item) else {
             return false;
@@ -1093,8 +1165,11 @@ impl Engine {
             // FailingCondition): a fire spell whose condition failed did no
             // damage, yet sent `OnMagicEffectApply` and `OnHit` and started a
             // fight.
-            let passes = condition::evaluate(self, &ei.conditions, ctx)
-                && condition::evaluate(self, &mgef.conditions, ctx);
+            // Delivered by a blow, its effects' conditions were rolled as it
+            // landed (`deliver_attack_spell`), and only those that passed come.
+            let passes = delivered
+                || (condition::evaluate(self, &ei.conditions, ctx)
+                    && condition::evaluate(self, &mgef.conditions, ctx));
             // A body not raised (yet) takes nothing else; a reanimation
             // raises only a body (`MagicNoReanimate`, Dead Thrall's
             // `ActorTypeNPC`: its conditions), and does nothing at all where
@@ -1178,6 +1253,7 @@ impl Engine {
                 summoned: None,
                 dual,
                 channelled,
+                delivered: delivered && constant,
             });
             log::debug!(
                 "{target}: {} from {} ({item}): magnitude {magnitude:.1}, {duration}s",
@@ -1783,7 +1859,9 @@ impl Engine {
             // A bound weapon put away (another taken up) leaves the effect
             // on: in the game it was still on 5 s after an iron sword took
             // the bound sword's hand (`test-mod autotest4`).
-            if sync && (x.duration > 0.0) {
+            // A caught disease's conditions were rolled as it landed; they
+            // aren't looked at again (`known_ambiguities/diseases.md`).
+            if sync && x.duration > 0.0 && !x.delivered {
                 let pass = self.effect_conditions_pass(&x, &mgef);
                 if pass && !x.active {
                     self.start_magic_effect(id);
@@ -1911,7 +1989,9 @@ impl Engine {
                 .magic
                 .effects
                 .iter()
-                .filter(|x| x.target == actor && x.duration.is_infinite() && !x.done)
+                .filter(|x| {
+                    x.target == actor && x.duration.is_infinite() && !x.done && !x.delivered
+                })
                 .map(|x| (x.item, x.equipment))
                 .collect();
             for &(item, equipment) in &wanted {
@@ -2394,3 +2474,7 @@ mod menu_object_tests {
 #[cfg(test)]
 #[path = "enhance_weapon_tests.rs"]
 mod enhance_weapon_tests;
+
+#[cfg(test)]
+#[path = "disease_tests.rs"]
+mod disease_tests;

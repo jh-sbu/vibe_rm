@@ -5646,6 +5646,7 @@ fn active_effects_payload_is_validated() {
         summoned: Some(FormId(0xFF00_0800)),
         dual: true,
         channelled: false,
+        delivered: true,
     };
     let mut s = Snapshot::default();
     s.continuity.active_effects = (vec![effect.clone()], 4);

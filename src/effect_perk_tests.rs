@@ -74,6 +74,7 @@ fn effect(id: u64, target: FormId) -> ActiveEffect {
         summoned: None,
         dual: false,
         channelled: false,
+        delivered: false,
     }
 }
 

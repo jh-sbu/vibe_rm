@@ -2088,7 +2088,9 @@ readings are applied (see Done; autotest23 and autotest24's on
       the effect re-check its `GetRandomPercent` condition after landing?
       (UESP's confirmed bug: Bone Break Fever "rarely" drains 0.)
     - `GetDisease` on an infected NPC; Resist Disease (0, 50, 100).
-    - Ours applies no `ATKD` attack spells yet (`research/autotest28.md`).
+    - Ours now delivers attack spells (`known_ambiguities/diseases.md`),
+      to NPCs' blows only: the player's own attacks (a werewolf's) carry
+      none yet.
     - Our engine read `IsInInterior` false in the pens after a script
       `MoveTo` (SE: true).
   - Built and waiting for the user's run: `saveload`

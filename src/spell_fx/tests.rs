@@ -450,6 +450,7 @@ fn lifecycle_hit(id: u64, target: FormId, persistent: bool) -> crate::magic::Act
         summoned: None,
         dual: false,
         channelled: false,
+        delivered: false,
     }
 }
 

@@ -208,6 +208,7 @@ pub const FIRE_RESIST: u32 = 41;
 pub const ELECTRIC_RESIST: u32 = 42;
 pub const FROST_RESIST: u32 = 43;
 pub const MAGIC_RESIST: u32 = 44;
+pub const DISEASE_RESIST: u32 = 45;
 pub const PARALYSIS: u32 = 53;
 pub const INVISIBILITY: u32 = 54;
 pub const WARD_POWER: u32 = 63;

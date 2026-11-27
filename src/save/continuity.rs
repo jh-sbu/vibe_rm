@@ -438,7 +438,8 @@ fn put_effect(w: &mut Writer, x: &crate::magic::ActiveEffect) {
         | (x.quiet as u8) << 2
         | (x.dual as u8) << 3
         | (x.channelled as u8) << 4
-        | (x.equipment.is_some() as u8) << 5);
+        | (x.equipment.is_some() as u8) << 5
+        | (x.delivered as u8) << 6);
     w.f32(x.held[0]);
     w.f32(x.held[1]);
     w.bool(x.at.is_some());
@@ -460,7 +461,7 @@ fn get_effect(r: &mut Reader) -> Result<crate::magic::ActiveEffect> {
     let effect = r.form()?;
     let (magnitude, duration, elapsed) = (r.f32()?, r.f32()?, r.f32()?);
     let bits = r.u8()?;
-    if bits >= 1 << 6 {
+    if bits >= 1 << 7 {
         return Err(Corrupt("unknown active effect flags".into()));
     }
     let held = [r.f32()?, r.f32()?];
@@ -491,6 +492,7 @@ fn get_effect(r: &mut Reader) -> Result<crate::magic::ActiveEffect> {
         summoned,
         dual: bits & 8 != 0,
         channelled: bits & 16 != 0,
+        delivered: bits & 64 != 0,
     })
 }
 

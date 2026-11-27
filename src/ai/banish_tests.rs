@@ -153,6 +153,7 @@ fn summoned(engine: &mut Engine, summon: FormId) {
         summoned: Some(summon),
         dual: false,
         channelled: false,
+        delivered: false,
     });
     engine.magic.commanded.insert(summon, SUMMONER);
 }

@@ -75,6 +75,7 @@ fn fixture() -> (Fixture, Engine) {
         stagger: 0.0,
         stamina_mult: 1.0,
         attack_type: FormId::NULL,
+        spell: FormId::NULL,
     };
     e.player_stats
         .set(Arc::new(CombatStats {

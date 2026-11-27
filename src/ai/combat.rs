@@ -80,6 +80,8 @@ pub struct Attack {
     pub stamina_mult: f32,
     /// Its attack type keyword (`PowerAttackTypeForward`...: `IsAttackType`).
     pub attack_type: FormId,
+    /// The spell its blows deliver (`ATKD` 0x08: a creature's disease).
+    pub spell: FormId,
 }
 
 /// The hands an attack strikes with, by its event: the right (`attackStart`,
@@ -467,6 +469,7 @@ fn attacks_of(rec: &esp::LoadedRecord<'_>) -> Vec<Attack> {
                     attack_type: d.get(28..32).map_or(FormId::NULL, |b| {
                         rec.fid(FormId(u32::from_le_bytes(b.try_into().unwrap())))
                     }),
+                    spell: rec.fid(FormId(u32::from_le_bytes(d[8..12].try_into().unwrap()))),
                 });
             }
             b"ATKE" => {
@@ -2167,6 +2170,14 @@ impl Engine {
                     stagger,
                     Struck::Hand(s.hand),
                 );
+            }
+            // The attack's spell lands with its blow (a bear's Bone Break
+            // Fever: Skyrim SE, autotest29).
+            if let Some(spell) = attack.as_ref().map(|x| x.spell).filter(|f| !f.is_null())
+                && !self.is_ethereal(s.target)
+                && !self.is_ethereal(s.attacker)
+            {
+                self.deliver_attack_spell(spell, s.attacker, s.target);
             }
             // The triggering blow tests sneak eligibility while still hidden.
             // A missed hit frame ends invisibility too.
@@ -4386,6 +4397,7 @@ mod hand_tests {
             stagger: 0.0,
             stamina_mult: 1.0,
             attack_type: FormId::NULL,
+            spell: FormId::NULL,
         }
     }
 

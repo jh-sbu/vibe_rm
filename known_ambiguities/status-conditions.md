@@ -361,19 +361,15 @@ first faction lists towards the second: 0 neutral, 1 enemy, 2 ally, 3 friend.
   the clothing type (`BOD2` armor type 2). Oblivion's function may have
   returned something other than gold value; the thresholds above (12, 1000)
   don't settle it.
-- `GetDisease` reads 0. Skyrim SE read 0 for an NPC given Ataxia by
-  `AddSpell` (autotest22), for the player given Ataxia by `AddSpell`
-  (autotest23, `HasSpell` True) or Sanguinare Vampiris (autotest24), and
-  after Ataxia cast at the player as the traps do, directly and by an NPC
-  (which didn't infect). autotest28 (`research/autotest28.md`, Disease):
-  it read 1 after a bear's blows gave the player Bone Break Fever (its
-  race's `ATKD` attack spell), and 0 once `RemoveSpell` had cured it; 19
-  skeever and 69 wolf blows didn't infect. So a disease caught from a
-  blow counts and an added one doesn't. NPCs catch them too (autotest29,
-  `research/autotest29.md`: 8 of 9, about 6% a blow), and `HasSpell` doesn't
-  see a caught disease. Ours applies no attack spells, so
-  nobody catches one, and reads 0: differs, open (`plans/ROADMAP.md`).
-  The vanilla uses all ask about the player.
+- `GetDisease` reads 1 while the subject has a disease caught from a blow
+  (`known_ambiguities/diseases.md`), else 0. Skyrim SE read 0 for an NPC
+  given Ataxia by `AddSpell` (autotest22), for the player given Ataxia by
+  `AddSpell` (autotest23, `HasSpell` True) or Sanguinare Vampiris
+  (autotest24), and after Ataxia cast at the player as the traps do. It
+  read 1 after a bear's blows gave the player Bone Break Fever, and 0 once
+  `RemoveSpell` had cured it (autotest28). NPCs catch diseases too
+  (autotest29); `GetDisease` on one is unread. The vanilla uses all ask
+  about the player.
 - `IsActorUsingATorch` is 0 for NPCs: Skyrim SE read 0 for an NPC holding a
   torch, sheathed (`test-mod autotest22`) and drawn in combat (autotest23),
   while `IsTorchOut` read 1. For the player, unread, it is kept as a torch

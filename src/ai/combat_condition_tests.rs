@@ -163,6 +163,7 @@ fn attack(event: &str, flags: u32) -> Attack {
         stagger: 0.0,
         stamina_mult: 1.0,
         attack_type: FormId::NULL,
+        spell: FormId::NULL,
     }
 }
 
