@@ -54,6 +54,11 @@ fn init_data(opts: &Options) -> Result<(LoadOrder, vfs::Vfs)> {
             names.push(entry);
         }
     }
+    anyhow::ensure!(
+        !names.is_empty(),
+        "no plugins found in {}: pass the Data directory (the one holding Skyrim.esm)",
+        data_dir.display()
+    );
     log::info!("plugins: {}", names.join(", "));
     let t = Instant::now();
     let mut lo = LoadOrder::load(&data_dir, &names)?;
@@ -641,7 +646,7 @@ fn answer_boxes(engine: &mut Engine, opts: &Options, box_up: &mut u32) {
 }
 
 pub(crate) fn write_png(path: &str, width: u32, height: u32, pixels: &[u8]) -> Result<()> {
-    let file = std::fs::File::create(path)?;
+    let file = std::fs::File::create(path).with_context(|| format!("cannot write {path}"))?;
     let mut enc = png::Encoder::new(std::io::BufWriter::new(file), width, height);
     enc.set_color(png::ColorType::Rgba);
     enc.set_depth(png::BitDepth::Eight);
