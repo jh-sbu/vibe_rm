@@ -294,9 +294,14 @@ locations name it.
   `IsGuard` guard of our own faction with Arrest and Attack on Sight stood
   off at bounty 0, and at 999 and 1000 came to 180-240 units from the
   player without turning hostile in 6 s (an arrest approach; it has no
-  voice, so it couldn't speak). Not settled: whether it attacks later, or
-  only in a hold of its own (our cell's location is Whiterun Hold, not its
-  faction's). The threshold is kept.
+  voice, so it couldn't speak). autotest27 (bounty 1000, 41 s; and a
+  `CrimeFactionWhiterun` guard in Whiterun Hold, 44 s) and autotest28
+  (bounties 2000 and 5000, 25 s each; `research/autotest28.md`) never saw
+  it turn hostile. From 2000 it drew its weapon and stood about 360 off.
+  So a guard of a faction that arrests doesn't attack on sight from the
+  bounty alone, without the arrest dialogue a voiced guard would start.
+  Ours does: differs. The threshold is kept until a voiced guard is read
+  (whether its dialogue starts the attack, `plans/ROADMAP.md`).
 - Resisting (the fragment, or the arrest conversation ending without the
   bounty settled and not on a goodbye line, so "never mind" lets the player
   go) makes the faction's guards attack until it is paid; only guards, not

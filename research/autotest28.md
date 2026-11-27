@@ -145,3 +145,32 @@ in reach of its enemy, fought in place (state 1).
    attacker, or because it is held (`SetDontMove` at 100 and at 400 off).
 4. The Vigilant's heal threshold between 0.16 and 0.22, and whether it
    needs a spell attacker (melee at 0.18).
+
+## Compared with ours (2026-11-27)
+
+- **Changed to agree**:
+  - Combat healing starts below 20% health and stops at 25%, not below 50%
+    until full (`src/casting.rs`, `known_ambiguities/npc-healing.md`; the
+    start between 0.16 and 0.218 is a choice).
+  - An unwanted draw is sheathed 2.5 s after it, and a second `DrawWeapon`
+    while drawn doesn't put that off (`src/ai/equipment.rs`,
+    `known_ambiguities/combat-movement.md`).
+  - Fury sends its target at its caster; the nearest actor only with no
+    caster to fight (`src/ai/influence.rs`, `known_ambiguities/magic.md`).
+  - An NPC restrained mid-fight stays in combat, drawn, without attacking
+    (`src/ai/mod.rs`, `known_ambiguities/actor-holds.md`).
+- **Agree already**: `GetTimeDead` in hours struck
+  (`known_ambiguities/death.md`); Disarm's level cap
+  (`known_ambiguities/disarm.md`).
+- **Differ, left open** (`plans/ROADMAP.md`):
+  - `GetDisease`: ours applies no `ATKD` attack spells, so no disease is
+    caught from blows, and reads 0.
+  - Attack on Sight: ours attacks from a bounty of 1000; SE's voiceless
+    guard didn't up to 5000, drawing from 2000.
+  - A `SetDontMove` target of a hostile spell searches (state 2) in SE;
+    ours fights.
+  - `IsWeaponDrawn` reads true 0.6 s into the draw in SE, at once in ours.
+  - The Vigilant healed in bleedout (autotest27) and drank a potion out of
+    magicka; ours does neither. It healed only under fire, not against
+    melee at 0.218.
+  - A restrained fighter is pushed by blows; ours holds it.

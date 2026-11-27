@@ -2049,14 +2049,30 @@ readings are applied (see Done; autotest23 and autotest24's on
     1.5 s idle sheathe (autotest21's 0.6 s was a test artefact) and
     `GetTimeDead` in hours struck. Its last test confirmed that
     `IsKillerObject` run on a dead reference crashes SE. Its "Faults and
-    open items" are `test-mod autotest28`, built and waiting for the user's
-    run (fully automatic; `crates/tools/src/test_mods/autotest28.rs`):
-    `GetTimeDead` timed against the clock, Disarm's cap mid-swing,
-    `GetDisease` with a skeever, a wolf and a bear outdoors, the Vigilant
-    with 600 health, the sheathe delay, Attack on Sight at 2000 and 5000,
-    Fury's target, `SetRestrained` mid-fight and a script spell at a
-    `SetDontMove` NPC. Still open after it: Attack on Sight by a voiced
-    guard (its arrest dialogue would stop the script).
+    open items" were `test-mod autotest28`.
+  - `test-mod autotest28`: run 2026-11-27 (`research/autotest28.md`).
+    Applied on 2026-11-27: combat healing below 20% health to 25%, the idle
+    sheathe 2.5 s from the draw (not restarted by a second `DrawWeapon`),
+    Fury sends its target at its caster, a fighter restrained mid-fight
+    stays in combat without attacking. Agreed already: `GetTimeDead` in
+    hours struck, Disarm's level cap. Left open:
+    - Creature attack spells (`ATKD`): the bear's blows gave the player Bone
+      Break Fever and `GetDisease` read 1; ours applies no attack spells and
+      reads 0. Needs the chance per blow (19 skeever and 69 wolf blows
+      didn't infect) and whether `HasSpell` sees a caught disease.
+    - Attack on Sight: SE's voiceless guard of a faction that arrests
+      never attacked up to a bounty of 5000 (it drew from 2000); ours
+      attacks from 1000. Unread: a voiced guard's arrest dialogue (it would
+      stop the script).
+    - A `SetDontMove` target of a hostile spell 400 off searches (state 2)
+      in SE; ours fights. Unread: whether it is the hold or being out of
+      reach.
+    - `IsWeaponDrawn` reads true 0.6 s into a draw in SE, at once in ours.
+    - NPC healing: SE's Vigilant healed only under fire (not against melee
+      at 0.218), in bleedout (autotest27), and drank a potion out of
+      magicka; ours heals at any attack, not in bleedout, and drinks
+      nothing.
+    - A restrained fighter is pushed by blows; ours holds it.
   - Built and waiting for the user's run: `saveload`
     (`plans/saves-remaining.md` step 9; run instructions in
     `crates/tools/src/test_mods/saveload.rs`). Its dry run in our engine

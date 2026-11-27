@@ -46,18 +46,16 @@ unverified in Skyrim SE.
   tenths of a game hour, and game hours or real minutes as they are. Hour
   boundaries on the clock passed since the death, or whole real minutes
   counted from a few seconds after `Kill`, still fit.
+- `GetTimeDead` counts the hours struck on the game clock since the death
+  (autotest28, `research/autotest28.md`): killed at 17.902 on the clock it
+  read `>= 1` 16 s later (the clock 18.011); killed at 18.050, 161 s later
+  (19.006). Ours (`floor(now) - floor(death)` in game hours,
+  `Engine::game_hours_total`) agrees. Living subjects, and those dead
+  before the game (placed dead, or dead in a loaded save), have no value
+  and fail the condition: unread.
 
 ## Unconfirmed
 
-- `GetTimeDead` unit: the hours struck on the game clock since the death
-  (`floor(now) - floor(death)` in game hours, `Engine::game_hours_total`).
-  Skyrim SE read whole numbers (autotest27: 0, then 1 at 1.18 to 1.44 game
-  hours), which rules out the elapsed game hours we used to return. Whole
-  real minutes counted from a few seconds after the death fit the readings
-  too; the hour count was chosen because the engine records deaths in game
-  time. autotest28 times it against `GameHour` to tell them apart. Living
-  subjects, and those dead before the game (placed dead, or dead in a
-  loaded save), have no value and fail the condition.
 - `IsKillerObject(FormList)`: the subject's killer is an actor whose
   reference or base the list names. In the game (`test-mod autotest22`,
   `research/autotest22.md`) it was false run on the killer with a list of

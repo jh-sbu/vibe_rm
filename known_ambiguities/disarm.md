@@ -40,8 +40,9 @@ fighting a held target:
   of combat, 0 of 8. Ours takes the weapon only from a target that is
   attacking (`Engine::is_attacking`, as the `IsAttacking` condition reads).
   CommonLibSSE-NG declaring `DisarmEffect` a `StaggerEffect` fits. The cap
-  stays as UESP has it. autotest27's level 15 casts (at 12 and 30) were on
-  idle NPCs and so say nothing about it.
+  stays as UESP has it: autotest28 (`research/autotest28.md`, DisarmCap)
+  cast it at level 15 fighters mid-swing, which kept their swords at
+  magnitude 12 (0 of 3) and lost them at 30 (3 of 3). Ours agrees.
 - A disarmed level 1 NPC carrying a dagger fought on with nothing in hand
   for at least 4 s, not drawing the dagger or picking its sword up. Ours
   takes up what it still carries: differs, open (how long before it does).

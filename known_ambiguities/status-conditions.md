@@ -365,8 +365,13 @@ first faction lists towards the second: 0 neutral, 1 enemy, 2 ally, 3 friend.
   `AddSpell` (autotest22), for the player given Ataxia by `AddSpell`
   (autotest23, `HasSpell` True) or Sanguinare Vampiris (autotest24), and
   after Ataxia cast at the player as the traps do, directly and by an NPC
-  (which didn't infect). What makes it 1, if anything (a disease caught from
-  a creature's blow?), is open. The vanilla uses all ask about the player.
+  (which didn't infect). autotest28 (`research/autotest28.md`, Disease):
+  it read 1 after a bear's blows gave the player Bone Break Fever (its
+  race's `ATKD` attack spell), and 0 once `RemoveSpell` had cured it; 19
+  skeever and 69 wolf blows didn't infect. So a disease caught from a
+  blow counts and an added one doesn't. Ours applies no attack spells, so
+  nobody catches one, and reads 0: differs, open (`plans/ROADMAP.md`).
+  The vanilla uses all ask about the player.
 - `IsActorUsingATorch` is 0 for NPCs: Skyrim SE read 0 for an NPC holding a
   torch, sheathed (`test-mod autotest22`) and drawn in combat (autotest23),
   while `IsTorchOut` read 1. For the player, unread, it is kept as a torch
