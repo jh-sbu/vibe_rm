@@ -369,7 +369,9 @@ first faction lists towards the second: 0 neutral, 1 enemy, 2 ally, 3 friend.
   it read 1 after a bear's blows gave the player Bone Break Fever (its
   race's `ATKD` attack spell), and 0 once `RemoveSpell` had cured it; 19
   skeever and 69 wolf blows didn't infect. So a disease caught from a
-  blow counts and an added one doesn't. Ours applies no attack spells, so
+  blow counts and an added one doesn't. NPCs catch them too (autotest29,
+  `research/autotest29.md`: 8 of 9, about 6% a blow), and `HasSpell` doesn't
+  see a caught disease. Ours applies no attack spells, so
   nobody catches one, and reads 0: differs, open (`plans/ROADMAP.md`).
   The vanilla uses all ask about the player.
 - `IsActorUsingATorch` is 0 for NPCs: Skyrim SE read 0 for an NPC holding a

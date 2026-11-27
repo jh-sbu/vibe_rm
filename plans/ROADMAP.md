@@ -2073,19 +2073,24 @@ readings are applied (see Done; autotest23 and autotest24's on
       magicka; ours heals at any attack, not in bleedout, and drinks
       nothing.
     - A restrained fighter is pushed by blows; ours holds it.
-  - `test-mod autotest29`, built and waiting for the user's run (fully
-    automatic, about 4 minutes; `crates/tools/src/test_mods/autotest29.rs`):
-    whether NPCs catch a creature's disease, nine NPCs each penned with a
-    bear. The disease chance itself is in the records (`GetRandomPercent`
-    on each disease effect: Ataxia and Rockjoint 3%, Bone Break Fever,
-    Rattles and Witbane 6%, Brain Rot and Sanguinare 11%; the wolf's only
-    on power attacks and lunges). It is the first batch in the test pens
-    (`test_mods/pens.rs`, `Batch { pens: true }`): nine walled pens with
-    navmeshes of ours and a closed booth for the player. If the pens crash
-    SE, their navmeshes or `NAVI` entries are the suspects. Open after it:
-    how Resist Disease applies (the effects name no resist value; the
-    spells' type is Disease), and our engine reading `IsInInterior` false
-    after a script `MoveTo` into the pens.
+  - `test-mod autotest29`: run 2026-11-27 (`research/autotest29.md`). The
+    test pens (`test_mods/pens.rs`, `Batch { pens: true }`) work in SE:
+    nine walled, navmeshed pens and a booth, no crash, bears fighting in
+    all nine. NPCs catch creature diseases: 8 of 9 infected, the first
+    infecting blow consistent with the effect's 6% roll per blow (the
+    chances are in the records: `GetRandomPercent` on each disease effect,
+    Ataxia and Rockjoint 3%, Bone Break Fever, Rattles and Witbane 6%,
+    Brain Rot and Sanguinare 11%; the wolf's only on power attacks and
+    lunges). `HasSpell` doesn't see a caught disease. Open, for a
+    follow-up batch in the pens:
+    - Only 4 of the 8 infected kept the full stamina drain; 3 had none at
+      the end and one part (9.2 of 25) while `HasMagicEffect` held. Does
+      the effect re-check its `GetRandomPercent` condition after landing?
+      (UESP's confirmed bug: Bone Break Fever "rarely" drains 0.)
+    - `GetDisease` on an infected NPC; Resist Disease (0, 50, 100).
+    - Ours applies no `ATKD` attack spells yet (`research/autotest28.md`).
+    - Our engine read `IsInInterior` false in the pens after a script
+      `MoveTo` (SE: true).
   - Our engine loses the scripts of actors a script creates
     (`PlaceActorAtMe`): `attach_cell_scripts` takes `self.vm` out to attach
     them, but while a script is running the engine holds only an empty
