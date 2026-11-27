@@ -242,9 +242,12 @@ mod tests {
         e.actor_mut(ACTOR).unwrap().drawn = false;
         e.apply_item(REACHES_30, Some(PLAYER_REF), ACTOR);
         assert_eq!(e.inventories[&ACTOR].held(RIGHT), Some(SWORD));
-        // So is a drawn one between swings (autotest27).
+        // So is a drawn one between swings (autotest27). Scripts read the
+        // swing as the graph's `IsAttacking` (autotest30's casts waited on it).
         e.actor_mut(ACTOR).unwrap().drawn = true;
+        assert_eq!(e.anim_variable(ACTOR, "IsAttacking"), 1.0);
         swinging(&mut e, false);
+        assert_eq!(e.anim_variable(ACTOR, "IsAttacking"), 0.0);
         e.apply_item(REACHES_30, Some(PLAYER_REF), ACTOR);
         assert_eq!(e.inventories[&ACTOR].held(RIGHT), Some(SWORD));
         // A bound weapon stays in the hand.

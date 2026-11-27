@@ -134,9 +134,18 @@ impl Engine {
     /// Papyrus `GetAnimationVariable*`: 0 when `r` runs no graph or its graph
     /// has no such variable.
     pub(crate) fn anim_variable(&mut self, r: FormId, name: &str) -> f32 {
-        self.graph_mut(r)
+        let graph = self
+            .graph_mut(r)
             .and_then(|g| g.variable(name))
-            .unwrap_or(0.0)
+            .unwrap_or(0.0);
+        // The graph's `IsAttacking` is never set by ours: swings are timed by
+        // the fight (`Engine::is_attacking`, which the `IsAttacking`
+        // condition reads). Skyrim SE's scripts read it true mid-swing
+        // (autotest27, autotest28: Disarm cast when it was).
+        if graph == 0.0 && name.eq_ignore_ascii_case("IsAttacking") && self.is_attacking(r) {
+            return 1.0;
+        }
+        graph
     }
 
     /// Papyrus `SetAnimationVariable*`.
