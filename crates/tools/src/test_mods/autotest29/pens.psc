@@ -3,40 +3,6 @@
 ; bear, whose attacks carry Bone Break Fever (6% a blow: its effect's
 ; GetRandomPercent <= 5).
 
-; Pen i's marker.
-ObjectReference Function Pen(Int i)
-    If i == 0
-        return Pen0
-    ElseIf i == 1
-        return Pen1
-    ElseIf i == 2
-        return Pen2
-    ElseIf i == 3
-        return Pen3
-    ElseIf i == 4
-        return Pen4
-    ElseIf i == 5
-        return Pen5
-    ElseIf i == 6
-        return Pen6
-    ElseIf i == 7
-        return Pen7
-    EndIf
-    return Pen8
-EndFunction
-
-; An actor of base b placed in pen i, x / y from its centre.
-Actor Function SpawnPen(ActorBase b, Int i, Float x, Float y)
-    Actor a = Pen(i).PlaceActorAtMe(b, 4, None)
-    a.MoveTo(Pen(i), x, y, 0.0, false)
-    return a
-EndFunction
-
-Function GoPens()
-    Player.MoveTo(PenBooth, 0.0, 0.0, 10.0, true)
-    Utility.Wait(4.0)
-EndFunction
-
 ; The battery itself: the player in the booth, and the pens' distances.
 String Function TestPensEnter()
     GoPens()

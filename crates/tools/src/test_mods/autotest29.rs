@@ -49,6 +49,7 @@ use super::autotest21::{self, Batch};
 const SOURCES: &[(&str, &str)] = &[
     ("base", include_str!("autotest22/base.psc")),
     ("helpers", include_str!("autotest28/helpers.psc")),
+    ("pen helpers", include_str!("pens/helpers.psc")),
     ("pens", include_str!("autotest29/pens.psc")),
 ];
 
