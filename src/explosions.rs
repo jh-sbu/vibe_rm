@@ -330,7 +330,9 @@ impl Engine {
         if x.has(flag::KNOCK_DOWN_ALWAYS | flag::KNOCK_DOWN_BY_FORMULA) {
             let threshold = gmst_f32(&self.lo, "fKnockdownCurrentHealthThreshold", 50.0) / 100.0;
             for (r, taken, before) in actors {
-                if self.is_dead(r.what) {
+                // A restrained actor isn't knocked down; one held by
+                // `SetDontMove` is (Skyrim SE, autotest30).
+                if self.is_dead(r.what) || self.world_state.restrained.contains(&r.what) {
                     continue;
                 }
                 if knocks_down(x.flags, *taken, *before, threshold) {

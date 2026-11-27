@@ -70,7 +70,12 @@ Choices made to get explosions working where the sources
   `PushActorAway`'s) with the explosion's force. Explosions without either
   flag don't move living actors: SE's ballista explosion (no flag, damage
   80) moved a free NPC 20 units in 0.3 s without knocking it down, perhaps a
-  hit reaction; ours has none.
+  hit reaction; ours has none. Holds (Skyrim SE, autotest30,
+  `research/autotest30.md`): "Always" knocked down NPCs held by
+  `SetDontMove` (moved 75 to 91 units) as it did free ones, and none held by
+  `SetRestrained` (moved under 5). Ours knocks down neither restrained
+  actors nor, by its own rule, anything else unflagged; whether
+  `SetRestrained` also keeps off pushes and other knockdowns is unread.
 - **Pushing what moves.** Dynamic bodies (loose objects, corpses' ragdolls;
   living actors only through knockdowns) whose centre of mass is within the radius and in
   sight get an impulse away from the centre: the force times
