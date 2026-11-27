@@ -1076,7 +1076,7 @@ pub fn call(
                 None => none(),
             }
         }
-        ("objectreference", "getparentcell") => match me.and_then(|f| e.lo.cell_of_ref(f)) {
+        ("objectreference", "getparentcell") => match me.and_then(|f| e.parent_cell(f)) {
             Some(c) => v(e.object_value(c)),
             None => none(),
         },

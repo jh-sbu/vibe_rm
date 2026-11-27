@@ -2091,8 +2091,6 @@ readings are applied (see Done; autotest23 and autotest24's on
     - Ours now delivers attack spells (`known_ambiguities/diseases.md`),
       to NPCs' blows only: the player's own attacks (a werewolf's) carry
       none yet.
-    - Our engine read `IsInInterior` false in the pens after a script
-      `MoveTo` (SE: true).
   - Built and waiting for the user's run: `saveload`
     (`plans/saves-remaining.md` step 9; run instructions in
     `crates/tools/src/test_mods/saveload.rs`). Its dry run in our engine

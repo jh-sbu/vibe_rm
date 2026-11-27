@@ -181,6 +181,22 @@ impl Engine {
         Some((self.place_of_ref(r, pos)?, pos))
     }
 
+    /// The cell a reference is in now (`GetParentCell`): the player's (or a
+    /// moved or loaded actor's) interior, or the exterior cell at its grid;
+    /// else the cell its record is placed in. Vanilla's `IsInInterior` asks
+    /// this cell whether it is an interior.
+    pub fn parent_cell(&self, r: FormId) -> Option<FormId> {
+        match self.current_place_of(r).map(|(place, _)| place) {
+            Some(Place::Interior(c)) => Some(c),
+            Some(Place::Exterior(world, grid)) => self
+                .lo
+                .world(world)
+                .and_then(|w| w.cells.get(&grid).copied())
+                .or_else(|| self.lo.cell_of_ref(r)),
+            None => self.lo.cell_of_ref(r),
+        }
+    }
+
     /// Make a reference to `base` at reference `at`, or in its inventory.
     pub fn create_ref(&mut self, base: FormId, at: FormId, inside: bool) -> Option<FormId> {
         self.create_ref_as(base, at, inside, false)
@@ -473,5 +489,59 @@ mod created_actor_tests {
             "{:?}",
             scripts(&e)
         );
+    }
+}
+
+#[cfg(test)]
+mod parent_cell_tests {
+    use super::*;
+    use esp::writer::{Node, RecordBuilder, write_plugin};
+
+    /// The player's parent cell is the interior they are in, not the cell
+    /// of their record (vanilla `IsInInterior` asks it: autotest29's
+    /// booth read false in ours, true in the game).
+    #[test]
+    #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+    fn the_players_parent_cell_is_the_one_they_are_in() {
+        const CELL: FormId = FormId(0x800);
+        let dir = std::env::temp_dir().join(format!("vrm-parent-cell-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cell = RecordBuilder::new(b"CELL", CELL)
+            .zstring(b"EDID", "TestInterior")
+            .field(b"DATA", &1u16.to_le_bytes());
+        std::fs::write(
+            dir.join("Cell.esp"),
+            write_plugin(
+                0,
+                &[],
+                "test",
+                "a cell",
+                0x900,
+                &[Node::Group {
+                    label: *b"CELL",
+                    group_type: esp::group_type::TOP,
+                    children: vec![Node::Group {
+                        label: 0i32.to_le_bytes(),
+                        group_type: esp::group_type::INTERIOR_BLOCK,
+                        children: vec![Node::Group {
+                            label: 0i32.to_le_bytes(),
+                            group_type: esp::group_type::INTERIOR_SUB_BLOCK,
+                            children: vec![Node::Record(cell)],
+                        }],
+                    }],
+                }],
+            ),
+        )
+        .unwrap();
+        let mut e = crate::stats::action_tests::headless_engine(&dir, "Cell.esp");
+        e.location = Location::Interior(CELL);
+        assert_eq!(e.parent_cell(PLAYER_REF), Some(CELL));
+        let cell = e.object_value(CELL);
+        let interior = crate::script::natives::call(&mut e, "cell", "isinterior", Some(&cell), &[]);
+        assert!(matches!(
+            interior,
+            papyrus::NativeResult::Value(papyrus::Value::Bool(true))
+        ));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }
