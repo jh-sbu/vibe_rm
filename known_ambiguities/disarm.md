@@ -44,8 +44,14 @@ fighting a held target:
   cast it at level 15 fighters mid-swing, which kept their swords at
   magnitude 12 (0 of 3) and lost them at 30 (3 of 3). Ours agrees.
 - A disarmed level 1 NPC carrying a dagger fought on with nothing in hand
-  for at least 4 s, not drawing the dagger or picking its sword up. Ours
-  takes up what it still carries: differs, open (how long before it does).
+  for at least 4 s (autotest24). autotest30 (`research/autotest30.md`,
+  DisarmDagger) timed it: fighting on, it drew a carried dagger 2.75 to
+  2.79 s after the disarm; with none, it picked its sword up from the
+  floor 11 to 27 s after; its opponent taken away (out of combat), it did
+  neither in 60 s. Ours wields the best weapon it still carries
+  `REARM_DELAY` (2.8 s) after, only while still fighting
+  (`Engine::update_rearming`); picking a weapon up from the floor isn't
+  done (`plans/ROADMAP.md`).
 - The shout's own spell (`VoiceDisarm1`) cast by script from 150 units did
   nothing at all.
 

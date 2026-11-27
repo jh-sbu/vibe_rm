@@ -14,7 +14,57 @@ use esp::FormId;
 use crate::engine::{Engine, PLAYER_REF};
 use crate::world::inventory::{LEFT, RIGHT, item_droppable, weapon_bound};
 
+/// Seconds after a disarm before a fighter wields a weapon it still carries:
+/// Skyrim SE (autotest30) drew a carried dagger 2.75 to 2.79 s after.
+pub(crate) const REARM_DELAY: f32 = 2.8;
+
 impl Engine {
+    /// A disarmed NPC still fighting wields the best weapon it still carries
+    /// once [`REARM_DELAY`] has passed (in combat: autotest30's, its opponent
+    /// gone, stayed unarmed). With none, it fights on with nothing (picking
+    /// its weapon up from the floor, as the game's did in 11 to 27 s, is
+    /// open: `plans/ROADMAP.md`).
+    pub(crate) fn update_rearming(&mut self, dt: f32) {
+        let due: Vec<FormId> = self
+            .cells
+            .values_mut()
+            .flat_map(|rt| rt.actors.iter_mut())
+            .filter_map(|a| {
+                let left = a.rearm_in.as_mut()?;
+                if a.dead || a.exec.combat.is_none() {
+                    a.rearm_in = None;
+                    return None;
+                }
+                *left -= dt;
+                (*left <= 0.0).then(|| {
+                    a.rearm_in = None;
+                    a.ref_id
+                })
+            })
+            .collect();
+        for actor in due {
+            let lo = &self.lo;
+            let Some(inv) = self.inventories.get(&actor) else {
+                continue;
+            };
+            if inv.weapon(lo).is_some() {
+                continue;
+            }
+            let Some(rf) = self.reference_of(actor) else {
+                continue;
+            };
+            let inv = inv.clone();
+            if let Some(w) =
+                crate::world::actor::best_weapon(&self.lo, &rf, &self.scripts.globals, &inv)
+            {
+                log::info!("{actor}, disarmed, wields its {w}");
+                if self.wield(actor, w) {
+                    self.draw_weapon(actor, true);
+                }
+            }
+        }
+    }
+
     /// Pull the weapon out of `target`'s hands for `caster`'s Disarm (`item`,
     /// the spell): whether they held one the effect takes, only while
     /// attacking (autotest27). A disarm is a blow: Skyrim SE (autotest23,
@@ -49,6 +99,9 @@ impl Engine {
             "{target} is disarmed{}",
             caster.map_or(String::new(), |c| format!(" by {c}"))
         );
+        if let Some(a) = self.actor_mut(target) {
+            a.rearm_in = Some(REARM_DELAY);
+        }
         if caster == Some(PLAYER_REF) && target != PLAYER_REF {
             self.increment_stat("Weapons Disarmed", 1);
         }
@@ -105,7 +158,10 @@ mod tests {
             dnam[0] = anim;
             dnam[12..14].copy_from_slice(&drop_flags.to_le_bytes());
             dnam[40..44].copy_from_slice(&flags2.to_le_bytes());
-            RecordBuilder::new(b"WEAP", id).field(b"DNAM", &dnam)
+            // A model, as every weapon an NPC takes up has (`equip_weapons`).
+            RecordBuilder::new(b"WEAP", id)
+                .zstring(b"MODL", "Weapons\\Iron\\Dagger.nif")
+                .field(b"DNAM", &dnam)
         };
         let mut mgef = [0; 0x6c];
         mgef[..4].copy_from_slice(&(flags::HOSTILE | 0x1000).to_le_bytes());
@@ -228,6 +284,21 @@ mod tests {
         assert_eq!(e.query_stat("Weapons Disarmed"), 1);
         assert_eq!(lying(&e, SWORD), 1);
         assert_eq!(lying(&e, DAGGER), 0);
+    }
+
+    #[test]
+    #[ignore = "needs a headless GPU adapter to construct Engine; synthetic records only"]
+    fn a_disarmed_fighter_wields_a_weapon_it_carries_after_a_while() {
+        let (_f, mut e) = fixture();
+        arm(&mut e, SWORD, None, false);
+        e.inventories.get_mut(&ACTOR).unwrap().add(DAGGER, 1);
+        assert!(e.apply_item(REACHES_30, Some(PLAYER_REF), ACTOR));
+        assert_eq!(e.inventories[&ACTOR].held(RIGHT), None);
+        // Not at once (Skyrim SE, autotest30: 2.75 to 2.79 s).
+        e.update_rearming(2.0);
+        assert_eq!(e.inventories[&ACTOR].held(RIGHT), None);
+        e.update_rearming(1.0);
+        assert_eq!(e.inventories[&ACTOR].held(RIGHT), Some(DAGGER));
     }
 
     #[test]

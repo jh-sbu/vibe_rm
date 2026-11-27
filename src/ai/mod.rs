@@ -369,6 +369,9 @@ pub struct ActorRuntime {
     pub(crate) sprinting: bool,
     sprint_told: bool,
     pub(crate) idle_weapon_time: f32,
+    /// Seconds before a disarmed fighter wields a weapon it still carries
+    /// (`Engine::update_rearming`).
+    pub(crate) rearm_in: Option<f32>,
     pub(crate) swimming: bool,
     swim_told: bool,
     pub swim_moves: Option<(MoveSpeeds, f32)>,
@@ -561,6 +564,7 @@ impl ActorRuntime {
             sprinting: false,
             sprint_told: false,
             idle_weapon_time: 0.0,
+            rearm_in: None,
             swimming: false,
             swim_told: false,
             swim_moves: None,
@@ -4062,6 +4066,7 @@ impl Engine {
         self.update_combat_spells(dt);
         self.update_actor_encumbrance();
         self.update_weapon_readiness(dt);
+        self.update_rearming(dt);
         timing.next("ai.loaded.world_prepare");
         let talking = self.conversation.as_ref().map(|c| c.npc_ref).or(self
             .barks
