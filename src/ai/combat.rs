@@ -4246,10 +4246,30 @@ impl Engine {
     }
 
     /// Stamina comes back by the race's rate (percent of the most a second),
-    /// slower in combat, once a moment has passed since it was spent.
+    /// slower in combat, once a moment has passed since it was spent. NPCs'
+    /// `StaminaRateMult` and `HealRateMult` count, as the player's (Skyrim
+    /// SE, autotest30: none at 0, three times as fast at 300).
     pub(crate) fn update_stamina(&mut self, dt: f32) {
         let set = self.combat_settings();
         let mut player_fought = false;
+        let mults: HashMap<FormId, (f32, f32)> = self
+            .cells
+            .values()
+            .flat_map(|rt| &rt.actors)
+            .filter(|a| !a.dead)
+            .map(|a| a.ref_id)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|r| {
+                (
+                    r,
+                    (
+                        self.actor_value(r, av::STAMINA_RATE_MULT) / 100.0,
+                        self.actor_value(r, av::HEAL_RATE_MULT) / 100.0,
+                    ),
+                )
+            })
+            .collect();
         for rt in self.cells.values_mut() {
             for a in rt.actors.iter_mut().filter(|a| !a.dead) {
                 player_fought |= a
@@ -4265,6 +4285,7 @@ impl Engine {
                     continue;
                 }
                 let rate = a.stats.stamina_regen / 100.0
+                    * mults.get(&a.ref_id).map_or(1.0, |m| m.0)
                     * if a.exec.combat.is_some() {
                         set.combat_regen
                     } else {
@@ -4280,6 +4301,7 @@ impl Engine {
                 .filter(|a| !a.dead && a.exec.bleeding.is_none())
             {
                 let rate = a.stats.health_regen / 100.0
+                    * mults.get(&a.ref_id).map_or(1.0, |m| m.1)
                     * if a.exec.combat.is_some() {
                         set.combat_health_regen
                     } else {

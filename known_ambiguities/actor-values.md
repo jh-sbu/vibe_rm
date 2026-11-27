@@ -48,6 +48,12 @@ use them (`vrm-tool av-conditions <data>`).
 - NPCs' `HealRate` reads 0 (as does `CombatHealthRegenMult`), though their
   race's `DATA` has 0.7: that is the player's. Our NPCs at 90 of 300 health
   didn't heal in 30 s, free, held or fighting (`test-mod autotest5`).
+- NPCs' rate multipliers count (Skyrim SE, `test-mod autotest30`,
+  `research/autotest30.md`): with `HealRate` set to 0.7, held NPCs out of
+  combat regained 0.76% of their health a second at `HealRateMult` 100,
+  none at 0 and 2.34% at 300; stamina 5.6%, 0 and 17.1% at
+  `StaminaRateMult` 100, 0, 300; magicka 3.5%, 0 and 10.7%. Ours applies
+  all three to NPCs (`Engine::update_stamina`, `regen_npc_magicka`).
 - The player's health comes back at most x `HealRate`% x `HealRateMult`% a
   second, times `CombatHealthRegenMult` in combat (UESP Skyrim:Health,
   <https://en.uesp.net/w/index.php?oldid=3636643>). The 0.7 in combat is
