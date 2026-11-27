@@ -59,6 +59,7 @@ use anyhow::{Context, Result};
 use esp::writer::{AttachedScript, Node, PropertyValue, RecordBuilder, vmad, write_plugin};
 use esp::{FormId, LoadOrder, group_type, record_flags};
 
+use super::pens;
 use super::places::{self, Interior};
 use super::records::{self, spell};
 use super::script::{self, bytes};
@@ -95,6 +96,10 @@ pub(super) struct Batch {
     /// skipping test n: a crash then shows in the newest save, and a reload
     /// can step past it. autotest21 and autotest22 saved every 20 tests.
     pub checkpoints: bool,
+    /// The test pens ([`pens`]): nine walled, navmeshed pens in a cell of
+    /// their own (`VrmAt21Pens`), the markers `Pen0` to `Pen8` at their
+    /// centres and `PenBooth` in the closed booth above them. autotest29 on.
+    pub pens: bool,
 }
 
 pub(super) const AUTOTEST21: Batch = Batch {
@@ -104,6 +109,7 @@ pub(super) const AUTOTEST21: Batch = Batch {
     probes_on_skill: false,
     cell_location: None,
     checkpoints: false,
+    pens: false,
 };
 
 /// autotest21's test sources, in running order (base first: the helpers).
@@ -239,8 +245,21 @@ const FEAR_SPELL: u32 = 0xA2D;
 const FURY_SPELL: u32 = 0xA2E;
 const LEVEL15_FIGHTER: u32 = 0xA2F;
 const HOLD_GUARD: u32 = 0xA30;
+// Added for autotest29: the test pens (`pens`).
+const PENS_CELL: u32 = 0xA31;
+const PEN_MARKERS: u32 = 0xA32; // nine
+const PEN_BOOTH: u32 = 0xA3B;
+const PEN_STATICS: u32 = 0xA40; // pens::STATICS
+const PEN_NAVMESHES: u32 = 0xA80; // nine
+const PEN_IDS: pens::Ids = pens::Ids {
+    cell: PENS_CELL,
+    markers: PEN_MARKERS,
+    booth: PEN_BOOTH,
+    statics: PEN_STATICS,
+    navmeshes: PEN_NAVMESHES,
+};
 /// The next free object id.
-const NEXT_OBJECT: u32 = 0xA31;
+const NEXT_OBJECT: u32 = 0xA89;
 
 const DOOR: u32 = 0x850;
 const WEB: u32 = 0x851;
@@ -752,6 +771,22 @@ const VANILLA: &[(&str, &str, &str)] = &[
     ("BearBase", "ActorBase", "EncBear"),
     ("Rockjoint", "Spell", "DiseaseRockjoint"),
     ("BoneBreak", "Spell", "DiseaseBoneBreakFever"),
+    // Added for autotest29.
+    ("BoneBreakEffect", "MagicEffect", "DisDamageStamina"),
+];
+
+/// The pens' markers, given to the script only with [`Batch::pens`].
+const PEN_OWN: &[(&str, &str, u32)] = &[
+    ("Pen0", "ObjectReference", PEN_MARKERS),
+    ("Pen1", "ObjectReference", PEN_MARKERS + 1),
+    ("Pen2", "ObjectReference", PEN_MARKERS + 2),
+    ("Pen3", "ObjectReference", PEN_MARKERS + 3),
+    ("Pen4", "ObjectReference", PEN_MARKERS + 4),
+    ("Pen5", "ObjectReference", PEN_MARKERS + 5),
+    ("Pen6", "ObjectReference", PEN_MARKERS + 6),
+    ("Pen7", "ObjectReference", PEN_MARKERS + 7),
+    ("Pen8", "ObjectReference", PEN_MARKERS + 8),
+    ("PenBooth", "ObjectReference", PEN_BOOTH),
 ];
 
 /// The weathers whose transitions are timed, with their trans deltas: the
@@ -914,7 +949,7 @@ fn header(batch: &Batch) -> String {
     for (name, ty, _) in VANILLA {
         s += &format!("{ty} Property {name} Auto\n");
     }
-    for (name, ty, _) in OWN {
+    for (name, ty, _) in OWN.iter().chain(PEN_OWN) {
         s += &format!("{ty} Property {name} Auto\n");
     }
     for p in PROBE_LIST {
@@ -1376,6 +1411,11 @@ fn build_records(lo: &LoadOrder, batch: &Batch) -> Result<TestMod> {
     }
     for (name, _, id) in OWN {
         properties.push((name.to_string(), object(own(*id))));
+    }
+    if batch.pens {
+        for (name, _, id) in PEN_OWN {
+            properties.push((name.to_string(), object(own(*id))));
+        }
     }
     for (k, (w, delta)) in weathers(lo)?.into_iter().enumerate() {
         let letter = ["A", "B", "C"][k];
@@ -2354,6 +2394,18 @@ fn build_records(lo: &LoadOrder, batch: &Batch) -> Result<TestMod> {
         .entry((CELL / 10 % 10) as i32)
         .or_default()
         .extend([Node::Record(cell), children]);
+    // The test pens, and the navmesh info map's entries for them.
+    let mut navi = Vec::new();
+    if batch.pens {
+        let battery = pens::build(lo, &PEN_IDS, "VrmAt21Pens", "vibe_rm Test Pens")?;
+        cells
+            .entry((PENS_CELL % 10) as i32)
+            .or_default()
+            .entry((PENS_CELL / 10 % 10) as i32)
+            .or_default()
+            .extend([Node::Record(battery.cell), battery.children]);
+        navi.push(battery.navi);
+    }
 
     // The warehouse: markers on its floor's middle.
     let warehouse = v.id("WarehouseFurniture")?;
@@ -2421,29 +2473,33 @@ fn build_records(lo: &LoadOrder, batch: &Batch) -> Result<TestMod> {
         children: blocks,
     };
 
+    let mut tops = vec![
+        Node::top(b"KYWD", keywords),
+        Node::top(b"FACT", factions),
+        Node::top(b"MGEF", effects),
+        Node::top(b"SPEL", spells),
+        Node::top(b"ACTI", activators),
+        Node::top(b"ARMO", armor),
+        Node::top(b"CONT", containers),
+        Node::top(b"DOOR", doors),
+        Node::top(b"NPC_", npcs),
+        Node::top(b"FLST", lists),
+        Node::top(b"OTFT", outfits),
+        Node::top(b"GLOB", globals),
+        Node::top(b"QUST", quests),
+    ];
+    // The navmesh info map goes before the cells, as Survival Mode's does.
+    if !navi.is_empty() {
+        tops.push(Node::top(b"NAVI", navi));
+    }
+    tops.extend([cells, Node::top(b"SMQN", story_nodes)]);
     let plugin = write_plugin(
         0,
         &["Skyrim.esm"],
         "vibe_rm",
         "plans/autotest-audit.md's automatic items: tests run by script, reports saved.",
         NEXT_OBJECT,
-        &[
-            Node::top(b"KYWD", keywords),
-            Node::top(b"FACT", factions),
-            Node::top(b"MGEF", effects),
-            Node::top(b"SPEL", spells),
-            Node::top(b"ACTI", activators),
-            Node::top(b"ARMO", armor),
-            Node::top(b"CONT", containers),
-            Node::top(b"DOOR", doors),
-            Node::top(b"NPC_", npcs),
-            Node::top(b"FLST", lists),
-            Node::top(b"OTFT", outfits),
-            Node::top(b"GLOB", globals),
-            Node::top(b"QUST", quests),
-            cells,
-            Node::top(b"SMQN", story_nodes),
-        ],
+        &tops,
     );
     Ok(TestMod {
         plugin,
@@ -2485,7 +2541,7 @@ pub(super) fn check_batch(batch: &Batch) {
         for (i, (name, ty, _)) in VANILLA.iter().enumerate() {
             properties.push((name.to_string(), form(0x1000 + i as u32, ty)));
         }
-        for (name, ty, object_id) in OWN {
+        for (name, ty, object_id) in OWN.iter().chain(PEN_OWN) {
             properties.push((name.to_string(), form(own(*object_id).0, ty)));
         }
         for name in ["DeltaA", "DeltaB", "DeltaC"] {

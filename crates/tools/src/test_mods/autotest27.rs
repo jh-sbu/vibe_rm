@@ -85,6 +85,7 @@ const AUTOTEST27: Batch = Batch {
     probes_on_skill: true,
     cell_location: None,
     checkpoints: true,
+    pens: false,
 };
 
 pub fn build(lo: &LoadOrder) -> Result<TestMod> {

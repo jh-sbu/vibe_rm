@@ -63,6 +63,7 @@ mod dualcast;
 mod explosions;
 mod firstperson;
 mod loadscreens;
+mod pens;
 mod pex;
 mod places;
 mod ragdolls;
