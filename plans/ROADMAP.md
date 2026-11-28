@@ -2091,17 +2091,26 @@ readings are applied (see Done; autotest23 and autotest24's on
     - Ours now delivers attack spells (`known_ambiguities/diseases.md`),
       to NPCs' blows only: the player's own attacks (a werewolf's) carry
       none yet.
-  - `test-mod autotest30`, built and waiting for the user's run (fully
-    automatic, about 15 to 20 minutes; `crates/tools/src/test_mods/autotest30.rs`),
-    all in the pens: autotest29's disease items (Disease Resist 0, 50 and
-    100; whether a caught disease's drain stays; `GetDisease` on an NPC),
-    autotest28's healing and hostile-spell items, Fury with its caster
-    unseen or gone, a disarmed fighter's next weapon, NPCs' regeneration
-    multipliers (`test-mod regen`) and knockdowns of held NPCs
-    (`test-mod explosions`). Its dry run in our engine: our Vigilants' casts
-    send no `OnSpellCast` to the logger, and our fighters never read
-    `IsAttacking` true, so ours disarmed nobody (SE read it in autotest27
-    and autotest28); both to look into.
+  - `test-mod autotest30`: run 2026-11-27 (`research/autotest30.md`), in the
+    pens. Applied on 2026-11-27: NPCs' health and stamina rate multipliers,
+    restrained actors not knocked down by explosions, Fury at the player
+    only if it finds them, a carried weapon wielded 2.8 s after a disarm;
+    and the dry runs' engine gaps (`IsAttacking` for scripts,
+    `OnSpellCast`). Agreed already: a caught disease isn't rolled again,
+    Disease Resist 100, `GetDisease` on NPCs, healing against melee. Left
+    open:
+    - A disarmed fighter with nothing else picks its weapon up from the
+      floor (SE: 11 to 27 s after); ours fights on unarmed.
+    - A caught disease's drain: 25 seven times, 0 four, about 9 twice,
+      0.17 once (autotest29, 30). What decides it.
+    - The Vigilant: a potion drunk at once with no magicka; a heal cast in
+      bleedout once, not by two others; the first heal not at once below
+      the line. Ours drinks nothing and doesn't heal in bleedout.
+    - A held NPC hit by the player's script cast searched (autotest21, 28);
+      hit by an NPC's it fought (autotest30). Why the player differs.
+    - Ours: a frenzied NPC alone in a pen found an actor in another pen
+      within 2 s (SE: stayed out of combat). Our detection through the
+      pens' walls, perhaps.
   - Built and waiting for the user's run: `saveload`
     (`plans/saves-remaining.md` step 9; run instructions in
     `crates/tools/src/test_mods/saveload.rs`). Its dry run in our engine

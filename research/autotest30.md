@@ -125,4 +125,24 @@ against 3, 11 and 28 at 0; too few to show the halving.
 
 ## Compared with ours (2026-11-27)
 
-See the commits after this note; summarised in `plans/ROADMAP.md`.
+- **Engine gaps found by the dry runs, fixed**: scripts read our swings as
+  the graph's `IsAttacking` (ours never set it, so ours disarmed nobody);
+  `OnSpellCast` is sent, once a cast (nothing sent it).
+- **Changed to agree**:
+  - NPCs' `HealRateMult` and `StaminaRateMult` count
+    (`known_ambiguities/actor-values.md`); `MagickaRateMult` already did.
+  - Explosions don't knock restrained actors down
+    (`known_ambiguities/explosions.md`).
+  - Fury goes for the player who cast it only if it finds them, else the
+    nearest it finds (`known_ambiguities/magic.md`).
+  - A disarmed fighter wields a weapon it carries 2.8 s after, while still
+    fighting (`known_ambiguities/disarm.md`).
+- **Agree already**: an NPC caster's hostile spell starts a fight, held or
+  not; a caught disease isn't rolled again; Disease Resist 100 keeps it
+  off; `GetDisease` on an infected NPC; the Vigilant heals against melee
+  too, below about 0.2, stopping near 0.25.
+- **Differ, left open** (`plans/ROADMAP.md`): picking a dropped weapon up;
+  the drain's size (25 or less); the Vigilant's potion, healing in
+  bleedout and its delay before a first heal; the player's cast searching
+  in autotest21 and 28. In our dry run a frenzied NPC alone in its pen
+  found an actor in another pen within 2 s (SE: none).
